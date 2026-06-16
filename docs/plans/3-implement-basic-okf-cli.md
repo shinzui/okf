@@ -22,17 +22,19 @@ The observable behavior is that `cabal run okf -- --help` shows OKF-specific com
 
 ## Progress
 
-- [ ] Replace the scaffold `Hello` command with OKF commands.
-- [ ] Add `validate <bundle>` with permissive and strict validation flags.
-- [ ] Add `index <bundle> [--write]` for previewing or writing generated indexes.
-- [ ] Add `graph <bundle> [--json]` for graph output.
-- [ ] Add `show <bundle> <concept-id>` for concept inspection.
-- [ ] Add CLI tests for parser shape, exit behavior, and representative command output.
+- [x] Replace the scaffold `Hello` command with OKF commands. Completed 2026-06-16.
+- [x] Add `validate <bundle>` with permissive and strict validation flags. Completed 2026-06-16.
+- [x] Add `index <bundle> [--write]` for previewing or writing generated indexes. Completed 2026-06-16.
+- [x] Add `graph <bundle> [--json]` for graph output. Completed 2026-06-16.
+- [x] Add `show <bundle> <concept-id>` for concept inspection. Completed 2026-06-16.
+- [x] Add CLI tests for parser shape, exit behavior, and representative command output. Completed 2026-06-16.
 
 
 ## Surprises & Discoveries
 
-None yet.
+- EP-3 needed `Okf.Index.renderBundleIndexes` in addition to `writeBundleIndexes` so `okf index <bundle>` can preview generated index contents without mutating files. The CLI still uses `writeBundleIndexes` when `--write` is passed.
+
+- `optparse-applicative` option groups require version 0.19, while the package currently allows `optparse-applicative >=0.18`. EP-3 kept the initial command parsers simple and did not use `parserOptionGroup`; later CLI polish can raise the lower bound if grouped option sections become necessary.
 
 
 ## Decision Log
@@ -45,10 +47,66 @@ None yet.
   Rationale: `mori://shinzui/haskell-jitsurei/docs/cli-option-groups` documents the local pattern for readable `--help` output. The standalone OKF CLI should follow the same style.
   Date: 2026-06-16
 
+- Decision: Keep JSON as the only graph output format while still accepting `--json`.
+  Rationale: EP-3 needs a script-friendly graph command and future compatibility with more formats. Accepting `--json` now documents the intended format without adding unused presentation modes.
+  Date: 2026-06-16
+
+- Decision: Test parser shape in the CLI package and smoke-test representative executable behavior manually.
+  Rationale: The core package already tests bundle semantics thoroughly. CLI tests should catch command parser regressions without duplicating all filesystem behavior, while the executable smoke test proves the integrated commands work end to end.
+  Date: 2026-06-16
+
 
 ## Outcomes & Retrospective
 
-To be filled during and after implementation.
+EP-3 is complete. `okf-cli` now exposes `validate`, `index`, `graph`, and `show`; the scaffold `hello` command is gone. The CLI validates bundles under permissive or strict profiles, previews or writes generated indexes, prints graph JSON, and renders a human-readable concept view.
+
+Validation evidence from the repository root:
+
+```text
+$ cabal build all
+Build completed successfully.
+
+$ cabal test all
+Test suite okf-core-test: PASS
+Test suite okf-cli-test: PASS
+2 of 2 test suites passed.
+
+$ cabal run okf -- --help
+Available commands:
+  validate                 Validate an OKF bundle
+  index                    Preview or write generated index.md files
+  graph                    Print a bundle graph
+  show                     Show one concept
+```
+
+Executable smoke evidence against a temporary one-concept bundle:
+
+```text
+$ cabal run okf -- validate "$tmp"
+OK: 1 concepts
+
+$ cabal run okf -- index "$tmp"
+--- index.md
+# Subdirectories
+
+- [tables/](tables/index.md)
+
+--- tables/index.md
+# BigQuery Table
+
+- [Orders](orders.md) - Order records.
+
+$ cabal run okf -- graph "$tmp" --json
+{"edges":[],"nodes":[{"description":"Order records.","id":"tables/orders","label":"Orders","resource":null,"tags":[],"type":"BigQuery Table"}]}
+
+$ cabal run okf -- show "$tmp" tables/orders
+id: tables/orders
+type: BigQuery Table
+title: Orders
+description: Order records.
+
+# Orders
+```
 
 
 ## Context and Orientation
@@ -126,3 +184,6 @@ CLI commands should be safe to rerun. `validate`, `graph`, and `show` must not m
 ## Interfaces and Dependencies
 
 The CLI should depend on `okf-core` for all OKF behavior, `optparse-applicative` for parsing, `aeson` or `aeson-pretty` only if graph JSON rendering needs it, and `text` for output. Do not add Mina or Mori dependencies.
+
+
+Revision note 2026-06-16: Updated the living sections after implementation to record completed CLI commands, validation evidence, the preview-index core helper, and CLI testing decisions.

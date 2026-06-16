@@ -34,7 +34,7 @@ The main alternative considered was to implement the CLI first and grow library 
 |---|-------|------|-----------|-----------|--------|
 | EP-1 | Implement OKF document model and parser | docs/plans/1-implement-okf-document-model-and-parser.md | None | None | Complete |
 | EP-2 | Implement OKF bundle indexing and graph extraction | docs/plans/2-implement-okf-bundle-indexing-and-graph-extraction.md | EP-1 | None | Complete |
-| EP-3 | Implement basic OKF CLI | docs/plans/3-implement-basic-okf-cli.md | EP-1, EP-2 | None | Not Started |
+| EP-3 | Implement basic OKF CLI | docs/plans/3-implement-basic-okf-cli.md | EP-1, EP-2 | None | Complete |
 | EP-4 | Add OKF fixtures tests and documentation | docs/plans/4-add-okf-fixtures-tests-and-documentation.md | EP-1, EP-2, EP-3 | None | Not Started |
 | EP-5 | Prepare Mori and Mina integration surfaces | docs/plans/5-prepare-mori-and-mina-integration-surfaces.md | EP-1, EP-2 | EP-3, EP-4 | Not Started |
 
@@ -69,8 +69,8 @@ The eventual Mori and Mina integration surface is intentionally a data boundary 
 - [x] EP-1: Add permissive and strict validation modes with tests.
 - [x] EP-2: Implement bundle walking, concept lookup, and index generation.
 - [x] EP-2: Implement Markdown link extraction and graph JSON model.
-- [ ] EP-3: Replace the scaffold `hello` command with `validate`, `index`, `graph`, and `show`.
-- [ ] EP-3: Ensure CLI errors are deterministic and script-friendly.
+- [x] EP-3: Replace the scaffold `hello` command with `validate`, `index`, `graph`, and `show`.
+- [x] EP-3: Ensure CLI errors are deterministic and script-friendly.
 - [ ] EP-4: Add valid and invalid fixture bundles and golden-style tests.
 - [ ] EP-4: Update README and command examples after the CLI exists.
 - [ ] EP-5: Document and expose integration surfaces for future Mori and Mina adapters.
@@ -87,6 +87,8 @@ The eventual Mori and Mina integration surface is intentionally a data boundary 
 - EP-1 uses the Hackage `frontmatter` package for frontmatter fence parsing and `Data.Yaml` for YAML decoding/rendering. Rei was checked for precedent and currently uses local line splitting for agent-memory frontmatter, but OKF intentionally chose the package-based parser.
 
 - EP-2 uses `cmark-gfm` for Markdown link extraction, matching Rei's established Markdown parser dependency. It also discovered that `System.FilePath.normalise` does not collapse `..` segments in relative paths, so OKF graph resolution performs explicit bundle-relative segment collapse before parsing target concept IDs.
+
+- EP-3 added `Okf.Index.renderBundleIndexes` so the CLI can preview generated index files without mutating a bundle. `okf index --write` remains the explicit mutating path.
 
 
 ## Decision Log
@@ -113,3 +115,5 @@ The eventual Mori and Mina integration surface is intentionally a data boundary 
 EP-1 is complete. `okf-core` now has the first reusable library surface for safe concept IDs, parsed OKF documents, normalized serialization, and permissive versus strict validation.
 
 EP-2 is complete. `okf-core` now walks bundles, renders deterministic indexes, extracts Markdown links with `cmark-gfm`, and builds JSON-serializable concept graphs. Remaining outcomes will be filled as later child plans complete.
+
+EP-3 is complete. `okf-cli` now provides `validate`, `index`, `graph`, and `show` commands over the public `okf-core` surface. Remaining outcomes will be filled as later child plans complete.

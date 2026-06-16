@@ -40,10 +40,24 @@ library
     Okf.Cli
 
   build-depends:
+    aeson,
     base >=4.20 && <5,
+    bytestring,
     okf-core,
     generic-lens,
     lens ^>=5.3,
+    optparse-applicative >=0.18,
+    text ^>=2.1,
+
+test-suite okf-cli-test
+  import: common-options
+  type: exitcode-stdio-1.0
+  main-is: Main.hs
+  hs-source-dirs: test
+
+  build-depends:
+    base >=4.20 && <5,
+    okf-cli,
     optparse-applicative >=0.18,
     text ^>=2.1,
 

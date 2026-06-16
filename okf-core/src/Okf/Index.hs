@@ -1,6 +1,7 @@
 -- | Deterministic Markdown index rendering for OKF bundle directories.
 module Okf.Index
-  ( renderIndex
+  ( renderBundleIndexes
+  , renderIndex
   , writeBundleIndexes
   ) where
 
@@ -66,13 +67,23 @@ conceptBullet concept =
 -- | Write deterministic @index.md@ files for every directory in a bundle.
 writeBundleIndexes :: FilePath -> IO (Either BundleError ())
 writeBundleIndexes root = do
+  rendered <- renderBundleIndexes root
+  case rendered of
+    Left bundleError -> pure (Left bundleError)
+    Right indexes -> do
+      mapM_ (\(relativePath, content) -> Text.IO.writeFile (root </> relativePath) content) indexes
+      pure (Right ())
+
+-- | Render every @index.md@ file that would be written for a bundle.
+renderBundleIndexes :: FilePath -> IO (Either BundleError [(FilePath, Text)])
+renderBundleIndexes root = do
   walked <- walkBundle root
   case walked of
     Left bundleError -> pure (Left bundleError)
     Right concepts -> do
       directories <- indexDirectories root concepts
-      mapM_ (writeDirectoryIndex root concepts) directories
-      pure (Right ())
+      indexes <- mapM (renderDirectoryIndex root concepts) directories
+      pure (Right indexes)
 
 indexDirectories :: FilePath -> [Concept] -> IO [FilePath]
 indexDirectories root concepts = do
@@ -95,15 +106,15 @@ discoverDirectories root relativeDir = do
       )
       entries
 
-writeDirectoryIndex :: FilePath -> [Concept] -> FilePath -> IO ()
-writeDirectoryIndex root concepts relativeDir = do
+renderDirectoryIndex :: FilePath -> [Concept] -> FilePath -> IO (FilePath, Text)
+renderDirectoryIndex root concepts relativeDir = do
   subdirectories <- immediateSubdirectories root relativeDir
   let immediateConcepts =
         List.filter
           (\concept -> FilePath.normalise (FilePath.takeDirectory (sourcePath concept)) == FilePath.normalise relativeDir)
           concepts
-      indexPath = root </> relativeDir </> "index.md"
-  Text.IO.writeFile indexPath (renderIndex subdirectories immediateConcepts)
+      indexPath = relativeDir </> "index.md"
+  pure (FilePath.normalise indexPath, renderIndex subdirectories immediateConcepts)
 
 immediateSubdirectories :: FilePath -> FilePath -> IO [FilePath]
 immediateSubdirectories root relativeDir = do
