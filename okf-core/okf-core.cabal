@@ -37,10 +37,31 @@ library
   import: common-options
   hs-source-dirs: src
   exposed-modules:
+    Okf.ConceptId
+    Okf.Document
     Okf.Prelude
+    Okf.Validation
 
   build-depends:
+    aeson,
+    attoparsec,
     base >=4.20 && <5,
+    bytestring,
+    filepath,
+    frontmatter,
     generic-lens,
     lens ^>=5.3,
+    text ^>=2.1,
+    yaml,
+
+test-suite okf-core-test
+  import: common-options
+  type: exitcode-stdio-1.0
+  main-is: Main.hs
+  hs-source-dirs: test
+
+  build-depends:
+    aeson,
+    base >=4.20 && <5,
+    okf-core,
     text ^>=2.1,
