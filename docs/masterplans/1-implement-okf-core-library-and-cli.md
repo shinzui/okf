@@ -35,7 +35,7 @@ The main alternative considered was to implement the CLI first and grow library 
 | EP-1 | Implement OKF document model and parser | docs/plans/1-implement-okf-document-model-and-parser.md | None | None | Complete |
 | EP-2 | Implement OKF bundle indexing and graph extraction | docs/plans/2-implement-okf-bundle-indexing-and-graph-extraction.md | EP-1 | None | Complete |
 | EP-3 | Implement basic OKF CLI | docs/plans/3-implement-basic-okf-cli.md | EP-1, EP-2 | None | Complete |
-| EP-4 | Add OKF fixtures tests and documentation | docs/plans/4-add-okf-fixtures-tests-and-documentation.md | EP-1, EP-2, EP-3 | None | Not Started |
+| EP-4 | Add OKF fixtures tests and documentation | docs/plans/4-add-okf-fixtures-tests-and-documentation.md | EP-1, EP-2, EP-3 | None | Complete |
 | EP-5 | Prepare Mori and Mina integration surfaces | docs/plans/5-prepare-mori-and-mina-integration-surfaces.md | EP-1, EP-2 | EP-3, EP-4 | Not Started |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
@@ -71,8 +71,8 @@ The eventual Mori and Mina integration surface is intentionally a data boundary 
 - [x] EP-2: Implement Markdown link extraction and graph JSON model.
 - [x] EP-3: Replace the scaffold `hello` command with `validate`, `index`, `graph`, and `show`.
 - [x] EP-3: Ensure CLI errors are deterministic and script-friendly.
-- [ ] EP-4: Add valid and invalid fixture bundles and golden-style tests.
-- [ ] EP-4: Update README and command examples after the CLI exists.
+- [x] EP-4: Add valid and invalid fixture bundles and golden-style tests.
+- [x] EP-4: Update README and command examples after the CLI exists.
 - [ ] EP-5: Document and expose integration surfaces for future Mori and Mina adapters.
 
 
@@ -89,6 +89,8 @@ The eventual Mori and Mina integration surface is intentionally a data boundary 
 - EP-2 uses `cmark-gfm` for Markdown link extraction, matching Rei's established Markdown parser dependency. It also discovered that `System.FilePath.normalise` does not collapse `..` segments in relative paths, so OKF graph resolution performs explicit bundle-relative segment collapse before parsing target concept IDs.
 
 - EP-3 added `Okf.Index.renderBundleIndexes` so the CLI can preview generated index files without mutating a bundle. `okf index --write` remains the explicit mutating path.
+
+- EP-4 found that `nix fmt` is not currently available because the flake does not expose `formatter.aarch64-darwin`. `cabal build all` and `cabal test all` pass.
 
 
 ## Decision Log
@@ -117,3 +119,5 @@ EP-1 is complete. `okf-core` now has the first reusable library surface for safe
 EP-2 is complete. `okf-core` now walks bundles, renders deterministic indexes, extracts Markdown links with `cmark-gfm`, and builds JSON-serializable concept graphs. Remaining outcomes will be filled as later child plans complete.
 
 EP-3 is complete. `okf-cli` now provides `validate`, `index`, `graph`, and `show` commands over the public `okf-core` surface. Remaining outcomes will be filled as later child plans complete.
+
+EP-4 is complete. The repository now includes valid and invalid OKF fixture bundles, fixture-backed tests, and README examples that run against checked-in fixture paths. Remaining outcomes will be filled as later child plans complete.

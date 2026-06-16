@@ -22,17 +22,21 @@ The observable behavior is that `cabal test all` exercises both `okf-core` and `
 
 ## Progress
 
-- [ ] Add a valid fixture bundle with datasets, tables, references, links, and indexes.
-- [ ] Add invalid fixture bundles for malformed frontmatter and missing required `type`.
-- [ ] Add tests that use fixtures rather than only inline strings.
-- [ ] Add CLI command examples to the README after commands exist.
-- [ ] Add contributor notes about the OKF implementation boundaries.
-- [ ] Run formatting and full build/test validation.
+- [x] Add a valid fixture bundle with datasets, tables, references, links, and indexes. Completed 2026-06-16.
+- [x] Add invalid fixture bundles for malformed frontmatter and missing required `type`. Completed 2026-06-16.
+- [x] Add tests that use fixtures rather than only inline strings. Completed 2026-06-16.
+- [x] Add CLI command examples to the README after commands exist. Completed 2026-06-16.
+- [x] Add contributor notes about the OKF implementation boundaries. Completed 2026-06-16.
+- [x] Run formatting and full build/test validation. Completed 2026-06-16; `cabal build all` and `cabal test all` pass, while `nix fmt` is unavailable because the flake does not expose `formatter.aarch64-darwin`.
 
 
 ## Surprises & Discoveries
 
-None yet.
+- `nix fmt` is not currently wired in this flake. Running it reports that the flake does not provide `formatter.aarch64-darwin`, so EP-4 could not use it as a formatting gate.
+
+```text
+error: flake 'git+file:///Users/shinzui/Keikaku/bokuno/okf' does not provide attribute 'formatter.aarch64-darwin'
+```
 
 
 ## Decision Log
@@ -41,10 +45,31 @@ None yet.
   Rationale: Tiny fixtures make tests easy to understand, but they must still include nested directories, reserved files, absolute and relative links, and invalid cases to catch real parser and graph behavior.
   Date: 2026-06-16
 
+- Decision: Keep fixture-backed tests in the existing lightweight test executable.
+  Rationale: EP-1 chose an `exitcode-stdio-1.0` test executable. The new fixture assertions fit that harness without adding a heavier test framework dependency.
+  Date: 2026-06-16
+
 
 ## Outcomes & Retrospective
 
-To be filled during and after implementation.
+EP-4 is complete. The repository now has a valid fixture bundle at `okf-core/test/fixtures/valid-bundle`, invalid fixtures for unterminated frontmatter and missing `type`, fixture-backed core tests, CLI parser tests from EP-3, and README examples that use real fixture paths.
+
+Validation evidence from the repository root:
+
+```text
+$ cabal test all
+Test suite okf-cli-test: PASS
+Test suite okf-core-test: PASS
+2 of 2 test suites passed.
+
+$ cabal build all
+Build completed successfully.
+
+$ cabal run okf -- validate okf-core/test/fixtures/valid-bundle
+OK: 4 concepts
+```
+
+`nix fmt` was attempted but is not available from the current flake because no formatter attribute is exposed for `aarch64-darwin`.
 
 
 ## Context and Orientation
@@ -111,3 +136,6 @@ Fixture tests should be safe to rerun and should not mutate fixture files unless
 ## Interfaces and Dependencies
 
 Prefer `hspec` or the existing test framework chosen by EP-1. Avoid adding heavyweight dependencies for golden tests unless ordinary assertions become too brittle. Documentation should reference local files and commands rather than external websites.
+
+
+Revision note 2026-06-16: Updated the living sections after adding fixtures, fixture-backed tests, README command examples, implementation boundary notes, and validation evidence.

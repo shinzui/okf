@@ -5,6 +5,7 @@ import Data.Text qualified as Text
 import Data.Text.IO qualified as Text.IO
 import System.Directory
   ( createDirectoryIfMissing
+  , doesDirectoryExist
   , getTemporaryDirectory
   , removeDirectoryRecursive
   )
@@ -40,6 +41,9 @@ main = do
       , testIO "extractLinks ignores external markdown URLs" testExtractLinksIgnoresExternalUrls
       , testIO "buildGraph includes only edges to existing concepts" testBuildGraphIncludesKnownEdges
       , testIO "writeBundleIndexes is deterministic" testWriteBundleIndexesDeterministic
+      , testIO "fixture valid bundle validates and graphs expected edges" testFixtureValidBundle
+      , testIO "fixture unterminated frontmatter reports parse error" testFixtureUnterminatedFrontmatter
+      , testIO "fixture missing type reports validation error" testFixtureMissingType
       ]
   unless (and results) exitFailure
 
@@ -200,6 +204,44 @@ testWriteBundleIndexesDeterministic =
       )
   )
 
+testFixtureValidBundle :: IO (Either Text ())
+testFixtureValidBundle = do
+  root <- fixturePath "valid-bundle"
+  concepts <- readBundle root
+  pure
+    ( do
+        orders <- firstShow (parseConceptId "tables/orders")
+        customers <- firstShow (parseConceptId "tables/customers")
+        sales <- firstShow (parseConceptId "datasets/sales")
+        assertEqual 4 (length concepts)
+        assertEqual [] (foldMap (validateDocument PermissiveConformance . document) concepts)
+        let graph = buildGraph concepts
+        assertBool "orders to customers" (Edge{source = orders, target = customers} `List.elem` edges graph)
+        assertBool "orders to sales" (Edge{source = orders, target = sales} `List.elem` edges graph)
+    )
+
+testFixtureUnterminatedFrontmatter :: IO (Either Text ())
+testFixtureUnterminatedFrontmatter = do
+  root <- fixturePath "invalid-unterminated-frontmatter"
+  result <- walkBundle root
+  pure
+    ( case result of
+        Left (InvalidConceptDocument "broken.md" UnterminatedFrontmatter) -> Right ()
+        other -> Left ("expected unterminated frontmatter error, got " <> Text.pack (show other))
+    )
+
+testFixtureMissingType :: IO (Either Text ())
+testFixtureMissingType = do
+  root <- fixturePath "invalid-missing-type"
+  concepts <- readBundle root
+  pure
+    ( do
+        assertEqual 1 (length concepts)
+        case foldMap (validateDocument PermissiveConformance . document) concepts of
+          [MissingRequiredField "type"] -> Right ()
+          other -> Left ("expected missing type error, got " <> Text.pack (show other))
+    )
+
 sampleDocument :: Text
 sampleDocument =
   Text.unlines
@@ -241,6 +283,19 @@ readBundle root = do
   case result of
     Left bundleError -> fail (show bundleError)
     Right concepts -> pure concepts
+
+fixturePath :: FilePath -> IO FilePath
+fixturePath name = do
+  let candidates =
+        [ "okf-core" </> "test" </> "fixtures" </> name
+        , "test" </> "fixtures" </> name
+        ]
+  findExisting candidates
+ where
+  findExisting [] = fail ("fixture not found: " <> name)
+  findExisting (candidate : rest) = do
+    exists <- doesDirectoryExist candidate
+    if exists then pure candidate else findExisting rest
 
 requireConcept :: Text -> [Concept] -> Either Text Concept
 requireConcept rawId concepts = do
