@@ -2,3 +2,12 @@
 .agents/
 .seihou/manifest.json.tmp
 CLAUDE.local.md
+.envrc
+dist
+dist-*
+cabal-dev
+.direnv
+cabal.project.local
+result
+result-*
+.pre-commit-config.yaml
