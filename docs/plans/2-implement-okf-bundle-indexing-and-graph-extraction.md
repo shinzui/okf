@@ -22,17 +22,19 @@ The observable behavior is a test suite that builds a small fixture bundle and p
 
 ## Progress
 
-- [ ] Implement bundle walking that skips reserved files.
-- [ ] Implement concept lookup by `ConceptId`.
-- [ ] Implement deterministic `index.md` generation from concept metadata.
-- [ ] Implement Markdown link extraction for relative and absolute bundle links.
-- [ ] Implement graph data types and JSON instances.
-- [ ] Add bundle, index, and graph tests.
+- [x] Implement bundle walking that skips reserved files. Completed 2026-06-16.
+- [x] Implement concept lookup by `ConceptId`. Completed 2026-06-16.
+- [x] Implement deterministic `index.md` generation from concept metadata. Completed 2026-06-16.
+- [x] Implement Markdown link extraction for relative and absolute bundle links. Completed 2026-06-16.
+- [x] Implement graph data types and JSON instances. Completed 2026-06-16.
+- [x] Add bundle, index, and graph tests. Completed 2026-06-16.
 
 
 ## Surprises & Discoveries
 
-None yet.
+- The registered dependency `mori://kivikakk/cmark-gfm-hs/packages/cmark-gfm-hs` is available locally and Rei already uses `cmark-gfm ^>=0.2` in `Rei.Workspace.Markdown`. EP-2 uses `cmark-gfm` for Markdown link extraction instead of a regex.
+
+- `System.FilePath.normalise` on this platform does not collapse `..` segments in relative paths such as `tables/../datasets/sales.md`. EP-2 adds a small bundle-relative path segment collapse before converting `.md` links to `ConceptId`, so `../datasets/sales.md` from `tables/orders.md` resolves to `datasets/sales`.
 
 
 ## Decision Log
@@ -45,10 +47,33 @@ None yet.
   Rationale: The OKF specification says consumers must tolerate broken links because partially authored bundles are valid. A graph can expose broken links separately later, but the initial node-edge graph should only connect known concept IDs.
   Date: 2026-06-16
 
+- Decision: Use `cmark-gfm` for Markdown link extraction.
+  Rationale: Rei uses `cmark-gfm` for Markdown parsing, and the dependency is registered in Mori. This keeps OKF aligned with an established parser instead of hand-rolling Markdown link parsing.
+  Date: 2026-06-16
+
+- Decision: Keep graph JSON presentation-free.
+  Rationale: EP-2 only needs stable integration data for concepts and edges. Color, layout, and visual grouping belong to future presentation layers.
+  Date: 2026-06-16
+
 
 ## Outcomes & Retrospective
 
-To be filled during and after implementation.
+EP-2 is complete. `okf-core` now exposes `Okf.Bundle`, `Okf.Index`, and `Okf.Graph`. The implementation walks bundle directories while skipping reserved Markdown files, extracts typed concept records, renders and writes deterministic indexes, extracts Markdown links with `cmark-gfm`, resolves relative and absolute bundle links, and builds JSON-serializable graphs that exclude broken links from concrete edges.
+
+Validation evidence from the repository root:
+
+```text
+$ cabal test okf-core
+PASS walkBundle skips index.md and log.md
+PASS walkBundle discovers nested concept IDs
+PASS generateIndex groups documents by frontmatter type
+PASS extractLinks resolves relative and absolute bundle links
+PASS extractLinks ignores external markdown URLs
+PASS buildGraph includes only edges to existing concepts
+PASS writeBundleIndexes is deterministic
+Test suite okf-core-test: PASS
+1 of 1 test suites (1 of 1 test cases) passed.
+```
 
 
 ## Context and Orientation
@@ -127,3 +152,6 @@ Index writing should be deterministic. Running the index generation command or l
 ## Interfaces and Dependencies
 
 Expose pure functions for index rendering and graph construction separately from IO functions that read or write the filesystem. Future CLI, Mori, and Mina adapters should be able to use the pure functions in tests without creating temporary directories.
+
+
+Revision note 2026-06-16: Updated the living sections after implementation to record completed progress, dependency choices, path-normalization behavior, validation evidence, and the EP-2 outcome.

@@ -2,12 +2,14 @@
 module Okf.ConceptId
   ( ConceptId
   , ConceptIdError (..)
+  , conceptIdFromFilePath
   , conceptIdToFilePath
   , parseConceptId
   , renderConceptId
   ) where
 
 import Data.Char qualified as Char
+import Data.Aeson (ToJSON (..))
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Text qualified as Text
 import System.FilePath ((<.>))
@@ -21,6 +23,9 @@ newtype ConceptId = ConceptId
   }
   deriving stock (Generic, Eq, Ord, Show)
 
+instance ToJSON ConceptId where
+  toJSON = toJSON . renderConceptId
+
 -- | Why a piece of text could not become a 'ConceptId'.
 data ConceptIdError
   = EmptyConceptId
@@ -33,8 +38,8 @@ parseConceptId raw =
   case Text.splitOn "/" raw of
     [] -> Left EmptyConceptId
     [""] -> Left EmptyConceptId
-    first : rest -> do
-      parsedSegments <- traverse validateSegment (first :| rest)
+    firstSegment : rest -> do
+      parsedSegments <- traverse validateSegment (firstSegment :| rest)
       pure (ConceptId parsedSegments)
 
 -- | Render a concept identifier without a file extension.
@@ -46,6 +51,11 @@ renderConceptId (ConceptId rawSegments) =
 conceptIdToFilePath :: ConceptId -> FilePath
 conceptIdToFilePath (ConceptId rawSegments) =
   FilePath.joinPath (Text.unpack <$> NonEmpty.toList rawSegments) <.> "md"
+
+-- | Convert a bundle-relative Markdown path to a concept identifier.
+conceptIdFromFilePath :: FilePath -> Either ConceptIdError ConceptId
+conceptIdFromFilePath path =
+  parseConceptId (Text.pack (FilePath.dropExtension (FilePath.normalise path)))
 
 validateSegment :: Text -> Either ConceptIdError Text
 validateSegment segment

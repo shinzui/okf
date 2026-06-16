@@ -15,7 +15,10 @@ module Okf.Prelude
 import "aeson" Data.Aeson as X (FromJSON, ToJSON, Value (..))
 import "base" Control.Applicative as X ((<|>))
 import "base" Control.Monad as X (unless, void, when)
+import "base" Data.Bifunctor as X (first)
 import "base" Data.List.NonEmpty as X (NonEmpty (..))
+import "base" Data.Maybe as X (fromMaybe, isJust, isNothing)
+import "base" Data.Traversable as X (for)
 import "base" GHC.Generics as X (Generic)
 import "lens" Control.Lens
 import "generic-lens" Data.Generics.Product

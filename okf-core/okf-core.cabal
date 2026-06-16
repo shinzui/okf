@@ -37,8 +37,11 @@ library
   import: common-options
   hs-source-dirs: src
   exposed-modules:
+    Okf.Bundle
     Okf.ConceptId
     Okf.Document
+    Okf.Graph
+    Okf.Index
     Okf.Prelude
     Okf.Validation
 
@@ -47,6 +50,9 @@ library
     attoparsec,
     base >=4.20 && <5,
     bytestring,
+    cmark-gfm ^>=0.2,
+    containers,
+    directory,
     filepath,
     frontmatter,
     generic-lens,
@@ -63,5 +69,8 @@ test-suite okf-core-test
   build-depends:
     aeson,
     base >=4.20 && <5,
+    directory,
+    filepath,
     okf-core,
+    temporary,
     text ^>=2.1,
