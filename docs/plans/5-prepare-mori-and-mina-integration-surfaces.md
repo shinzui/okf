@@ -22,16 +22,18 @@ The observable behavior is documentation and exported Haskell functions that des
 
 ## Progress
 
-- [ ] Identify the exported `okf-core` functions future integrations should consume.
-- [ ] Define stable JSON shapes for concept summaries and graph output.
-- [ ] Document a proposed Mori artifact model for OKF bundles and concepts.
-- [ ] Document a proposed Mina browsing/context workflow.
-- [ ] Add tests that lock the JSON shape where appropriate.
+- [x] Identify the exported `okf-core` functions future integrations should consume. Completed 2026-06-16.
+- [x] Define stable JSON shapes for concept summaries and graph output. Completed 2026-06-16.
+- [x] Document a proposed Mori artifact model for OKF bundles and concepts. Completed 2026-06-16.
+- [x] Document a proposed Mina browsing/context workflow. Completed 2026-06-16.
+- [x] Add tests that lock the JSON shape where appropriate. Completed 2026-06-16.
 
 
 ## Surprises & Discoveries
 
-None yet.
+- `mori registry show shinzui/mori --full` and `mori registry show shinzui/mina --full` confirm that both tools are registered locally, but EP-5 kept them as documented future consumers rather than package dependencies.
+
+- Checking the Cabal files with `rg -n "\b(mori|min(a|a-)|Mori|Mina)\b" okf-core/okf-core.cabal okf-cli/okf-cli.cabal` returns no matches, which verifies the initial runtime dependency boundary.
 
 
 ## Decision Log
@@ -40,10 +42,26 @@ None yet.
   Rationale: The first user-facing goal is a standalone library and CLI. Integration planning should make later work straightforward without expanding the initial runtime dependency graph.
   Date: 2026-06-16
 
+- Decision: Treat graph nodes as the stable concept-summary JSON shape for the first integration boundary.
+  Rationale: `Okf.Graph.Node` already carries concept ID, label, type, description, resource, and tags. A separate concept-summary type would duplicate that shape before a consumer needs a different projection.
+  Date: 2026-06-16
+
 
 ## Outcomes & Retrospective
 
-To be filled during and after implementation.
+EP-5 is complete. The integration documents now describe which `okf-core` functions future Mori and Mina adapters should consume, the graph JSON shape, a proposed Mori OKF artifact URI model, and a Mina browsing/context workflow. The core test suite locks the graph node JSON shape for `tables/orders` from the valid fixture bundle.
+
+Validation evidence from the repository root:
+
+```text
+$ cabal test all
+Test suite okf-cli-test: PASS
+Test suite okf-core-test: PASS
+2 of 2 test suites passed.
+
+$ rg -n "\b(mori|min(a|a-)|Mori|Mina)\b" okf-core/okf-core.cabal okf-cli/okf-cli.cabal
+<no matches>
+```
 
 
 ## Context and Orientation
@@ -102,3 +120,6 @@ This work is mostly documentation and API boundary clarification. If a proposed 
 ## Interfaces and Dependencies
 
 Use `aeson` JSON instances from `okf-core` as the durable data boundary. Future Mori and Mina projects can either import `okf-core` as a Haskell dependency or call `okf graph --json`, but this project should not require either workflow during the initial implementation.
+
+
+Revision note 2026-06-16: Updated the living sections after adding Mori and Mina integration docs, locking the graph node JSON shape in tests, and verifying that OKF packages still do not depend on Mori or Mina.

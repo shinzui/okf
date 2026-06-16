@@ -36,7 +36,7 @@ The main alternative considered was to implement the CLI first and grow library 
 | EP-2 | Implement OKF bundle indexing and graph extraction | docs/plans/2-implement-okf-bundle-indexing-and-graph-extraction.md | EP-1 | None | Complete |
 | EP-3 | Implement basic OKF CLI | docs/plans/3-implement-basic-okf-cli.md | EP-1, EP-2 | None | Complete |
 | EP-4 | Add OKF fixtures tests and documentation | docs/plans/4-add-okf-fixtures-tests-and-documentation.md | EP-1, EP-2, EP-3 | None | Complete |
-| EP-5 | Prepare Mori and Mina integration surfaces | docs/plans/5-prepare-mori-and-mina-integration-surfaces.md | EP-1, EP-2 | EP-3, EP-4 | Not Started |
+| EP-5 | Prepare Mori and Mina integration surfaces | docs/plans/5-prepare-mori-and-mina-integration-surfaces.md | EP-1, EP-2 | EP-3, EP-4 | Complete |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
 
@@ -73,7 +73,7 @@ The eventual Mori and Mina integration surface is intentionally a data boundary 
 - [x] EP-3: Ensure CLI errors are deterministic and script-friendly.
 - [x] EP-4: Add valid and invalid fixture bundles and golden-style tests.
 - [x] EP-4: Update README and command examples after the CLI exists.
-- [ ] EP-5: Document and expose integration surfaces for future Mori and Mina adapters.
+- [x] EP-5: Document and expose integration surfaces for future Mori and Mina adapters.
 
 
 ## Surprises & Discoveries
@@ -91,6 +91,8 @@ The eventual Mori and Mina integration surface is intentionally a data boundary 
 - EP-3 added `Okf.Index.renderBundleIndexes` so the CLI can preview generated index files without mutating a bundle. `okf index --write` remains the explicit mutating path.
 
 - EP-4 found that `nix fmt` is not currently available because the flake does not expose `formatter.aarch64-darwin`. `cabal build all` and `cabal test all` pass.
+
+- EP-5 verified that `okf-core` and `okf-cli` still do not depend on Mori or Mina packages. The integration boundary is documentation plus stable JSON shapes.
 
 
 ## Decision Log
@@ -120,4 +122,8 @@ EP-2 is complete. `okf-core` now walks bundles, renders deterministic indexes, e
 
 EP-3 is complete. `okf-cli` now provides `validate`, `index`, `graph`, and `show` commands over the public `okf-core` surface. Remaining outcomes will be filled as later child plans complete.
 
-EP-4 is complete. The repository now includes valid and invalid OKF fixture bundles, fixture-backed tests, and README examples that run against checked-in fixture paths. Remaining outcomes will be filled as later child plans complete.
+EP-4 is complete. The repository now includes valid and invalid OKF fixture bundles, fixture-backed tests, and README examples that run against checked-in fixture paths.
+
+EP-5 is complete. The repository now documents future Mori and Mina integration surfaces and locks the graph node JSON shape in tests.
+
+The MasterPlan is complete. `okf-core` and `okf-cli` now provide the requested standalone OKF library and CLI without Mori, Mina, BigQuery, LLM, or network runtime requirements.

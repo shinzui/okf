@@ -1,5 +1,6 @@
 module Main (main) where
 
+import Data.Aeson ((.=), object, toJSON)
 import Data.List qualified as List
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text.IO
@@ -18,7 +19,7 @@ import Okf.ConceptId
 import Okf.Document
 import Okf.Graph
 import Okf.Index
-import Okf.Prelude
+import Okf.Prelude hiding ((.=))
 import Okf.Validation
 
 main :: IO ()
@@ -42,6 +43,7 @@ main = do
       , testIO "buildGraph includes only edges to existing concepts" testBuildGraphIncludesKnownEdges
       , testIO "writeBundleIndexes is deterministic" testWriteBundleIndexesDeterministic
       , testIO "fixture valid bundle validates and graphs expected edges" testFixtureValidBundle
+      , testIO "fixture graph JSON shape is stable" testFixtureGraphJsonShape
       , testIO "fixture unterminated frontmatter reports parse error" testFixtureUnterminatedFrontmatter
       , testIO "fixture missing type reports validation error" testFixtureMissingType
       ]
@@ -220,6 +222,28 @@ testFixtureValidBundle = do
         assertBool "orders to sales" (Edge{source = orders, target = sales} `List.elem` edges graph)
     )
 
+testFixtureGraphJsonShape :: IO (Either Text ())
+testFixtureGraphJsonShape = do
+  root <- fixturePath "valid-bundle"
+  concepts <- readBundle root
+  orders <- requireConceptIO "tables/orders" concepts
+  pure
+    ( case filter (\Node{id = nodeId} -> nodeId == conceptIdOf orders) (nodes (buildGraph concepts)) of
+        [ordersNode] ->
+          assertEqual
+            ( object
+                [ "id" .= ("tables/orders" :: Text)
+                , "label" .= ("Orders" :: Text)
+                , "type" .= ("BigQuery Table" :: Text)
+                , "description" .= Just ("Order fact table." :: Text)
+                , "resource" .= Just ("bigquery://analytics.tables.orders" :: Text)
+                , "tags" .= ["orders" :: Text, "sales"]
+                ]
+            )
+            (toJSON ordersNode)
+        other -> Left ("expected one orders node, got " <> Text.pack (show (length other)))
+    )
+
 testFixtureUnterminatedFrontmatter :: IO (Either Text ())
 testFixtureUnterminatedFrontmatter = do
   root <- fixturePath "invalid-unterminated-frontmatter"
@@ -303,6 +327,12 @@ requireConcept rawId concepts = do
   case findConcept conceptId concepts of
     Just concept -> Right concept
     Nothing -> Left ("missing concept " <> rawId)
+
+requireConceptIO :: Text -> [Concept] -> IO Concept
+requireConceptIO rawId concepts =
+  case requireConcept rawId concepts of
+    Right concept -> pure concept
+    Left message -> fail (Text.unpack message)
 
 withFixtureBundle :: (FilePath -> IO (Either Text ())) -> IO (Either Text ())
 withFixtureBundle action = do
