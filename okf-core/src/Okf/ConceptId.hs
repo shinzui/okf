@@ -1,23 +1,23 @@
 -- | Safe concept identifiers for bundle-relative OKF Markdown documents.
 module Okf.ConceptId
-  ( ConceptId
-  , ConceptIdError (..)
-  , conceptIdFromFilePath
-  , conceptIdToFilePath
-  , parseConceptId
-  , renderConceptId
-  , renderConceptLinkTarget
-  , renderConceptLink
-  ) where
+  ( ConceptId,
+    ConceptIdError (..),
+    conceptIdFromFilePath,
+    conceptIdToFilePath,
+    parseConceptId,
+    renderConceptId,
+    renderConceptLinkTarget,
+    renderConceptLink,
+  )
+where
 
-import Data.Char qualified as Char
 import Data.Aeson (ToJSON (..))
+import Data.Char qualified as Char
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Text qualified as Text
+import Okf.Prelude hiding ((<.>))
 import System.FilePath ((<.>))
 import System.FilePath qualified as FilePath
-
-import Okf.Prelude hiding ((<.>))
 
 -- | A bundle-relative concept path without the @.md@ suffix.
 newtype ConceptId = ConceptId

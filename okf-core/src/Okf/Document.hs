@@ -1,25 +1,27 @@
 -- | Parsing and serialization for OKF Markdown concept documents.
 module Okf.Document
-  ( Frontmatter (..)
-  , OKFDocument (..)
-  , DocumentParseError (..)
-  , emptyFrontmatter
-  , frontmatterLookup
-  , parseDocument
-  , serializeDocument
+  ( Frontmatter (..),
+    OKFDocument (..),
+    DocumentParseError (..),
+    emptyFrontmatter,
+    frontmatterLookup,
+    parseDocument,
+    serializeDocument,
+
     -- * Frontmatter authoring
-  , frontmatterFromFields
-  , setField
-  , removeField
-  , OkfCommon (..)
-  , okfCommon
-  , setType
-  , setTitle
-  , setDescription
-  , setTimestamp
-  , setResource
-  , setTags
-  ) where
+    frontmatterFromFields,
+    setField,
+    removeField,
+    OkfCommon (..),
+    okfCommon,
+    setType,
+    setTitle,
+    setDescription,
+    setTimestamp,
+    setResource,
+    setTags,
+  )
+where
 
 import Data.Aeson.Key qualified as AesonKey
 import Data.Aeson.KeyMap qualified as KeyMap
@@ -32,7 +34,6 @@ import Data.Text.Encoding qualified as Text.Encoding
 import Data.Vector qualified as Vector
 import Data.Yaml qualified as Yaml
 import Data.Yaml.Pretty qualified as YamlPretty
-
 import Okf.Prelude hiding (setField)
 
 -- | YAML frontmatter fields. OKF allows producer-defined extension keys, so
@@ -44,8 +45,8 @@ newtype Frontmatter = Frontmatter
 
 -- | A Markdown concept document split into frontmatter and body.
 data OKFDocument = OKFDocument
-  { frontmatter :: !Frontmatter
-  , body :: !Text
+  { frontmatter :: !Frontmatter,
+    body :: !Text
   }
   deriving stock (Generic, Eq, Show)
 
@@ -84,21 +85,23 @@ removeField key (Frontmatter rawFields) =
 -- omitted because they are optional and have distinct shapes; set them with
 -- 'setResource' and 'setTags'.
 data OkfCommon = OkfCommon
-  { commonType :: !Text
-  , commonTitle :: !(Maybe Text)
-  , commonDescription :: !(Maybe Text)
-  , commonTimestamp :: !(Maybe Text)
+  { commonType :: !Text,
+    commonTitle :: !(Maybe Text),
+    commonDescription :: !(Maybe Text),
+    commonTimestamp :: !(Maybe Text)
   }
   deriving stock (Generic, Eq, Show)
 
 -- | Build frontmatter from the common OKF fields: @type@ always, plus
 -- whichever of @title@, @description@, @timestamp@ are present.
 okfCommon :: OkfCommon -> Frontmatter
-okfCommon OkfCommon{commonType, commonTitle, commonDescription, commonTimestamp} =
-  foldr ($) (setType commonType emptyFrontmatter)
-    [ maybe id setTitle commonTitle
-    , maybe id setDescription commonDescription
-    , maybe id setTimestamp commonTimestamp
+okfCommon OkfCommon {commonType, commonTitle, commonDescription, commonTimestamp} =
+  foldr
+    ($)
+    (setType commonType emptyFrontmatter)
+    [ maybe id setTitle commonTitle,
+      maybe id setDescription commonDescription,
+      maybe id setTimestamp commonTimestamp
     ]
 
 -- | Set the @type@ field.
@@ -140,18 +143,19 @@ parseDocument input =
 -- @type, title, description, timestamp, resource, tags@ — then every other key
 -- in ascending alphabetical order) so regenerating a bundle yields minimal diffs.
 serializeDocument :: OKFDocument -> Text
-serializeDocument OKFDocument{frontmatter, body} =
+serializeDocument OKFDocument {frontmatter, body} =
   Text.unlines ["---", renderedYaml, "---", ""] <> ensureTrailingNewline body
- where
-  renderedYaml = renderOrderedYaml frontmatter
+  where
+    renderedYaml = renderOrderedYaml frontmatter
 
 -- | Render frontmatter to YAML with the deterministic OKF key order.
 renderOrderedYaml :: Frontmatter -> Text
 renderOrderedYaml (Frontmatter rawFields) =
-  Text.dropWhileEnd (== '\n')
+  Text.dropWhileEnd
+    (== '\n')
     (Text.Encoding.decodeUtf8 (YamlPretty.encodePretty config (Object rawFields)))
- where
-  config = YamlPretty.setConfCompare (comparing okfKeyRank) YamlPretty.defConfig
+  where
+    config = YamlPretty.setConfCompare (comparing okfKeyRank) YamlPretty.defConfig
 
 -- | Sort key for deterministic frontmatter ordering: the six common OKF fields
 -- come first in their fixed order; every other key sorts after them
@@ -161,9 +165,9 @@ okfKeyRank keyText =
   case lookup keyText commonRanks of
     Just rank -> (rank, "")
     Nothing -> (length commonRanks, keyText)
- where
-  commonRanks =
-    zip ["type", "title", "description", "timestamp", "resource", "tags"] [0 ..]
+  where
+    commonRanks =
+      zip ["type", "title", "description", "timestamp", "resource", "tags"] [0 ..]
 
 parseFrontmatterDocument :: ByteString.ByteString -> Either DocumentParseError OKFDocument
 parseFrontmatterDocument inputBytes =

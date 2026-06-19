@@ -1,20 +1,19 @@
 module Main (main) where
 
 import Control.Monad (unless)
+import Okf.Cli
 import Options.Applicative
 import System.Exit (exitFailure)
-
-import Okf.Cli
 
 main :: IO ()
 main = do
   let results =
-        [ parseSucceeds ["validate", "bundle"]
-        , parseSucceeds ["validate", "bundle", "--strict"]
-        , parseSucceeds ["index", "bundle", "--write"]
-        , parseSucceeds ["graph", "bundle", "--json"]
-        , parseSucceeds ["show", "bundle", "tables/orders"]
-        , parseFails ["hello"]
+        [ parseSucceeds ["validate", "bundle"],
+          parseSucceeds ["validate", "bundle", "--strict"],
+          parseSucceeds ["index", "bundle", "--write"],
+          parseSucceeds ["graph", "bundle", "--json"],
+          parseSucceeds ["show", "bundle", "tables/orders"],
+          parseFails ["hello"]
         ]
   unless (and results) exitFailure
 

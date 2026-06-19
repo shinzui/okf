@@ -22,6 +22,15 @@
       hsdev = inputs.haskell-nix-dev.lib.${system};
       haskellPackages = pkgs.haskell.packages."ghc9124";
 
+      # okf is a multi-package project: okf-core (library) and okf-cli (library +
+      # `okf` executable, depends on okf-core). There is no root .cabal file, so
+      # callCabal2nix is pointed at each package directory and okf-cli is given
+      # okf-core as its inter-package dependency.
+      okf-core = haskellPackages.callCabal2nix "okf-core" (inputs.self + "/okf-core") { };
+      okf-cli = haskellPackages.callCabal2nix "okf-cli" (inputs.self + "/okf-cli") {
+        inherit okf-core;
+      };
+
       baseDevPackages = [
         pkgs.zlib
         pkgs.just
@@ -29,6 +38,7 @@
       ];
 
       shellHook = ''
+        ${config.pre-commit.installationScript}
       '';
 
       mkProjectShell = ghc: hsdev.mkDevShell {
@@ -39,7 +49,9 @@
       };
     in
     {
-      packages.default = haskellPackages.callCabal2nix "okf" inputs.self { };
+      packages.okf-core = okf-core;
+      packages.okf-cli = okf-cli;
+      packages.default = okf-cli;
 
       devShells.default = mkProjectShell "ghc9124";
       devShells."ghc9124" = mkProjectShell "ghc9124";
