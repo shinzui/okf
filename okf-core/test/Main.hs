@@ -19,7 +19,7 @@ import Okf.ConceptId
 import Okf.Document
 import Okf.Graph
 import Okf.Index
-import Okf.Prelude hiding ((.=))
+import Okf.Prelude hiding ((.=), setField)
 import Okf.Validation
 
 main :: IO ()
@@ -46,6 +46,8 @@ main = do
       , testIO "fixture graph JSON shape is stable" testFixtureGraphJsonShape
       , testIO "fixture unterminated frontmatter reports parse error" testFixtureUnterminatedFrontmatter
       , testIO "fixture missing type reports validation error" testFixtureMissingType
+      , test "frontmatter builder round-trips through serialize and parse" testFrontmatterBuilderRoundTrip
+      , test "serializeDocument emits deterministic key order" testSerializeDeterministicKeyOrder
       ]
   unless (and results) exitFailure
 
@@ -265,6 +267,50 @@ testFixtureMissingType = do
           [MissingRequiredField "type"] -> Right ()
           other -> Left ("expected missing type error, got " <> Text.pack (show other))
     )
+
+testFrontmatterBuilderRoundTrip :: Either Text ()
+testFrontmatterBuilderRoundTrip = do
+  let frontmatterValue =
+        setField "version" (String "0.2.0")
+          . setTags ["orders", "sales"]
+          . setResource "bigquery://analytics.tables.orders"
+          $ okfCommon
+              OkfCommon
+                { commonType = "BigQuery Table"
+                , commonTitle = Just "Orders"
+                , commonDescription = Just "Order fact table."
+                , commonTimestamp = Just "2026-06-16T00:00:00Z"
+                }
+      original = OKFDocument frontmatterValue "# Orders\n\nBody text.\n"
+  reparsed <- firstShow (parseDocument (serializeDocument original))
+  assertEqual (frontmatter original) (frontmatter reparsed)
+  assertEqual (body original) (body reparsed)
+
+testSerializeDeterministicKeyOrder :: Either Text ()
+testSerializeDeterministicKeyOrder = do
+  let frontmatterValue =
+        setField "zeta" (String "z")
+          . setField "alpha" (String "a")
+          . setTags ["t"]
+          . setResource "res://x"
+          . setType "Recipe"
+          . setTimestamp "2026-06-16T00:00:00Z"
+          . setDescription "Desc"
+          . setTitle "Demo"
+          $ emptyFrontmatter
+      rendered = serializeDocument (OKFDocument frontmatterValue "# Demo\n")
+      expectedOrder =
+        ["type:", "title:", "description:", "timestamp:", "resource:", "tags:", "alpha:", "zeta:"]
+  indices <- traverse (\key -> maybe (Left ("missing key " <> key)) Right (substringIndex key rendered)) expectedOrder
+  assertBool ("keys not in deterministic order: " <> Text.pack (show indices)) (strictlyIncreasing indices)
+
+substringIndex :: Text -> Text -> Maybe Int
+substringIndex needle haystack =
+  let (prefix, match) = Text.breakOn needle haystack
+   in if Text.null match then Nothing else Just (Text.length prefix)
+
+strictlyIncreasing :: [Int] -> Bool
+strictlyIncreasing xs = and (zipWith (<) xs (drop 1 xs))
 
 sampleDocument :: Text
 sampleDocument =
