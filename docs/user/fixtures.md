@@ -91,3 +91,22 @@ The command exits non-zero and reports:
 ```text
 missing-type: missing required field: type
 ```
+
+The dangling-link fixture is:
+
+```text
+okf-core/test/fixtures/invalid-dangling-link
+```
+
+Its one concept `orders` links to `/customers.md`, but no `customers` concept
+exists in the bundle. Run:
+
+```bash
+cabal run okf -- validate okf-core/test/fixtures/invalid-dangling-link
+```
+
+The command exits non-zero and reports the dangling reference:
+
+```text
+orders: link to missing concept: customers
+```

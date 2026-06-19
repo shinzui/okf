@@ -106,4 +106,14 @@ External URLs are allowed in prose but do not become OKF graph edges:
 [Vendor docs](https://example.com/vendor/orders.md)
 ```
 
-Broken links are tolerated and excluded from the concrete graph edge list.
+A link to a `.md` concept that does not exist in the bundle is a *dangling
+reference*. The `graph` command tolerates it and excludes it from the concrete
+graph edge list, but `okf validate` reports it as an error and exits non-zero —
+see [Referential integrity](cli.md#validate).
+
+
+## Authoring
+
+To produce bundles in code — build frontmatter, render links that are guaranteed
+to become edges, construct concepts, and write a bundle to disk — see the
+[Authoring Guide](authoring.md).
