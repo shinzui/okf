@@ -49,6 +49,9 @@ main = do
       , test "frontmatter builder round-trips through serialize and parse" testFrontmatterBuilderRoundTrip
       , test "serializeDocument emits deterministic key order" testSerializeDeterministicKeyOrder
       , test "rendered concept link round-trips through extractConceptLinks" testConceptLinkRoundTrip
+      , test "validateBundle reports a dangling reference" testValidateBundleDanglingReference
+      , test "validateBundle accepts a bundle whose links all resolve" testValidateBundleAcceptsResolved
+      , test "duplicateConceptIds finds repeated ids" testDuplicateConceptIds
       ]
   unless (and results) exitFailure
 
@@ -302,8 +305,8 @@ testSerializeDeterministicKeyOrder = do
       rendered = serializeDocument (OKFDocument frontmatterValue "# Demo\n")
       expectedOrder =
         ["type:", "title:", "description:", "timestamp:", "resource:", "tags:", "alpha:", "zeta:"]
-  indices <- traverse (\key -> maybe (Left ("missing key " <> key)) Right (substringIndex key rendered)) expectedOrder
-  assertBool ("keys not in deterministic order: " <> Text.pack (show indices)) (strictlyIncreasing indices)
+  keyIndices <- traverse (\key -> maybe (Left ("missing key " <> key)) Right (substringIndex key rendered)) expectedOrder
+  assertBool ("keys not in deterministic order: " <> Text.pack (show keyIndices)) (strictlyIncreasing keyIndices)
 
 testConceptLinkRoundTrip :: Either Text ()
 testConceptLinkRoundTrip = do
@@ -331,6 +334,53 @@ extractFromBodyLinkingTo sourceId targetId =
       , type_ = "Test"
       , title = Nothing
       , description = Nothing
+      , resource = Nothing
+      , tags = []
+      }
+
+testValidateBundleDanglingReference :: Either Text ()
+testValidateBundleDanglingReference = do
+  aId <- parseTestConceptId "a"
+  bId <- parseTestConceptId "b"
+  conceptA <- testConcept "a" ("See " <> renderConceptLink bId "b" <> ".\n")
+  assertEqual [DanglingReference aId bId] (validateBundle StrictAuthoring [conceptA])
+
+testValidateBundleAcceptsResolved :: Either Text ()
+testValidateBundleAcceptsResolved = do
+  bId <- parseTestConceptId "b"
+  conceptA <- testConcept "a" ("See " <> renderConceptLink bId "b" <> ".\n")
+  conceptB <- testConcept "b" "Standalone.\n"
+  assertEqual [] (validateBundle StrictAuthoring [conceptA, conceptB])
+
+testDuplicateConceptIds :: Either Text ()
+testDuplicateConceptIds = do
+  aId <- parseTestConceptId "a"
+  conceptA <- testConcept "a" "First.\n"
+  conceptAAgain <- testConcept "a" "Second.\n"
+  assertEqual [aId] (duplicateConceptIds [conceptA, conceptAAgain])
+
+-- | Build an in-memory concept whose typed fields are kept in sync with the
+-- frontmatter built by the authoring API. Includes all StrictAuthoring fields so
+-- per-document validation passes and bundle-level checks can be isolated.
+testConcept :: Text -> Text -> Either Text Concept
+testConcept rawId bodyText = do
+  conceptId <- parseTestConceptId rawId
+  let frontmatterValue =
+        okfCommon
+          OkfCommon
+            { commonType = "Test"
+            , commonTitle = Just "Title"
+            , commonDescription = Just "Description"
+            , commonTimestamp = Just "2026-06-16T00:00:00Z"
+            }
+  pure
+    Concept
+      { id = conceptId
+      , sourcePath = conceptIdToFilePath conceptId
+      , document = OKFDocument frontmatterValue bodyText
+      , type_ = "Test"
+      , title = Just "Title"
+      , description = Just "Description"
       , resource = Nothing
       , tags = []
       }

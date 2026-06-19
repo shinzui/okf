@@ -5,11 +5,14 @@ module Okf.Graph
   , Node (..)
   , buildGraph
   , extractConceptLinks
+  , danglingReferences
+  , duplicateConceptIds
   ) where
 
 import CMarkGFM qualified
 import Data.Aeson (ToJSON (..), object, (.=))
 import Data.List qualified as List
+import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Text qualified as Text
 import System.FilePath ((</>))
@@ -92,6 +95,31 @@ buildGraph concepts =
 extractConceptLinks :: Concept -> [ConceptId]
 extractConceptLinks concept =
   foldMap (resolveLink concept) (extractMarkdownLinks (body (document concept)))
+
+-- | Every @(source, target)@ pair where a document links to a @.md@ concept ID
+-- that is not present in the bundle. These are the edges 'buildGraph' silently
+-- drops. An empty list means every internal link resolves to a real concept.
+danglingReferences :: [Concept] -> [(ConceptId, ConceptId)]
+danglingReferences concepts =
+  [ (conceptIdOf concept, target)
+  | concept <- concepts
+  , target <- extractConceptLinks concept
+  , not (target `Set.member` knownIds)
+  ]
+ where
+  knownIds = Set.fromList (conceptIdOf <$> concepts)
+
+-- | Concept IDs that appear more than once in a concept list. Always empty for
+-- a bundle read from disk (paths are unique) but possible for an in-memory
+-- producer assembling concepts before writing.
+duplicateConceptIds :: [Concept] -> [ConceptId]
+duplicateConceptIds concepts =
+  [ conceptId
+  | (conceptId, count) <- Map.toList counts
+  , count > (1 :: Int)
+  ]
+ where
+  counts = Map.fromListWith (+) [(conceptIdOf concept, 1) | concept <- concepts]
 
 conceptNode :: Concept -> Node
 conceptNode concept@Concept{type_ = conceptType, title = conceptTitle, description = conceptDescription, resource = conceptResource, tags = conceptTags} =

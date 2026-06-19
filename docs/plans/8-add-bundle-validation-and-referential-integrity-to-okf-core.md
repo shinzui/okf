@@ -68,12 +68,12 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] Add `danglingReferences :: [Concept] -> [(ConceptId, ConceptId)]` (source, missing target)
-- [ ] Add `duplicateConceptIds :: [Concept] -> [ConceptId]`
-- [ ] Add `BundleValidationError` type and `validateBundle :: ValidationProfile -> [Concept] -> [BundleValidationError]`
-- [ ] Export the new functions/types from the owning module(s); keep existing exports intact
-- [ ] Add tests: dangling reference detected, duplicate ID detected, clean bundle reports nothing
-- [ ] Confirm `cabal build all` and `cabal test okf-core-test` are green
+- [x] Add `danglingReferences :: [Concept] -> [(ConceptId, ConceptId)]` (source, missing target) in `Okf.Graph` (2026-06-19)
+- [x] Add `duplicateConceptIds :: [Concept] -> [ConceptId]` in `Okf.Graph` (2026-06-19)
+- [x] Add `BundleValidationError` type and `validateBundle :: ValidationProfile -> [Concept] -> [BundleValidationError]` in `Okf.Validation` (2026-06-19)
+- [x] Export the new functions/types from the owning module(s); keep existing exports intact (2026-06-19)
+- [x] Add tests: dangling reference detected, duplicate ID detected, clean bundle reports nothing (2026-06-19)
+- [x] Confirm `cabal build all` and `cabal test okf-core-test` are green (2026-06-19)
 
 
 ## Surprises & Discoveries
@@ -81,7 +81,16 @@ This section must always reflect the actual current state of the work.
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+- No import cycle, as predicted. `Okf.Validation` now imports `Okf.Graph` and `Okf.Bundle`;
+  neither imports `Okf.Validation`, so GHC compiled cleanly (`[7 of 7] Compiling
+  Okf.Validation`). `danglingReferences` and `duplicateConceptIds` live in `Okf.Graph` next to
+  `buildGraph`/`extractConceptLinks`.
+- `buildGraph` was left untouched: the existing test
+  `buildGraph includes only edges to existing concepts` (which relies on broken edges being
+  dropped) still passes, confirming the new functions only *supplement* the read API.
+- The EP-8 test helper `testConcept` builds frontmatter with EP-6's `okfCommon` and keeps the
+  typed `Concept` fields in sync by hand (EP-10's public `conceptFromDocument` is not yet
+  exported). When EP-10 lands, in-memory callers should prefer that constructor.
 
 
 ## Decision Log
@@ -109,6 +118,20 @@ Record every decision made while working on the plan.
   Rationale: Producers assemble `Concept` lists in memory before writing; a duplicate ID
   there is a real bug the check catches. It is cheap and additive.
   Date: 2026-06-19
+
+
+## Outcomes & Retrospective
+
+Implemented 2026-06-19. `Okf.Graph` now exports `danglingReferences :: [Concept] -> [(ConceptId, ConceptId)]`
+(every source→missing-target pair `buildGraph` silently drops) and
+`duplicateConceptIds :: [Concept] -> [ConceptId]`. `Okf.Validation` now exports
+`BundleValidationError` (`DocumentInvalid`, `DanglingReference`, `DuplicateConceptId`) and
+`validateBundle :: ValidationProfile -> [Concept] -> [BundleValidationError]`, which combines
+per-document `validateDocument` checks with the two bundle-level checks. Three new tests in
+`okf-core/test/Main.hs` prove a dangling reference is reported, a fully-resolving bundle
+reports `[]`, and duplicate IDs are detected. `buildGraph` is unchanged (its drop-unknown-edges
+test still passes). `cabal test okf-core-test` passes all 26 tests; `cabal build all` is green.
+No existing export was removed or renamed. This unblocks EP-9's `okf validate` command.
 
 
 ## Context and Orientation

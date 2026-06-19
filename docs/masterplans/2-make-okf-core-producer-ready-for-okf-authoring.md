@@ -124,7 +124,7 @@ and its existing no-external-dependencies boundary.
 |------|-------|------|-----------|-----------|--------|
 | EP-6 | Add frontmatter authoring API to okf-core | docs/plans/6-add-frontmatter-authoring-api-to-okf-core.md | None | None | Complete |
 | EP-7 | Add concept-link rendering with round-trip guarantee | docs/plans/7-add-concept-link-rendering-with-round-trip-guarantee.md | None | None | Complete |
-| EP-8 | Add bundle validation and referential integrity to okf-core | docs/plans/8-add-bundle-validation-and-referential-integrity-to-okf-core.md | None | EP-7 | Not Started |
+| EP-8 | Add bundle validation and referential integrity to okf-core | docs/plans/8-add-bundle-validation-and-referential-integrity-to-okf-core.md | None | EP-7 | Complete |
 | EP-10 | Add concept construction and bundle writing to okf-core | docs/plans/10-add-concept-construction-and-bundle-writing-to-okf-core.md | None | EP-6 | Not Started |
 | EP-9 | Surface OKF authoring in the CLI and user docs | docs/plans/9-surface-okf-authoring-in-the-cli-and-user-docs.md | EP-8 | EP-6, EP-7, EP-10 | Not Started |
 
@@ -236,8 +236,8 @@ the milestone. This section provides an at-a-glance view of the entire initiativ
 - [x] EP-6: Frontmatter builder and typed field helpers added to `Okf.Document` (2026-06-19)
 - [x] EP-6: Deterministic frontmatter key ordering on serialize, existing round-trip green (2026-06-19)
 - [x] EP-7: `renderConceptLinkTarget` / `renderConceptLink` added with round-trip property test (2026-06-19)
-- [ ] EP-8: Dangling-reference and duplicate-id detection exposed from `okf-core`
-- [ ] EP-8: `validateBundle` combines per-document and bundle-level checks
+- [x] EP-8: Dangling-reference and duplicate-id detection exposed from `okf-core` (2026-06-19)
+- [x] EP-8: `validateBundle` combines per-document and bundle-level checks (2026-06-19)
 - [ ] EP-10: `conceptFromDocument` promoted to a public constructor that derives typed fields
 - [ ] EP-10: `writeBundle` writes an in-memory `[Concept]` to disk; write → read round-trip green
 - [ ] EP-9: `okf validate` reports bundle-level errors; new invalid fixture proves it
