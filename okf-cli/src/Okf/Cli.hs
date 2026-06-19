@@ -129,15 +129,10 @@ runValidate :: ValidateOptions -> IO ()
 runValidate ValidateOptions{bundlePath, strictMode} = do
   concepts <- loadBundleOrExit bundlePath
   let profile = if strictMode then StrictAuthoring else PermissiveConformance
-      validationErrors =
-        [ (concept, error_)
-        | concept <- concepts
-        , error_ <- validateDocument profile (document concept)
-        ]
-  if null validationErrors
-    then Text.IO.putStrLn ("OK: " <> Text.pack (show (length concepts)) <> " concepts")
-    else do
-      mapM_ renderValidationError validationErrors
+  case validateBundle profile concepts of
+    [] -> Text.IO.putStrLn ("OK: " <> Text.pack (show (length concepts)) <> " concepts")
+    errors -> do
+      mapM_ (Text.IO.hPutStrLn stderr . renderBundleValidationError) errors
       exitFailure
 
 runIndex :: IndexOptions -> IO ()
@@ -179,9 +174,14 @@ loadIndexesOrExit bundlePath = do
     Left bundleError -> dieText (renderBundleError bundleError)
     Right indexes -> pure indexes
 
-renderValidationError :: (Concept, ValidationError) -> IO ()
-renderValidationError (concept, error_) =
-  Text.IO.hPutStrLn stderr (renderConceptId (conceptIdOf concept) <> ": " <> renderValidationErrorText error_)
+renderBundleValidationError :: BundleValidationError -> Text
+renderBundleValidationError = \case
+  DocumentInvalid conceptId error_ ->
+    renderConceptId conceptId <> ": " <> renderValidationErrorText error_
+  DanglingReference source target ->
+    renderConceptId source <> ": link to missing concept: " <> renderConceptId target
+  DuplicateConceptId conceptId ->
+    "duplicate concept ID: " <> renderConceptId conceptId
 
 renderValidationErrorText :: ValidationError -> Text
 renderValidationErrorText = \case

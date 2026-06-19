@@ -54,6 +54,7 @@ main = do
       , test "duplicateConceptIds finds repeated ids" testDuplicateConceptIds
       , test "conceptFromDocument derives typed fields from frontmatter" testConceptFromDocumentDerivesFields
       , testIO "writeBundle then walkBundle round-trips" testWriteBundleRoundTrip
+      , testIO "fixture dangling link reports a bundle validation error" testFixtureDanglingLink
       ]
   unless (and results) exitFailure
 
@@ -419,6 +420,20 @@ testWriteBundleRoundTrip = do
               (List.sort ((body . document) <$> concepts))
               (List.sort ((body . document) <$> recovered))
         )
+
+testFixtureDanglingLink :: IO (Either Text ())
+testFixtureDanglingLink = do
+  root <- fixturePath "invalid-dangling-link"
+  concepts <- readBundle root
+  pure
+    ( case validateBundle PermissiveConformance concepts of
+        errs
+          | any isDangling errs -> Right ()
+          | otherwise -> Left ("expected a DanglingReference, got: " <> Text.pack (show errs))
+    )
+ where
+  isDangling DanglingReference{} = True
+  isDangling _ = False
 
 substringIndex :: Text -> Text -> Maybe Int
 substringIndex needle haystack =

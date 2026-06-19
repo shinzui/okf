@@ -54,12 +54,12 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] Wire `validateBundle` into `runValidate` in `okf-cli/src/Okf/Cli.hs` and render `BundleValidationError`
-- [ ] Add the `invalid-dangling-link` fixture under `okf-core/test/fixtures/`
-- [ ] Add a CLI/library test proving the dangling fixture fails validation and the valid one passes
-- [ ] Update `docs/user/cli.md` to describe referential-integrity validation
-- [ ] Add an authoring section/file under `docs/user/` documenting the EP-6, EP-7, and EP-10 API
-- [ ] Confirm `cabal build all` and `cabal test all` are green and the README CLI examples still work
+- [x] Wire `validateBundle` into `runValidate` in `okf-cli/src/Okf/Cli.hs` and render `BundleValidationError` (2026-06-19)
+- [x] Add the `invalid-dangling-link` fixture under `okf-core/test/fixtures/` (2026-06-19)
+- [x] Add a library test proving the dangling fixture fails validation (2026-06-19)
+- [x] Update `docs/user/cli.md` to describe referential-integrity validation (2026-06-19)
+- [x] Add `docs/user/authoring.md` documenting the EP-6, EP-7, EP-8, and EP-10 API; linked from README (2026-06-19)
+- [x] Confirm `cabal build all` and `cabal test all` are green and the README CLI examples still work (2026-06-19)
 
 
 ## Surprises & Discoveries
@@ -67,7 +67,21 @@ This section must always reflect the actual current state of the work.
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+- All soft dependencies (EP-6, EP-7, EP-10) and the hard one (EP-8) were already merged when
+  this plan ran, so `docs/user/authoring.md` documents the complete authoring API with no
+  deferral needed.
+- The unused per-document tuple helper `renderValidationError :: (Concept, ValidationError) -> IO ()`
+  was removed (its loop is replaced by `validateBundle`); `renderValidationErrorText` is kept
+  (reused by the new `renderBundleValidationError`). `okf-cli` builds clean under `-Wall`.
+- The dangling-link fixture test reuses the existing `fixturePath` + `readBundle` helpers (like
+  `testFixtureMissingType`) rather than hardcoding the repo-relative path, so it works whether
+  tests run from the repo root or the package directory.
+- End-to-end behavior verified by running the CLI directly:
+  `okf validate .../valid-bundle` → `OK: 4 concepts` (exit 0);
+  `okf validate .../invalid-dangling-link` → `orders: link to missing concept: customers`
+  (exit 1). REPL spot-check confirmed `renderConceptLink` yields
+  `[Customers](/tables/customers.md)` and `serializeConcept` emits the deterministic key order,
+  matching the snippets in `authoring.md`.
 
 
 ## Decision Log
@@ -89,6 +103,23 @@ Record every decision made while working on the plan.
   distinct audience (producers/generators). A separate file keeps each focused, and the
   existing `docs/user/README.md` can link to both.
   Date: 2026-06-19
+
+
+## Outcomes & Retrospective
+
+Implemented 2026-06-19. `okf validate` now reports referential-integrity problems: `runValidate`
+in `okf-cli/src/Okf/Cli.hs` calls `Okf.Validation.validateBundle` and renders the unified
+`BundleValidationError` via a new `renderBundleValidationError` (the unused per-document tuple
+helper was removed). A new fixture `okf-core/test/fixtures/invalid-dangling-link/orders.md`
+links to a missing concept, and `testFixtureDanglingLink` proves `validateBundle` flags it; the
+valid fixture still reports `[]`. `docs/user/cli.md` documents the referential-integrity check
+with an example error line, and a new `docs/user/authoring.md` documents the full producer API
+(frontmatter building, link rendering, concept construction, bundle writing, and validation),
+linked from `docs/user/README.md`. Verified end to end: `okf validate` on the valid bundle
+prints `OK: 4 concepts` (exit 0) and on the dangling fixture prints
+`orders: link to missing concept: customers` (exit 1); `cabal test all` is green for both
+suites; REPL spot-checks confirm the `authoring.md` snippets. No existing CLI command shape
+changed.
 
 
 ## Context and Orientation

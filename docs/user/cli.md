@@ -40,13 +40,25 @@ description
 timestamp
 ```
 
+Validation also checks referential integrity across the whole bundle: a Markdown
+link from one concept to another `.md` concept that does not exist in the bundle
+is reported as a dangling reference, and the command exits non-zero. External
+URLs and non-`.md` links are not checked. Duplicate concept IDs are also
+reported. These checks run in both the permissive and strict profiles.
+
 Successful validation prints a concept count:
 
 ```text
 OK: 4 concepts
 ```
 
-Invalid bundles exit non-zero and print deterministic errors to stderr.
+Invalid bundles exit non-zero and print deterministic errors to stderr. For
+example, a concept `orders` whose body links to `/customers.md` when no
+`customers` concept exists produces:
+
+```text
+orders: link to missing concept: customers
+```
 
 
 ## index

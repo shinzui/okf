@@ -126,7 +126,7 @@ and its existing no-external-dependencies boundary.
 | EP-7 | Add concept-link rendering with round-trip guarantee | docs/plans/7-add-concept-link-rendering-with-round-trip-guarantee.md | None | None | Complete |
 | EP-8 | Add bundle validation and referential integrity to okf-core | docs/plans/8-add-bundle-validation-and-referential-integrity-to-okf-core.md | None | EP-7 | Complete |
 | EP-10 | Add concept construction and bundle writing to okf-core | docs/plans/10-add-concept-construction-and-bundle-writing-to-okf-core.md | None | EP-6 | Complete |
-| EP-9 | Surface OKF authoring in the CLI and user docs | docs/plans/9-surface-okf-authoring-in-the-cli-and-user-docs.md | EP-8 | EP-6, EP-7, EP-10 | Not Started |
+| EP-9 | Surface OKF authoring in the CLI and user docs | docs/plans/9-surface-okf-authoring-in-the-cli-and-user-docs.md | EP-8 | EP-6, EP-7, EP-10 | Complete |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
 Hard Deps and Soft Deps reference other rows by their # prefix (e.g., EP-6, EP-8).
@@ -240,8 +240,8 @@ the milestone. This section provides an at-a-glance view of the entire initiativ
 - [x] EP-8: `validateBundle` combines per-document and bundle-level checks (2026-06-19)
 - [x] EP-10: `conceptFromDocument` promoted to a public constructor that derives typed fields (2026-06-19)
 - [x] EP-10: `writeBundle` writes an in-memory `[Concept]` to disk; write → read round-trip green (2026-06-19)
-- [ ] EP-9: `okf validate` reports bundle-level errors; new invalid fixture proves it
-- [ ] EP-9: `docs/user/` documents the authoring API (frontmatter, links, construction/writing)
+- [x] EP-9: `okf validate` reports bundle-level errors; new invalid fixture proves it (2026-06-19)
+- [x] EP-9: `docs/user/` documents the authoring API (frontmatter, links, construction/writing) (2026-06-19)
 
 
 ## Surprises & Discoveries
@@ -344,7 +344,41 @@ Record every decomposition or coordination decision made while working on the ma
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion. Compare
 the result against the original vision.
 
-(To be filled during and after implementation.)
+Completed 2026-06-19. All five child plans (EP-6, EP-7, EP-8, EP-10, EP-9) are implemented and
+merged to `master`. `okf-core` now supports the full author-side loop the vision described:
+
+- EP-6 — `Okf.Document` gained `frontmatterFromFields`, `setField`, `removeField`, the
+  `OkfCommon`/`okfCommon` helpers, and typed setters; `serializeDocument` emits a deterministic
+  key order (common fields first, then alphabetical) for diff-clean regeneration.
+- EP-7 — `Okf.ConceptId` gained `renderConceptLinkTarget` and `renderConceptLink`, with a
+  property test proving the round-trip law against the real CommonMark extractor.
+- EP-8 — `Okf.Graph` gained `danglingReferences` and `duplicateConceptIds`; `Okf.Validation`
+  gained `BundleValidationError` and `validateBundle`, surfacing the broken-link information
+  `buildGraph` previously discarded.
+- EP-10 — `Okf.Bundle` promoted `conceptFromDocument` to a public single-source-of-truth
+  constructor and added `writeBundle`/`serializeConcept`, closing the in-memory→on-disk gap and
+  removing the typed-vs-frontmatter divergence sharp edge.
+- EP-9 — `okf validate` now enforces referential integrity (proven by the new
+  `invalid-dangling-link` fixture), and `docs/user/authoring.md` documents the whole producer
+  API.
+
+Every change was additive and backward-compatible: no MasterPlan-1 export was removed or
+renamed, and the original read-path fixture tests stayed green throughout. The test suite grew
+from 20 to 29 cases (`cabal test all` green across both `okf-core` and `okf-cli`).
+
+What went smoothly: the disjoint-modules decomposition held — EP-6/7/8/10 touched
+non-overlapping source modules and only the shared `okf-core/test/Main.hs` (resolved by
+appending entries, as planned). The soft dependencies paid off in order: EP-6 landed first so
+EP-10's `writeBundle` and EP-9's docs inherited deterministic output, and EP-7 landed before
+EP-8/EP-9 so their link bodies use `renderConceptLink`.
+
+Deviations / lessons: (1) `vector` had to become an explicit `okf-core` dependency — a
+transitive (hidden) package is not importable. (2) `Okf.Prelude` re-exports a generic-lens
+`setField` that collides with EP-6's `setField`; modules importing both must hide it. (3) EP-8's
+test helper was later refactored onto EP-10's `conceptFromDocument` to realize integration
+point 5 (in-memory producers should not hand-build the `Concept` record). None changed the
+decomposition or any plan's scope. The downstream Dhall-to-OKF generator remains out of scope
+as decided, with the building blocks it needs now in place.
 
 
 ## Revision Notes
