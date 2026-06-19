@@ -1,6 +1,7 @@
 .claude/
 .agents/
 .seihou/manifest.json.tmp
+.mina/
 CLAUDE.local.md
 .envrc
 dist
