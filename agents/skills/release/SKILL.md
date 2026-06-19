@@ -44,6 +44,22 @@ benchmark-only, or split-out packages to exclude. The `okf` executable and the
 `okf-core-test` / `okf-cli-test` test-suites are components of the two packages
 above and ship as part of them.
 
+### Per-package layout (important for sdist)
+
+There is **no root `.cabal`** file. Each package directory is self-contained for
+`cabal sdist` / Hackage:
+
+- Each package has its **own `LICENSE`** (a copy of the root `LICENSE`) and its
+  **own `CHANGELOG.md`** (a copy of the root `CHANGELOG.md`). The cabal files
+  reference these locally (`license-file: LICENSE`, `extra-doc-files:
+  CHANGELOG.md`).
+- This is required: `cabal check` / Hackage **reject** `../LICENSE` or
+  `../CHANGELOG.md` (paths outside the package tree are not packaged into the
+  tarball). Never point a cabal file at a parent-directory path.
+- Consequence: the root `CHANGELOG.md` is the source of truth, but the two
+  per-package copies must be **kept in sync** with it on every release (see the
+  Changelog step).
+
 ## Arguments
 
 `$ARGUMENTS` is optional:
@@ -97,16 +113,18 @@ Verify both end up at the target version before committing.
 
 #### Internal dependency bounds
 
-`okf-cli` depends on `okf-core`. Set a PVP-compatible bound matching the new
-version in `okf-cli/okf-cli.cabal`. Today the `library` section lists
-`okf-core,` with **no version bound** — add/maintain it as
-`okf-core ^>=A.B.C.D` (the `^>=` operator pins `A.B.C` and allows later `D`).
+`okf-cli` depends on `okf-core`. The `library` section of `okf-cli/okf-cli.cabal`
+already carries `okf-core ^>=A.B.C.D` (the `^>=` operator pins `A.B.C` and allows
+a later `D`). **Bump this bound to the new version every release** so it tracks
+the version of `okf-core` being published alongside it.
 
 - Update every section of `okf-cli.cabal` that build-depends on `okf-core`
   (currently the `library`; check the `executable` and test-suite too if they
   ever gain a direct `okf-core` dep).
 - `okf-cli`'s `executable okf` and `okf-cli-test` depend on `okf-cli` (not
   `okf-core` directly), so no additional internal bound is needed there.
+- All library dependencies carry PVP upper bounds (`cabal check` warns when one
+  is missing). If you add a dependency, give it a lower **and** upper bound.
 
 #### Changelog
 
@@ -123,12 +141,19 @@ dates, with an `## [Unreleased]` section):
   - **Changed** / **Removed** — breaking — major
   - **Fixed** (bug fixes)
   - **Deprecated** / **Security** as applicable
-- Both cabal files reference `../CHANGELOG.md` via `extra-doc-files`, so the
-  single root changelog ships inside both sdists — no per-package changelog is
-  needed.
+- **Sync the per-package copies.** After editing the root `CHANGELOG.md`, copy it
+  verbatim into each package directory so the sdists ship the updated changelog:
 
-Show the user ALL changes (version bumps, `okf-core` bound, changelog) for
-review before committing.
+  ```bash
+  cp CHANGELOG.md okf-core/CHANGELOG.md
+  cp CHANGELOG.md okf-cli/CHANGELOG.md
+  ```
+
+  (The per-package `LICENSE` copies are static and only need recreating if the
+  root `LICENSE` ever changes: `cp LICENSE okf-core/LICENSE okf-cli/LICENSE`.)
+
+Show the user ALL changes (version bumps, `okf-core` bound, root + per-package
+changelogs) for review before committing.
 
 ### 4. Verify builds and checks
 
@@ -137,15 +162,35 @@ Run, in order, and stop on the first failure:
 - `nix fmt` — format with treefmt (nixpkgs-fmt, fourmolu, cabal-fmt).
 - `cabal build all` — verify everything builds.
 - `cabal test all` — run `okf-core-test` and `okf-cli-test`.
-- `nix flake check` — treefmt + pre-commit gates.
+- `(cd okf-core && cabal check)` and `(cd okf-cli && cabal check)` — **must report
+  "No errors or warnings"**. This is the gate that catches Hackage-rejecting
+  packaging problems (parent-directory paths, missing upper bounds, no
+  `category`, short `description`). Fix anything it reports before publishing.
+- `nix flake check` — runs the `treefmt` and `pre-commit` checks and evaluates
+  the `packages.okf-core` / `okf-cli` / `default` derivations.
   - **Newly created/edited files must be `git add`-ed before nix evaluation
-    sees them**, since nix evaluates the git tree.
+    sees them**, since nix evaluates the git tree. In particular, new
+    `LICENSE` / `CHANGELOG.md` copies must be staged or `nix flake check` (and
+    `cabal sdist` via nix) won't see them.
 
 If any check fails, fix it before proceeding.
 
+> **Project nix wiring notes.** `nix fmt` and `nix flake check`'s
+> treefmt/pre-commit gates are wired through `flake.nix` → `nix/treefmt.nix` /
+> `nix/pre-commit.nix`. Because there is no root `.cabal`, `nix/haskell.nix`
+> defines `packages.okf-core` / `okf-cli` (pointing `callCabal2nix` at each
+> package dir, with `okf-cli` given `okf-core`) rather than a single root
+> package. `nix/haskell.nix` is seihou-managed, so if a future
+> `nix-haskell-flake` migration regenerates it back to a single-package
+> `callCabal2nix "okf" inputs.self`, re-apply the multi-package definitions or
+> `nix flake check` will fail with "Found neither a .cabal file nor
+> package.yaml".
+
 ### 5. Commit, tag, and push
 
-- Stage the modified `.cabal` files and `CHANGELOG.md`.
+- Stage the modified `.cabal` files, the root `CHANGELOG.md`, and the per-package
+  `okf-core/CHANGELOG.md` / `okf-cli/CHANGELOG.md` copies (plus any new/changed
+  `LICENSE` copies).
 - Create a single commit with a Conventional Commits message:
   `chore(release): <new-version>`. The body should summarize what's in the
   release and why this bump level was chosen.
@@ -205,6 +250,8 @@ EOF
 - Always ask the user to confirm the version bump and changelog before
   committing.
 - Always publish in dependency order: **okf-core → okf-cli**.
+- Keep the per-package `LICENSE` / `CHANGELOG.md` copies in sync and never point
+  a cabal file at a `../` path — both will make Hackage reject the package.
 - Never skip `cabal check`, the tests, or `nix flake check`.
 - If any step fails (including `nix flake check`), stop and report the error
   rather than continuing.
