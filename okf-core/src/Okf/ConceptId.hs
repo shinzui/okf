@@ -6,6 +6,8 @@ module Okf.ConceptId
   , conceptIdToFilePath
   , parseConceptId
   , renderConceptId
+  , renderConceptLinkTarget
+  , renderConceptLink
   ) where
 
 import Data.Char qualified as Char
@@ -56,6 +58,20 @@ conceptIdToFilePath (ConceptId rawSegments) =
 conceptIdFromFilePath :: FilePath -> Either ConceptIdError ConceptId
 conceptIdFromFilePath path =
   parseConceptId (Text.pack (FilePath.dropExtension (FilePath.normalise path)))
+
+-- | The canonical bundle-absolute Markdown link target for a concept, e.g.
+-- @/modules/nix-haskell-flake.md@. A link whose URL is this string resolves
+-- back to the same 'ConceptId' regardless of which document contains it.
+renderConceptLinkTarget :: ConceptId -> Text
+renderConceptLinkTarget conceptId =
+  "/" <> Text.replace "\\" "/" (Text.pack (conceptIdToFilePath conceptId))
+
+-- | A complete Markdown link to a concept: @[label](/path.md)@. Only the URL is
+-- read by OKF link extraction, so an odd label does not break edges, but the
+-- caller should choose a label free of unbalanced brackets to keep prose readable.
+renderConceptLink :: ConceptId -> Text -> Text
+renderConceptLink conceptId label =
+  "[" <> label <> "](" <> renderConceptLinkTarget conceptId <> ")"
 
 validateSegment :: Text -> Either ConceptIdError Text
 validateSegment segment

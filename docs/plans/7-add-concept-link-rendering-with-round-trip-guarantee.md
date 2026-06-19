@@ -57,11 +57,11 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] Add `renderConceptLinkTarget` to `Okf.ConceptId` and export it
-- [ ] Add `renderConceptLink` (target + label → Markdown link) and export it
-- [ ] Add a round-trip test proving rendered links extract back to the same concept ID
-- [ ] Add a test for nested/dotted/hyphenated concept IDs and a non-trivial source directory
-- [ ] Confirm `cabal build all` and `cabal test okf-core-test` are green
+- [x] Add `renderConceptLinkTarget` to `Okf.ConceptId` and export it (2026-06-19)
+- [x] Add `renderConceptLink` (target + label → Markdown link) and export it (2026-06-19)
+- [x] Add a round-trip test proving rendered links extract back to the same concept ID (2026-06-19)
+- [x] Add a test for nested/dotted/hyphenated concept IDs and a non-trivial source directory (2026-06-19)
+- [x] Confirm `cabal build all` and `cabal test okf-core-test` are green (2026-06-19)
 
 
 ## Surprises & Discoveries
@@ -69,7 +69,15 @@ This section must always reflect the actual current state of the work.
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+- No surprises. The bundle-absolute target `"/" <> conceptIdToFilePath cid` round-trips
+  through `extractConceptLinks` exactly as the plan predicted, for single-segment, nested,
+  and dotted/hyphenated IDs, from a source document in its own directory
+  (`recipes/haskell-library-repo`). The renderers needed no graph dependency; the round-trip
+  test in `okf-core/test/Main.hs` exercises the real CommonMark parser via `extractConceptLinks`.
+- The test module needed no extra imports: `Okf.ConceptId`, `Okf.Bundle` (`Concept (..)`),
+  `Okf.Document` (`emptyFrontmatter`, `OKFDocument`), and `Okf.Graph` (`extractConceptLinks`)
+  were already imported. Used `mapM_` (standard Prelude) to iterate target IDs since
+  `Okf.Prelude` exports `for` but not `for_`/`traverse_`.
 
 
 ## Decision Log
@@ -90,6 +98,20 @@ Record every decision made while working on the plan.
   rendering functions. The round-trip *test* lives in the shared test file and exercises
   `Okf.Graph.extractConceptLinks`, but the renderers themselves have no graph dependency.
   Date: 2026-06-19
+
+
+## Outcomes & Retrospective
+
+Implemented 2026-06-19. `Okf.ConceptId` now exports `renderConceptLinkTarget :: ConceptId -> Text`
+(the bundle-absolute `/path.md` target) and `renderConceptLink :: ConceptId -> Text -> Text`
+(the full `[label](/path.md)` link), both pure and additive. A new test
+`testConceptLinkRoundTrip` in `okf-core/test/Main.hs` embeds a rendered link in prose, runs
+the real CommonMark parser through `extractConceptLinks`, and asserts the extracted list is
+exactly `[targetId]` for single-segment (`orders`), nested (`modules/nix-haskell-flake`), and
+dotted/hyphenated (`refs/source-system.v1`) IDs, from a source in its own directory — proving
+the round-trip law and that a bundle-absolute target is source-directory-independent.
+`cabal test okf-core-test` passes all 23 tests; `cabal build all` is green. No existing
+export was removed or renamed.
 
 
 ## Context and Orientation

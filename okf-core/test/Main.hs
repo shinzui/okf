@@ -48,6 +48,7 @@ main = do
       , testIO "fixture missing type reports validation error" testFixtureMissingType
       , test "frontmatter builder round-trips through serialize and parse" testFrontmatterBuilderRoundTrip
       , test "serializeDocument emits deterministic key order" testSerializeDeterministicKeyOrder
+      , test "rendered concept link round-trips through extractConceptLinks" testConceptLinkRoundTrip
       ]
   unless (and results) exitFailure
 
@@ -303,6 +304,36 @@ testSerializeDeterministicKeyOrder = do
         ["type:", "title:", "description:", "timestamp:", "resource:", "tags:", "alpha:", "zeta:"]
   indices <- traverse (\key -> maybe (Left ("missing key " <> key)) Right (substringIndex key rendered)) expectedOrder
   assertBool ("keys not in deterministic order: " <> Text.pack (show indices)) (strictlyIncreasing indices)
+
+testConceptLinkRoundTrip :: Either Text ()
+testConceptLinkRoundTrip = do
+  sourceId <- parseTestConceptId "recipes/haskell-library-repo"
+  let targetStrings = ["orders", "modules/nix-haskell-flake", "refs/source-system.v1"]
+  mapM_
+    ( \rawTarget -> do
+        targetId <- parseTestConceptId rawTarget
+        let extracted = extractFromBodyLinkingTo sourceId targetId
+        assertEqual [targetId] extracted
+    )
+    targetStrings
+
+parseTestConceptId :: Text -> Either Text ConceptId
+parseTestConceptId rawId =
+  first (\err -> "bad concept id " <> rawId <> ": " <> Text.pack (show err)) (parseConceptId rawId)
+
+extractFromBodyLinkingTo :: ConceptId -> ConceptId -> [ConceptId]
+extractFromBodyLinkingTo sourceId targetId =
+  extractConceptLinks
+    Concept
+      { id = sourceId
+      , sourcePath = conceptIdToFilePath sourceId
+      , document = OKFDocument emptyFrontmatter ("See " <> renderConceptLink targetId "link" <> ".\n")
+      , type_ = "Test"
+      , title = Nothing
+      , description = Nothing
+      , resource = Nothing
+      , tags = []
+      }
 
 substringIndex :: Text -> Text -> Maybe Int
 substringIndex needle haystack =
