@@ -79,12 +79,12 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] Promote the internal `conceptFromDocument` to a public 2-argument constructor `ConceptId -> OKFDocument -> Concept` and keep the on-disk read path working
-- [ ] Add `writeBundle :: FilePath -> [Concept] -> IO ()` that serializes and writes each concept, creating parent directories
-- [ ] (Optional) Add `serializeConcept :: Concept -> Text` convenience and export it
-- [ ] Extend the `Okf.Bundle` export list additively; confirm no existing export changed
-- [ ] Add a write → read round-trip test and a typed-field-derivation test in `okf-core/test/Main.hs`
-- [ ] Confirm `cabal build all` and `cabal test okf-core-test` are green
+- [x] Promote the internal `conceptFromDocument` to a public 2-argument constructor `ConceptId -> OKFDocument -> Concept`; kept read path via renamed `conceptAt` (2026-06-19)
+- [x] Add `writeBundle :: FilePath -> [Concept] -> IO ()` that serializes and writes each concept, creating parent directories (2026-06-19)
+- [x] Add `serializeConcept :: Concept -> Text` convenience and export it (2026-06-19)
+- [x] Extend the `Okf.Bundle` export list additively; confirmed no existing export changed (2026-06-19)
+- [x] Add a write → read round-trip test and a typed-field-derivation test in `okf-core/test/Main.hs` (2026-06-19)
+- [x] Confirm `cabal build all` and `cabal test okf-core-test` are green (2026-06-19)
 
 
 ## Surprises & Discoveries
@@ -92,7 +92,16 @@ This section must always reflect the actual current state of the work.
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+- EP-6 was already merged, so the test frontmatter is built with `okfCommon` rather than a
+  raw Aeson `KeyMap`, and `writeBundle`'s output is deterministically ordered.
+- Used `mapM_` (standard Prelude) inside `writeBundle` rather than `for_`, because
+  `Okf.Prelude` re-exports `for` but not `for_`/`traverse_`. This matches the EP-7 choice.
+- `walkBundle` sorts recovered concepts by concept ID, so the round-trip test sorts both the
+  ID list and the body list before comparing (the in-memory order `[orders, customers]` does
+  not match the on-disk read order `[customers, orders]`).
+- Refactored EP-8's `testConcept` helper to build concepts via the new public
+  `conceptFromDocument`, realizing MasterPlan integration point 5 (in-memory producers and
+  test helpers should not hand-build the `Concept` record). All 28 tests pass.
 
 
 ## Decision Log
@@ -502,4 +511,14 @@ Relationship to other plans (see the MasterPlan's Integration Points):
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
 Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+Implemented 2026-06-19. `Okf.Bundle` now exports a public, single-source-of-truth constructor
+`conceptFromDocument :: ConceptId -> OKFDocument -> Concept` (typed fields derived from the
+document's frontmatter; source path derived from the concept ID), a bundle writer
+`writeBundle :: FilePath -> [Concept] -> IO ()` (serializes each concept and writes it to
+`root/<conceptId>.md`, creating parent directories), and a `serializeConcept :: Concept -> Text`
+convenience. The original internal 3-argument helper was renamed `conceptAt` and kept private;
+`readConcept` calls it, so the read path is behavior-preserving (the fixture tests stay green).
+Two new tests in `okf-core/test/Main.hs` prove typed-field derivation and a
+write → read round-trip via the existing `walkBundle`. The EP-8 test helper was refactored
+onto `conceptFromDocument`, closing MasterPlan integration point 5. `cabal test okf-core-test`
+passes all 28 tests; `cabal build all` is green. No existing export was removed or renamed.

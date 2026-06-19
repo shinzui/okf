@@ -2,16 +2,20 @@
 module Okf.Bundle
   ( BundleError (..)
   , Concept (..)
+  , conceptFromDocument
   , conceptIdOf
   , findConcept
   , isReservedMarkdownFile
+  , serializeConcept
   , walkBundle
+  , writeBundle
   ) where
 
 import Data.List qualified as List
 import Data.Text.IO qualified as Text.IO
 import System.Directory
-  ( doesDirectoryExist
+  ( createDirectoryIfMissing
+  , doesDirectoryExist
   , listDirectory
   )
 import System.FilePath ((</>))
@@ -80,6 +84,26 @@ discoverMarkdownFiles root relativeDir = do
             ]
     )
 
+-- | Write every concept to @root/\<conceptId\>.md@, creating parent directories
+-- as needed, using 'serializeDocument' for the file contents. Existing files for
+-- the given concepts are overwritten; files NOT corresponding to a supplied
+-- concept are left untouched (a producer wanting a pristine output directory
+-- should clear it first). Does not validate; run 'Okf.Validation.validateBundle'
+-- first if you want referential-integrity guarantees.
+writeBundle :: FilePath -> [Concept] -> IO ()
+writeBundle root concepts =
+  mapM_ writeConcept concepts
+ where
+  writeConcept concept = do
+    let relativePath = conceptIdToFilePath (conceptIdOf concept)
+        absolutePath = root </> relativePath
+    createDirectoryIfMissing True (FilePath.takeDirectory absolutePath)
+    Text.IO.writeFile absolutePath (serializeConcept concept)
+
+-- | Serialize a single concept's document to a Markdown string.
+serializeConcept :: Concept -> Text
+serializeConcept = serializeDocument . document
+
 readConcept :: FilePath -> FilePath -> IO (Either BundleError Concept)
 readConcept root relativePath = do
   content <- Text.IO.readFile (root </> relativePath)
@@ -87,11 +111,21 @@ readConcept root relativePath = do
     ( do
         conceptId <- first (InvalidConceptPath relativePath) (conceptIdFromFilePath relativePath)
         document <- first (InvalidConceptDocument relativePath) (parseDocument content)
-        pure (conceptFromDocument conceptId relativePath document)
+        pure (conceptAt conceptId relativePath document)
     )
 
-conceptFromDocument :: ConceptId -> FilePath -> OKFDocument -> Concept
-conceptFromDocument conceptId relativePath document =
+-- | Build a 'Concept' from its identity and document. The typed projection
+-- fields (@type_@, @title@, @description@, @resource@, @tags@) are derived from
+-- the document's frontmatter, so they can never disagree with it. The source
+-- path is derived from the concept ID. Use this when assembling concepts in
+-- memory (for 'writeBundle' or 'Okf.Validation.validateBundle').
+conceptFromDocument :: ConceptId -> OKFDocument -> Concept
+conceptFromDocument conceptId =
+  conceptAt conceptId (conceptIdToFilePath conceptId)
+
+-- | Build a 'Concept' with an explicit on-disk source path (used by the reader).
+conceptAt :: ConceptId -> FilePath -> OKFDocument -> Concept
+conceptAt conceptId relativePath document =
   Concept
     { id = conceptId
     , sourcePath = relativePath

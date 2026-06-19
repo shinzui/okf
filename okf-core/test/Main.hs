@@ -52,6 +52,8 @@ main = do
       , test "validateBundle reports a dangling reference" testValidateBundleDanglingReference
       , test "validateBundle accepts a bundle whose links all resolve" testValidateBundleAcceptsResolved
       , test "duplicateConceptIds finds repeated ids" testDuplicateConceptIds
+      , test "conceptFromDocument derives typed fields from frontmatter" testConceptFromDocumentDerivesFields
+      , testIO "writeBundle then walkBundle round-trips" testWriteBundleRoundTrip
       ]
   unless (and results) exitFailure
 
@@ -359,9 +361,10 @@ testDuplicateConceptIds = do
   conceptAAgain <- testConcept "a" "Second.\n"
   assertEqual [aId] (duplicateConceptIds [conceptA, conceptAAgain])
 
--- | Build an in-memory concept whose typed fields are kept in sync with the
--- frontmatter built by the authoring API. Includes all StrictAuthoring fields so
--- per-document validation passes and bundle-level checks can be isolated.
+-- | Build an in-memory concept via the public 'conceptFromDocument' constructor,
+-- so its typed fields are derived from the frontmatter and cannot diverge.
+-- Includes all StrictAuthoring fields so per-document validation passes and
+-- bundle-level checks can be isolated.
 testConcept :: Text -> Text -> Either Text Concept
 testConcept rawId bodyText = do
   conceptId <- parseTestConceptId rawId
@@ -373,17 +376,49 @@ testConcept rawId bodyText = do
             , commonDescription = Just "Description"
             , commonTimestamp = Just "2026-06-16T00:00:00Z"
             }
-  pure
-    Concept
-      { id = conceptId
-      , sourcePath = conceptIdToFilePath conceptId
-      , document = OKFDocument frontmatterValue bodyText
-      , type_ = "Test"
-      , title = Just "Title"
-      , description = Just "Description"
-      , resource = Nothing
-      , tags = []
-      }
+  pure (conceptFromDocument conceptId (OKFDocument frontmatterValue bodyText))
+
+testConceptFromDocumentDerivesFields :: Either Text ()
+testConceptFromDocumentDerivesFields = do
+  conceptId <- parseTestConceptId "tables/orders"
+  let frontmatterValue =
+        okfCommon
+          OkfCommon
+            { commonType = "BigQuery Table"
+            , commonTitle = Just "Orders"
+            , commonDescription = Nothing
+            , commonTimestamp = Nothing
+            }
+      Concept{type_, title, sourcePath} = conceptFromDocument conceptId (OKFDocument frontmatterValue "# Orders\n")
+  assertEqual "BigQuery Table" type_
+  assertEqual (Just "Orders") title
+  assertEqual "tables/orders.md" sourcePath
+
+testWriteBundleRoundTrip :: IO (Either Text ())
+testWriteBundleRoundTrip = do
+  temporaryDirectory <- getTemporaryDirectory
+  root <- createTempDirectory temporaryDirectory "okf-core-writebundle"
+  let buildConcepts = do
+        orders <- testConcept "tables/orders" "# Orders\n\nOrder records.\n"
+        customers <- testConcept "tables/customers" "# Customers\n\nCustomer records.\n"
+        pure [orders, customers]
+  case buildConcepts of
+    Left message -> do
+      removeDirectoryRecursive root
+      pure (Left message)
+    Right concepts -> do
+      writeBundle root concepts
+      recovered <- readBundle root
+      removeDirectoryRecursive root
+      pure
+        ( do
+            assertEqual
+              (List.sort (renderConceptId . conceptIdOf <$> concepts))
+              (List.sort (renderConceptId . conceptIdOf <$> recovered))
+            assertEqual
+              (List.sort ((body . document) <$> concepts))
+              (List.sort ((body . document) <$> recovered))
+        )
 
 substringIndex :: Text -> Text -> Maybe Int
 substringIndex needle haystack =
