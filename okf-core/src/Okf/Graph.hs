@@ -1,100 +1,101 @@
 -- | Markdown link extraction and concept graph construction.
 module Okf.Graph
-  ( Edge (..)
-  , Graph (..)
-  , Node (..)
-  , buildGraph
-  , extractConceptLinks
-  , danglingReferences
-  , duplicateConceptIds
-  ) where
+  ( Edge (..),
+    Graph (..),
+    Node (..),
+    buildGraph,
+    extractConceptLinks,
+    danglingReferences,
+    duplicateConceptIds,
+  )
+where
 
 import CMarkGFM qualified
+import Control.Monad (foldM)
 import Data.Aeson (ToJSON (..), object, (.=))
 import Data.List qualified as List
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Text qualified as Text
-import System.FilePath ((</>))
-import System.FilePath qualified as FilePath
-
 import Okf.Bundle
 import Okf.ConceptId
 import Okf.Document (body)
 import Okf.Prelude hiding ((.=))
+import System.FilePath ((</>))
+import System.FilePath qualified as FilePath
 
 -- | A graph node for one concept.
 data Node = Node
-  { id :: !ConceptId
-  , label :: !Text
-  , type_ :: !Text
-  , description :: !(Maybe Text)
-  , resource :: !(Maybe Text)
-  , tags :: ![Text]
+  { id :: !ConceptId,
+    label :: !Text,
+    type_ :: !Text,
+    description :: !(Maybe Text),
+    resource :: !(Maybe Text),
+    tags :: ![Text]
   }
   deriving stock (Generic, Eq, Show)
 
 -- | A directed concept-to-concept link.
 data Edge = Edge
-  { source :: !ConceptId
-  , target :: !ConceptId
+  { source :: !ConceptId,
+    target :: !ConceptId
   }
   deriving stock (Generic, Eq, Ord, Show)
 
 -- | Bundle graph data with presentation-free nodes and edges.
 data Graph = Graph
-  { nodes :: ![Node]
-  , edges :: ![Edge]
+  { nodes :: ![Node],
+    edges :: ![Edge]
   }
   deriving stock (Generic, Eq, Show)
 
 instance ToJSON Node where
-  toJSON Node{id = nodeId, label = nodeLabel, type_ = nodeType, description = nodeDescription, resource = nodeResource, tags = nodeTags} =
+  toJSON Node {id = nodeId, label = nodeLabel, type_ = nodeType, description = nodeDescription, resource = nodeResource, tags = nodeTags} =
     object
-      [ "id" .= nodeId
-      , "label" .= nodeLabel
-      , "type" .= nodeType
-      , "description" .= nodeDescription
-      , "resource" .= nodeResource
-      , "tags" .= nodeTags
+      [ "id" .= nodeId,
+        "label" .= nodeLabel,
+        "type" .= nodeType,
+        "description" .= nodeDescription,
+        "resource" .= nodeResource,
+        "tags" .= nodeTags
       ]
 
 instance ToJSON Edge where
-  toJSON Edge{source, target} =
+  toJSON Edge {source, target} =
     object
-      [ "source" .= source
-      , "target" .= target
+      [ "source" .= source,
+        "target" .= target
       ]
 
 instance ToJSON Graph where
-  toJSON Graph{nodes, edges} =
+  toJSON Graph {nodes, edges} =
     object
-      [ "nodes" .= nodes
-      , "edges" .= edges
+      [ "nodes" .= nodes,
+        "edges" .= edges
       ]
 
 -- | Build a graph, excluding links whose targets are not known concepts.
 buildGraph :: [Concept] -> Graph
 buildGraph concepts =
   Graph
-    { nodes = conceptNode <$> sortedConcepts
-    , edges = Set.toAscList knownEdges
+    { nodes = conceptNode <$> sortedConcepts,
+      edges = Set.toAscList knownEdges
     }
- where
-  sortedConcepts = List.sortOn (renderConceptId . conceptIdOf) concepts
-  knownIds = Set.fromList (conceptIdOf <$> concepts)
-  knownEdges =
-    Set.fromList
-      [ Edge{source = conceptIdOf concept, target}
-      | concept <- concepts
-      , target <- extractConceptLinks concept
-      , target `Set.member` knownIds
-      ]
+  where
+    sortedConcepts = List.sortOn (renderConceptId . conceptIdOf) concepts
+    knownIds = Set.fromList (conceptIdOf <$> concepts)
+    knownEdges =
+      Set.fromList
+        [ Edge {source = conceptIdOf concept, target}
+        | concept <- concepts,
+          target <- extractConceptLinks concept,
+          target `Set.member` knownIds
+        ]
 
 -- | Extract OKF concept links from a concept body.
 extractConceptLinks :: Concept -> [ConceptId]
 extractConceptLinks concept =
-  foldMap (resolveLink concept) (extractMarkdownLinks (body (document concept)))
+  foldMap (resolveLink concept) (extractMarkdownLinks (body (conceptDocument concept)))
 
 -- | Every @(source, target)@ pair where a document links to a @.md@ concept ID
 -- that is not present in the bundle. These are the edges 'buildGraph' silently
@@ -102,12 +103,12 @@ extractConceptLinks concept =
 danglingReferences :: [Concept] -> [(ConceptId, ConceptId)]
 danglingReferences concepts =
   [ (conceptIdOf concept, target)
-  | concept <- concepts
-  , target <- extractConceptLinks concept
-  , not (target `Set.member` knownIds)
+  | concept <- concepts,
+    target <- extractConceptLinks concept,
+    not (target `Set.member` knownIds)
   ]
- where
-  knownIds = Set.fromList (conceptIdOf <$> concepts)
+  where
+    knownIds = Set.fromList (conceptIdOf <$> concepts)
 
 -- | Concept IDs that appear more than once in a concept list. Always empty for
 -- a bundle read from disk (paths are unique) but possible for an in-memory
@@ -115,43 +116,43 @@ danglingReferences concepts =
 duplicateConceptIds :: [Concept] -> [ConceptId]
 duplicateConceptIds concepts =
   [ conceptId
-  | (conceptId, count) <- Map.toList counts
-  , count > (1 :: Int)
+  | (conceptId, count) <- Map.toList counts,
+    count > (1 :: Int)
   ]
- where
-  counts = Map.fromListWith (+) [(conceptIdOf concept, 1) | concept <- concepts]
+  where
+    counts = Map.fromListWith (+) [(conceptIdOf concept, 1) | concept <- concepts]
 
 conceptNode :: Concept -> Node
-conceptNode concept@Concept{type_ = conceptType, title = conceptTitle, description = conceptDescription, resource = conceptResource, tags = conceptTags} =
+conceptNode concept =
   Node
-    { id = conceptIdOf concept
-    , label = fromMaybe (renderConceptId (conceptIdOf concept)) conceptTitle
-    , type_ = conceptType
-    , description = conceptDescription
-    , resource = conceptResource
-    , tags = conceptTags
+    { id = conceptIdOf concept,
+      label = fromMaybe (renderConceptId (conceptIdOf concept)) (conceptTitle concept),
+      type_ = conceptType concept,
+      description = conceptDescription concept,
+      resource = conceptResource concept,
+      tags = conceptTags concept
     }
 
 extractMarkdownLinks :: Text -> [Text]
 extractMarkdownLinks markdown =
   walk (CMarkGFM.commonmarkToNode [] [] markdown)
- where
-  walk (CMarkGFM.Node _ nodeType childNodes) =
-    case nodeType of
-      CMarkGFM.LINK url _title -> [url]
-      _ -> foldMap walk childNodes
+  where
+    walk (CMarkGFM.Node _ nodeType childNodes) =
+      case nodeType of
+        CMarkGFM.LINK url _title -> [url]
+        _ -> foldMap walk childNodes
 
 resolveLink :: Concept -> Text -> [ConceptId]
 resolveLink concept rawUrl
   | isExternalUrl rawUrl = []
   | FilePath.takeExtension cleanPath /= ".md" = []
-  | otherwise = either (const []) pure (conceptIdFromFilePath bundleRelativePath)
- where
-  cleanPath = Text.unpack (stripUrlSuffix rawUrl)
-  sourceDirectory = FilePath.takeDirectory (conceptIdToFilePath (conceptIdOf concept))
-  bundleRelativePath
-    | "/" `Text.isPrefixOf` rawUrl = collapseBundlePath (dropWhile (== '/') cleanPath)
-    | otherwise = collapseBundlePath (sourceDirectory </> cleanPath)
+  | otherwise = maybe [] (either (const []) pure . conceptIdFromFilePath) bundleRelativePath
+  where
+    cleanPath = Text.unpack (stripUrlSuffix rawUrl)
+    sourceDirectory = FilePath.takeDirectory (conceptIdToFilePath (conceptIdOf concept))
+    bundleRelativePath
+      | "/" `Text.isPrefixOf` rawUrl = collapseBundlePath (dropWhile (== '/') cleanPath)
+      | otherwise = collapseBundlePath (sourceDirectory </> cleanPath)
 
 stripUrlSuffix :: Text -> Text
 stripUrlSuffix =
@@ -164,13 +165,12 @@ isExternalUrl rawUrl =
         || "https://" `Text.isPrefixOf` lower
         || "mailto:" `Text.isPrefixOf` lower
 
-collapseBundlePath :: FilePath -> FilePath
+collapseBundlePath :: FilePath -> Maybe FilePath
 collapseBundlePath =
-  FilePath.joinPath . foldl step [] . FilePath.splitDirectories
- where
-  step [] "." = []
-  step acc "." = acc
-  step [] ".." = [".."]
-  step [] segment = [segment]
-  step acc ".." = init acc
-  step acc segment = acc <> [segment]
+  fmap FilePath.joinPath . foldM step [] . FilePath.splitDirectories
+  where
+    step [] "." = Just []
+    step acc "." = Just acc
+    step [] ".." = Nothing
+    step acc ".." = Just (init acc)
+    step acc segment = Just (acc <> [segment])

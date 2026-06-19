@@ -1,54 +1,54 @@
 -- | Deterministic Markdown index rendering for OKF bundle directories.
 module Okf.Index
-  ( renderBundleIndexes
-  , renderIndex
-  , writeBundleIndexes
-  ) where
+  ( renderBundleIndexes,
+    renderIndex,
+    writeBundleIndexes,
+  )
+where
 
 import Data.List qualified as List
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text.IO
+import Okf.Bundle
+import Okf.Prelude
 import System.Directory
-  ( doesDirectoryExist
-  , listDirectory
+  ( doesDirectoryExist,
+    listDirectory,
   )
 import System.FilePath ((</>))
 import System.FilePath qualified as FilePath
-
-import Okf.Bundle
-import Okf.Prelude
 
 -- | Render an @index.md@ for one bundle directory from its immediate concepts
 -- and subdirectory names.
 renderIndex :: [FilePath] -> [Concept] -> Text
 renderIndex subdirectories concepts =
   Text.intercalate "\n" (filter (not . Text.null) [subdirectorySection, conceptSections]) <> "\n"
- where
-  sortedSubdirectories = List.sort subdirectories
-  subdirectorySection
-    | null sortedSubdirectories = ""
-    | otherwise =
-        Text.unlines
-          ( "# Subdirectories"
-              : ""
-              : (directoryBullet <$> sortedSubdirectories)
-          )
+  where
+    sortedSubdirectories = List.sort subdirectories
+    subdirectorySection
+      | null sortedSubdirectories = ""
+      | otherwise =
+          Text.unlines
+            ( "# Subdirectories"
+                : ""
+                : (directoryBullet <$> sortedSubdirectories)
+            )
 
-  groupedConcepts = Map.toAscList (foldr addConcept Map.empty concepts)
-  conceptSections =
-    Text.intercalate "\n" (sectionForType <$> groupedConcepts)
+    groupedConcepts = Map.toAscList (foldr addConcept Map.empty concepts)
+    conceptSections =
+      Text.intercalate "\n" (sectionForType <$> groupedConcepts)
 
 addConcept :: Concept -> Map.Map Text [Concept] -> Map.Map Text [Concept]
 addConcept concept =
-  Map.insertWith (<>) (type_ concept) [concept]
+  Map.insertWith (<>) (conceptType concept) [concept]
 
 sectionForType :: (Text, [Concept]) -> Text
-sectionForType (conceptType, concepts) =
+sectionForType (typeName, concepts) =
   Text.unlines
-    ( ("# " <> conceptType)
+    ( ("# " <> typeName)
         : ""
-        : (conceptBullet <$> List.sortOn sourcePath concepts)
+        : (conceptBullet <$> List.sortOn conceptSourcePath concepts)
     )
 
 directoryBullet :: FilePath -> Text
@@ -58,11 +58,11 @@ directoryBullet directory =
 conceptBullet :: Concept -> Text
 conceptBullet concept =
   "- ["
-    <> fromMaybe (Text.pack (FilePath.dropExtension (FilePath.takeFileName (sourcePath concept)))) (title concept)
+    <> fromMaybe (Text.pack (FilePath.dropExtension (FilePath.takeFileName (conceptSourcePath concept)))) (conceptTitle concept)
     <> "]("
-    <> Text.pack (FilePath.takeFileName (sourcePath concept))
+    <> Text.pack (FilePath.takeFileName (conceptSourcePath concept))
     <> ")"
-    <> maybe "" (" - " <>) (description concept)
+    <> maybe "" (" - " <>) (conceptDescription concept)
 
 -- | Write deterministic @index.md@ files for every directory in a bundle.
 writeBundleIndexes :: FilePath -> IO (Either BundleError ())
@@ -88,7 +88,7 @@ renderBundleIndexes root = do
 indexDirectories :: FilePath -> [Concept] -> IO [FilePath]
 indexDirectories root concepts = do
   discovered <- discoverDirectories root ""
-  let conceptDirectories = List.nub (FilePath.takeDirectory . sourcePath <$> concepts)
+  let conceptDirectories = List.nub (FilePath.takeDirectory . conceptSourcePath <$> concepts)
   pure (List.sort (List.nub ("" : discovered <> conceptDirectories)))
 
 discoverDirectories :: FilePath -> FilePath -> IO [FilePath]
@@ -111,7 +111,7 @@ renderDirectoryIndex root concepts relativeDir = do
   subdirectories <- immediateSubdirectories root relativeDir
   let immediateConcepts =
         List.filter
-          (\concept -> FilePath.normalise (FilePath.takeDirectory (sourcePath concept)) == FilePath.normalise relativeDir)
+          (\concept -> FilePath.normalise (FilePath.takeDirectory (conceptSourcePath concept)) == FilePath.normalise relativeDir)
           concepts
       indexPath = relativeDir </> "index.md"
   pure (FilePath.normalise indexPath, renderIndex subdirectories immediateConcepts)

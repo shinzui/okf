@@ -1,15 +1,16 @@
 -- | OKF document validation profiles and errors.
 module Okf.Validation
-  ( ValidationError (..)
-  , ValidationProfile (..)
-  , validateDocument
-  , BundleValidationError (..)
-  , validateBundle
-  ) where
+  ( ValidationError (..),
+    ValidationProfile (..),
+    validateDocument,
+    BundleValidationError (..),
+    validateBundle,
+  )
+where
 
 import Data.Text qualified as Text
-
-import Okf.Bundle (Concept, conceptIdOf, document)
+import Data.Vector qualified as Vector
+import Okf.Bundle (Concept, conceptDocument, conceptIdOf)
 import Okf.ConceptId (ConceptId)
 import Okf.Document
 import Okf.Graph (danglingReferences, duplicateConceptIds)
@@ -26,6 +27,7 @@ data ValidationError
   = MissingRequiredField Text
   | FieldMustBeNonEmptyText Text
   | MissingRecommendedField Text
+  | FieldMustBeListOfText Text
   deriving stock (Generic, Eq, Show)
 
 -- | A whole-bundle validation problem.
@@ -44,29 +46,42 @@ data BundleValidationError
 validateBundle :: ValidationProfile -> [Concept] -> [BundleValidationError]
 validateBundle profile concepts =
   perDocument <> dangling <> duplicates
- where
-  perDocument =
-    [ DocumentInvalid (conceptIdOf concept) err
-    | concept <- concepts
-    , err <- validateDocument profile (document concept)
-    ]
-  dangling = uncurry DanglingReference <$> danglingReferences concepts
-  duplicates = DuplicateConceptId <$> duplicateConceptIds concepts
+  where
+    perDocument =
+      [ DocumentInvalid (conceptIdOf concept) err
+      | concept <- concepts,
+        err <- validateDocument profile (conceptDocument concept)
+      ]
+    dangling = uncurry DanglingReference <$> danglingReferences concepts
+    duplicates = DuplicateConceptId <$> duplicateConceptIds concepts
 
 -- | Validate a parsed document under the requested profile.
 validateDocument :: ValidationProfile -> OKFDocument -> [ValidationError]
 validateDocument profile document =
   requireNonEmptyText MissingRequiredField "type" document
+    <> optionalListOfText "tags" document
     <> case profile of
       PermissiveConformance -> []
       StrictAuthoring ->
         foldMap (requireNonEmptyText MissingRecommendedField `flip` document) ["title", "description", "timestamp"]
 
 requireNonEmptyText :: (Text -> ValidationError) -> Text -> OKFDocument -> [ValidationError]
-requireNonEmptyText missing key OKFDocument{frontmatter} =
+requireNonEmptyText missing key OKFDocument {frontmatter} =
   case frontmatterLookup key frontmatter of
     Nothing -> [missing key]
     Just (String value)
       | Text.null (Text.strip value) -> [FieldMustBeNonEmptyText key]
       | otherwise -> []
     Just _ -> [FieldMustBeNonEmptyText key]
+
+optionalListOfText :: Text -> OKFDocument -> [ValidationError]
+optionalListOfText key OKFDocument {frontmatter} =
+  case frontmatterLookup key frontmatter of
+    Nothing -> []
+    Just (Array values)
+      | Vector.all isString values -> []
+      | otherwise -> [FieldMustBeListOfText key]
+    Just _ -> [FieldMustBeListOfText key]
+  where
+    isString (String _) = True
+    isString _ = False

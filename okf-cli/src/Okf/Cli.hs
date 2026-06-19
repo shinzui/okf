@@ -1,25 +1,22 @@
 -- | Top-level CLI entry point for okf.
 module Okf.Cli
-  ( Command (..)
-  , GraphOptions (..)
-  , IndexOptions (..)
-  , Options (..)
-  , ShowOptions (..)
-  , ValidateOptions (..)
-  , parserInfo
-  , runCli
-  , runCommand
-  ) where
+  ( Command (..),
+    GraphOptions (..),
+    IndexOptions (..),
+    Options (..),
+    ShowOptions (..),
+    ValidateOptions (..),
+    parserInfo,
+    runCli,
+    runCommand,
+  )
+where
 
 import Data.Aeson qualified as Aeson
 import Data.ByteString.Lazy.Char8 qualified as LazyByteString
 import Data.Foldable (traverse_)
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text.IO
-import Options.Applicative
-import System.Exit (exitFailure)
-import System.IO (stderr)
-
 import Okf.Bundle
 import Okf.ConceptId
 import Okf.Document (DocumentParseError (..), body)
@@ -27,6 +24,9 @@ import Okf.Graph (buildGraph)
 import Okf.Index
 import Okf.Prelude
 import Okf.Validation
+import Options.Applicative
+import System.Exit (exitFailure)
+import System.IO (stderr)
 
 data Command
   = Validate ValidateOptions
@@ -36,26 +36,26 @@ data Command
   deriving stock (Show, Eq)
 
 data ValidateOptions = ValidateOptions
-  { bundlePath :: !FilePath
-  , strictMode :: !Bool
+  { bundlePath :: !FilePath,
+    strictMode :: !Bool
   }
   deriving stock (Show, Eq)
 
 data IndexOptions = IndexOptions
-  { bundlePath :: !FilePath
-  , write :: !Bool
+  { bundlePath :: !FilePath,
+    write :: !Bool
   }
   deriving stock (Show, Eq)
 
 data GraphOptions = GraphOptions
-  { bundlePath :: !FilePath
-  , json :: !Bool
+  { bundlePath :: !FilePath,
+    json :: !Bool
   }
   deriving stock (Show, Eq)
 
 data ShowOptions = ShowOptions
-  { bundlePath :: !FilePath
-  , conceptIdText :: !Text
+  { bundlePath :: !FilePath,
+    conceptIdText :: !Text
   }
   deriving stock (Show, Eq)
 
@@ -66,7 +66,7 @@ data Options = Options
 
 runCli :: IO ()
 runCli = do
-  Options{cmd} <- execParser parserInfo
+  Options {cmd} <- execParser parserInfo
   runCommand cmd
 
 parserInfo :: ParserInfo Options
@@ -126,7 +126,7 @@ runCommand = \case
   ShowConcept options -> runShow options
 
 runValidate :: ValidateOptions -> IO ()
-runValidate ValidateOptions{bundlePath, strictMode} = do
+runValidate ValidateOptions {bundlePath, strictMode} = do
   concepts <- loadBundleOrExit bundlePath
   let profile = if strictMode then StrictAuthoring else PermissiveConformance
   case validateBundle profile concepts of
@@ -136,7 +136,7 @@ runValidate ValidateOptions{bundlePath, strictMode} = do
       exitFailure
 
 runIndex :: IndexOptions -> IO ()
-runIndex IndexOptions{bundlePath, write} =
+runIndex IndexOptions {bundlePath, write} =
   if write
     then do
       result <- writeBundleIndexes bundlePath
@@ -148,12 +148,12 @@ runIndex IndexOptions{bundlePath, write} =
       mapM_ renderIndexPreview indexes
 
 runGraph :: GraphOptions -> IO ()
-runGraph GraphOptions{bundlePath} = do
+runGraph GraphOptions {bundlePath} = do
   concepts <- loadBundleOrExit bundlePath
   LazyByteString.putStrLn (Aeson.encode (buildGraph concepts))
 
 runShow :: ShowOptions -> IO ()
-runShow ShowOptions{bundlePath, conceptIdText} = do
+runShow ShowOptions {bundlePath, conceptIdText} = do
   conceptId <- either (dieText . renderConceptIdError conceptIdText) pure (parseConceptId conceptIdText)
   concepts <- loadBundleOrExit bundlePath
   case findConcept conceptId concepts of
@@ -188,6 +188,7 @@ renderValidationErrorText = \case
   MissingRequiredField fieldName -> "missing required field: " <> fieldName
   FieldMustBeNonEmptyText fieldName -> "field must be non-empty text: " <> fieldName
   MissingRecommendedField fieldName -> "missing recommended field: " <> fieldName
+  FieldMustBeListOfText fieldName -> "field must be a list of text values: " <> fieldName
 
 renderIndexPreview :: (FilePath, Text) -> IO ()
 renderIndexPreview (path, content) = do
@@ -195,24 +196,25 @@ renderIndexPreview (path, content) = do
   Text.IO.putStr content
 
 renderConcept :: Concept -> IO ()
-renderConcept concept@Concept{type_ = conceptType, title = conceptTitle, description = conceptDescription, resource = conceptResource, tags = conceptTags} = do
+renderConcept concept = do
   Text.IO.putStrLn ("id: " <> renderConceptId (conceptIdOf concept))
-  Text.IO.putStrLn ("type: " <> conceptType)
-  traverse_ (Text.IO.putStrLn . ("title: " <>)) conceptTitle
-  traverse_ (Text.IO.putStrLn . ("description: " <>)) conceptDescription
-  traverse_ (Text.IO.putStrLn . ("resource: " <>)) conceptResource
-  unless (null conceptTags) (Text.IO.putStrLn ("tags: " <> Text.intercalate ", " conceptTags))
+  Text.IO.putStrLn ("type: " <> conceptType concept)
+  traverse_ (Text.IO.putStrLn . ("title: " <>)) (conceptTitle concept)
+  traverse_ (Text.IO.putStrLn . ("description: " <>)) (conceptDescription concept)
+  traverse_ (Text.IO.putStrLn . ("resource: " <>)) (conceptResource concept)
+  unless (null (conceptTags concept)) (Text.IO.putStrLn ("tags: " <> Text.intercalate ", " (conceptTags concept)))
   Text.IO.putStrLn ""
   Text.IO.putStr (bodyText concept)
 
 bodyText :: Concept -> Text
-bodyText Concept{document} =
-  body document
+bodyText concept =
+  body (conceptDocument concept)
 
 renderBundleError :: BundleError -> Text
 renderBundleError = \case
   InvalidConceptPath path error_ -> Text.pack path <> ": " <> renderConceptIdParseError error_
   InvalidConceptDocument path error_ -> Text.pack path <> ": " <> renderDocumentParseError error_
+  BundleIoError path message -> Text.pack path <> ": " <> message
 
 renderConceptIdError :: Text -> ConceptIdError -> Text
 renderConceptIdError rawId error_ =
