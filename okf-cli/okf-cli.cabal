@@ -1,32 +1,29 @@
-cabal-version: 3.4
-name: okf-cli
-version: 0.1.0.0
-synopsis: Command-line interface for okf
+cabal-version:   3.4
+name:            okf-cli
+version:         0.1.0.0
+synopsis:        Command-line interface for Open Knowledge Format bundles
 description:
-  Core library and CLI for Open Knowledge Format bundles
+  okf-cli provides the @okf@ executable for working with Open Knowledge Format
+  (OKF) bundles: validating bundles, inspecting their concept graph, and
+  authoring documents from the command line, built on the okf-core library.
 
-license: BSD-3-Clause
-license-file: ../LICENSE
-author: Nadeem Bitar
-maintainer: nadeem@gmail.com
-copyright: (c) 2026 Nadeem Bitar
-build-type: Simple
-extra-doc-files: ../CHANGELOG.md
+category:        Data, CLI
+license:         BSD-3-Clause
+license-file:    LICENSE
+author:          Nadeem Bitar
+maintainer:      nadeem@gmail.com
+copyright:       (c) 2026 Nadeem Bitar
+build-type:      Simple
+extra-doc-files: CHANGELOG.md
 
 common common-options
   ghc-options:
-    -Wall
-    -Wcompat
-    -Widentities
-    -Wincomplete-uni-patterns
-    -Wincomplete-record-updates
-    -Wredundant-constraints
-    -fhide-source-paths
-    -Wmissing-export-lists
-    -Wpartial-fields
+    -Wall -Wcompat -Widentities -Wincomplete-uni-patterns
+    -Wincomplete-record-updates -Wredundant-constraints
+    -fhide-source-paths -Wmissing-export-lists -Wpartial-fields
     -Wmissing-deriving-strategies
 
-  default-language: GHC2024
+  default-language:   GHC2024
   default-extensions:
     DeriveAnyClass
     DuplicateRecordFields
@@ -34,42 +31,35 @@ common common-options
     OverloadedStrings
 
 library
-  import: common-options
-  hs-source-dirs: src
-  exposed-modules:
-    Okf.Cli
-
+  import:          common-options
+  hs-source-dirs:  src
+  exposed-modules: Okf.Cli
   build-depends:
-    aeson,
-    base >=4.20 && <5,
-    bytestring,
-    okf-core,
-    generic-lens,
-    lens ^>=5.3,
-    optparse-applicative >=0.18,
-    text ^>=2.1,
+    , aeson                 >=2.2      && <2.4
+    , base                  >=4.20     && <5
+    , bytestring            >=0.11     && <0.13
+    , generic-lens          >=2.2      && <2.4
+    , lens                  ^>=5.3
+    , okf-core              ^>=0.1.0.0
+    , optparse-applicative  >=0.18     && <0.20
+    , text                  ^>=2.1
 
 test-suite okf-cli-test
-  import: common-options
-  type: exitcode-stdio-1.0
-  main-is: Main.hs
+  import:         common-options
+  type:           exitcode-stdio-1.0
+  main-is:        Main.hs
   hs-source-dirs: test
-
   build-depends:
-    base >=4.20 && <5,
-    okf-cli,
-    optparse-applicative >=0.18,
-    text ^>=2.1,
+    , base                  >=4.20 && <5
+    , okf-cli
+    , optparse-applicative  >=0.18
+    , text                  ^>=2.1
 
 executable okf
-  import: common-options
-  main-is: Main.hs
+  import:         common-options
+  main-is:        Main.hs
   hs-source-dirs: app
-  ghc-options:
-    -threaded
-    -rtsopts
-    -with-rtsopts=-N
-
+  ghc-options:    -threaded -rtsopts -with-rtsopts=-N
   build-depends:
-    base >=4.20 && <5,
-    okf-cli,
+    , base     >=4.20 && <5
+    , okf-cli
