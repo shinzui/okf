@@ -26,10 +26,26 @@
       # `okf` executable, depends on okf-core). There is no root .cabal file, so
       # callCabal2nix is pointed at each package directory and okf-cli is given
       # okf-core as its inter-package dependency.
+      # 7-char git SHA of this flake's source. Absent on a dirty tree, where we
+      # fall back to "dirty"; the okf binary's --version then prints
+      # "okf v0.1.0.0 (dirty)".
+      gitRev = inputs.self.shortRev or "dirty";
+
       okf-core = haskellPackages.callCabal2nix "okf-core" (inputs.self + "/okf-core") { };
-      okf-cli = haskellPackages.callCabal2nix "okf-cli" (inputs.self + "/okf-cli") {
-        inherit okf-core;
-      };
+
+      # nix build strips .git/, so the Template Haskell hash read in
+      # Okf.Cli.Version returns Left. We inject the SHA as the CPP macro GIT_HASH
+      # at configure time so the module's #ifdef GIT_HASH fallback supplies it.
+      # The escaped quotes make GIT_HASH expand to a Haskell string literal.
+      okf-cli = pkgs.haskell.lib.compose.overrideCabal
+        (drv: {
+          configureFlags = (drv.configureFlags or [ ]) ++ [
+            "--ghc-option=-DGIT_HASH=\"${builtins.substring 0 7 gitRev}\""
+          ];
+        })
+        (haskellPackages.callCabal2nix "okf-cli" (inputs.self + "/okf-cli") {
+          inherit okf-core;
+        });
 
       baseDevPackages = [
         pkgs.zlib
