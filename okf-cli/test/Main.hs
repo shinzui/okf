@@ -13,6 +13,10 @@ main = do
           parseSucceeds ["index", "bundle", "--write"],
           parseSucceeds ["graph", "bundle", "--json"],
           parseSucceeds ["show", "bundle", "tables/orders"],
+          parseSucceeds ["completions", "bash"],
+          parseSucceeds ["completions", "zsh"],
+          parseSucceeds ["completions", "fish"],
+          parseFails ["completions", "elvish"],
           parseShowsInfo ["--version"],
           parseFails ["hello"]
         ]

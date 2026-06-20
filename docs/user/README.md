@@ -42,3 +42,20 @@ OK: 4 concepts
 4. Run `okf index <bundle> --write` to update indexes.
 5. Run `okf graph <bundle> --json` to produce graph data for tools.
 6. Run `okf show <bundle> <concept-id>` to inspect one concept.
+
+## Shell Completion
+
+`okf` can generate Tab-completion scripts for Bash, Zsh, and Fish. The scripts
+delegate to the `okf` binary at completion time, so they always match the current
+set of subcommands and flags — no regeneration is needed when okf gains new
+commands. Install the script for your shell:
+
+```bash
+okf completions bash > ~/.local/share/bash-completion/completions/okf
+okf completions zsh  > ~/.zfunc/_okf    # a directory on your $fpath
+okf completions fish > ~/.config/fish/completions/okf.fish
+```
+
+Restart your shell (or source the script) and press Tab while typing an `okf`
+command. Zsh and Fish additionally show a short description next to each
+subcommand.

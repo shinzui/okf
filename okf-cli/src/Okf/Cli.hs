@@ -18,6 +18,7 @@ import Data.Foldable (traverse_)
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text.IO
 import Okf.Bundle
+import Okf.Cli.Completions (CompletionsShell, completionsParser, handleCompletions)
 import Okf.Cli.Version (appVersionWithGit)
 import Okf.ConceptId
 import Okf.Document (DocumentParseError (..), body)
@@ -34,6 +35,7 @@ data Command
   | Index IndexOptions
   | GraphCommand GraphOptions
   | ShowConcept ShowOptions
+  | Completions CompletionsShell
   deriving stock (Show, Eq)
 
 data ValidateOptions = ValidateOptions
@@ -95,6 +97,7 @@ commandParser =
         <> command "index" (info (Index <$> indexOptionsParser <**> helper) (progDesc "Preview or write generated index.md files"))
         <> command "graph" (info (GraphCommand <$> graphOptionsParser <**> helper) (progDesc "Print a bundle graph"))
         <> command "show" (info (ShowConcept <$> showOptionsParser <**> helper) (progDesc "Show one concept"))
+        <> command "completions" (info (Completions <$> completionsParser <**> helper) (progDesc "Generate a shell completion script (bash, zsh, fish)"))
     )
 
 validateOptionsParser :: Parser ValidateOptions
@@ -131,6 +134,7 @@ runCommand = \case
   Index options -> runIndex options
   GraphCommand options -> runGraph options
   ShowConcept options -> runShow options
+  Completions shell -> handleCompletions shell
 
 runValidate :: ValidateOptions -> IO ()
 runValidate ValidateOptions {bundlePath, strictMode} = do
