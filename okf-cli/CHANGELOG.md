@@ -7,6 +7,13 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- `okf --version` flag, printing the package version plus the short git commit
+  hash the binary was built from, e.g. `okf v0.1.0.0 (445fd16)`. The hash is read
+  from `.git/` at compile time under `cabal build` and injected by Nix (CPP
+  `GIT_HASH` macro) under `nix build`; a dirty tree reports `(dirty)`.
+
 ## [0.1.0.0] - 2026-06-19
 
 Initial release.

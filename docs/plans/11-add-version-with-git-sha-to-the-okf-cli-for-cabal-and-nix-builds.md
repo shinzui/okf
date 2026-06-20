@@ -63,13 +63,16 @@ This section must always reflect the actual current state of the work.
       `okf v0.1.0.0 (1251dbf)`, matches `git rev-parse --short=7 HEAD`.)
 - [x] Milestone 1: Add a parser-level test for `--version` to `okf-cli/test/Main.hs`
       and confirm `cabal test` passes. (2026-06-20: `1 of 1 test suites ... passed`.)
-- [ ] Milestone 2: Edit `nix/haskell.nix` to capture the flake git revision and inject
+- [x] Milestone 2: Edit `nix/haskell.nix` to capture the flake git revision and inject
       it into the `okf-cli` build via a `-DGIT_HASH=...` GHC option, then confirm
       `nix build .#okf-cli` produces a binary whose `--version` shows the hash.
-- [ ] Milestone 2: Confirm `nix run .#okf -- --version` (or the built binary) prints the
-      correct hash and that a dirty tree falls back to `okf v0.1.0.0 (dirty)`.
-- [ ] Final: update CHANGELOG, run the full validation suite, fill in Outcomes &
-      Retrospective.
+      (2026-06-20: `./result/bin/okf --version` → `okf v0.1.0.0 (445fd16)`, matching
+      the built commit.)
+- [x] Milestone 2: Confirm the built binary prints the correct hash and that a dirty
+      tree falls back to `okf v0.1.0.0 (dirty)`. (2026-06-20: editing a tracked file
+      then `nix build .#okf-cli` → `okf v0.1.0.0 (dirty)`.)
+- [x] Final: update CHANGELOG, run the full validation suite, fill in Outcomes &
+      Retrospective. (2026-06-20.)
 
 
 ## Surprises & Discoveries
@@ -77,7 +80,26 @@ This section must always reflect the actual current state of the work.
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+- An **untracked** file does not make the flake "dirty". The plan's first attempt
+  to observe the `(dirty)` fallback used `touch okf-cli/README-scratch.md` (an
+  untracked file). Nix flakes derive `self.shortRev` only from git-**tracked**
+  content, so `shortRev` stayed resolved and the build was even cache-reused:
+
+  ```text
+  $ touch okf-cli/README-scratch.md && nix build .#okf-cli && ./result/bin/okf --version
+  okf v0.1.0.0 (445fd16)        # still the committed hash, not (dirty)
+  ```
+
+  Editing a **tracked** file is required to dirty the tree and exercise the
+  fallback:
+
+  ```text
+  $ printf '\n<!-- scratch -->\n' >> okf-cli/CHANGELOG.md && nix build .#okf-cli && ./result/bin/okf --version
+  okf v0.1.0.0 (dirty)
+  ```
+
+  The Validation/Concrete-Steps guidance to use `touch` for the dirty check was
+  therefore corrected to "edit a tracked file" below.
 
 
 ## Decision Log
@@ -121,7 +143,32 @@ Record every decision made while working on the plan.
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
 Compare the result against the original purpose.
 
-(To be filled during and after implementation.)
+Both milestones are complete and the original purpose is met: the `okf` CLI now
+reports its version with the build's short git SHA under both build paths.
+
+- `cabal run okf -- --version` → `okf v0.1.0.0 (1251dbf)` (Milestone-1 commit's
+  parent at authoring time; matches `git rev-parse --short=7 HEAD`).
+- `nix build .#okf-cli && ./result/bin/okf --version` → `okf v0.1.0.0 (445fd16)`
+  (matches the committed revision Nix built from).
+- Dirty tree under Nix → `okf v0.1.0.0 (dirty)`.
+- `okf --help` lists `--version`; `cabal test okf-cli` passes including the new
+  `parseShowsInfo ["--version"]` case.
+
+What was delivered: the `Okf.Cli.Version` library module (TH read + CPP
+`GIT_HASH` fallback), the `--version` `infoOption` wired into `parserInfo`, a
+parser test, the `githash ^>=0.1` dependency, and the `overrideCabal` SHA
+injection in `nix/haskell.nix`. The `okf-core` derivation was intentionally left
+unwrapped — only `okf-cli` carries the version module.
+
+Lessons learned: (1) untracked files do not dirty a Nix flake's `self.shortRev`,
+so dirty-fallback verification must edit a tracked file (see Surprises). (2) The
+seihou-managed `nix/haskell.nix` was the only non-circular home for the override,
+since `packages.okf-cli` is defined exactly once there; re-apply the `gitRev` +
+`overrideCabal` block if a future seihou migration conflicts.
+
+Gaps / future work: none required for this scope. If the package version in
+`okf-cli.cabal` is bumped, the `--version` string updates automatically via
+`Paths_okf_cli`; the CHANGELOG example hash is illustrative only.
 
 
 ## Context and Orientation
@@ -586,10 +633,12 @@ okf v0.1.0.0 (<your-commit-sha>)
 
 Equivalently, `nix run .#okf -- --version` prints the same line.
 
-To observe the dirty-tree fallback, make any uncommitted edit (e.g. `touch
-okf-cli/README-scratch.md`) and re-run `nix build .#okf-cli && ./result/bin/okf
---version`; it should print `okf v0.1.0.0 (dirty)`. Remove the scratch file
-afterward.
+To observe the dirty-tree fallback, make an uncommitted edit **to a git-tracked
+file** (an untracked new file does not dirty a flake — see Surprises &
+Discoveries), for example `printf '\n<!-- scratch -->\n' >> okf-cli/CHANGELOG.md`,
+then re-run `nix build .#okf-cli && ./result/bin/okf --version`; it prints
+`okf v0.1.0.0 (dirty)`. Revert the edit afterward (`git checkout --
+okf-cli/CHANGELOG.md`).
 
 
 ## Validation and Acceptance
