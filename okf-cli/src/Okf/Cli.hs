@@ -18,6 +18,7 @@ import Data.Foldable (traverse_)
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text.IO
 import Okf.Bundle
+import Okf.Cli.Version (appVersionWithGit)
 import Okf.ConceptId
 import Okf.Document (DocumentParseError (..), body)
 import Okf.Graph (buildGraph)
@@ -72,11 +73,17 @@ runCli = do
 parserInfo :: ParserInfo Options
 parserInfo =
   info
-    (optionsParser <**> helper)
+    (optionsParser <**> helper <**> versionOption)
     ( fullDesc
         <> progDesc "Validate, index, inspect, and graph Open Knowledge Format bundles"
         <> header "okf - Open Knowledge Format bundle tools"
     )
+
+versionOption :: Parser (a -> a)
+versionOption =
+  infoOption
+    (Text.unpack appVersionWithGit)
+    (long "version" <> help "Show version information and exit")
 
 optionsParser :: Parser Options
 optionsParser = Options <$> commandParser
