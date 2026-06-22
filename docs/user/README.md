@@ -26,6 +26,14 @@ OK: 4 concepts
 ```
 
 
+## In-Terminal Help
+
+`okf` ships conceptual help guides baked into the binary. Run `okf help` to list
+the topics and `okf help <topic>` to read one — for example `okf help okf`
+explains what the Open Knowledge Format is. No network or docs checkout is
+needed. See the [CLI Reference](cli.md#help) for details.
+
+
 ## Documentation
 
 - [CLI Reference](cli.md): command syntax, options, output, and exit behavior.

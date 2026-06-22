@@ -9,6 +9,10 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- `okf help` command with embedded conceptual topic guides (`okf`, `format`,
+  `validation`, `profiles`), including a guide explaining what the Open Knowledge
+  Format is. The guides are plain text baked into the binary at compile time, so
+  `okf help <topic>` works with no network or docs checkout.
 - Profile-based validation: `okf validate --profile <descriptor>.dhall` checks a
   bundle against a team's house conventions (allowed `type` strings, required
   frontmatter keys, `resource:` schemes, file layout, and `# Schema` columns)

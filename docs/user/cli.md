@@ -20,6 +20,23 @@ show
 ```
 
 
+## help
+
+Print conceptual help topics directly in the terminal. These are short,
+plain-text guides baked into the `okf` binary, so they work with no network and
+no docs checkout.
+
+```bash
+cabal run okf -- help          # list the available topics
+cabal run okf -- help okf      # what the Open Knowledge Format is
+cabal run okf -- help format   # bundle layout, concept IDs, frontmatter, links
+```
+
+Available topics: `okf`, `format`, `validation`, `profiles`. Topic lookup is
+case-insensitive. An unknown topic name prints the list of valid topics, and the
+command still succeeds (exit 0).
+
+
 ## validate
 
 Validate every concept document in a bundle.

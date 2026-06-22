@@ -1,7 +1,9 @@
 module Main (main) where
 
 import Control.Monad (unless)
+import Data.Text qualified as Text
 import Okf.Cli
+import Okf.Cli.Help (HelpTopic (..), helpTopics)
 import Options.Applicative
 import System.Exit (exitFailure)
 
@@ -35,6 +37,11 @@ main = do
           parseSucceeds ["completions", "zsh"],
           parseSucceeds ["completions", "fish"],
           parseFails ["completions", "elvish"],
+          parseSucceeds ["help"],
+          parseSucceeds ["help", "okf"],
+          parseSucceeds ["help", "format"],
+          any ((== "okf") . topicName) helpTopics,
+          all (not . Text.null . topicContent) helpTopics,
           parseShowsInfo ["--version"],
           parseFails ["hello"]
         ]
