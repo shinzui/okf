@@ -148,7 +148,7 @@ Milestone 6 — Publish the canonical profile schema in okf + drift guard: **DON
       nothing from `okf-profiles` (one-way dependency).
 - [x] `cabal test okf-core-test` green (42 cases); `dhall type --file okf-core/dhall/package.dhall` succeeds.
 
-Milestone 7 — Make `okf-profiles` evolvable and consume okf's schema: **IN PROGRESS**
+Milestone 7 — Make `okf-profiles` evolvable and consume okf's schema: **DONE**
 (work lands in the separate `okf-profiles` repo)
 
 - [x] Restructure each schema file in `okf-profiles` to the Dhall record-completion
@@ -161,11 +161,15 @@ Milestone 7 — Make `okf-profiles` evolvable and consume okf's schema: **IN PRO
       consumer source from field additions, but the normalized value still decodes
       against okf-core's exact record, so adding a field is a coordinated
       okf-core + okf-profiles + tag-bump change ("Schema evolution" section).
-- [ ] **After okf is pushed/tagged:** switch `okf-profiles` schema files to import
-      okf's canonical `okf-core/dhall/Profile.dhall` by pinned URL (`dhall freeze`),
-      delete the local schema copy, re-type-check, and re-run the end-to-end
-      `okf validate --profile` proof. **Blocked on pushing okf to GitHub** (an
-      outward-facing step left to the user).
+- [x] Switch `okf-profiles` schema files to import okf's canonical schema by pinned
+      URL. okf was pushed (master `b0e9f92`, public); `okf-profiles/Profile/okf.dhall`
+      now imports `…/okf/b0e9f92/okf-core/dhall/package.dhall` frozen at
+      `sha256:feb5d6…` (single URL+hash for the repo), and the sibling schema files
+      keep only local `default` records. Re-type-checked; `okf validate --profile`
+      against the remote-schema profile still passes the sample and flags the
+      deviation fixture. Tagged `okf-profiles` `v0.1.0` and pushed; the README's
+      consumer import (`…/okf-profiles/v0.1.0/package.dhall sha256:04a684…`) was
+      verified to resolve from a clean Dhall cache.
 
 
 ## Surprises & Discoveries
@@ -371,6 +375,18 @@ This matches the Validation and Acceptance transcript line-for-line.
 **Gaps:** `frontmatter.recommended` is decoded and documented but not yet enforced
 as a distinct advisory (the plan scoped only `required`); this is intentional and
 noted in `docs/user/profiles.md`.
+
+**Follow-on phase outcome (Milestones 6–7).** okf now publishes the canonical
+profile schema as Dhall under `okf-core/dhall/`, guarded against drift from the
+Haskell decoder by the schema-annotated fixture round-trip. The external
+`okf-profiles` repo (public, `github.com/shinzui/okf-profiles`, tagged `v0.1.0`)
+imports that schema by a single pinned URL (`Profile/okf.dhall`, frozen at
+`sha256:feb5d6…`) and exposes profiles through Dhall record completion so the schema
+can grow without breaking pinned consumers. The dependency is strictly one-way
+(okf-profiles → okf); okf imports nothing remote and builds offline. A clean-cache
+import of `okf-profiles` `v0.1.0` was verified to resolve, so downstream projects
+can `--profile` against a pinned URL today. The only remaining optional step is
+registering `okf-profiles` in mori for discoverability.
 
 
 ## Context and Orientation
