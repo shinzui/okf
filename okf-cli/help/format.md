@@ -25,7 +25,7 @@ CONCEPT IDS
 FRONTMATTER FIELDS
 
   type          REQUIRED. Short string naming the kind of concept, e.g.
-                "BigQuery Table", "Metric", "Playbook". Not registered
+                "PostgreSQL Table", "Metric", "Playbook". Not registered
                 centrally; consumers tolerate unknown types.
   title         Recommended. Human-readable display name.
   description   Recommended. One-sentence summary used in indexes and graphs.

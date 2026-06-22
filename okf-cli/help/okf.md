@@ -34,7 +34,7 @@ CORE IDEAS
   (free-form knowledge). Only the frontmatter "type" field is required:
 
     ---
-    type: BigQuery Table
+    type: PostgreSQL Table
     title: Orders
     description: One row per completed customer order.
     ---
@@ -54,7 +54,7 @@ WHAT THE okf TOOL DOES
 STANDALONE BY DESIGN
 
   The okf CLI works on plain files only. It does not require Mori, Mina, an
-  LLM, BigQuery, or network access. It tracks Google's Open Knowledge Format
+  LLM, PostgreSQL, or network access. It tracks Google's Open Knowledge Format
   v0.1 specification (the knowledge-catalog okf SPEC.md).
 
 SEE ALSO
