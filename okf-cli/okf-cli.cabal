@@ -36,6 +36,7 @@ library
   exposed-modules:
     Okf.Cli
     Okf.Cli.Completions
+    Okf.Cli.Help
     Okf.Cli.Version
 
   other-modules:   Paths_okf_cli
@@ -44,6 +45,7 @@ library
     , aeson                 >=2.2      && <2.4
     , base                  >=4.20     && <5
     , bytestring            >=0.11     && <0.13
+    , file-embed            >=0.0.15   && <0.1
     , generic-lens          >=2.2      && <2.4
     , githash               ^>=0.1
     , lens                  ^>=5.3

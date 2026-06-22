@@ -19,6 +19,7 @@ import Data.Text qualified as Text
 import Data.Text.IO qualified as Text.IO
 import Okf.Bundle
 import Okf.Cli.Completions (CompletionsShell, completionsParser, handleCompletions)
+import Okf.Cli.Help (HelpCommand, handleHelpCommand, helpCommandParser)
 import Okf.Cli.Version (appVersionWithGit)
 import Okf.ConceptId
 import Okf.Document (DocumentParseError (..), body)
@@ -37,6 +38,7 @@ data Command
   | GraphCommand GraphOptions
   | ShowConcept ShowOptions
   | Completions CompletionsShell
+  | Help HelpCommand
   deriving stock (Show, Eq)
 
 data ValidateOptions = ValidateOptions
@@ -101,6 +103,7 @@ commandParser =
         <> command "graph" (info (GraphCommand <$> graphOptionsParser <**> helper) (progDesc "Print a bundle graph"))
         <> command "show" (info (ShowConcept <$> showOptionsParser <**> helper) (progDesc "Show one concept"))
         <> command "completions" (info (Completions <$> completionsParser <**> helper) (progDesc "Generate a shell completion script (bash, zsh, fish)"))
+        <> command "help" (info (Help <$> helpCommandParser <**> helper) (progDesc "Show conceptual help topics"))
     )
 
 validateOptionsParser :: Parser ValidateOptions
@@ -146,6 +149,7 @@ runCommand = \case
   GraphCommand options -> runGraph options
   ShowConcept options -> runShow options
   Completions shell -> handleCompletions shell
+  Help helpCommand -> handleHelpCommand helpCommand
 
 runValidate :: ValidateOptions -> IO ()
 runValidate ValidateOptions {bundlePath, strictMode, profilePath, profileEnforce} = do
