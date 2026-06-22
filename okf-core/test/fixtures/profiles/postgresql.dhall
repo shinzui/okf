@@ -1,10 +1,7 @@
-let TypeRule =
-      { type : Text
-      , pathPattern : Optional Text
-      , resourceScheme : Optional Text
-      , requireSchemaSection : Bool
-      , schemaColumns : List Text
-      }
+-- The `: Profile` annotation here is load-bearing: it ties this fixture to the
+-- canonical schema, so the `testLoadProfileFixture` round-trip in test/Main.hs
+-- fails if okf's published Dhall schema and the Haskell decoder ever drift apart.
+let Profile = ../../../dhall/Profile.dhall
 
 in  { name = "shinzui-postgresql"
     , okfVersion = "0.1"
@@ -32,5 +29,6 @@ in  { name = "shinzui-postgresql"
         , requireSchemaSection = True
         , schemaColumns = [ "Column", "Type", "Description" ]
         }
-      ] : List TypeRule
+      ]
     }
+  : Profile

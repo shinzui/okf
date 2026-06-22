@@ -18,6 +18,12 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   `resource:` URI schemes, concept-ID path patterns (`*` and trailing `**`), and
   the `# Schema` body section's column contract (`schemaSectionColumns`). Adds a
   `dhall` dependency.
+- Canonical profile schema published as Dhall under `okf-core/dhall/`
+  (`Profile.dhall`, `TypeRule.dhall`, `FrontmatterRules.dhall`, `package.dhall`),
+  importable by other repositories (e.g. by pinned URL). The shipped sample and the
+  test fixture annotate their values against it, so the existing fixture round-trip
+  doubles as a drift guard keeping the published Dhall schema and the Haskell
+  `FromDhall` decoder in lockstep. okf imports nothing remote in return.
 
 ## [0.1.0.0] - 2026-06-19
 

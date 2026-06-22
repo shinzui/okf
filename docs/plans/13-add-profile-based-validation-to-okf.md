@@ -62,6 +62,18 @@ profile that a generator/blueprint *consumes* to produce conforming bundles —
 lives outside this repository; this plan makes the **same descriptor** checkable
 against existing, possibly hand-edited bundles.
 
+**Follow-on phase (Milestones 6–7).** Milestones 1–5 above are complete. A second
+phase establishes a *single canonical profile schema* and makes that schema safe
+to evolve, now that an external repository — `okf-profiles`
+(`/Users/shinzui/Keikaku/bokuno/okf-profiles`, to be pushed to
+`github.com/shinzui/okf-profiles`) — holds the authoritative profile *values* that
+projects import by URL. The key user-visible outcomes of this phase: (1) okf
+*publishes* the profile schema as a small set of Dhall files that other repos can
+import, so the schema is defined in exactly one place instead of hand-mirrored in
+three; (2) a test guarantees that published Dhall schema can never silently drift
+from okf-core's Haskell decoder; and (3) the `okf-profiles` schema can gain new
+fields over time without breaking projects that have already pinned a version.
+
 
 ## Progress
 
@@ -115,6 +127,42 @@ Milestone 5 — Fixtures, example bundle, docs, changelogs: **DONE**
 - [x] Update `docs/user/cli.md` and root `README.md` for the new flags.
 - [x] Update `okf-core/CHANGELOG.md`, `okf-cli/CHANGELOG.md`, root `CHANGELOG.md`.
 - [x] Run the full end-to-end transcript and paste it into Outcomes & Retrospective.
+
+Milestone 6 — Publish the canonical profile schema in okf + drift guard: **DONE**
+
+- [x] Add `okf-core/dhall/{Profile,TypeRule,FrontmatterRules,package}.dhall` — the
+      canonical profile schema as Dhall, using local relative imports only (okf
+      stays offline-buildable; it imports nothing remote).
+- [x] Re-author `okf-core/test/fixtures/profiles/postgresql.dhall` and
+      `docs/profiles/postgresql.dhall` to construct their value against the
+      published schema (`let Profile = <relative>/Profile.dhall in { … } : Profile`),
+      so the existing `testLoadProfileFixture` round-trip doubles as a
+      schema↔decoder drift guard.
+- [~] (Optional, belt-and-suspenders) `Dhall.expected`-based AST test **skipped**:
+      the schema-annotated fixture round-trip already catches drift in both
+      directions (Dhall record decoding is exact), proven by injecting a bogus field
+      into `Profile.dhall` and observing the fixture fail to type-check. The extra
+      AST-comparison test was judged redundant; recorded here rather than added.
+- [x] Document the published-schema location and that it is importable in
+      `docs/user/profiles.md` ("The canonical schema" section); note okf imports
+      nothing from `okf-profiles` (one-way dependency).
+- [x] `cabal test okf-core-test` green (42 cases); `dhall type --file okf-core/dhall/package.dhall` succeeds.
+
+Milestone 7 — Make `okf-profiles` evolvable and consume okf's schema: **TODO**
+(work lands in the separate `okf-profiles` repo)
+
+- [ ] Restructure each schema file in `okf-profiles` to the Dhall record-completion
+      form `{ Type, default }` and rebuild `profiles/postgresql.dhall` with
+      `Profile::{ … }` / `TypeRule::{ … }` (the idiomatic realization of rei note
+      `note_01kn09t15be9j842n0tb8tm3hp`).
+- [ ] Document in `okf-profiles/README.md` the evolution caveat: `::` protects
+      consumer source from field additions, but the normalized value still decodes
+      against okf-core's exact record, so adding a field is a coordinated
+      okf-core + okf-profiles + tag-bump change.
+- [ ] **After okf is pushed/tagged:** switch `okf-profiles` schema files to import
+      okf's canonical `okf-core/dhall/Profile.dhall` by pinned URL (`dhall freeze`),
+      delete the local schema copy, re-type-check, and re-run the end-to-end
+      `okf validate --profile` proof.
 
 
 ## Surprises & Discoveries
@@ -208,6 +256,57 @@ Record every decision made while working on the plan.
   Rationale: a profile pins the leading required columns while letting a team add
   extra trailing columns without tripping the check. Implemented with
   `List.isPrefixOf` over normalized (`Text.toLower . Text.strip`) column lists.
+  Date: 2026-06-22
+
+- Decision: The **canonical profile schema is owned and published by okf** (the
+  tool), and `okf-profiles` plus downstream projects *import* it. okf-core
+  **does not** import `okf-profiles`. The dependency direction is consumer →
+  `okf-profiles` → okf, never the reverse.
+  Rationale: `ProfileSpec` defines *what `--profile` accepts* — it is generic OKF
+  tool infrastructure, identical for every profile, so it belongs with the tool.
+  The PostgreSQL-specific part is the profile *value*, which belongs in
+  `okf-profiles`. Making `okf-profiles` canonical for the schema would invert the
+  layering and, worse, couple the deliberately standalone/offline open-source tool
+  to a house repository and the network. The user's initial framing ("import the
+  schema in core from okf-profiles") is therefore implemented with the direction
+  flipped: okf publishes, okf-profiles consumes.
+  Date: 2026-06-22
+
+- Decision: A **`Dhall.expected`-based drift guard** keeps okf's published Dhall
+  schema and okf-core's Haskell `FromDhall` decoder in lockstep, run entirely
+  offline against in-repo files. The pragmatic primary form is a value round-trip:
+  the test fixtures are annotated against the published schema and loaded through
+  `loadProfileFile`, so any divergence between schema and decoder fails decoding in
+  one direction or the other (Dhall record decoding is exact — a field present on
+  one side but not the other breaks the load).
+  Rationale: the schema and the decoder are "two halves of one contract"; a
+  mechanical, offline check prevents silent drift without networking okf's build or
+  adding brittle AST comparison. `Dhall.expected (auto :: Decoder ProfileSpec)` is
+  available (it is a field of `Decoder`, `Expector (Expr Src Void)`) for an
+  optional stricter AST-level assertion.
+  Date: 2026-06-22
+
+- Decision: `okf-profiles` adopts the Dhall **record-completion** evolution pattern
+  — each schema exported as `{ Type, default }` and values built with
+  `Profile::{ … }` / `TypeRule::{ … }` — as the idiomatic realization of rei note
+  `note_01kn09t15be9j842n0tb8tm3hp` (Input / Type / default / mk).
+  Rationale: completion lets authors override any "optional" field while defaulting
+  the rest, which the note's fixed minimal-`Input` `mk` cannot express, and profile
+  authors routinely set the optional fields. Adding a field later = extend `Type` +
+  `default`; existing `::{ … }` values keep compiling. **Caveat (must be documented
+  in okf-profiles):** completion protects consumer *source* from breakage, but the
+  normalized value still decodes against okf-core's exact record, so adding a field
+  remains a coordinated okf-core + okf-profiles change gated by the drift guard and
+  by tag / `okfVersion` discipline.
+  Date: 2026-06-22
+
+- Decision: okf's in-repo sample (`docs/profiles/postgresql.dhall`) and test
+  fixtures stay **self-contained within the okf repo** — they may import the
+  canonical schema by *relative* path but never by remote URL, and never from
+  `okf-profiles`.
+  Rationale: the open-source tool and its test suite must build and validate
+  offline. The authoritative, network-importable profiles live in `okf-profiles`;
+  okf only ships a self-contained example.
   Date: 2026-06-22
 
 
@@ -1010,6 +1109,150 @@ Acceptance for Milestone 5: the full transcript in Validation and Acceptance run
 as shown; `cabal test all` passes.
 
 
+### Milestone 6 — Publish the canonical profile schema in okf + drift guard
+
+Scope: stop hand-mirroring the profile schema. Today the schema exists three times:
+as the Haskell records in `okf-core/src/Okf/Profile.hs`, inline in
+`docs/profiles/postgresql.dhall`, and inline in the test fixture. This milestone
+makes okf publish **one** canonical Dhall schema that the sample, the fixture, and
+(in Milestone 7) the external `okf-profiles` repo all build against, and adds a test
+that guarantees that Dhall schema matches the Haskell decoder. At the end, a single
+edit to the schema is caught by the test if it diverges from the decoder, and other
+repos have a stable schema to import.
+
+Background a novice needs: a Dhall *record type* (e.g. `{ name : Text, … }`) is a
+value-level description of the shape of data. okf-core's decoder
+(`Okf.Profile.ProfileSpec` with its `FromDhall` instance) already implies such a
+type — `Dhall.auto`'s `expected` field is exactly "the Dhall type this decoder
+accepts." Publishing a `.dhall` file with that type lets other Dhall files annotate
+their values against it (`myValue : ./Profile.dhall`), which both documents the
+shape and makes Dhall reject malformed values before okf ever sees them. The risk
+is that the published `.dhall` type and the Haskell decoder drift apart; the drift
+guard removes that risk.
+
+Create the canonical schema as four files under a new `okf-core/dhall/` directory
+(co-located with the decoder so the test can resolve them by a short relative path,
+and so a remote importer gets a stable URL like
+`…/okf/<tag>/okf-core/dhall/Profile.dhall`). These mirror the bootstrapped
+`okf-profiles` schema exactly:
+
+- `okf-core/dhall/TypeRule.dhall` — the record type
+  `{ type : Text, pathPattern : Optional Text, resourceScheme : Optional Text, requireSchemaSection : Bool, schemaColumns : List Text }`.
+- `okf-core/dhall/FrontmatterRules.dhall` — `{ required : List Text, recommended : List Text }`.
+- `okf-core/dhall/Profile.dhall` — imports the two above and defines
+  `{ name : Text, okfVersion : Text, frontmatter : FrontmatterRules, allowUnknownTypes : Bool, types : List TypeRule }`.
+- `okf-core/dhall/package.dhall` — re-exports `{ Profile, TypeRule, FrontmatterRules }`.
+
+All imports here are **relative**, never URL — okf must build and test offline.
+
+Re-author the two existing in-repo descriptors to construct their value against the
+published schema, so they prove the schema is usable *and* serve as the drift
+guard:
+
+- `okf-core/test/fixtures/profiles/postgresql.dhall` becomes
+  `let Profile = ../../../dhall/Profile.dhall in { … } : Profile` (the path goes up
+  from `test/fixtures/profiles/` to the `okf-core/` package root, then into
+  `dhall/`). Keep the field values identical to today so the existing
+  `testLoadProfileFixture` assertions still hold.
+- `docs/profiles/postgresql.dhall` becomes `let Profile = ../../okf-core/dhall/Profile.dhall in { … } : Profile`
+  (from `docs/profiles/` up to the repo root, then into `okf-core/dhall/`).
+
+Why this is the drift guard: `testLoadProfileFixture` already loads the fixture via
+`loadProfileFile` and asserts decoded fields. Because the fixture is now annotated
+`: Profile`, the value carries exactly the schema's fields; `loadProfileFile`
+decodes it with okf-core's decoder, which expects exactly the decoder's fields.
+Dhall record decoding is exact, so if the schema and the decoder disagree in either
+direction (a field on one side but not the other), the load fails and the test goes
+red. No new test is strictly required, but state in a one-line comment on the
+fixture that its annotation is load-bearing for drift detection.
+
+Optionally, add an explicit stricter test `testSchemaMatchesDecoder` in
+`okf-core/test/Main.hs`: take `Dhall.expected (Dhall.auto :: Dhall.Decoder ProfileSpec)`
+(run the `Expector` via `Data.Either.Validation.validationToEither`), parse the
+canonical `Profile.dhall` with `Dhall.inputExpr`, strip source notes with
+`Dhall.Core.denote`, normalize both, and compare for equality. This asserts the
+*types* are identical rather than merely mutually satisfiable by one value. Mark it
+optional in the Decision Log if you skip it.
+
+Update `docs/user/profiles.md`: add a short subsection noting that the canonical
+schema lives at `okf-core/dhall/` and may be imported by other Dhall files, and
+state explicitly that okf itself imports nothing from `okf-profiles` and requires
+no network access — the relationship is one-way (others import okf's schema).
+
+Acceptance for Milestone 6: `dhall type --file okf-core/dhall/package.dhall` prints
+a type and exits 0; `cabal test okf-core-test` is green (the annotated fixture still
+decodes); deliberately adding a bogus field to `okf-core/dhall/Profile.dhall` makes
+`testLoadProfileFixture` fail (try it, then revert) — proving the guard works.
+
+
+### Milestone 7 — Make `okf-profiles` evolvable and consume okf's schema
+
+Scope: this milestone's edits land in the **separate `okf-profiles` repository** at
+`/Users/shinzui/Keikaku/bokuno/okf-profiles` (already bootstrapped: it currently
+defines its own local schema under `Profile/` and a `profiles/postgresql.dhall`
+value). Two changes: (1) make the schema safe to grow without breaking pinned
+consumers, and (2) once okf is pushed, point `okf-profiles` at okf's canonical
+schema instead of keeping its own copy. It is recorded here because the contract
+spans both repos; the okf repo itself is unchanged by this milestone.
+
+Background a novice needs: in Dhall, **record fields are always required** — adding
+even an `Optional` field to a record type breaks every existing value that omitted
+it. The standard fix is Dhall's *record completion* operator `::`. You export a
+schema as a record `{ Type = <the full record type>, default = <defaults for every
+non-essential field> }` and authors write `Schema::{ requiredField = … }`, which is
+sugar for `(Schema.default // { requiredField = … }) : Schema.Type`. Adding a new
+field later means adding it to `Type` and to `default`; every existing
+`Schema::{ … }` keeps compiling because the default supplies the new field. This is
+the idiomatic form of the pattern in rei note `note_01kn09t15be9j842n0tb8tm3hp`
+(which spells it out manually as Input/Type/default/mk); completion is preferred
+here because profile authors routinely override the "optional" fields, which a
+fixed minimal-`Input` `mk` cannot express.
+
+First change — restructure for evolution (does not need okf pushed):
+
+- Rewrite `okf-profiles/Profile/TypeRule.dhall` to export `{ Type, default }` where
+  `Type` is the current record type and `default` supplies
+  `{ pathPattern = None Text, resourceScheme = None Text, requireSchemaSection = False, schemaColumns = [] : List Text }`
+  (everything except the essential `type`).
+- Rewrite `okf-profiles/Profile/Type.dhall` (the Profile schema) similarly to
+  `{ Type, default }`, with `default` supplying `allowUnknownTypes = False` and an
+  empty `types`/`frontmatter` as appropriate for the fields you consider non-essential.
+- Rebuild `okf-profiles/profiles/postgresql.dhall` to construct via completion:
+  `TypeRule::{ type = "PostgreSQL Table", pathPattern = Some "schemas/*/tables/*", … }`
+  and `Profile::{ name = "shinzui-postgresql", … }`.
+- Update `okf-profiles/package.dhall` to re-export the `{ Type, default }` records
+  (consumers reference `okf.Profile`, `okf.TypeRule` and use `::`).
+- Add a "Schema evolution" section to `okf-profiles/README.md` describing the `::`
+  pattern and the cross-repo caveat from the Decision Log: completion keeps consumer
+  *source* working across field additions, but the normalized value still decodes
+  against okf-core's exact record, so a new field is a coordinated okf-core +
+  okf-profiles release with a tag bump and an updated `okfVersion` / minimum-okf
+  note.
+
+Verify locally: `dhall type --file okf-profiles/package.dhall` succeeds, and the
+end-to-end proof still holds from a checkout of okf:
+`okf validate examples/postgresql-sample --profile <okf-profiles>/profiles/postgresql.dhall`
+prints `OK` with no `profile:` lines (the completed value normalizes to the same
+record okf-core decodes today).
+
+Second change — consume okf's canonical schema (needs okf pushed and tagged):
+
+- Replace the bodies of `okf-profiles/Profile/TypeRule.dhall`,
+  `FrontmatterRules.dhall`, and `Profile/Type.dhall`'s *type* portion with a pinned
+  remote import of okf's published schema, e.g. the `Type` becomes
+  `(https://raw.githubusercontent.com/shinzui/okf/<tag>/okf-core/dhall/Profile.dhall sha256:<hash>)`,
+  keeping the `default` records local. Generate hashes with
+  `dhall freeze --inplace okf-profiles/package.dhall`.
+- Re-type-check and re-run the end-to-end proof. After this step `okf-profiles`
+  holds no schema copy of its own — okf is the single source of truth for the
+  shape, `okf-profiles` owns values and defaults.
+
+Acceptance for Milestone 7: `dhall type --file okf-profiles/package.dhall` succeeds;
+`okf validate` against the completion-built profile passes the sample bundle; after
+the second change, `okf-profiles` contains no local schema record type, only a
+pinned import of okf's, and the proof still passes.
+
+
 ## Concrete Steps
 
 All commands run from the repository root `/Users/shinzui/Keikaku/bokuno/okf`
@@ -1227,3 +1470,49 @@ The `Okf.Validation` module's interface is unchanged:
 parallel profile-validation path; it does not alter OKF structural conformance, so
 a bundle that passes today still passes, and profile checks are strictly additive
 and advisory by default.
+
+End of Milestone 6 — new published-schema artifacts in the okf repo (Dhall, not
+Haskell), all with relative imports only:
+
+```text
+okf-core/dhall/Profile.dhall            -- canonical ProfileSpec record type
+okf-core/dhall/TypeRule.dhall           -- TypeRule record type
+okf-core/dhall/FrontmatterRules.dhall   -- FrontmatterRules record type
+okf-core/dhall/package.dhall            -- re-exports { Profile, TypeRule, FrontmatterRules }
+```
+
+The Haskell decoder `Okf.Profile.ProfileSpec`/`FromDhall` is unchanged in shape;
+its `Dhall.expected` type must remain equal to `okf-core/dhall/Profile.dhall`,
+enforced by the drift guard (the schema-annotated `testLoadProfileFixture`, plus the
+optional `testSchemaMatchesDecoder`). The relevant dhall API: `Dhall.expected` is a
+field of `Decoder` with type `Expector (Expr Src Void)` (run it through
+`Data.Either.Validation.validationToEither`); `Dhall.inputExpr :: Text -> IO (Expr Src Void)`
+parses/normalizes a schema file; `Dhall.Core.denote` strips source annotations
+before comparison.
+
+End of Milestone 7 — in the **`okf-profiles` repo** (not okf): each schema file is a
+`{ Type, default }` record enabling `Schema::{ … }` completion, and (after okf is
+pushed) the `Type` portion is a pinned remote import of
+`okf-core/dhall/Profile.dhall`. okf-core and the okf repo take **no** dependency on
+`okf-profiles`; the import is strictly one-way (okf-profiles → okf).
+
+
+## Revision History
+
+- 2026-06-22 — Added the follow-on phase (Milestones 6–7) after Milestones 1–5 were
+  completed and the external `okf-profiles` repository was bootstrapped. The phase
+  captures five decisions reached in discussion: (1) the canonical profile schema is
+  owned and *published* by okf, with `okf-profiles` and downstream projects importing
+  it and okf-core importing nothing from `okf-profiles` — i.e. the user's
+  "import the schema from okf-profiles into core" idea implemented with the
+  dependency direction flipped, because the schema is generic tool infrastructure and
+  the public tool must stay standalone/offline; (2) an offline `Dhall.expected` /
+  annotated-fixture drift guard keeps the published Dhall schema and the Haskell
+  decoder in lockstep; (3) `okf-profiles` adopts Dhall record-completion
+  (`{ Type, default }` + `::`) for backward-compatible schema evolution, the
+  idiomatic form of rei note `note_01kn09t15be9j842n0tb8tm3hp`, with the documented
+  caveat that completion protects consumer source but field additions still require a
+  coordinated okf-core + okf-profiles release; and (4)/(5) okf's in-repo sample and
+  fixtures stay self-contained (relative imports only, never `okf-profiles` or URLs).
+  Purpose, Progress, Decision Log, Plan of Work, and Interfaces and Dependencies were
+  all updated to reflect these additions; Milestones 1–5 are unchanged.

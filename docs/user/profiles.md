@@ -111,6 +111,34 @@ Each `TypeRule`:
 | `requireSchemaSection` | `Bool` | When `True`, the body must contain a `# Schema` heading followed by a GitHub-flavored Markdown table. A missing section is reported as `requires a # Schema section`. |
 | `schemaColumns` | `List Text` | The required leading columns of the `# Schema` table header, compared case-insensitively and trimmed as a **prefix** of the actual columns. Extra trailing columns are allowed. A mismatch is reported as `# Schema columns ... do not start with required ...`. |
 
+## The canonical schema
+
+The descriptor shape above is published as Dhall under
+[`okf-core/dhall/`](../../okf-core/dhall) — `Profile.dhall`, `TypeRule.dhall`,
+`FrontmatterRules.dhall`, and a `package.dhall` that re-exports them. This is the
+single source of truth for the schema: the shipped sample and the test fixtures
+annotate their values against it (`… : ../path/to/Profile.dhall`), and a test
+guarantees this Dhall schema stays in lockstep with okf's internal decoder, so the
+two can never silently drift.
+
+Other repositories may import this schema — by relative path within okf, or by a
+version-pinned URL from elsewhere:
+
+```dhall
+let okf =
+      https://raw.githubusercontent.com/shinzui/okf/<tag>/okf-core/dhall/package.dhall
+        sha256:<hash>
+
+in  ({ name = "acme", okfVersion = "0.1", … } : okf.Profile)
+```
+
+The dependency is **one-way**: okf publishes the schema and imports nothing in
+return. `okf validate --profile` accepts any descriptor path — local or one that
+remote-imports — and the tool never requires network access of its own. For ready-
+made, versioned profiles to import rather than hand-write, see the separate
+`okf-profiles` repository; the `docs/profiles/postgresql.dhall` shipped here is a
+self-contained example, not the authoritative source.
+
 ## A worked example
 
 The repository ships a conforming bundle at

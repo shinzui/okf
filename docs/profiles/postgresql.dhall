@@ -1,10 +1,8 @@
-let TypeRule =
-      { type : Text
-      , pathPattern : Optional Text
-      , resourceScheme : Optional Text
-      , requireSchemaSection : Bool
-      , schemaColumns : List Text
-      }
+-- Self-contained sample PostgreSQL profile, annotated against okf's canonical
+-- published schema (okf-core/dhall/Profile.dhall) by relative path. This file is a
+-- worked example shipped with the tool; the authoritative, versioned profiles live
+-- in the separate okf-profiles repository, which projects import by pinned URL.
+let Profile = ../../okf-core/dhall/Profile.dhall
 
 in  { name = "shinzui-postgresql"
     , okfVersion = "0.1"
@@ -32,5 +30,6 @@ in  { name = "shinzui-postgresql"
         , requireSchemaSection = True
         , schemaColumns = [ "Column", "Type", "Description" ]
         }
-      ] : List TypeRule
+      ]
     }
+  : Profile
