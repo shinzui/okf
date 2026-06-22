@@ -7,6 +7,18 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- `Okf.Profile` module: house-convention profiles, a Dhall-authored description of
+  a team's OKF usage that is checkable against a bundle without affecting OKF
+  conformance. Loads a descriptor with `loadProfileFile` into a `ProfileSpec`
+  (`FrontmatterRules`, `TypeRule`) and reports deviations with
+  `validateProfile :: ProfileSpec -> [Concept] -> [ProfileViolation]`. Checks
+  cover the `type` vocabulary (`allowUnknownTypes`), required frontmatter keys,
+  `resource:` URI schemes, concept-ID path patterns (`*` and trailing `**`), and
+  the `# Schema` body section's column contract (`schemaSectionColumns`). Adds a
+  `dhall` dependency.
+
 ## [0.1.0.0] - 2026-06-19
 
 Initial release.

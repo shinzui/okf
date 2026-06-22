@@ -9,6 +9,12 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- `okf validate --profile <descriptor>.dhall` checks a bundle against a house
+  profile (see `okf-core`'s `Okf.Profile`) after the normal structural
+  validation. Deviations are advisory by default — printed to stderr with a
+  `profile:` prefix, exit code unchanged. `--profile-enforce` makes deviations
+  exit non-zero for CI gating. A descriptor that fails to load is always a hard
+  error. With no `--profile`, `validate` behaves exactly as before.
 - `okf --version` flag, printing the package version plus the short git commit
   hash the binary was built from, e.g. `okf v0.1.0.0 (445fd16)`. The hash is read
   from `.git/` at compile time under `cabal build` and injected by Nix (CPP

@@ -30,6 +30,7 @@ OK: 4 concepts
 
 - [CLI Reference](cli.md): command syntax, options, output, and exit behavior.
 - [OKF Bundle Format](format.md): directory layout, concept IDs, frontmatter, and links.
+- [Profiles](profiles.md): checking a bundle against house conventions with `--profile`.
 - [Authoring Guide](authoring.md): the producer API for building, constructing, writing, and validating bundles in code.
 - [Fixture Walkthrough](fixtures.md): runnable examples using the repository fixtures.
 

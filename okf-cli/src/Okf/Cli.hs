@@ -25,6 +25,7 @@ import Okf.Document (DocumentParseError (..), body)
 import Okf.Graph (buildGraph)
 import Okf.Index
 import Okf.Prelude
+import Okf.Profile (ProfileViolation (..), loadProfileFile, validateProfile)
 import Okf.Validation
 import Options.Applicative
 import System.Exit (exitFailure)
@@ -40,7 +41,9 @@ data Command
 
 data ValidateOptions = ValidateOptions
   { bundlePath :: !FilePath,
-    strictMode :: !Bool
+    strictMode :: !Bool,
+    profilePath :: !(Maybe FilePath),
+    profileEnforce :: !Bool
   }
   deriving stock (Show, Eq)
 
@@ -105,6 +108,14 @@ validateOptionsParser =
   ValidateOptions
     <$> bundleArgument
     <*> switch (long "strict" <> help "Require recommended authoring fields")
+    <*> optional
+      ( strOption
+          ( long "profile"
+              <> metavar "PROFILE"
+              <> help "Path to a Dhall profile descriptor to check (advisory)"
+          )
+      )
+    <*> switch (long "profile-enforce" <> help "Exit non-zero when profile checks find deviations")
 
 indexOptionsParser :: Parser IndexOptions
 indexOptionsParser =
@@ -137,14 +148,35 @@ runCommand = \case
   Completions shell -> handleCompletions shell
 
 runValidate :: ValidateOptions -> IO ()
-runValidate ValidateOptions {bundlePath, strictMode} = do
+runValidate ValidateOptions {bundlePath, strictMode, profilePath, profileEnforce} = do
   concepts <- loadBundleOrExit bundlePath
-  let profile = if strictMode then StrictAuthoring else PermissiveConformance
-  case validateBundle profile concepts of
-    [] -> Text.IO.putStrLn ("OK: " <> Text.pack (show (length concepts)) <> " concepts")
-    errors -> do
-      mapM_ (Text.IO.hPutStrLn stderr . renderBundleValidationError) errors
-      exitFailure
+  let coreProfile = if strictMode then StrictAuthoring else PermissiveConformance
+      coreErrors = validateBundle coreProfile concepts
+  mapM_ (Text.IO.hPutStrLn stderr . renderBundleValidationError) coreErrors
+
+  profileViolations <- case profilePath of
+    Nothing -> pure []
+    Just path -> do
+      loaded <- loadProfileFile path
+      case loaded of
+        Left err -> dieText ("Failed to load profile " <> Text.pack path <> ": " <> err)
+        Right spec -> do
+          let violations = validateProfile spec concepts
+          mapM_ (Text.IO.hPutStrLn stderr . ("profile: " <>) . renderProfileViolation) violations
+          pure violations
+
+  let coreFailed = not (null coreErrors)
+      profileFailed = profileEnforce && not (null profileViolations)
+  if coreFailed || profileFailed
+    then exitFailure
+    else do
+      Text.IO.putStrLn ("OK: " <> Text.pack (show (length concepts)) <> " concepts")
+      unless (null profileViolations) $
+        Text.IO.putStrLn
+          ( "profile: "
+              <> Text.pack (show (length profileViolations))
+              <> " advisory deviation(s) (use --profile-enforce to fail)"
+          )
 
 runIndex :: IndexOptions -> IO ()
 runIndex IndexOptions {bundlePath, write} =
@@ -193,6 +225,31 @@ renderBundleValidationError = \case
     renderConceptId source <> ": link to missing concept: " <> renderConceptId target
   DuplicateConceptId conceptId ->
     "duplicate concept ID: " <> renderConceptId conceptId
+
+renderProfileViolation :: ProfileViolation -> Text
+renderProfileViolation = \case
+  TypeNotInProfile cid ctype ->
+    renderConceptId cid <> ": type not in profile vocabulary: " <> ctype
+  MissingProfileField cid key ->
+    renderConceptId cid <> ": missing profile-required field: " <> key
+  PathPatternMismatch cid ctype patternText ->
+    renderConceptId cid <> ": " <> ctype <> " must match path pattern: " <> patternText
+  MissingResource cid ctype scheme ->
+    renderConceptId cid <> ": " <> ctype <> " requires a resource with scheme " <> scheme <> "://"
+  ResourceSchemeMismatch cid scheme resourceValue ->
+    renderConceptId cid <> ": resource must use scheme " <> scheme <> "://, found: " <> resourceValue
+  MissingSchemaSection cid ctype ->
+    renderConceptId cid <> ": " <> ctype <> " requires a # Schema section"
+  SchemaColumnsMismatch cid ctype expected actual ->
+    renderConceptId cid
+      <> ": "
+      <> ctype
+      <> " # Schema columns "
+      <> renderList actual
+      <> " do not start with required "
+      <> renderList expected
+  where
+    renderList xs = "[" <> Text.intercalate ", " xs <> "]"
 
 renderValidationErrorText :: ValidationError -> Text
 renderValidationErrorText = \case

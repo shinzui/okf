@@ -10,6 +10,24 @@ main = do
   let results =
         [ parseSucceeds ["validate", "bundle"],
           parseSucceeds ["validate", "bundle", "--strict"],
+          parseSucceeds ["validate", "bundle", "--profile", "p.dhall"],
+          parseSucceeds ["validate", "bundle", "--profile", "p.dhall", "--profile-enforce"],
+          parseValidateMatches
+            ["validate", "b", "--profile", "p.dhall", "--profile-enforce"]
+            ValidateOptions
+              { bundlePath = "b",
+                strictMode = False,
+                profilePath = Just "p.dhall",
+                profileEnforce = True
+              },
+          parseValidateMatches
+            ["validate", "b"]
+            ValidateOptions
+              { bundlePath = "b",
+                strictMode = False,
+                profilePath = Nothing,
+                profileEnforce = False
+              },
           parseSucceeds ["index", "bundle", "--write"],
           parseSucceeds ["graph", "bundle", "--json"],
           parseSucceeds ["show", "bundle", "tables/orders"],
@@ -26,6 +44,15 @@ parseSucceeds :: [String] -> Bool
 parseSucceeds args =
   case execParserPure defaultPrefs parserInfo args of
     Success _ -> True
+    _ -> False
+
+-- | Parse a @validate@ invocation and check it yields exactly the expected
+-- 'ValidateOptions' (so the new @--profile@/@--profile-enforce@ flags map to the
+-- right fields).
+parseValidateMatches :: [String] -> ValidateOptions -> Bool
+parseValidateMatches args expected =
+  case execParserPure defaultPrefs parserInfo args of
+    Success (Options (Validate opts)) -> opts == expected
     _ -> False
 
 parseFails :: [String] -> Bool

@@ -60,6 +60,40 @@ example, a concept `orders` whose body links to `/customers.md` when no
 orders: link to missing concept: customers
 ```
 
+### Profile checks
+
+A profile descriptor declares house conventions on top of OKF (allowed `type`
+strings, required frontmatter keys, `resource:` schemes, file layout, and
+`# Schema` columns). Pass one with `--profile` to additionally check a bundle
+against it. See [Profiles](profiles.md) for the descriptor schema.
+
+```bash
+cabal run okf -- validate BUNDLE --profile PROFILE.dhall
+cabal run okf -- validate BUNDLE --profile PROFILE.dhall --profile-enforce
+```
+
+| Option | Effect |
+|--------|--------|
+| `--profile PROFILE` | Run profile checks after structural validation. Deviations print to stderr (each line prefixed `profile:`). By default they are **advisory** — they do not change the exit code. |
+| `--profile-enforce` | Make profile deviations fail the command (non-zero exit). |
+
+Exit codes with `--profile`:
+
+- Structural errors always exit non-zero, exactly as without `--profile`.
+- Profile deviations exit `0` by default (advisory), or non-zero with
+  `--profile-enforce`.
+- A descriptor that fails to load is always a hard error (exit non-zero),
+  regardless of `--profile-enforce`.
+
+A conforming bundle prints only `OK: N concepts`. A deviating bundle (advisory)
+prints the per-concept `profile:` lines, the `OK:` count, and a summary:
+
+```text
+profile: schemas/sales/tables/bad: type not in profile vocabulary: pg table
+OK: 3 concepts
+profile: 1 advisory deviation(s) (use --profile-enforce to fail)
+```
+
 
 ## index
 

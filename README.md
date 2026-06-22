@@ -62,6 +62,7 @@ The CLI surface is intentionally small:
 ```bash
 cabal run okf -- validate <bundle>
 cabal run okf -- validate <bundle> --strict
+cabal run okf -- validate <bundle> --profile <descriptor>.dhall [--profile-enforce]
 cabal run okf -- index <bundle> [--write]
 cabal run okf -- graph <bundle> [--json]
 cabal run okf -- show <bundle> <concept-id>
@@ -87,6 +88,27 @@ cabal run okf -- validate okf-core/test/fixtures/invalid-dangling-link
 
 See [docs/user/cli.md](./docs/user/cli.md) for command syntax, options, output,
 and exit behavior.
+
+
+## Profiles
+
+OKF deliberately defines no fixed taxonomy of concept types. A **profile** is a
+small Dhall descriptor that layers a team's own house conventions on top of OKF —
+allowed `type` strings, required frontmatter keys, `resource:` URI schemes, file
+layout, and `# Schema` table columns — and lets `okf validate` check a bundle
+against them. Profiles are not part of the OKF standard; a bundle that deviates
+from a profile remains fully OKF-conformant.
+
+```bash
+cabal run okf -- validate examples/postgresql-sample --profile docs/profiles/postgresql.dhall
+```
+
+Profile deviations are advisory by default (printed, but exit `0`); add
+`--profile-enforce` to fail on drift in CI. The repository ships a conforming
+example bundle ([examples/postgresql-sample](./examples/postgresql-sample)) and a
+sample descriptor ([docs/profiles/postgresql.dhall](./docs/profiles/postgresql.dhall)).
+See [docs/user/profiles.md](./docs/user/profiles.md) for the descriptor schema and
+worked examples.
 
 
 ## Bundle Format

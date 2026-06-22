@@ -1,3 +1,5 @@
+{-# LANGUAGE PackageImports #-}
+
 module Main (main) where
 
 import Data.Aeson (object, toJSON, (.=))
@@ -10,16 +12,19 @@ import Okf.Document
 import Okf.Graph
 import Okf.Index
 import Okf.Prelude hiding (setField, (.=))
+import Okf.Profile
 import Okf.Validation
 import System.Directory
   ( createDirectoryIfMissing,
     doesDirectoryExist,
+    doesFileExist,
     getTemporaryDirectory,
     removeDirectoryRecursive,
   )
 import System.Exit (exitFailure)
 import System.FilePath ((</>))
 import System.IO.Temp (createTempDirectory)
+import "generic-lens" Data.Generics.Labels ()
 
 main :: IO ()
 main = do
@@ -56,7 +61,17 @@ main = do
         test "duplicateConceptIds finds repeated ids" testDuplicateConceptIds,
         test "conceptFromDocument derives typed fields from frontmatter" testConceptFromDocumentDerivesFields,
         testIO "writeBundle then walkBundle round-trips" testWriteBundleRoundTrip,
-        testIO "fixture dangling link reports a bundle validation error" testFixtureDanglingLink
+        testIO "fixture dangling link reports a bundle validation error" testFixtureDanglingLink,
+        testIO "loadProfileFile decodes the postgresql fixture" testLoadProfileFixture,
+        test "validateProfile accepts a conforming table concept" testProfileConformingTable,
+        test "validateProfile flags a type not in the vocabulary" testProfileUnknownType,
+        test "validateProfile flags a missing required field" testProfileMissingField,
+        test "validateProfile flags a resource scheme mismatch" testProfileResourceMismatch,
+        test "validateProfile flags a path pattern mismatch" testProfilePathMismatch,
+        test "validateProfile flags a missing # Schema section" testProfileMissingSchema,
+        test "validateProfile flags mismatched # Schema columns" testProfileSchemaColumnsMismatch,
+        test "schemaSectionColumns reads the header row of the Schema table" testSchemaSectionColumns,
+        testIO "validateProfile reports the expected deviations for the fixture bundle" testProfileDeviationsFixture
       ]
   unless (and results) exitFailure
 
@@ -78,13 +93,13 @@ testIO name assertion = do
 testParseValidDocument :: Either Text ()
 testParseValidDocument = do
   document <- firstShow (parseDocument sampleDocument)
-  assertEqual (Just (String "BigQuery Table")) (frontmatterLookup "type" (frontmatter document))
+  assertEqual (Just (String "BigQuery Table")) (frontmatterLookup "type" (document ^. #frontmatter))
   assertEqual "# Schema\n\nBody text.\n" (body document)
 
 testParseNoFrontmatter :: Either Text ()
 testParseNoFrontmatter = do
   document <- firstShow (parseDocument "# Draft\n")
-  assertEqual Nothing (frontmatterLookup "type" (frontmatter document))
+  assertEqual Nothing (frontmatterLookup "type" (document ^. #frontmatter))
   assertEqual "# Draft\n" (body document)
 
 testRejectUnterminatedFrontmatter :: Either Text ()
@@ -119,7 +134,7 @@ testRoundTrip = do
   assertEqual [] (validateDocument PermissiveConformance document)
   assertEqual [] (validateDocument StrictAuthoring document)
   reparsed <- firstShow (parseDocument (serializeDocument document))
-  assertEqual (frontmatter document) (frontmatter reparsed)
+  assertEqual (document ^. #frontmatter) (reparsed ^. #frontmatter)
   assertEqual (body document) (body reparsed)
 
 testRejectInvalidConceptId :: Either Text ()
@@ -318,7 +333,7 @@ testFrontmatterBuilderRoundTrip = do
               }
       original = OKFDocument frontmatterValue "# Orders\n\nBody text.\n"
   reparsed <- firstShow (parseDocument (serializeDocument original))
-  assertEqual (frontmatter original) (frontmatter reparsed)
+  assertEqual (original ^. #frontmatter) (reparsed ^. #frontmatter)
   assertEqual (body original) (body reparsed)
 
 testSerializeDeterministicKeyOrder :: Either Text ()
@@ -469,6 +484,178 @@ testFixtureDanglingLink = do
   where
     isDangling DanglingReference {} = True
     isDangling _ = False
+
+-- | Resolve a fixture file path regardless of whether tests run from the repo
+-- root or the package directory (mirrors 'fixturePath' for files).
+fixtureFilePath :: FilePath -> IO FilePath
+fixtureFilePath name = findExisting candidates
+  where
+    candidates =
+      [ "okf-core" </> "test" </> "fixtures" </> name,
+        "test" </> "fixtures" </> name
+      ]
+    findExisting [] = fail ("fixture file not found: " <> name)
+    findExisting (candidate : rest) = do
+      exists <- doesFileExist candidate
+      if exists then pure candidate else findExisting rest
+
+-- | Milestone 1: the Dhall descriptor round-trips into a 'ProfileSpec'.
+testLoadProfileFixture :: IO (Either Text ())
+testLoadProfileFixture = do
+  path <- fixtureFilePath "profiles/postgresql.dhall"
+  result <- loadProfileFile path
+  pure $ case result of
+    Left err -> Left ("failed to load profile: " <> err)
+    Right spec -> do
+      assertEqual "shinzui-postgresql" (spec ^. #name)
+      assertEqual False (spec ^. #allowUnknownTypes)
+      assertEqual ["type", "title"] (spec ^. #frontmatter . #required)
+      assertEqual
+        ["PostgreSQL Schema", "PostgreSQL Table", "PostgreSQL View"]
+        (map (^. #type_) (spec ^. #types))
+
+-- | A standalone profile literal so the validation tests do not depend on the
+-- Dhall fixture. One rule: PostgreSQL Table, fully constrained.
+testProfileSpec :: ProfileSpec
+testProfileSpec =
+  ProfileSpec
+    { name = "test-postgresql",
+      okfVersion = "0.1",
+      frontmatter = FrontmatterRules {required = ["type", "title"], recommended = []},
+      allowUnknownTypes = False,
+      types =
+        [ TypeRule
+            { type_ = "PostgreSQL Table",
+              pathPattern = Just "schemas/*/tables/*",
+              resourceScheme = Just "postgresql",
+              requireSchemaSection = True,
+              schemaColumns = ["Column", "Type", "Nullable", "Description"]
+            }
+        ]
+    }
+
+-- | Build an in-memory concept from a raw ID, frontmatter pairs, and a body.
+profileConcept :: Text -> [(Text, Value)] -> Text -> Either Text Concept
+profileConcept rawId fieldPairs bodyText = do
+  conceptId <- parseTestConceptId rawId
+  pure (conceptFromDocument conceptId (OKFDocument (frontmatterFromFields fieldPairs) bodyText))
+
+-- | A well-formed @# Schema@ section matching the profile's required columns.
+schemaSectionBody :: Text
+schemaSectionBody =
+  Text.unlines
+    [ "# Schema",
+      "",
+      "| Column | Type   | Nullable | Description |",
+      "|--------|--------|----------|-------------|",
+      "| id     | bigint | no       | Primary key |"
+    ]
+
+testProfileConformingTable :: Either Text ()
+testProfileConformingTable = do
+  concept <-
+    profileConcept
+      "schemas/sales/tables/orders"
+      [ ("type", String "PostgreSQL Table"),
+        ("title", String "Orders"),
+        ("resource", String "postgresql://warehouse/sales/orders")
+      ]
+      schemaSectionBody
+  assertEqual [] (validateProfile testProfileSpec [concept])
+
+testProfileUnknownType :: Either Text ()
+testProfileUnknownType = do
+  concept <-
+    profileConcept
+      "schemas/sales/tables/bad"
+      [("type", String "pg table"), ("title", String "Bad"), ("resource", String "postgresql://x")]
+      schemaSectionBody
+  cid <- parseTestConceptId "schemas/sales/tables/bad"
+  assertEqual [TypeNotInProfile cid "pg table"] (validateProfile testProfileSpec [concept])
+
+testProfileMissingField :: Either Text ()
+testProfileMissingField = do
+  concept <-
+    profileConcept
+      "schemas/sales/tables/orders"
+      [("type", String "PostgreSQL Table"), ("resource", String "postgresql://x")]
+      schemaSectionBody
+  cid <- parseTestConceptId "schemas/sales/tables/orders"
+  assertEqual [MissingProfileField cid "title"] (validateProfile testProfileSpec [concept])
+
+testProfileResourceMismatch :: Either Text ()
+testProfileResourceMismatch = do
+  concept <-
+    profileConcept
+      "schemas/sales/tables/orders"
+      [("type", String "PostgreSQL Table"), ("title", String "Orders"), ("resource", String "mysql://x")]
+      schemaSectionBody
+  cid <- parseTestConceptId "schemas/sales/tables/orders"
+  assertEqual
+    [ResourceSchemeMismatch cid "postgresql" "mysql://x"]
+    (validateProfile testProfileSpec [concept])
+
+testProfilePathMismatch :: Either Text ()
+testProfilePathMismatch = do
+  concept <-
+    profileConcept
+      "tables/orders"
+      [("type", String "PostgreSQL Table"), ("title", String "Orders"), ("resource", String "postgresql://x")]
+      schemaSectionBody
+  cid <- parseTestConceptId "tables/orders"
+  assertEqual
+    [PathPatternMismatch cid "PostgreSQL Table" "schemas/*/tables/*"]
+    (validateProfile testProfileSpec [concept])
+
+testProfileMissingSchema :: Either Text ()
+testProfileMissingSchema = do
+  concept <-
+    profileConcept
+      "schemas/sales/tables/orders"
+      [("type", String "PostgreSQL Table"), ("title", String "Orders"), ("resource", String "postgresql://x")]
+      "# Overview\n\nNo schema section here.\n"
+  cid <- parseTestConceptId "schemas/sales/tables/orders"
+  assertEqual
+    [MissingSchemaSection cid "PostgreSQL Table"]
+    (validateProfile testProfileSpec [concept])
+
+testProfileSchemaColumnsMismatch :: Either Text ()
+testProfileSchemaColumnsMismatch = do
+  let mismatchBody =
+        Text.unlines
+          ["# Schema", "", "| Col | Type |", "|-----|------|", "| id  | bigint |"]
+  concept <-
+    profileConcept
+      "schemas/sales/tables/orders"
+      [("type", String "PostgreSQL Table"), ("title", String "Orders"), ("resource", String "postgresql://x")]
+      mismatchBody
+  cid <- parseTestConceptId "schemas/sales/tables/orders"
+  assertEqual
+    [SchemaColumnsMismatch cid "PostgreSQL Table" ["Column", "Type", "Nullable", "Description"] ["Col", "Type"]]
+    (validateProfile testProfileSpec [concept])
+
+testSchemaSectionColumns :: Either Text ()
+testSchemaSectionColumns =
+  assertEqual
+    (Just ["Column", "Type", "Nullable", "Description"])
+    (schemaSectionColumns schemaSectionBody)
+
+-- | Milestone 5: walking the deviating fixture and validating it against the
+-- shipped descriptor produces exactly the expected advisory deviations.
+testProfileDeviationsFixture :: IO (Either Text ())
+testProfileDeviationsFixture = do
+  descriptorPath <- fixtureFilePath "profiles/postgresql.dhall"
+  loaded <- loadProfileFile descriptorPath
+  root <- fixturePath "profile-deviations"
+  concepts <- readBundle root
+  pure $ case loaded of
+    Left err -> Left ("failed to load profile: " <> err)
+    Right spec -> do
+      badId <- parseTestConceptId "schemas/sales/tables/bad"
+      ordersId <- parseTestConceptId "schemas/sales/tables/orders"
+      assertEqual
+        [TypeNotInProfile badId "pg table", MissingProfileField ordersId "title"]
+        (validateProfile spec concepts)
 
 substringIndex :: Text -> Text -> Maybe Int
 substringIndex needle haystack =
