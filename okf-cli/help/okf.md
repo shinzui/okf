@@ -46,8 +46,9 @@ CORE IDEAS
 WHAT THE okf TOOL DOES
 
   validate    Check frontmatter conformance and, as an authoring aid, that
-              links between concepts resolve.
+              links between concepts resolve and log.md files are structured.
   index       Generate progressive-disclosure index.md files per directory.
+  log         Preview log.md files, check stale concepts, and append entries.
   graph       Extract a JSON node/edge graph from links between concepts.
   show        Print one concept's metadata and body.
 

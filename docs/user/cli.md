@@ -15,8 +15,11 @@ The help output lists these commands:
 ```text
 validate
 index
+log
 graph
 show
+completions
+help
 ```
 
 
@@ -44,6 +47,7 @@ Validate every concept document in a bundle.
 ```bash
 cabal run okf -- validate BUNDLE
 cabal run okf -- validate BUNDLE --strict
+cabal run okf -- validate BUNDLE --log-enforce
 ```
 
 Default validation is permissive OKF conformance. It requires each concept
@@ -62,6 +66,12 @@ link from one concept to another `.md` concept that does not exist in the bundle
 is reported as a dangling reference, and the command exits non-zero. External
 URLs and non-`.md` links are not checked. Duplicate concept IDs are also
 reported. These checks run in both the permissive and strict profiles.
+
+If a bundle contains `log.md` files, validation checks their structure. A bad
+date heading or an empty date group is a hard error. Out-of-order date groups
+are advisory. Validation also reports concepts whose `timestamp` date is newer
+than the newest entry in the nearest enclosing `log.md`; those stale-log
+advisories exit `0` by default and exit non-zero with `--log-enforce`.
 
 Successful validation prints a concept count:
 
@@ -127,6 +137,40 @@ the bundle.
 
 The generated index groups immediate concept documents by their `type` field and
 lists immediate subdirectories in a `Subdirectories` section.
+
+
+## log
+
+Preview, check, and update `log.md` files. A `log.md` is a reserved Markdown
+file that records dated changes for its directory scope.
+
+```bash
+cabal run okf -- log BUNDLE
+cabal run okf -- log BUNDLE --check-stale
+cabal run okf -- log BUNDLE --since HEAD
+cabal run okf -- log add BUNDLE [CONCEPT_ID] --kind Update -m "Refreshed schema"
+```
+
+`okf log BUNDLE` prints each discovered log as:
+
+```text
+--- tables/log.md
+# tables Update Log
+
+## 2026-06-23
+* **Update**: Refreshed schema
+```
+
+`--check-stale` reports concepts whose frontmatter `timestamp` date is newer
+than the nearest enclosing `log.md` entry. `--since REF` uses git to report
+concept `.md` files changed since `REF` when their nearest enclosing `log.md`
+was not changed in the same diff. If git is unavailable or the bundle is not in
+a git checkout, the git drift check is skipped with a message.
+
+`okf log add` appends an entry. With a `CONCEPT_ID`, it writes the `log.md` in
+that concept's directory, creating it if absent; without one, it writes the root
+`log.md`. Re-running the same command adds another bullet; it does not
+deduplicate.
 
 
 ## graph

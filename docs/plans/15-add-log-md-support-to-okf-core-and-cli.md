@@ -104,8 +104,11 @@ This section must always reflect the actual current state of the work.
       changing `a.md` without `log.md` reports `git: a.md changed without
       log.md changing`, and changing `log.md` in the same diff removes the
       drift report.
-- [ ] Documentation: update `docs/user/cli.md`, `docs/user/format.md`, and the embedded
+- [x] Documentation: update `docs/user/cli.md`, `docs/user/format.md`, and the embedded
       `okf help` topics; mark this plan complete.
+      Completed 2026-06-23T23:41:02Z. Updated CLI docs, format docs, and
+      embedded `okf`, `format`, and `validation` help topics. Verified `cabal
+      run okf -- help` and `cabal run okf -- help validation`.
 
 
 ## Surprises & Discoveries
@@ -213,6 +216,12 @@ Compare the result against the original purpose.
   reports changed concept Markdown files whose nearest enclosing `log.md` was
   not changed in the same git diff, and skips cleanly when git cannot produce a
   diff.
+- 2026-06-23T23:41:02Z: Documentation is complete. The user guide now explains
+  `log.md` structure, `okf log`, `okf log add`, `--check-stale`, `--since`, and
+  `--log-enforce`; embedded help topics mention log validation and advisories.
+  The full plan outcome matches the original purpose: `okf-core` parses,
+  serializes, validates, discovers, appends, and checks staleness for logs, and
+  `okf-cli` exposes preview, validation, authoring, and git drift workflows.
 
 
 ## Context and Orientation

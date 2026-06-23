@@ -11,6 +11,16 @@ RESERVED FILES
 
   These filenames are reserved at any level and are never concept documents.
 
+  A log.md has a title, date groups, and bullet entries:
+
+    # Directory Update Log
+
+    ## 2026-06-23
+    * **Update**: Refreshed schema notes.
+
+  Date headings must be real YYYY-MM-DD calendar dates. okf validate treats
+  malformed log.md files as hard errors.
+
 CONCEPT IDS
 
   A concept ID is the bundle-relative path of a concept without the .md

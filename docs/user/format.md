@@ -14,7 +14,23 @@ log.md
 ```
 
 `index.md` files are generated or maintained as progressive-disclosure indexes
-for each directory. `log.md` is reserved for future or producer-specific use.
+for each directory. `log.md` files record chronological changes for the
+directory scope.
+
+A `log.md` uses a level-1 title, level-2 date groups, and bullet entries:
+
+```markdown
+# Directory Update Log
+
+## 2026-06-23
+* **Update**: Refreshed schema notes.
+* **Creation**: Added customers.
+```
+
+Date headings must be real `YYYY-MM-DD` calendar dates, and each date group
+must have at least one bullet. `okf validate` treats malformed `log.md` files as
+hard errors. `okf log --check-stale` and `okf validate --log-enforce` can compare
+concept `timestamp` dates against the nearest enclosing log entry.
 
 
 ## Concept IDs

@@ -24,9 +24,25 @@ REFERENTIAL INTEGRITY
     - A Markdown link to another .md concept that does not exist in the
       bundle is a dangling reference and fails validation.
     - Duplicate concept IDs are reported.
+    - Present log.md files must use valid YYYY-MM-DD headings and non-empty
+      date groups.
     - External URLs and non-.md links are not checked.
 
   These checks run in both permissive and strict modes.
+
+LOG ADVISORIES
+
+  okf validate reports concepts whose timestamp date is newer than the newest
+  entry in the nearest enclosing log.md. These stale-log findings are advisory
+  by default:
+
+    okf validate BUNDLE
+    okf validate BUNDLE --log-enforce
+
+  Use --log-enforce to make stale-log advisories fail the command. Use
+  okf log BUNDLE --check-stale for the same timestamp check without running all
+  validation, or okf log BUNDLE --since REF to ask git which changed concept
+  files did not change their nearest log.md in the same diff.
 
 CONFORMANCE VS AUTHORING CHECKS
 
