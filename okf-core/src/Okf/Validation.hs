@@ -5,15 +5,18 @@ module Okf.Validation
     validateDocument,
     BundleValidationError (..),
     validateBundle,
+    validateBundleLogs,
+    validateLogs,
   )
 where
 
 import Data.Text qualified as Text
 import Data.Vector qualified as Vector
-import Okf.Bundle (Concept, conceptDocument, conceptIdOf)
+import Okf.Bundle (Concept, LogFile, conceptDocument, conceptIdOf, logContent, logSourcePath)
 import Okf.ConceptId (ConceptId)
 import Okf.Document
 import Okf.Graph (danglingReferences, duplicateConceptIds)
+import Okf.Log (LogValidationError, validateLog)
 import Okf.Prelude
 
 -- | Validation modes supported by the initial OKF core library.
@@ -38,6 +41,8 @@ data BundleValidationError
     DanglingReference ConceptId ConceptId
   | -- | The same concept ID was assembled more than once.
     DuplicateConceptId ConceptId
+  | -- | A reserved log file does not match the required log structure.
+    LogInvalid FilePath LogValidationError
   deriving stock (Generic, Eq, Show)
 
 -- | Validate a whole bundle: per-document checks under the given profile, plus
@@ -54,6 +59,18 @@ validateBundle profile concepts =
       ]
     dangling = uncurry DanglingReference <$> danglingReferences concepts
     duplicates = DuplicateConceptId <$> duplicateConceptIds concepts
+
+-- | Validate all parsed @log.md@ files discovered in a bundle.
+validateBundleLogs :: [LogFile] -> [BundleValidationError]
+validateBundleLogs = validateLogs
+
+-- | Validate all parsed @log.md@ files discovered in a bundle.
+validateLogs :: [LogFile] -> [BundleValidationError]
+validateLogs logFiles =
+  [ LogInvalid (logSourcePath logFile) err
+  | logFile <- logFiles,
+    err <- validateLog (logContent logFile)
+  ]
 
 -- | Validate a parsed document under the requested profile.
 validateDocument :: ValidationProfile -> OKFDocument -> [ValidationError]

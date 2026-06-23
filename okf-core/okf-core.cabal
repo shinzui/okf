@@ -61,6 +61,7 @@ library
     , generic-lens  >=2.2  && <2.4
     , lens          ^>=5.3
     , text          ^>=2.1
+    , time          >=1.12 && <1.15
     , vector        >=0.13 && <0.14
     , yaml          >=0.11 && <0.12
 
@@ -80,3 +81,4 @@ test-suite okf-core-test
     , okf-core
     , temporary
     , text          ^>=2.1
+    , time          >=1.12 && <1.15

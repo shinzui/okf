@@ -45,6 +45,10 @@ main = do
         testIO "walkBundle skips index.md and log.md" testWalkBundleSkipsReserved,
         testIO "walkBundle discovers nested concept IDs" testWalkBundleDiscoversNestedConceptIds,
         test "parseLog/serializeLog round-trips a canonical log" testLogRoundTrip,
+        test "validateLog flags a non-ISO date heading" testValidateLogNonIsoDate,
+        test "validateLog flags an empty date group" testValidateLogEmptyDay,
+        test "validateLog flags out-of-order days" testValidateLogOutOfOrder,
+        testIO "walkLogs discovers nested log.md files" testWalkLogsDiscoversNested,
         testIO "generateIndex groups documents by frontmatter type" testGenerateIndexGroupsByType,
         testIO "extractLinks resolves relative and absolute bundle links" testExtractLinksResolveBundleLinks,
         testIO "extractLinks ignores external markdown URLs" testExtractLinksIgnoresExternalUrls,
@@ -198,6 +202,41 @@ testLogRoundTrip = do
       parsed = parseLog canonicalLog
       reparsed = parseLog (serializeLog parsed)
   assertEqual parsed reparsed
+
+testValidateLogNonIsoDate :: Either Text ()
+testValidateLogNonIsoDate =
+  assertBool
+    "expected LogDateNotIso"
+    (LogDateNotIso "not-a-date" `List.elem` validateLog (parseLog "# Log\n\n## not-a-date\n* **Update**: oops\n"))
+
+testValidateLogEmptyDay :: Either Text ()
+testValidateLogEmptyDay =
+  assertBool
+    "expected LogEmptyDay"
+    (LogEmptyDay "2026-06-23" `List.elem` validateLog (parseLog "# Log\n\n## 2026-06-23\n"))
+
+testValidateLogOutOfOrder :: Either Text ()
+testValidateLogOutOfOrder =
+  assertBool
+    "expected LogDaysOutOfOrder"
+    ( LogDaysOutOfOrder "2026-01-01" "2026-06-23"
+        `List.elem` validateLog (parseLog "# Log\n\n## 2026-01-01\n* Old.\n\n## 2026-06-23\n* New.\n")
+    )
+
+testWalkLogsDiscoversNested :: IO (Either Text ())
+testWalkLogsDiscoversNested = do
+  temporaryDirectory <- getTemporaryDirectory
+  root <- createTempDirectory temporaryDirectory "okf-core-logs"
+  createDirectoryIfMissing True (root </> "tables")
+  Text.IO.writeFile (root </> "log.md") "# Root Log\n\n## 2026-06-23\n* Root entry.\n"
+  Text.IO.writeFile (root </> "tables" </> "log.md") "# Tables Log\n\n## 2026-06-22\n* Tables entry.\n"
+  result <- walkLogs root
+  removeDirectoryRecursive root
+  pure
+    ( case result of
+        Right logs -> assertEqual ["log.md", "tables/log.md"] (logSourcePath <$> logs)
+        Left bundleError -> Left ("expected logs, got " <> Text.pack (show bundleError))
+    )
 
 testGenerateIndexGroupsByType :: IO (Either Text ())
 testGenerateIndexGroupsByType =

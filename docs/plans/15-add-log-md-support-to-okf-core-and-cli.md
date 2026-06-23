@@ -69,8 +69,13 @@ This section must always reflect the actual current state of the work.
       Completed 2026-06-23T23:19:30Z. Added `okf-core/src/Okf/Log.hs`, exposed
       `Okf.Log`, and added the core round-trip test. `cabal test okf-core-test`
       passed after the change.
-- [ ] Milestone 2: validate log structure and discover logs in a bundle; fold structural
+- [x] Milestone 2: validate log structure and discover logs in a bundle; fold structural
       checks into `validateBundle`.
+      Completed 2026-06-23T23:22:28Z. Added `LogValidationError`,
+      `validateLog`, `logErrorIsStructural`, `LogFile`, `walkLogs`,
+      `LogInvalid`, and `validateBundleLogs`/`validateLogs`. `cabal test
+      okf-core-test` passed with the non-ISO date, empty day, out-of-order day,
+      and nested log discovery tests.
 - [ ] Milestone 3: advisory staleness detection comparing concept `timestamp` to nearest log.
 - [ ] Milestone 4: `okf log` CLI command (preview + structural validation) and log-aware
       `okf validate` with `--log-enforce`.
@@ -154,6 +159,10 @@ Compare the result against the original purpose.
   `Okf.Log` module with `Log`, `LogDay`, `LogEntry`, total `parseLog`, and
   deterministic `serializeLog`. The new core test proves a canonical log parses,
   serializes, and re-parses to the same model.
+- 2026-06-23T23:22:28Z: Milestone 2 is complete. `okf-core` now validates
+  malformed `log.md` structures, classifies ordering as advisory, discovers
+  nested logs in bundle directories, and exposes bundle-level log validation
+  errors without changing the existing concept-only `validateBundle` signature.
 
 
 ## Context and Orientation

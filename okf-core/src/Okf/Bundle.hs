@@ -2,6 +2,7 @@
 module Okf.Bundle
   ( BundleError (..),
     Concept,
+    LogFile,
     conceptFromDocument,
     conceptDescription,
     conceptDocument,
@@ -13,8 +14,11 @@ module Okf.Bundle
     conceptType,
     findConcept,
     isReservedMarkdownFile,
+    logContent,
+    logSourcePath,
     serializeConcept,
     walkBundle,
+    walkLogs,
     writeBundle,
   )
 where
@@ -25,6 +29,7 @@ import Data.Text qualified as Text
 import Data.Text.IO qualified as Text.IO
 import Okf.ConceptId
 import Okf.Document
+import Okf.Log
 import Okf.Prelude
 import System.Directory
   ( createDirectoryIfMissing,
@@ -55,6 +60,13 @@ data BundleError
   | BundleIoError FilePath Text
   deriving stock (Generic, Eq, Show)
 
+-- | A parsed @log.md@ reserved file discovered in a bundle.
+data LogFile = LogFile
+  { logSourcePath :: !FilePath,
+    logContent :: !Log
+  }
+  deriving stock (Generic, Eq, Show)
+
 -- | Discover and parse every non-reserved Markdown concept in a bundle.
 walkBundle :: FilePath -> IO (Either BundleError [Concept])
 walkBundle root = do
@@ -64,6 +76,16 @@ walkBundle root = do
     Right paths -> do
       results <- mapM (readConcept root) paths
       pure (List.sortOn (renderConceptId . conceptIdOf) <$> sequenceA results)
+
+-- | Discover and parse every @log.md@ reserved file in a bundle.
+walkLogs :: FilePath -> IO (Either BundleError [LogFile])
+walkLogs root = do
+  discovered <- discoverLogFiles root ""
+  case discovered of
+    Left bundleError -> pure (Left bundleError)
+    Right paths -> do
+      results <- mapM (readLog root) paths
+      pure (List.sortOn logSourcePath <$> sequenceA results)
 
 -- | Find a concept by identifier in an already walked bundle.
 findConcept :: ConceptId -> [Concept] -> Maybe Concept
@@ -132,6 +154,34 @@ discoverMarkdownFiles root relativeDir = do
           )
       pure (concat <$> sequenceA discovered)
 
+discoverLogFiles :: FilePath -> FilePath -> IO (Either BundleError [FilePath])
+discoverLogFiles root relativeDir = do
+  let absoluteDir = root </> relativeDir
+      displayDir = if null relativeDir then root else relativeDir
+  listed <- tryBundleIo displayDir (listDirectory absoluteDir)
+  case listed of
+    Left bundleError -> pure (Left bundleError)
+    Right entries -> do
+      discovered <-
+        for
+          (List.sort entries)
+          ( \entry -> do
+              let relativePath = relativeDir </> entry
+                  absolutePath = root </> relativePath
+              isDirectory <- tryBundleIo relativePath (doesDirectoryExist absolutePath)
+              case isDirectory of
+                Left bundleError -> pure (Left bundleError)
+                Right True -> discoverLogFiles root relativePath
+                Right False ->
+                  pure
+                    ( Right
+                        [ FilePath.normalise relativePath
+                        | entry == "log.md"
+                        ]
+                    )
+          )
+      pure (concat <$> sequenceA discovered)
+
 -- | Write every concept to @root/\<conceptId\>.md@, creating parent directories
 -- as needed, using 'serializeDocument' for the file contents. Existing files for
 -- the given concepts are overwritten; files NOT corresponding to a supplied
@@ -161,6 +211,15 @@ readConcept root relativePath = do
         conceptId <- first (InvalidConceptPath relativePath) (conceptIdFromFilePath relativePath)
         document <- first (InvalidConceptDocument relativePath) (parseDocument content)
         pure (conceptAt conceptId relativePath document)
+    )
+
+readLog :: FilePath -> FilePath -> IO (Either BundleError LogFile)
+readLog root relativePath = do
+  loaded <- tryBundleIo relativePath (Text.IO.readFile (root </> relativePath))
+  pure
+    ( do
+        content <- loaded
+        pure (LogFile {logSourcePath = relativePath, logContent = parseLog content})
     )
 
 tryBundleIo :: FilePath -> IO value -> IO (Either BundleError value)

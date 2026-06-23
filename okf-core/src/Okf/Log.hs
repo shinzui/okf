@@ -4,13 +4,18 @@ module Okf.Log
     LogDay (..),
     LogEntry (..),
     LogParseError (..),
+    LogValidationError (..),
+    logErrorIsStructural,
     parseLog,
     serializeLog,
+    validateLog,
   )
 where
 
 import CMarkGFM qualified
+import Data.Char qualified as Char
 import Data.Text qualified as Text
+import Data.Time (Day, defaultTimeLocale, parseTimeM)
 import Okf.Prelude
 
 -- | One parsed @log.md@ file.
@@ -39,6 +44,13 @@ data LogParseError
   = LogNotMarkdown Text
   deriving stock (Generic, Eq, Show)
 
+-- | A structural or advisory problem in one parsed log.
+data LogValidationError
+  = LogDateNotIso Text
+  | LogDaysOutOfOrder Text Text
+  | LogEmptyDay Text
+  deriving stock (Generic, Eq, Show)
+
 -- | Parse Markdown into the log model. Structural validation is separate.
 parseLog :: Text -> Log
 parseLog markdown =
@@ -64,6 +76,30 @@ serializeLog Log {logTitle, logDays} =
       "* **" <> kind <> "**: " <> logText
     renderEntry LogEntry {logKind = Nothing, logText} =
       "* " <> logText
+
+-- | Validate the OKF @log.md@ structure and ordering.
+validateLog :: Log -> [LogValidationError]
+validateLog Log {logDays} =
+  foldMap validateDay logDays <> validateOrdering logDays
+  where
+    validateDay LogDay {logDate, logEntries} =
+      [LogDateNotIso logDate | not (isIsoDate logDate)]
+        <> [LogEmptyDay logDate | null logEntries]
+
+    validateOrdering days =
+      [ LogDaysOutOfOrder earlier later
+      | (LogDay earlier _, LogDay later _) <- zip days (drop 1 days),
+        isIsoDate earlier,
+        isIsoDate later,
+        earlier < later
+      ]
+
+-- | Whether a log validation error is a hard reserved-file structure error.
+logErrorIsStructural :: LogValidationError -> Bool
+logErrorIsStructural = \case
+  LogDateNotIso _ -> True
+  LogEmptyDay _ -> True
+  LogDaysOutOfOrder _ _ -> False
 
 data BuildLog = BuildLog
   { buildTitle :: !(Maybe Text),
@@ -163,3 +199,16 @@ ensureTrailingNewline text
   | Text.null text = "\n"
   | "\n" `Text.isSuffixOf` text = text
   | otherwise = text <> "\n"
+
+isIsoDate :: Text -> Bool
+isIsoDate value =
+  Text.length value == 10
+    && Text.index value 4 == '-'
+    && Text.index value 7 == '-'
+    && Text.all Char.isDigit (Text.take 4 value)
+    && Text.all Char.isDigit (Text.take 2 (Text.drop 5 value))
+    && Text.all Char.isDigit (Text.drop 8 value)
+    && isJust parsed
+  where
+    parsed :: Maybe Day
+    parsed = parseTimeM True defaultTimeLocale "%Y-%m-%d" (Text.unpack value)
