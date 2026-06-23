@@ -49,6 +49,8 @@ main = do
         test "validateLog flags an empty date group" testValidateLogEmptyDay,
         test "validateLog flags out-of-order days" testValidateLogOutOfOrder,
         testIO "walkLogs discovers nested log.md files" testWalkLogsDiscoversNested,
+        test "logStaleness flags a concept newer than its nearest log" testLogStalenessFlagsNewerConcept,
+        test "logStaleness prefers the deepest enclosing log" testLogStalenessPrefersDeepestLog,
         testIO "generateIndex groups documents by frontmatter type" testGenerateIndexGroupsByType,
         testIO "extractLinks resolves relative and absolute bundle links" testExtractLinksResolveBundleLinks,
         testIO "extractLinks ignores external markdown URLs" testExtractLinksIgnoresExternalUrls,
@@ -237,6 +239,40 @@ testWalkLogsDiscoversNested = do
         Right logs -> assertEqual ["log.md", "tables/log.md"] (logSourcePath <$> logs)
         Left bundleError -> Left ("expected logs, got " <> Text.pack (show bundleError))
     )
+
+testLogStalenessFlagsNewerConcept :: Either Text ()
+testLogStalenessFlagsNewerConcept = do
+  staleId <- parseTestConceptId "stale"
+  staleConcept <- testConceptWithTimestamp "stale" "2026-06-23T00:00:00Z"
+  currentConcept <- testConceptWithTimestamp "current" "2026-01-01T00:00:00Z"
+  let logs = [LogFile "log.md" (parseLog "# Log\n\n## 2026-06-01\n* **Update**: logged.\n")]
+  assertEqual
+    [ LogStaleness
+        { staleConcept = staleId,
+          staleConceptDate = "2026-06-23",
+          staleLogPath = Just "log.md",
+          staleLogDate = Just "2026-06-01"
+        }
+    ]
+    (logStaleness [staleConcept, currentConcept] logs)
+
+testLogStalenessPrefersDeepestLog :: Either Text ()
+testLogStalenessPrefersDeepestLog = do
+  usersId <- parseTestConceptId "tables/users"
+  usersConcept <- testConceptWithTimestamp "tables/users" "2026-06-21T00:00:00Z"
+  let logs =
+        [ LogFile "log.md" (parseLog "# Root Log\n\n## 2026-06-01\n* **Update**: root.\n"),
+          LogFile "tables/log.md" (parseLog "# Tables Log\n\n## 2026-06-20\n* **Update**: tables.\n")
+        ]
+  assertEqual
+    [ LogStaleness
+        { staleConcept = usersId,
+          staleConceptDate = "2026-06-21",
+          staleLogPath = Just "tables/log.md",
+          staleLogDate = Just "2026-06-20"
+        }
+    ]
+    (logStaleness [usersConcept] logs)
 
 testGenerateIndexGroupsByType :: IO (Either Text ())
 testGenerateIndexGroupsByType =
@@ -486,6 +522,19 @@ testConcept rawId bodyText = do
               commonTimestamp = Just "2026-06-16T00:00:00Z"
             }
   pure (conceptFromDocument conceptId (OKFDocument frontmatterValue bodyText))
+
+testConceptWithTimestamp :: Text -> Text -> Either Text Concept
+testConceptWithTimestamp rawId timestamp = do
+  conceptId <- parseTestConceptId rawId
+  let frontmatterValue =
+        okfCommon
+          OkfCommon
+            { commonType = "Test",
+              commonTitle = Just "Title",
+              commonDescription = Just "Description",
+              commonTimestamp = Just timestamp
+            }
+  pure (conceptFromDocument conceptId (OKFDocument frontmatterValue "# Test\n"))
 
 testConceptFromDocumentDerivesFields :: Either Text ()
 testConceptFromDocumentDerivesFields = do

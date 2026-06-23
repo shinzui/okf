@@ -76,7 +76,11 @@ This section must always reflect the actual current state of the work.
       `LogInvalid`, and `validateBundleLogs`/`validateLogs`. `cabal test
       okf-core-test` passed with the non-ISO date, empty day, out-of-order day,
       and nested log discovery tests.
-- [ ] Milestone 3: advisory staleness detection comparing concept `timestamp` to nearest log.
+- [x] Milestone 3: advisory staleness detection comparing concept `timestamp` to nearest log.
+      Completed 2026-06-23T23:24:36Z. Added `LogStaleness` and
+      `logStaleness`, including nearest-enclosing-log selection and timestamp
+      date-prefix comparison. `cabal test okf-core-test` passed with tests for
+      stale concepts and deepest log selection.
 - [ ] Milestone 4: `okf log` CLI command (preview + structural validation) and log-aware
       `okf validate` with `--log-enforce`.
 - [ ] Milestone 5: `okf log add` authoring command plus core `appendLogEntry`.
@@ -163,6 +167,10 @@ Compare the result against the original purpose.
   malformed `log.md` structures, classifies ordering as advisory, discovers
   nested logs in bundle directories, and exposes bundle-level log validation
   errors without changing the existing concept-only `validateBundle` signature.
+- 2026-06-23T23:24:36Z: Milestone 3 is complete. `okf-core` can now report
+  concepts whose frontmatter `timestamp` date is newer than the newest entry in
+  the nearest enclosing `log.md`, and it reports concepts with timestamps but no
+  covering log as stale.
 
 
 ## Context and Orientation

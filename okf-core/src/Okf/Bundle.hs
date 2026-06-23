@@ -2,7 +2,7 @@
 module Okf.Bundle
   ( BundleError (..),
     Concept,
-    LogFile,
+    LogFile (..),
     conceptFromDocument,
     conceptDescription,
     conceptDocument,
@@ -14,8 +14,6 @@ module Okf.Bundle
     conceptType,
     findConcept,
     isReservedMarkdownFile,
-    logContent,
-    logSourcePath,
     serializeConcept,
     walkBundle,
     walkLogs,
