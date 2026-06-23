@@ -3,13 +3,16 @@ module Okf.Cli
   ( Command (..),
     GraphOptions (..),
     IndexOptions (..),
+    LogAddOptions (..),
     LogOptions (..),
+    LogSub (..),
     Options (..),
     ShowOptions (..),
     ValidateOptions (..),
     parserInfo,
     runCli,
     runCommand,
+    runLogAdd,
   )
 where
 
@@ -18,6 +21,7 @@ import Data.ByteString.Lazy.Char8 qualified as LazyByteString
 import Data.Foldable (traverse_)
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text.IO
+import Data.Time (defaultTimeLocale, formatTime, getCurrentTime, utctDay)
 import Okf.Bundle
 import Okf.Cli.Completions (CompletionsShell, completionsParser, handleCompletions)
 import Okf.Cli.Help (HelpCommand, handleHelpCommand, helpCommandParser)
@@ -31,7 +35,10 @@ import Okf.Prelude
 import Okf.Profile (ProfileViolation (..), loadProfileFile, validateProfile)
 import Okf.Validation
 import Options.Applicative
+import System.Directory (createDirectoryIfMissing, doesFileExist)
 import System.Exit (exitFailure)
+import System.FilePath ((</>))
+import System.FilePath qualified as FilePath
 import System.IO (stderr)
 
 data Command
@@ -62,7 +69,21 @@ data IndexOptions = IndexOptions
 data LogOptions = LogOptions
   { bundlePath :: !FilePath,
     checkStale :: !Bool,
-    sinceRef :: !(Maybe Text)
+    sinceRef :: !(Maybe Text),
+    logSub :: !LogSub
+  }
+  deriving stock (Show, Eq)
+
+data LogSub
+  = LogPreview
+  | LogAdd LogAddOptions
+  deriving stock (Show, Eq)
+
+data LogAddOptions = LogAddOptions
+  { conceptId :: !(Maybe Text),
+    kind :: !Text,
+    message :: !Text,
+    date :: !(Maybe Text)
   }
   deriving stock (Show, Eq)
 
@@ -141,6 +162,10 @@ indexOptionsParser =
 
 logOptionsParser :: Parser LogOptions
 logOptionsParser =
+  logAddCommandParser <|> logPreviewOptionsParser
+
+logPreviewOptionsParser :: Parser LogOptions
+logPreviewOptionsParser =
   LogOptions
     <$> bundleArgument
     <*> switch (long "check-stale" <> help "Report concepts newer than their nearest log.md")
@@ -150,6 +175,57 @@ logOptionsParser =
             ( long "since"
                 <> metavar "GIT_REF"
                 <> help "Report git drift since a ref (implemented in Milestone 6)"
+            )
+      )
+    <*> pure LogPreview
+
+logAddCommandParser :: Parser LogOptions
+logAddCommandParser =
+  hsubparser
+    ( command
+        "add"
+        ( info
+            (logAddOptionsToCommand <$> bundleArgument <*> logAddOptionsParser <**> helper)
+            (progDesc "Append an entry to the nearest log.md")
+        )
+    )
+
+logAddOptionsToCommand :: FilePath -> LogAddOptions -> LogOptions
+logAddOptionsToCommand path addOptions =
+  LogOptions
+    { bundlePath = path,
+      checkStale = False,
+      sinceRef = Nothing,
+      logSub = LogAdd addOptions
+    }
+
+logAddOptionsParser :: Parser LogAddOptions
+logAddOptionsParser =
+  LogAddOptions
+    <$> optional (Text.pack <$> strArgument (metavar "CONCEPT_ID" <> help "Concept ID whose directory log.md should be updated"))
+    <*> ( Text.pack
+            <$> strOption
+              ( long "kind"
+                  <> metavar "KIND"
+                  <> value "Update"
+                  <> showDefault
+                  <> help "Leading bold log entry kind"
+              )
+        )
+    <*> ( Text.pack
+            <$> strOption
+              ( short 'm'
+                  <> long "message"
+                  <> metavar "MESSAGE"
+                  <> help "Log entry message"
+              )
+        )
+    <*> optional
+      ( Text.pack
+          <$> strOption
+            ( long "date"
+                <> metavar "YYYY-MM-DD"
+                <> help "Entry date; defaults to today in UTC"
             )
       )
 
@@ -234,7 +310,7 @@ runIndex IndexOptions {bundlePath, write} =
       mapM_ renderIndexPreview indexes
 
 runLog :: LogOptions -> IO ()
-runLog LogOptions {bundlePath, checkStale, sinceRef} = do
+runLog LogOptions {bundlePath, checkStale, sinceRef, logSub = LogPreview} = do
   logs <- loadLogsOrExit bundlePath
   mapM_ renderLogPreview logs
   let logErrors = validateBundleLogs logs
@@ -249,6 +325,56 @@ runLog LogOptions {bundlePath, checkStale, sinceRef} = do
       else pure []
   mapM_ (Text.IO.hPutStrLn stderr . ("log: " <>) . renderLogStaleness) staleness
   when (any bundleValidationErrorIsFailure logErrors) exitFailure
+runLog LogOptions {bundlePath, logSub = LogAdd addOptions} =
+  runLogAdd bundlePath addOptions
+
+runLogAdd :: FilePath -> LogAddOptions -> IO ()
+runLogAdd bundlePath LogAddOptions {conceptId, kind, message, date} = do
+  entryDate <- maybe todayDate pure date
+  targetPath <- resolveLogTarget bundlePath conceptId
+  let absolutePath = bundlePath </> targetPath
+      entry = Log.LogEntry {Log.logKind = Just kind, Log.logText = message}
+  exists <- doesFileExist absolutePath
+  existingLog <-
+    if exists
+      then Log.parseLog <$> Text.IO.readFile absolutePath
+      else pure (emptyLogFor targetPath)
+  createDirectoryIfMissing True (FilePath.takeDirectory absolutePath)
+  Text.IO.writeFile absolutePath (Log.serializeLog (Log.appendLogEntry entryDate entry existingLog))
+  Text.IO.putStrLn ("Wrote " <> Text.pack targetPath <> " for " <> entryDate)
+
+resolveLogTarget :: FilePath -> Maybe Text -> IO FilePath
+resolveLogTarget _ Nothing =
+  pure "log.md"
+resolveLogTarget bundlePath (Just rawConceptId) = do
+  parsed <- either (dieText . renderConceptIdError rawConceptId) pure (parseConceptId rawConceptId)
+  concepts <- loadBundleOrExit bundlePath
+  when (isNothing (findConcept parsed concepts)) $
+    Text.IO.hPutStrLn stderr ("log: warning: concept not found: " <> rawConceptId)
+  pure (logPathForConcept parsed)
+
+logPathForConcept :: ConceptId -> FilePath
+logPathForConcept conceptId =
+  case FilePath.takeDirectory (conceptIdToFilePath conceptId) of
+    "." -> "log.md"
+    directory -> directory </> "log.md"
+
+emptyLogFor :: FilePath -> Log.Log
+emptyLogFor targetPath =
+  Log.Log
+    { Log.logTitle = defaultLogTitle targetPath,
+      Log.logDays = []
+    }
+
+defaultLogTitle :: FilePath -> Text
+defaultLogTitle targetPath =
+  case FilePath.takeDirectory targetPath of
+    "." -> "Bundle Update Log"
+    directory -> Text.pack directory <> " Update Log"
+
+todayDate :: IO Text
+todayDate =
+  Text.pack . formatTime defaultTimeLocale "%Y-%m-%d" . utctDay <$> getCurrentTime
 
 runGraph :: GraphOptions -> IO ()
 runGraph GraphOptions {bundlePath} = do

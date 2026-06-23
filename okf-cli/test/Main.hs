@@ -2,13 +2,18 @@ module Main (main) where
 
 import Control.Monad (unless)
 import Data.Text qualified as Text
+import Data.Text.IO qualified as Text.IO
 import Okf.Cli
 import Okf.Cli.Help (HelpTopic (..), helpTopics)
 import Options.Applicative
+import System.Directory (createDirectoryIfMissing, getTemporaryDirectory, removeDirectoryRecursive)
 import System.Exit (exitFailure)
+import System.FilePath ((</>))
+import System.IO.Temp (createTempDirectory)
 
 main :: IO ()
 main = do
+  logAddWrites <- testLogAddWritesFile
   let results =
         [ parseSucceeds ["validate", "bundle"],
           parseSucceeds ["validate", "bundle", "--strict"],
@@ -50,7 +55,23 @@ main = do
             LogOptions
               { bundlePath = "b",
                 checkStale = True,
-                sinceRef = Just "HEAD~1"
+                sinceRef = Just "HEAD~1",
+                logSub = LogPreview
+              },
+          parseLogMatches
+            ["log", "add", "b", "tables/users", "--kind", "Update", "-m", "Refreshed schema", "--date", "2026-06-23"]
+            LogOptions
+              { bundlePath = "b",
+                checkStale = False,
+                sinceRef = Nothing,
+                logSub =
+                  LogAdd
+                    LogAddOptions
+                      { conceptId = Just "tables/users",
+                        kind = "Update",
+                        message = "Refreshed schema",
+                        date = Just "2026-06-23"
+                      }
               },
           parseSucceeds ["graph", "bundle", "--json"],
           parseSucceeds ["show", "bundle", "tables/orders"],
@@ -64,7 +85,8 @@ main = do
           any ((== "okf") . topicName) helpTopics,
           all (not . Text.null . topicContent) helpTopics,
           parseShowsInfo ["--version"],
-          parseFails ["hello"]
+          parseFails ["hello"],
+          logAddWrites
         ]
   unless (and results) exitFailure
 
@@ -88,6 +110,45 @@ parseLogMatches args expected =
   case execParserPure defaultPrefs parserInfo args of
     Success (Options (Log opts)) -> opts == expected
     _ -> False
+
+testLogAddWritesFile :: IO Bool
+testLogAddWritesFile = do
+  temporaryDirectory <- getTemporaryDirectory
+  root <- createTempDirectory temporaryDirectory "okf-cli-log-add"
+  createDirectoryIfMissing True (root </> "tables")
+  Text.IO.writeFile
+    (root </> "tables" </> "users.md")
+    ( Text.unlines
+        [ "---",
+          "type: Table",
+          "timestamp: 2026-06-23T10:00:00Z",
+          "---",
+          "",
+          "# Users"
+        ]
+    )
+  runCommand
+    ( Log
+        LogOptions
+          { bundlePath = root,
+            checkStale = False,
+            sinceRef = Nothing,
+            logSub =
+              LogAdd
+                LogAddOptions
+                  { conceptId = Just "tables/users",
+                    kind = "Update",
+                    message = "Refreshed schema",
+                    date = Just "2026-06-23"
+                  }
+          }
+    )
+  written <- Text.IO.readFile (root </> "tables" </> "log.md")
+  removeDirectoryRecursive root
+  pure
+    ( "## 2026-06-23" `Text.isInfixOf` written
+        && "* **Update**: Refreshed schema" `Text.isInfixOf` written
+    )
 
 parseFails :: [String] -> Bool
 parseFails args =

@@ -90,7 +90,13 @@ This section must always reflect the actual current state of the work.
       okf-core/test/fixtures/valid-bundle`, malformed-log validation, default
       stale-log validation, enforced stale-log validation, and `okf log
       --check-stale` were run successfully.
-- [ ] Milestone 5: `okf log add` authoring command plus core `appendLogEntry`.
+- [x] Milestone 5: `okf log add` authoring command plus core `appendLogEntry`.
+      Completed 2026-06-23T23:34:43Z. Added `appendLogEntry`, reshaped
+      `okf log` to support an `add` subcommand, added fixed-date parser and IO
+      coverage for `log add`, and manually verified `cabal run okf -- log add
+      /tmp/okf-log-add.G4BHEk tables/users --kind Update -m "Refreshed schema"
+      --date 2026-06-23` followed by `cabal run okf -- log
+      /tmp/okf-log-add.G4BHEk`.
 - [ ] Milestone 6: optional git-drift mode (`okf log --since <ref>`).
 - [ ] Documentation: update `docs/user/cli.md`, `docs/user/format.md`, and the embedded
       `okf help` topics; mark this plan complete.
@@ -187,6 +193,10 @@ Compare the result against the original purpose.
 - 2026-06-23T23:30:35Z: Milestone 4 is complete. Users can preview discovered
   logs with `okf log`, malformed logs fail `okf validate`, and stale concepts
   are advisory by default but become failing with `--log-enforce`.
+- 2026-06-23T23:34:43Z: Milestone 5 is complete. Users can now append a log
+  entry from the CLI, targeting the root log by default or a concept directory's
+  log when a concept ID is supplied. Missing logs are created with a default
+  title, and existing logs receive the new entry under the requested date.
 
 
 ## Context and Orientation

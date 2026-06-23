@@ -51,6 +51,7 @@ main = do
         testIO "walkLogs discovers nested log.md files" testWalkLogsDiscoversNested,
         test "logStaleness flags a concept newer than its nearest log" testLogStalenessFlagsNewerConcept,
         test "logStaleness prefers the deepest enclosing log" testLogStalenessPrefersDeepestLog,
+        test "appendLogEntry inserts newest-first and prepends within a day" testAppendLogEntry,
         testIO "generateIndex groups documents by frontmatter type" testGenerateIndexGroupsByType,
         testIO "extractLinks resolves relative and absolute bundle links" testExtractLinksResolveBundleLinks,
         testIO "extractLinks ignores external markdown URLs" testExtractLinksIgnoresExternalUrls,
@@ -292,6 +293,27 @@ testLogStalenessPrefersDeepestLog = do
         }
     ]
     (logStaleness [usersConcept] logs)
+
+testAppendLogEntry :: Either Text ()
+testAppendLogEntry =
+  assertEqual
+    ( Log
+        { logTitle = "Log",
+          logDays =
+            [ LogDay "2026-06-23" [LogEntry (Just "Update") "new"],
+              LogDay "2026-06-01" [LogEntry (Just "Update") "prepended", LogEntry (Just "Creation") "old"]
+            ]
+        }
+    )
+    ( appendLogEntry
+        "2026-06-01"
+        (LogEntry (Just "Update") "prepended")
+        ( appendLogEntry
+            "2026-06-23"
+            (LogEntry (Just "Update") "new")
+            (Log "Log" [LogDay "2026-06-01" [LogEntry (Just "Creation") "old"]])
+        )
+    )
 
 testGenerateIndexGroupsByType :: IO (Either Text ())
 testGenerateIndexGroupsByType =

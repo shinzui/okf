@@ -5,6 +5,7 @@ module Okf.Log
     LogEntry (..),
     LogParseError (..),
     LogValidationError (..),
+    appendLogEntry,
     logErrorIsStructural,
     parseLog,
     serializeLog,
@@ -183,6 +184,19 @@ plainText (CMarkGFM.Node _ nodeType childNodes) =
 renderInlineNodes :: [CMarkGFM.Node] -> Text
 renderInlineNodes nodes =
   Text.strip (CMarkGFM.nodeToCommonmark [] Nothing (CMarkGFM.Node Nothing CMarkGFM.PARAGRAPH nodes))
+
+-- | Insert an entry under a date, keeping date groups newest first.
+appendLogEntry :: Text -> LogEntry -> Log -> Log
+appendLogEntry dateText entry logFile@Log {logDays} =
+  logFile {logDays = insertDay logDays}
+  where
+    newDay = LogDay dateText [entry]
+
+    insertDay [] = [newDay]
+    insertDay (day : rest)
+      | logDate day == dateText = day {logEntries = entry : logEntries day} : rest
+      | dateText > logDate day = newDay : day : rest
+      | otherwise = day : insertDay rest
 
 dropKindSeparator :: Text -> Text
 dropKindSeparator text =
