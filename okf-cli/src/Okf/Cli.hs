@@ -16,9 +16,12 @@ module Okf.Cli
   )
 where
 
+import Control.Exception (IOException, try)
 import Data.Aeson qualified as Aeson
 import Data.ByteString.Lazy.Char8 qualified as LazyByteString
 import Data.Foldable (traverse_)
+import Data.List qualified as List
+import Data.Set qualified as Set
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text.IO
 import Data.Time (defaultTimeLocale, formatTime, getCurrentTime, utctDay)
@@ -36,10 +39,11 @@ import Okf.Profile (ProfileViolation (..), loadProfileFile, validateProfile)
 import Okf.Validation
 import Options.Applicative
 import System.Directory (createDirectoryIfMissing, doesFileExist)
-import System.Exit (exitFailure)
+import System.Exit (ExitCode (..), exitFailure)
 import System.FilePath ((</>))
 import System.FilePath qualified as FilePath
 import System.IO (stderr)
+import System.Process (readProcessWithExitCode)
 
 data Command
   = Validate ValidateOptions
@@ -315,8 +319,9 @@ runLog LogOptions {bundlePath, checkStale, sinceRef, logSub = LogPreview} = do
   mapM_ renderLogPreview logs
   let logErrors = validateBundleLogs logs
   mapM_ (Text.IO.hPutStrLn stderr . renderBundleValidationError) logErrors
-  when (isJust sinceRef) $
-    Text.IO.hPutStrLn stderr "log: --since is parsed but git drift checking is implemented in Milestone 6"
+  case sinceRef of
+    Nothing -> pure ()
+    Just ref -> runGitDriftCheck bundlePath ref logs
   staleness <-
     if checkStale
       then do
@@ -375,6 +380,65 @@ defaultLogTitle targetPath =
 todayDate :: IO Text
 todayDate =
   Text.pack . formatTime defaultTimeLocale "%Y-%m-%d" . utctDay <$> getCurrentTime
+
+runGitDriftCheck :: FilePath -> Text -> [LogFile] -> IO ()
+runGitDriftCheck bundlePath ref logs = do
+  result <-
+    try
+      ( readProcessWithExitCode
+          "git"
+          ["-C", bundlePath, "diff", "--name-only", "--relative", Text.unpack ref, "--", "."]
+          ""
+      )
+  case result of
+    Left (exception :: IOException) ->
+      Text.IO.hPutStrLn stderr ("log: skipped git drift check: " <> Text.pack (show exception))
+    Right (exitCode, output, errOutput) ->
+      case exitCode of
+        ExitSuccess ->
+          mapM_ (Text.IO.hPutStrLn stderr . ("git: " <>) . renderGitDrift) (gitDriftForChangedPaths logs (Text.lines (Text.pack output)))
+        ExitFailure _ ->
+          Text.IO.hPutStrLn stderr ("log: skipped git drift check: " <> firstNonEmpty (Text.pack errOutput) (Text.pack output))
+
+data GitDrift = GitDrift
+  { driftConceptPath :: !FilePath,
+    driftLogPath :: !(Maybe FilePath)
+  }
+  deriving stock (Generic, Eq, Show)
+
+gitDriftForChangedPaths :: [LogFile] -> [Text] -> [GitDrift]
+gitDriftForChangedPaths logs changed =
+  [ GitDrift conceptPath nearestLog
+  | conceptPath <- changedConcepts,
+    let nearestLog = nearestEnclosingLogPath conceptPath allLogPaths,
+    maybe True (`Set.notMember` changedSet) nearestLog
+  ]
+  where
+    changedPaths = Text.unpack <$> filter (not . Text.null) changed
+    changedSet = Set.fromList changedPaths
+    changedConcepts =
+      [ path
+      | path <- changedPaths,
+        FilePath.takeExtension path == ".md",
+        not (isReservedMarkdownFile path)
+      ]
+    changedLogs =
+      [ path
+      | path <- changedPaths,
+        FilePath.takeFileName path == "log.md"
+      ]
+    allLogPaths = List.nub (changedLogs <> (logSourcePath <$> logs))
+
+renderGitDrift :: GitDrift -> Text
+renderGitDrift GitDrift {driftConceptPath, driftLogPath} =
+  Text.pack driftConceptPath
+    <> " changed without "
+    <> maybe "an enclosing log.md" (Text.pack . (<> " changing")) driftLogPath
+
+firstNonEmpty :: Text -> Text -> Text
+firstNonEmpty primary fallback
+  | Text.null (Text.strip primary) = Text.strip fallback
+  | otherwise = Text.strip primary
 
 runGraph :: GraphOptions -> IO ()
 runGraph GraphOptions {bundlePath} = do

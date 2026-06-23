@@ -9,6 +9,7 @@ module Okf.Validation
     validateLogs,
     LogStaleness (..),
     logStaleness,
+    nearestEnclosingLogPath,
   )
 where
 
@@ -165,15 +166,22 @@ newestLogDate logFile =
 
 nearestEnclosingLog :: FilePath -> [LogFile] -> Maybe LogFile
 nearestEnclosingLog conceptPath logs =
+  case nearestEnclosingLogPath conceptPath (logSourcePath <$> logs) of
+    Nothing -> Nothing
+    Just path -> List.find ((== path) . logSourcePath) logs
+
+-- | Pick the closest @log.md@ path whose directory contains the concept path.
+nearestEnclosingLogPath :: FilePath -> [FilePath] -> Maybe FilePath
+nearestEnclosingLogPath conceptPath logPaths =
   case candidates of
     [] -> Nothing
     _ -> Just (snd (List.maximumBy compareDepth candidates))
   where
     conceptDirectory = pathSegments (FilePath.takeDirectory conceptPath)
     candidates =
-      [ (scope, logFile)
-      | logFile <- logs,
-        let scope = pathSegments (FilePath.takeDirectory (logSourcePath logFile)),
+      [ (scope, logPath)
+      | logPath <- logPaths,
+        let scope = pathSegments (FilePath.takeDirectory logPath),
         scope `List.isPrefixOf` conceptDirectory
       ]
     compareDepth left right = compare (length (fst left)) (length (fst right))

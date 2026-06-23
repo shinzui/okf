@@ -97,7 +97,13 @@ This section must always reflect the actual current state of the work.
       /tmp/okf-log-add.G4BHEk tables/users --kind Update -m "Refreshed schema"
       --date 2026-06-23` followed by `cabal run okf -- log
       /tmp/okf-log-add.G4BHEk`.
-- [ ] Milestone 6: optional git-drift mode (`okf log --since <ref>`).
+- [x] Milestone 6: optional git-drift mode (`okf log --since <ref>`).
+      Completed 2026-06-23T23:38:53Z. Added the `process` dependency and
+      implemented `okf log <bundle> --since <ref>` using `git diff
+      --name-only --relative`. Verified in `/tmp/okf-git-log.VZrZNY` that
+      changing `a.md` without `log.md` reports `git: a.md changed without
+      log.md changing`, and changing `log.md` in the same diff removes the
+      drift report.
 - [ ] Documentation: update `docs/user/cli.md`, `docs/user/format.md`, and the embedded
       `okf help` topics; mark this plan complete.
 
@@ -114,6 +120,12 @@ implementation. Provide concise evidence.
   has no entries: 2026-06-16` for a fixture containing a bullet. The fix was to
   finalize the previous day before setting the new current day, and the
   round-trip test now asserts the parsed entries explicitly.
+- 2026-06-23T23:38:53Z: `mori registry search process` did not find a
+  registered `process` package, and `mori registry show haskell/process --full`
+  failed with `Project 'haskell/process' not found in local registry`. The git
+  integration therefore uses the standard `System.Process.readProcessWithExitCode`
+  API and catches `IOException` so a missing `git` executable is reported as a
+  skipped drift check rather than an uncaught exception.
 
 
 ## Decision Log
@@ -197,6 +209,10 @@ Compare the result against the original purpose.
   entry from the CLI, targeting the root log by default or a concept directory's
   log when a concept ID is supplied. Missing logs are created with a default
   title, and existing logs receive the new entry under the requested date.
+- 2026-06-23T23:38:53Z: Milestone 6 is complete. `okf log --since <ref>` now
+  reports changed concept Markdown files whose nearest enclosing `log.md` was
+  not changed in the same git diff, and skips cleanly when git cannot produce a
+  diff.
 
 
 ## Context and Orientation
