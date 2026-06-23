@@ -81,8 +81,15 @@ This section must always reflect the actual current state of the work.
       `logStaleness`, including nearest-enclosing-log selection and timestamp
       date-prefix comparison. `cabal test okf-core-test` passed with tests for
       stale concepts and deepest log selection.
-- [ ] Milestone 4: `okf log` CLI command (preview + structural validation) and log-aware
+- [x] Milestone 4: `okf log` CLI command (preview + structural validation) and log-aware
       `okf validate` with `--log-enforce`.
+      Completed 2026-06-23T23:30:35Z. Added `okf log <bundle>`,
+      `--check-stale`, `--since` parsing, log-aware `okf validate`, and
+      `--log-enforce`. `cabal build all`, `cabal test okf-core-test`, `cabal
+      test okf-cli-test`, `cabal run okf -- log
+      okf-core/test/fixtures/valid-bundle`, malformed-log validation, default
+      stale-log validation, enforced stale-log validation, and `okf log
+      --check-stale` were run successfully.
 - [ ] Milestone 5: `okf log add` authoring command plus core `appendLogEntry`.
 - [ ] Milestone 6: optional git-drift mode (`okf log --since <ref>`).
 - [ ] Documentation: update `docs/user/cli.md`, `docs/user/format.md`, and the embedded
@@ -94,7 +101,13 @@ This section must always reflect the actual current state of the work.
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+- 2026-06-23T23:30:35Z: `okf log okf-core/test/fixtures/valid-bundle`
+  exposed that `parseLog` started a new day and immediately finalized it, so
+  following bullet lists were not attached and valid logs appeared as empty
+  days. Evidence before the fix: the command printed `log.md: log date group
+  has no entries: 2026-06-16` for a fixture containing a bullet. The fix was to
+  finalize the previous day before setting the new current day, and the
+  round-trip test now asserts the parsed entries explicitly.
 
 
 ## Decision Log
@@ -171,6 +184,9 @@ Compare the result against the original purpose.
   concepts whose frontmatter `timestamp` date is newer than the newest entry in
   the nearest enclosing `log.md`, and it reports concepts with timestamps but no
   covering log as stale.
+- 2026-06-23T23:30:35Z: Milestone 4 is complete. Users can preview discovered
+  logs with `okf log`, malformed logs fail `okf validate`, and stale concepts
+  are advisory by default but become failing with `--log-enforce`.
 
 
 ## Context and Orientation

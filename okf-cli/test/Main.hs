@@ -14,13 +14,15 @@ main = do
           parseSucceeds ["validate", "bundle", "--strict"],
           parseSucceeds ["validate", "bundle", "--profile", "p.dhall"],
           parseSucceeds ["validate", "bundle", "--profile", "p.dhall", "--profile-enforce"],
+          parseSucceeds ["validate", "bundle", "--log-enforce"],
           parseValidateMatches
             ["validate", "b", "--profile", "p.dhall", "--profile-enforce"]
             ValidateOptions
               { bundlePath = "b",
                 strictMode = False,
                 profilePath = Just "p.dhall",
-                profileEnforce = True
+                profileEnforce = True,
+                logEnforce = False
               },
           parseValidateMatches
             ["validate", "b"]
@@ -28,9 +30,28 @@ main = do
               { bundlePath = "b",
                 strictMode = False,
                 profilePath = Nothing,
-                profileEnforce = False
+                profileEnforce = False,
+                logEnforce = False
+              },
+          parseValidateMatches
+            ["validate", "b", "--log-enforce"]
+            ValidateOptions
+              { bundlePath = "b",
+                strictMode = False,
+                profilePath = Nothing,
+                profileEnforce = False,
+                logEnforce = True
               },
           parseSucceeds ["index", "bundle", "--write"],
+          parseSucceeds ["log", "bundle"],
+          parseSucceeds ["log", "bundle", "--check-stale"],
+          parseLogMatches
+            ["log", "b", "--check-stale", "--since", "HEAD~1"]
+            LogOptions
+              { bundlePath = "b",
+                checkStale = True,
+                sinceRef = Just "HEAD~1"
+              },
           parseSucceeds ["graph", "bundle", "--json"],
           parseSucceeds ["show", "bundle", "tables/orders"],
           parseSucceeds ["completions", "bash"],
@@ -60,6 +81,12 @@ parseValidateMatches :: [String] -> ValidateOptions -> Bool
 parseValidateMatches args expected =
   case execParserPure defaultPrefs parserInfo args of
     Success (Options (Validate opts)) -> opts == expected
+    _ -> False
+
+parseLogMatches :: [String] -> LogOptions -> Bool
+parseLogMatches args expected =
+  case execParserPure defaultPrefs parserInfo args of
+    Success (Options (Log opts)) -> opts == expected
     _ -> False
 
 parseFails :: [String] -> Bool

@@ -203,6 +203,25 @@ testLogRoundTrip = do
           ]
       parsed = parseLog canonicalLog
       reparsed = parseLog (serializeLog parsed)
+  assertEqual
+    ( Log
+        { logTitle = "Directory Update Log",
+          logDays =
+            [ LogDay
+                { logDate = "2026-06-23",
+                  logEntries =
+                    [ LogEntry (Just "Update") "Refreshed [orders](tables/orders.md).",
+                      LogEntry (Just "Creation") "Added customers."
+                    ]
+                },
+              LogDay
+                { logDate = "2026-06-01",
+                  logEntries = [LogEntry Nothing "Deprecated a stale note."]
+                }
+            ]
+        }
+    )
+    parsed
   assertEqual parsed reparsed
 
 testValidateLogNonIsoDate :: Either Text ()

@@ -3,6 +3,7 @@ module Okf.Cli
   ( Command (..),
     GraphOptions (..),
     IndexOptions (..),
+    LogOptions (..),
     Options (..),
     ShowOptions (..),
     ValidateOptions (..),
@@ -25,6 +26,7 @@ import Okf.ConceptId
 import Okf.Document (DocumentParseError (..), body)
 import Okf.Graph (buildGraph)
 import Okf.Index
+import Okf.Log qualified as Log
 import Okf.Prelude
 import Okf.Profile (ProfileViolation (..), loadProfileFile, validateProfile)
 import Okf.Validation
@@ -35,6 +37,7 @@ import System.IO (stderr)
 data Command
   = Validate ValidateOptions
   | Index IndexOptions
+  | Log LogOptions
   | GraphCommand GraphOptions
   | ShowConcept ShowOptions
   | Completions CompletionsShell
@@ -45,13 +48,21 @@ data ValidateOptions = ValidateOptions
   { bundlePath :: !FilePath,
     strictMode :: !Bool,
     profilePath :: !(Maybe FilePath),
-    profileEnforce :: !Bool
+    profileEnforce :: !Bool,
+    logEnforce :: !Bool
   }
   deriving stock (Show, Eq)
 
 data IndexOptions = IndexOptions
   { bundlePath :: !FilePath,
     write :: !Bool
+  }
+  deriving stock (Show, Eq)
+
+data LogOptions = LogOptions
+  { bundlePath :: !FilePath,
+    checkStale :: !Bool,
+    sinceRef :: !(Maybe Text)
   }
   deriving stock (Show, Eq)
 
@@ -100,6 +111,7 @@ commandParser =
   hsubparser
     ( command "validate" (info (Validate <$> validateOptionsParser <**> helper) (progDesc "Validate an OKF bundle"))
         <> command "index" (info (Index <$> indexOptionsParser <**> helper) (progDesc "Preview or write generated index.md files"))
+        <> command "log" (info (Log <$> logOptionsParser <**> helper) (progDesc "Preview and check log.md files"))
         <> command "graph" (info (GraphCommand <$> graphOptionsParser <**> helper) (progDesc "Print a bundle graph"))
         <> command "show" (info (ShowConcept <$> showOptionsParser <**> helper) (progDesc "Show one concept"))
         <> command "completions" (info (Completions <$> completionsParser <**> helper) (progDesc "Generate a shell completion script (bash, zsh, fish)"))
@@ -119,12 +131,27 @@ validateOptionsParser =
           )
       )
     <*> switch (long "profile-enforce" <> help "Exit non-zero when profile checks find deviations")
+    <*> switch (long "log-enforce" <> help "Exit non-zero when log staleness advisories are found")
 
 indexOptionsParser :: Parser IndexOptions
 indexOptionsParser =
   IndexOptions
     <$> bundleArgument
     <*> switch (long "write" <> help "Write generated index.md files instead of previewing")
+
+logOptionsParser :: Parser LogOptions
+logOptionsParser =
+  LogOptions
+    <$> bundleArgument
+    <*> switch (long "check-stale" <> help "Report concepts newer than their nearest log.md")
+    <*> optional
+      ( Text.pack
+          <$> strOption
+            ( long "since"
+                <> metavar "GIT_REF"
+                <> help "Report git drift since a ref (implemented in Milestone 6)"
+            )
+      )
 
 graphOptionsParser :: Parser GraphOptions
 graphOptionsParser =
@@ -146,17 +173,22 @@ runCommand :: Command -> IO ()
 runCommand = \case
   Validate options -> runValidate options
   Index options -> runIndex options
+  Log options -> runLog options
   GraphCommand options -> runGraph options
   ShowConcept options -> runShow options
   Completions shell -> handleCompletions shell
   Help helpCommand -> handleHelpCommand helpCommand
 
 runValidate :: ValidateOptions -> IO ()
-runValidate ValidateOptions {bundlePath, strictMode, profilePath, profileEnforce} = do
+runValidate ValidateOptions {bundlePath, strictMode, profilePath, profileEnforce, logEnforce} = do
   concepts <- loadBundleOrExit bundlePath
+  logs <- loadLogsOrExit bundlePath
   let coreProfile = if strictMode then StrictAuthoring else PermissiveConformance
-      coreErrors = validateBundle coreProfile concepts
+      coreErrors = validateBundle coreProfile concepts <> validateBundleLogs logs
   mapM_ (Text.IO.hPutStrLn stderr . renderBundleValidationError) coreErrors
+
+  let staleness = logStaleness concepts logs
+  mapM_ (Text.IO.hPutStrLn stderr . ("log: " <>) . renderLogStaleness) staleness
 
   profileViolations <- case profilePath of
     Nothing -> pure []
@@ -169,9 +201,10 @@ runValidate ValidateOptions {bundlePath, strictMode, profilePath, profileEnforce
           mapM_ (Text.IO.hPutStrLn stderr . ("profile: " <>) . renderProfileViolation) violations
           pure violations
 
-  let coreFailed = not (null coreErrors)
+  let coreFailed = any bundleValidationErrorIsFailure coreErrors
       profileFailed = profileEnforce && not (null profileViolations)
-  if coreFailed || profileFailed
+      logFailed = logEnforce && (any bundleValidationErrorIsAdvisory coreErrors || not (null staleness))
+  if coreFailed || profileFailed || logFailed
     then exitFailure
     else do
       Text.IO.putStrLn ("OK: " <> Text.pack (show (length concepts)) <> " concepts")
@@ -180,6 +213,12 @@ runValidate ValidateOptions {bundlePath, strictMode, profilePath, profileEnforce
           ( "profile: "
               <> Text.pack (show (length profileViolations))
               <> " advisory deviation(s) (use --profile-enforce to fail)"
+          )
+      unless (null staleness) $
+        Text.IO.putStrLn
+          ( "log: "
+              <> Text.pack (show (length staleness))
+              <> " stale concept advisory/advisories (use --log-enforce to fail)"
           )
 
 runIndex :: IndexOptions -> IO ()
@@ -193,6 +232,23 @@ runIndex IndexOptions {bundlePath, write} =
     else do
       indexes <- loadIndexesOrExit bundlePath
       mapM_ renderIndexPreview indexes
+
+runLog :: LogOptions -> IO ()
+runLog LogOptions {bundlePath, checkStale, sinceRef} = do
+  logs <- loadLogsOrExit bundlePath
+  mapM_ renderLogPreview logs
+  let logErrors = validateBundleLogs logs
+  mapM_ (Text.IO.hPutStrLn stderr . renderBundleValidationError) logErrors
+  when (isJust sinceRef) $
+    Text.IO.hPutStrLn stderr "log: --since is parsed but git drift checking is implemented in Milestone 6"
+  staleness <-
+    if checkStale
+      then do
+        concepts <- loadBundleOrExit bundlePath
+        pure (logStaleness concepts logs)
+      else pure []
+  mapM_ (Text.IO.hPutStrLn stderr . ("log: " <>) . renderLogStaleness) staleness
+  when (any bundleValidationErrorIsFailure logErrors) exitFailure
 
 runGraph :: GraphOptions -> IO ()
 runGraph GraphOptions {bundlePath} = do
@@ -221,6 +277,13 @@ loadIndexesOrExit bundlePath = do
     Left bundleError -> dieText (renderBundleError bundleError)
     Right indexes -> pure indexes
 
+loadLogsOrExit :: FilePath -> IO [LogFile]
+loadLogsOrExit bundlePath = do
+  result <- walkLogs bundlePath
+  case result of
+    Left bundleError -> dieText (renderBundleError bundleError)
+    Right logs -> pure logs
+
 renderBundleValidationError :: BundleValidationError -> Text
 renderBundleValidationError = \case
   DocumentInvalid conceptId error_ ->
@@ -229,6 +292,16 @@ renderBundleValidationError = \case
     renderConceptId source <> ": link to missing concept: " <> renderConceptId target
   DuplicateConceptId conceptId ->
     "duplicate concept ID: " <> renderConceptId conceptId
+  LogInvalid path error_ ->
+    Text.pack path <> ": " <> renderLogValidationError error_
+
+bundleValidationErrorIsFailure :: BundleValidationError -> Bool
+bundleValidationErrorIsFailure = \case
+  LogInvalid _ error_ -> Log.logErrorIsStructural error_
+  _ -> True
+
+bundleValidationErrorIsAdvisory :: BundleValidationError -> Bool
+bundleValidationErrorIsAdvisory = not . bundleValidationErrorIsFailure
 
 renderProfileViolation :: ProfileViolation -> Text
 renderProfileViolation = \case
@@ -262,10 +335,31 @@ renderValidationErrorText = \case
   MissingRecommendedField fieldName -> "missing recommended field: " <> fieldName
   FieldMustBeListOfText fieldName -> "field must be a list of text values: " <> fieldName
 
+renderLogValidationError :: Log.LogValidationError -> Text
+renderLogValidationError = \case
+  Log.LogDateNotIso dateText -> "log date heading is not YYYY-MM-DD: " <> dateText
+  Log.LogDaysOutOfOrder earlier later -> "log dates are not newest first: " <> earlier <> " before " <> later
+  Log.LogEmptyDay dateText -> "log date group has no entries: " <> dateText
+
+renderLogStaleness :: LogStaleness -> Text
+renderLogStaleness LogStaleness {staleConcept, staleConceptDate, staleLogPath, staleLogDate} =
+  renderConceptId staleConcept
+    <> ": timestamp date "
+    <> staleConceptDate
+    <> case (staleLogPath, staleLogDate) of
+      (Nothing, Nothing) -> " has no enclosing log.md"
+      (Just path, Nothing) -> " is newer than empty log " <> Text.pack path
+      (Just path, Just logDate) -> " is newer than " <> Text.pack path <> " newest entry " <> logDate
+      (Nothing, Just logDate) -> " is newer than missing log date " <> logDate
+
 renderIndexPreview :: (FilePath, Text) -> IO ()
 renderIndexPreview (path, content) = do
   Text.IO.putStrLn ("--- " <> Text.pack path)
   Text.IO.putStr content
+
+renderLogPreview :: LogFile -> IO ()
+renderLogPreview logFile =
+  renderIndexPreview (logSourcePath logFile, Log.serializeLog (logContent logFile))
 
 renderConcept :: Concept -> IO ()
 renderConcept concept = do

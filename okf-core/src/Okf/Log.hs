@@ -123,7 +123,7 @@ step build node@(CMarkGFM.Node _ nodeType childNodes) =
         Nothing -> build {buildTitle = Just (plainText node)}
         Just _ -> build
     CMarkGFM.HEADING 2 ->
-      pushCurrent build {buildCurrentDay = Just (LogDay (plainText node) [])}
+      (pushCurrent build) {buildCurrentDay = Just (LogDay (plainText node) [])}
     CMarkGFM.LIST _ ->
       case buildCurrentDay build of
         Nothing -> build
