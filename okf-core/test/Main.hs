@@ -11,6 +11,7 @@ import Okf.ConceptId
 import Okf.Document
 import Okf.Graph
 import Okf.Index
+import Okf.Log
 import Okf.Prelude hiding (setField, (.=))
 import Okf.Profile
 import Okf.Validation
@@ -43,6 +44,7 @@ main = do
         testIO "walkBundle reports a structured IO error for a missing root" testWalkBundleMissingRoot,
         testIO "walkBundle skips index.md and log.md" testWalkBundleSkipsReserved,
         testIO "walkBundle discovers nested concept IDs" testWalkBundleDiscoversNestedConceptIds,
+        test "parseLog/serializeLog round-trips a canonical log" testLogRoundTrip,
         testIO "generateIndex groups documents by frontmatter type" testGenerateIndexGroupsByType,
         testIO "extractLinks resolves relative and absolute bundle links" testExtractLinksResolveBundleLinks,
         testIO "extractLinks ignores external markdown URLs" testExtractLinksIgnoresExternalUrls,
@@ -179,6 +181,23 @@ testWalkBundleDiscoversNestedConceptIds =
               assertBool "nested concept exists" (isJust (findConcept expected concepts))
           )
     )
+
+testLogRoundTrip :: Either Text ()
+testLogRoundTrip = do
+  let canonicalLog =
+        Text.unlines
+          [ "# Directory Update Log",
+            "",
+            "## 2026-06-23",
+            "* **Update**: Refreshed [orders](tables/orders.md).",
+            "* **Creation**: Added customers.",
+            "",
+            "## 2026-06-01",
+            "* Deprecated a stale note."
+          ]
+      parsed = parseLog canonicalLog
+      reparsed = parseLog (serializeLog parsed)
+  assertEqual parsed reparsed
 
 testGenerateIndexGroupsByType :: IO (Either Text ())
 testGenerateIndexGroupsByType =

@@ -42,6 +42,7 @@ library
     Okf.Document
     Okf.Graph
     Okf.Index
+    Okf.Log
     Okf.Prelude
     Okf.Profile
     Okf.Validation
