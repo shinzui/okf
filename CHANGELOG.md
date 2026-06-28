@@ -7,8 +7,13 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.1.1.0] - 2026-06-28
+
 ### Added
 
+- `okf --version`, including git SHA reporting for Cabal and Nix builds when
+  available.
+- Shell completion generation for supported shells.
 - `okf help` command with embedded conceptual topic guides (`okf`, `format`,
   `validation`, `profiles`), including a guide explaining what the Open Knowledge
   Format is. The guides are plain text baked into the binary at compile time, so
@@ -21,6 +26,17 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   drift. Ships an example bundle (`examples/postgresql-sample`), a sample
   descriptor (`docs/profiles/postgresql.dhall`), and a user guide
   (`docs/user/profiles.md`).
+- Log support: `okf-core` can parse, serialize, and validate `log.md` files;
+  `okf-cli` can preview, validate, author log entries, and report drift between
+  bundle logs and git history.
+- Canonical OKF profile schema Dhall modules with drift tests.
+
+### Changed
+
+- Expanded the README and user guides to cover the current CLI, profile
+  validation, and log workflows.
+- Updated release, Nix, and repository metadata so both packages build and check
+  as separate Hackage packages.
 
 ## [0.1.0.0] - 2026-06-19
 

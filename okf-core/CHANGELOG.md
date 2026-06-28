@@ -7,23 +7,36 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.1.1.0] - 2026-06-28
+
 ### Added
 
-- `Okf.Profile` module: house-convention profiles, a Dhall-authored description of
-  a team's OKF usage that is checkable against a bundle without affecting OKF
-  conformance. Loads a descriptor with `loadProfileFile` into a `ProfileSpec`
-  (`FrontmatterRules`, `TypeRule`) and reports deviations with
-  `validateProfile :: ProfileSpec -> [Concept] -> [ProfileViolation]`. Checks
-  cover the `type` vocabulary (`allowUnknownTypes`), required frontmatter keys,
-  `resource:` URI schemes, concept-ID path patterns (`*` and trailing `**`), and
-  the `# Schema` body section's column contract (`schemaSectionColumns`). Adds a
-  `dhall` dependency.
-- Canonical profile schema published as Dhall under `okf-core/dhall/`
-  (`Profile.dhall`, `TypeRule.dhall`, `FrontmatterRules.dhall`, `package.dhall`),
-  importable by other repositories (e.g. by pinned URL). The shipped sample and the
-  test fixture annotate their values against it, so the existing fixture round-trip
-  doubles as a drift guard keeping the published Dhall schema and the Haskell
-  `FromDhall` decoder in lockstep. okf imports nothing remote in return.
+- `okf --version`, including git SHA reporting for Cabal and Nix builds when
+  available.
+- Shell completion generation for supported shells.
+- `okf help` command with embedded conceptual topic guides (`okf`, `format`,
+  `validation`, `profiles`), including a guide explaining what the Open Knowledge
+  Format is. The guides are plain text baked into the binary at compile time, so
+  `okf help <topic>` works with no network or docs checkout.
+- Profile-based validation: `okf validate --profile <descriptor>.dhall` checks a
+  bundle against a team's house conventions (allowed `type` strings, required
+  frontmatter keys, `resource:` schemes, file layout, and `# Schema` columns)
+  declared in a Dhall descriptor. Profiles are not part of the OKF standard, so
+  deviations are advisory by default; `--profile-enforce` fails the command on
+  drift. Ships an example bundle (`examples/postgresql-sample`), a sample
+  descriptor (`docs/profiles/postgresql.dhall`), and a user guide
+  (`docs/user/profiles.md`).
+- Log support: `okf-core` can parse, serialize, and validate `log.md` files;
+  `okf-cli` can preview, validate, author log entries, and report drift between
+  bundle logs and git history.
+- Canonical OKF profile schema Dhall modules with drift tests.
+
+### Changed
+
+- Expanded the README and user guides to cover the current CLI, profile
+  validation, and log workflows.
+- Updated release, Nix, and repository metadata so both packages build and check
+  as separate Hackage packages.
 
 ## [0.1.0.0] - 2026-06-19
 
