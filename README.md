@@ -20,8 +20,9 @@ This repository is split into two Cabal packages:
 
 - `okf-core`: the reusable library. It contains domain types, document
   parsing, validation, bundle traversal, index generation, and link graph
-  extraction. It also exposes producer APIs for building frontmatter, rendering
-  OKF links, constructing concepts, serializing documents, and writing bundles.
+  extraction. It also parses and validates reserved `log.md` files. Producer
+  APIs cover building frontmatter, rendering OKF links, constructing concepts,
+  serializing documents, and writing bundles.
 - `okf-cli`: the command-line interface. It exposes `Okf.Cli.runCli` and
   ships the `okf` executable.
 
@@ -42,6 +43,7 @@ Enter the development shell and run the checked-in fixture bundle:
 nix develop
 cabal run okf -- validate okf-core/test/fixtures/valid-bundle
 cabal run okf -- index okf-core/test/fixtures/valid-bundle
+cabal run okf -- log okf-core/test/fixtures/valid-bundle
 cabal run okf -- graph okf-core/test/fixtures/valid-bundle --json
 cabal run okf -- show okf-core/test/fixtures/valid-bundle tables/orders
 ```
@@ -60,23 +62,36 @@ The user guide starts at [docs/user/README.md](./docs/user/README.md).
 The CLI surface is intentionally small:
 
 ```bash
+cabal run okf -- --version
 cabal run okf -- validate <bundle>
 cabal run okf -- validate <bundle> --strict
 cabal run okf -- validate <bundle> --profile <descriptor>.dhall [--profile-enforce]
+cabal run okf -- validate <bundle> --log-enforce
 cabal run okf -- index <bundle> [--write]
+cabal run okf -- log <bundle> [--check-stale] [--since <git-ref>]
+cabal run okf -- log add <bundle> [<concept-id>] -m <message> [--kind <kind>] [--date YYYY-MM-DD]
 cabal run okf -- graph <bundle> [--json]
 cabal run okf -- show <bundle> <concept-id>
+cabal run okf -- completions <bash|zsh|fish>
+cabal run okf -- help [topic]
 ```
 
 `validate` checks every concept document and whole-bundle referential integrity.
 Default validation requires a non-empty `type` frontmatter field. `--strict`
 also requires the recommended authoring fields `title`, `description`, and
-`timestamp`.
+`timestamp`. If the bundle contains `log.md` files, validation checks their
+structure and reports stale-log advisories when concept `timestamp` dates are
+newer than the nearest enclosing log entry; `--log-enforce` makes those
+advisories fail the command.
 
 `index` previews generated `index.md` files by default and writes them with
-`--write`. `graph` emits JSON graph data; JSON is currently the only graph
-format, and `--json` is accepted to keep the command shape stable for future
-formats. `show` prints one concept's metadata and Markdown body.
+`--write`. `log` previews and checks reserved `log.md` files; `log add` appends
+a dated entry to the root log or to the log in a concept's directory. `graph`
+emits JSON graph data; JSON is currently the only graph format, and `--json` is
+accepted to keep the command shape stable for future formats. `show` prints one
+concept's metadata and Markdown body. `completions` generates shell completion
+scripts for Bash, Zsh, and Fish. `help` prints embedded conceptual guides for
+`okf`, `format`, `validation`, and `profiles`.
 
 Invalid fixtures are available for validation behavior:
 
@@ -141,6 +156,10 @@ Orders join to [Customers](/tables/customers.md).
 Reserved files such as `index.md` and `log.md` are not treated as concept
 documents. Markdown links to other `.md` concepts become graph edges when the
 target exists in the bundle; dangling references are reported by `validate`.
+`log.md` files use a level-1 title, `## YYYY-MM-DD` date groups, and bullet
+entries. They provide optional update history for a directory scope, and the CLI
+can preview them, append entries, and compare concept timestamps against the
+nearest enclosing log.
 
 See [docs/user/format.md](./docs/user/format.md) for this implementation's
 format reference, [Google's OKF specification](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md)
@@ -179,8 +198,9 @@ cabal test all
 
 `okf-core` owns OKF behavior: concept IDs, Markdown frontmatter parsing,
 validation, bundle traversal, deterministic serialization, bundle writing,
-index rendering, and graph extraction. `okf-cli` is a thin adapter that parses
-arguments, calls `okf-core`, renders output, and chooses exit codes.
+index rendering, `log.md` handling, and graph extraction. `okf-cli` is a thin
+adapter that parses arguments, calls `okf-core`, renders output, and chooses
+exit codes.
 
 The standalone CLI intentionally does not depend on Mori, Mina, an LLM, or
 network access. Future integrations should consume the core library surface
