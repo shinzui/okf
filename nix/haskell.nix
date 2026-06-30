@@ -20,7 +20,49 @@
   config.perSystem = { system, pkgs, config, ... }:
     let
       hsdev = inputs.haskell-nix-dev.lib.${system};
-      haskellPackages = pkgs.haskell.packages."ghc9124";
+      basePackages = pkgs.haskell.packages."ghc9124";
+
+      # Baikai is a multi-package repository. callCabal2nix receives only the
+      # selected subdirectory, so copy the repo-root LICENSE into the source
+      # when a package's LICENSE symlink would otherwise dangle in the store.
+      withBaikaiRootLicense = name: src:
+        pkgs.runCommand "${name}-with-license" { } ''
+          cp -R ${src} $out
+          chmod -R u+w $out
+          if [ ! -f "$out/LICENSE" ]; then
+            rm -f "$out/LICENSE"
+            cp ${inputs.baikai-src}/LICENSE "$out/LICENSE"
+          fi
+        '';
+
+      inherit (pkgs.haskell.lib.compose) doJailbreak dontCheck markUnbroken;
+
+      haskellPackages = basePackages.override {
+        overrides = final: prev:
+          let
+            callHackageNoCheck = pkg: ver: sha256:
+              dontCheck (doJailbreak (final.callHackageDirect
+                {
+                  inherit pkg ver sha256;
+                }
+                { }));
+          in
+          {
+            unicode-data = dontCheck prev.unicode-data;
+            streamly-core =
+              callHackageNoCheck "streamly-core" "0.3.1" "1bk9m7h0kar6nipq36kxdhxh9g48v5828qcygxpcjdh6pqipxn4k";
+            streamly =
+              callHackageNoCheck "streamly" "0.11.1" "1dxyhq8m9fr3ghpmxkh6bc37fd4f1048xckjrlpp6ybvlg0lq7g2";
+            openai = dontCheck (doJailbreak (markUnbroken prev.openai));
+
+            baikai = dontCheck (doJailbreak (final.callCabal2nix "baikai"
+              (withBaikaiRootLicense "baikai" "${inputs.baikai-src}/baikai")
+              { }));
+            baikai-kit = dontCheck (doJailbreak (final.callCabal2nix "baikai-kit"
+              (withBaikaiRootLicense "baikai-kit" "${inputs.baikai-src}/baikai-kit")
+              { }));
+          };
+      };
 
       # okf is a multi-package project: okf-core (library) and okf-cli (library +
       # `okf` executable, depends on okf-core). There is no root .cabal file, so

@@ -1,5 +1,22 @@
 {
   "nodes": {
+    "baikai-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1782273275,
+        "narHash": "sha256-Dgy6WTxEJviIU8PWwu1iMZFRgS41uzHvdXhwJ7K23zw=",
+        "owner": "shinzui",
+        "repo": "baikai",
+        "rev": "759ddc9e7d110c8935a4c863ef472ae20890aa1f",
+        "type": "github"
+      },
+      "original": {
+        "owner": "shinzui",
+        "repo": "baikai",
+        "rev": "759ddc9e7d110c8935a4c863ef472ae20890aa1f",
+        "type": "github"
+      }
+    },
     "flake-compat": {
       "flake": false,
       "locked": {
@@ -151,6 +168,7 @@
     },
     "root": {
       "inputs": {
+        "baikai-src": "baikai-src",
         "flake-parts": "flake-parts",
         "haskell-nix-dev": "haskell-nix-dev",
         "nixpkgs": [
