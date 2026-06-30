@@ -55,10 +55,13 @@ EP-3 (and ideally EP-4) to be complete.
       commit `4c2ec5d` containing `kit.json`, `skills/author-okf-concept/SKILL.md`,
       `agents/okf-guide.md`, and `README.md`; `okf kit list` against its `file://` URL listed
       both items.
-- [ ] Milestone 2: `okf-kit` published to `https://github.com/shinzui/okf-kit` and installable
-      via `okf kit install author-okf-concept` with the default config. Not attempted in this
-      turn because publishing a public GitHub repository is an outward-facing action requiring
-      explicit approval; the prompt tool for that approval was unavailable in this mode.
+- [x] Milestone 2: `okf-kit` published to `https://github.com/shinzui/okf-kit` and installable
+      via `okf kit install author-okf-concept` with the default config. Completed
+      2026-06-30 after explicit approval. Evidence: `gh repo view shinzui/okf-kit` reports
+      `isPrivate: false`, the local repo has `origin` set to
+      `https://github.com/shinzui/okf-kit.git`, and a clean temporary HOME with no
+      `okf-config.dhall` successfully ran `okf kit list`, `okf kit install
+      author-okf-concept`, `okf kit status`, and `okf assist --print-command`.
 - [x] Milestone 3: `okf` documents the loop — embedded `agents` help topic + README section.
       Completed 2026-06-30. Evidence: `okf-cli/help/agents.md` is registered in
       `Okf.Cli.Help`, `./result/bin/okf help agents` prints the guide, `okf help` lists the
@@ -87,6 +90,45 @@ EP-3 (and ideally EP-4) to be complete.
 
   okf assist --print-command "add a tables/orders concept"
   claude --add-dir /tmp/okf-kit-final.ItJ11h/.config/okf/agents 'add a tables/orders concept'
+  ```
+
+- Discovery: After publishing the public repository, the default-config walkthrough worked from
+  an isolated HOME with no project `okf-config.dhall`; this proves the compiled default
+  `kit.repoUrl = "https://github.com/shinzui/okf-kit.git"` is usable without local overrides.
+  Evidence:
+
+  ```text
+  Fetching okf-kit...
+  Skills:
+    author-okf-concept  Author a new OKF concept document with valid frontmatter, path, links, and a validation check
+
+  Agents:
+    okf-guide  An assistant persona for authoring and validating OKF bundles
+
+  Installed skill 'author-okf-concept' to user scope.
+
+  NAME                TYPE   SCOPE  PROVIDERS  INSTALLED  LATEST  STATE
+  author-okf-concept  skill  user   claude     -          -       up-to-date
+
+  claude --add-dir /tmp/okf-kit-default.X1Y8Ui/.config/okf/agents 'add a tables/orders concept'
+  ```
+
+- Discovery: The publish-your-own loop was validated by adding a second real skill,
+  `triage-okf-validation`, committing and pushing it to `okf-kit`, running `okf kit update`,
+  and confirming `okf kit list` showed the new skill without rebuilding `okf`. A transient
+  `git pull` warning appeared once immediately after the update, but a repeated `okf kit list`
+  was clean and the cached repository was on `master...origin/master` at the new commit.
+  Evidence:
+
+  ```text
+  Kit repository updated.
+  Updated 1 item(s).
+
+  Skills:
+    author-okf-concept     Author a new OKF concept document with valid frontmatter, path, links, and a validation check
+    triage-okf-validation  Triage okf validate failures and propose minimal fixes for an OKF bundle
+
+  Installed skill 'triage-okf-validation' to user scope.
   ```
 
 
@@ -118,13 +160,23 @@ EP-3 (and ideally EP-4) to be complete.
   but the publish step should happen only after the user explicitly authorizes it.
   Date: 2026-06-30
 
+- Decision: Add `triage-okf-validation` as the second skill used to prove the
+  publish-your-own loop.
+  Rationale: The validation plan asks for a second pushed skill to appear after
+  `okf kit update`. A real validation-triage skill is useful to OKF users and gives the
+  public repository more than a toy manifest change.
+  Date: 2026-06-30
+
 
 ## Outcomes & Retrospective
 
-EP-5 is partially complete. The local sibling `okf-kit` repository exists and contains the
-planned seed skill, subagent, manifest, and README. The okf repository has the embedded
-`agents` help topic and README documentation. Local validation proves the author -> install ->
-assist dry-run path works against the local `file://` repo.
+EP-5 is complete. The public `https://github.com/shinzui/okf-kit` repository exists and is
+mirrored locally at `/Users/shinzui/Keikaku/bokuno/okf-kit`. It contains `kit.json`, the
+planned `author-okf-concept` seed skill, the `okf-guide` subagent, a README, and the additional
+`triage-okf-validation` skill used to prove post-publication updates. The okf repository has
+the embedded `agents` help topic and README documentation. Validation proves the default
+repo URL works with no config file, installs skills into the agent asset directory, and surfaces
+that directory to `okf assist` via `--add-dir`.
 
 Validation completed on 2026-06-30:
 
@@ -139,14 +191,30 @@ nix build .#okf-cli
 ./result/bin/okf help agents
 ```
 
-Remaining work: publish `/Users/shinzui/Keikaku/bokuno/okf-kit` to
-`https://github.com/shinzui/okf-kit.git`, then re-run the default-config walkthrough with no
-project `okf-config.dhall`. Once that succeeds, mark Milestone 2 complete and mark EP-5
-complete in the MasterPlan.
+Additional validation completed after publication:
+
+```text
+gh repo view shinzui/okf-kit --json nameWithOwner,url,isPrivate,defaultBranchRef
+env -u OKF_CONFIG HOME=/tmp/okf-kit-default.X1Y8Ui okf kit list
+env -u OKF_CONFIG HOME=/tmp/okf-kit-default.X1Y8Ui okf kit install author-okf-concept
+env -u OKF_CONFIG HOME=/tmp/okf-kit-default.X1Y8Ui okf kit status
+env -u OKF_CONFIG HOME=/tmp/okf-kit-default.X1Y8Ui okf assist --print-command "add a tables/orders concept"
+env -u OKF_CONFIG HOME=/tmp/okf-kit-default.X1Y8Ui okf kit update
+env -u OKF_CONFIG HOME=/tmp/okf-kit-default.X1Y8Ui okf kit list
+env -u OKF_CONFIG HOME=/tmp/okf-kit-default.X1Y8Ui okf kit install triage-okf-validation
+```
+
+The only validation intentionally not performed was launching a live interactive Claude session;
+the installed skill files and `okf assist --print-command` output prove the launch command and
+skill directory handoff without starting an LLM process.
 
 Revision note (2026-06-30): Marked the local repo scaffold and okf documentation milestones
 complete, recorded the isolated local validation, and left the public GitHub publication
 milestone open pending explicit approval.
+
+Revision note (2026-06-30): Marked the public GitHub publication milestone complete after
+approval, recorded default-config validation from an isolated HOME, added and pushed
+`triage-okf-validation` to prove the post-publication update loop, and finalized EP-5 outcomes.
 
 
 ## Context and Orientation

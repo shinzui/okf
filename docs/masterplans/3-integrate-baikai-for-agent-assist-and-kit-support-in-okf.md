@@ -128,7 +128,7 @@ separate deliverable in a separate git repository with its own acceptance walkth
 | EP-2 | Add per-project and global configuration to okf | docs/plans/17-add-per-project-and-global-configuration-to-okf.md | None | None | Complete |
 | EP-3 | Add okf kit command for skill and subagent installation | docs/plans/18-add-okf-kit-command-for-skill-and-subagent-installation.md | EP-1, EP-2 | None | Complete |
 | EP-4 | Add okf assist command for interactive agent assistance | docs/plans/19-add-okf-assist-command-for-interactive-agent-assistance.md | EP-1, EP-2 | EP-3 | Complete |
-| EP-5 | Create the okf-kit repository with a seed skill and end-to-end docs | docs/plans/20-create-the-okf-kit-repository-with-a-seed-skill-and-end-to-end-docs.md | None | EP-3, EP-4 | In Progress |
+| EP-5 | Create the okf-kit repository with a seed skill and end-to-end docs | docs/plans/20-create-the-okf-kit-repository-with-a-seed-skill-and-end-to-end-docs.md | None | EP-3, EP-4 | Complete |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
 Hard Deps and Soft Deps reference other rows by their EP-# prefix.
@@ -232,7 +232,7 @@ Track milestone-level progress across all child plans.
 - [x] EP-3: `okf kit list` clones okf-kit and lists manifest items
 - [x] EP-3: `okf kit install/uninstall/update/status` manage skills at user and project scope
 - [x] EP-4: `okf assist` launches an interactive agent session with installed skills on its path
-- [ ] EP-5: `okf-kit` repository exists with a working seed skill and `kit.json`
+- [x] EP-5: `okf-kit` repository exists with a working seed skill and `kit.json`
 - [x] EP-5: README + embedded help topic document the author → publish → install → assist loop
 
 
@@ -294,6 +294,27 @@ interactions between child plans. Provide concise evidence.
   The local sibling repo at `/Users/shinzui/Keikaku/bokuno/okf-kit` has commit `4c2ec5d`, and
   validation against its `file://` URL proved `okf kit list`, install, status, and
   `okf assist --print-command` behavior.
+  Date: 2026-06-30
+
+- Discovery: EP-5 completed after publishing `https://github.com/shinzui/okf-kit` as a public
+  repository and validating the default configuration from a clean temporary HOME. The
+  post-publication update loop was also proved by pushing a second real skill,
+  `triage-okf-validation`, running `okf kit update`, and confirming `okf kit list` discovered
+  it without rebuilding `okf`.
+  Evidence:
+
+  ```text
+  gh repo view shinzui/okf-kit --json nameWithOwner,url,isPrivate,defaultBranchRef
+  {"defaultBranchRef":{"name":"master"},"isPrivate":false,"nameWithOwner":"shinzui/okf-kit","url":"https://github.com/shinzui/okf-kit"}
+
+  Kit repository updated.
+  Updated 1 item(s).
+
+  Skills:
+    author-okf-concept     Author a new OKF concept document with valid frontmatter, path, links, and a validation check
+    triage-okf-validation  Triage okf validate failures and propose minimal fixes for an OKF bundle
+  ```
+
   Date: 2026-06-30
 
 
@@ -374,6 +395,13 @@ interactions between child plans. Provide concise evidence.
   public push and default-config validation should happen only after explicit authorization.
   Date: 2026-06-30
 
+- Decision: Use `triage-okf-validation` as the second published kit skill for validating the
+  update loop.
+  Rationale: The EP-5 acceptance walkthrough requires proving that a newly pushed skill appears
+  after `okf kit update`; a validation-triage skill is genuinely useful for OKF authors and
+  keeps the public kit repository substantive.
+  Date: 2026-06-30
+
 
 ## Outcomes & Retrospective
 
@@ -408,6 +436,21 @@ Compare the result against the original vision.
   assist dry-run path. Remaining work is publishing the public GitHub repository and rerunning
   the default-config walkthrough.
 
+- 2026-06-30: EP-5 is complete. `https://github.com/shinzui/okf-kit` is public, the local
+  mirror is pushed through commit `d2f749e`, default-config `okf kit list/install/status` works
+  from an isolated HOME with no `okf-config.dhall`, `okf assist --print-command` includes the
+  installed agent directory, `okf kit update` discovers the newly pushed
+  `triage-okf-validation` skill, and the `agents` help topic plus README document the workflow.
+  A live interactive Claude session was not started during validation; the launch command and
+  installed asset paths were verified without handing control to an LLM process.
+
+The initiative is complete. `okf` now has build wiring for `baikai` and `baikai-kit`, a Dhall
+configuration subsystem, `config`, `kit`, and `assist` command groups, the public `okf-kit`
+repository with useful seed skills, and embedded/README documentation for the full
+author -> publish -> install -> assist loop. The core OKF validation/index/log/graph/show
+behavior remains unchanged, and the added agent layer stays optional unless the user invokes
+the new commands.
+
 Revision note (2026-06-30): Marked EP-1 complete, checked its MasterPlan progress items,
 recorded the required nix transitive dependency overrides, and summarized the validation
 evidence that proves the build foundation is ready for later feature plans.
@@ -427,3 +470,7 @@ failure behavior.
 Revision note (2026-06-30): Marked EP-5 in progress, checked the documentation progress item,
 recorded local `okf-kit` validation, and left the public repository/default-config milestone
 open pending explicit approval to publish `https://github.com/shinzui/okf-kit.git`.
+
+Revision note (2026-06-30): Marked EP-5 and the full MasterPlan complete after public
+publication of `okf-kit`, default-config validation, and post-publication update validation with
+the `triage-okf-validation` skill.
