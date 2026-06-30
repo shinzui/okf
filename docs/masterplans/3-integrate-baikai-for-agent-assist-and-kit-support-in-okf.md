@@ -127,7 +127,7 @@ separate deliverable in a separate git repository with its own acceptance walkth
 | EP-1 | Wire baikai and baikai-kit into the okf build | docs/plans/16-wire-baikai-and-baikai-kit-into-the-okf-build.md | None | None | Complete |
 | EP-2 | Add per-project and global configuration to okf | docs/plans/17-add-per-project-and-global-configuration-to-okf.md | None | None | Complete |
 | EP-3 | Add okf kit command for skill and subagent installation | docs/plans/18-add-okf-kit-command-for-skill-and-subagent-installation.md | EP-1, EP-2 | None | Complete |
-| EP-4 | Add okf assist command for interactive agent assistance | docs/plans/19-add-okf-assist-command-for-interactive-agent-assistance.md | EP-1, EP-2 | EP-3 | Not Started |
+| EP-4 | Add okf assist command for interactive agent assistance | docs/plans/19-add-okf-assist-command-for-interactive-agent-assistance.md | EP-1, EP-2 | EP-3 | Complete |
 | EP-5 | Create the okf-kit repository with a seed skill and end-to-end docs | docs/plans/20-create-the-okf-kit-repository-with-a-seed-skill-and-end-to-end-docs.md | None | EP-3, EP-4 | Not Started |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
@@ -231,7 +231,7 @@ Track milestone-level progress across all child plans.
 - [x] EP-2: `okf config` prints the effective config and its source path
 - [x] EP-3: `okf kit list` clones okf-kit and lists manifest items
 - [x] EP-3: `okf kit install/uninstall/update/status` manage skills at user and project scope
-- [ ] EP-4: `okf assist` launches an interactive agent session with installed skills on its path
+- [x] EP-4: `okf assist` launches an interactive agent session with installed skills on its path
 - [ ] EP-5: `okf-kit` repository exists with a working seed skill and `kit.json`
 - [ ] EP-5: README + embedded help topic document the author → publish → install → assist loop
 
@@ -281,6 +281,12 @@ interactions between child plans. Provide concise evidence.
   but `kit status` can print a `git pull` warning when the cloned fixture's configured branch
   metadata references `refs/heads/master` and the source repo does not provide that ref. The
   engine's cached-manifest fallback still produced a successful `up-to-date` status.
+  Date: 2026-06-30
+
+- Discovery: EP-4 can validate launch behavior without taking over the user's real terminal by
+  combining `--print-command` for argv inspection with a fake `claude` executable for
+  exit-code propagation. The real interactive path remains the same `createProcess` call and
+  will use the user's `claude` binary when run without the fake `PATH`.
   Date: 2026-06-30
 
 
@@ -348,6 +354,12 @@ interactions between child plans. Provide concise evidence.
   `Eq Command`.
   Date: 2026-06-30
 
+- Decision: EP-4 catches `createProcess` `IOException`s and exits 127 with an actionable
+  missing-Claude message.
+  Rationale: This implements the robustness follow-up already called out in EP-4's recovery
+  section and gives users a clear path when the `claude` executable is absent.
+  Date: 2026-06-30
+
 
 ## Outcomes & Retrospective
 
@@ -371,6 +383,11 @@ Compare the result against the original vision.
   pass, and a local fixture repo proved list, user install, project install, status, update,
   uninstall, and second-uninstall behavior. EP-4 can reuse `kitConfig`.
 
+- 2026-06-30: EP-4 is complete. `okf assist` is wired into the CLI, dry-run command printing
+  shows configured model/system prompt and installed agent dirs, Codex assist exits with the
+  planned unsupported-provider message and code 2, a fake `claude` executable proved child
+  exit-code propagation, and `cabal test all` plus `nix build .#okf-cli` pass.
+
 Revision note (2026-06-30): Marked EP-1 complete, checked its MasterPlan progress items,
 recorded the required nix transitive dependency overrides, and summarized the validation
 evidence that proves the build foundation is ready for later feature plans.
@@ -382,3 +399,7 @@ the validation evidence proving `Okf.Cli.Config` and `okf config` are ready for 
 Revision note (2026-06-30): Marked EP-3 complete, checked its MasterPlan progress items,
 recorded the local fixture `okf kit` validation and the file-url status warning, and noted that
 `Okf.Cli.Kit.Config.kitConfig` is ready for EP-4 reuse.
+
+Revision note (2026-06-30): Marked EP-4 complete, checked its MasterPlan progress item,
+recorded dry-run and fake-launch validation, and noted the friendly missing-Claude launch
+failure behavior.

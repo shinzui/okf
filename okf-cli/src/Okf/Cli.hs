@@ -27,6 +27,7 @@ import Data.Text qualified as Text
 import Data.Text.IO qualified as Text.IO
 import Data.Time (defaultTimeLocale, formatTime, getCurrentTime, utctDay)
 import Okf.Bundle
+import Okf.Cli.Assist (AssistOptions, assistOptionsParser, handleAssistCommand)
 import Okf.Cli.Completions (CompletionsShell, completionsParser, handleCompletions)
 import Okf.Cli.Config
 import Okf.Cli.Help (HelpCommand, handleHelpCommand, helpCommandParser)
@@ -56,6 +57,7 @@ data Command
   | ShowConcept ShowOptions
   | Config ConfigCommand
   | Kit KitCommand
+  | Assist AssistOptions
   | Completions CompletionsShell
   | Help HelpCommand
   deriving stock (Show, Eq)
@@ -152,6 +154,7 @@ commandParser =
         <> command "show" (info (ShowConcept <$> showOptionsParser <**> helper) (progDesc "Show one concept"))
         <> command "config" (info (Config <$> configCommandParser <**> helper) (progDesc "Show and manage okf configuration"))
         <> command "kit" (info (Kit <$> kitCommandParser <**> helper) (progDesc "Install and manage agent skills and subagents"))
+        <> command "assist" (info (Assist <$> assistOptionsParser <**> helper) (progDesc "Launch an interactive agent session with installed okf skills"))
         <> command "completions" (info (Completions <$> completionsParser <**> helper) (progDesc "Generate a shell completion script (bash, zsh, fish)"))
         <> command "help" (info (Help <$> helpCommandParser <**> helper) (progDesc "Show conceptual help topics"))
     )
@@ -287,6 +290,9 @@ runCommand = \case
   Kit kitCommand -> do
     config <- loadConfigOrDie
     handleKitCommand config kitCommand
+  Assist assistOptions -> do
+    config <- loadConfigOrDie
+    handleAssistCommand config assistOptions
   Completions shell -> handleCompletions shell
   Help helpCommand -> handleHelpCommand helpCommand
 

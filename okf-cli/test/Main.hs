@@ -5,7 +5,8 @@ import Control.Monad (unless)
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text.IO
 import Okf.Cli
-import Okf.Cli.Config
+import Okf.Cli.Assist (AssistOptions (..), buildClaudeCommand)
+import Okf.Cli.Config (AssistSettings (..), ConfigSource (..), KitSettings (..), OkfConfig (..), OkfProvider (..), defaultOkfConfig, exampleConfigText, findConfigSource, loadOkfConfig, okfConfigEnvVar, projectConfigPath)
 import Okf.Cli.Help (HelpTopic (..), helpTopics)
 import Options.Applicative
 import System.Directory (createDirectoryIfMissing, getCurrentDirectory, getTemporaryDirectory, removeDirectoryRecursive, withCurrentDirectory)
@@ -21,6 +22,8 @@ main = do
   configProjectPrecedence <- testConfigProjectPrecedence
   configEnvPrecedence <- testConfigEnvPrecedence
   configInvalidDhall <- testConfigInvalidDhall
+  assistCommandBuilder <- testAssistCommandBuilder
+  assistModelOverride <- testAssistModelOverride
   let results =
         [ parseSucceeds ["validate", "bundle"],
           parseSucceeds ["validate", "bundle", "--strict"],
@@ -99,6 +102,9 @@ main = do
           parseSucceeds ["kit", "uninstall", "demo-skill"],
           parseSucceeds ["kit", "uninstall", "demo-skill", "--project"],
           parseSucceeds ["kit", "status"],
+          parseSucceeds ["assist", "Summarize this bundle"],
+          parseSucceeds ["assist", "--print-command", "Summarize this bundle"],
+          parseSucceeds ["assist", "--model", "claude-opus-4-5", "Summarize this bundle"],
           parseFails ["completions", "elvish"],
           parseSucceeds ["help"],
           parseSucceeds ["help", "okf"],
@@ -111,7 +117,9 @@ main = do
           configDefaults,
           configProjectPrecedence,
           configEnvPrecedence,
-          configInvalidDhall
+          configInvalidDhall,
+          assistCommandBuilder,
+          assistModelOverride
         ]
   unless (and results) exitFailure
 
@@ -213,6 +221,48 @@ testConfigInvalidDhall =
       case loaded of
         Left message -> not (Text.null (Text.strip message))
         Right _ -> False
+
+testAssistCommandBuilder :: IO Bool
+testAssistCommandBuilder =
+  pure $
+    buildClaudeCommand assistTestConfig ["/a", "/b"] (AssistOptions "do work" Nothing False)
+      == [ "--add-dir",
+           "/a",
+           "--add-dir",
+           "/b",
+           "--model",
+           "claude-opus-4-5",
+           "--append-system-prompt",
+           "Be concise",
+           "do work"
+         ]
+
+testAssistModelOverride :: IO Bool
+testAssistModelOverride =
+  pure $
+    buildClaudeCommand assistTestConfig [] (AssistOptions "do work" (Just "override-model") True)
+      == [ "--model",
+           "override-model",
+           "--append-system-prompt",
+           "Be concise",
+           "do work"
+         ]
+
+assistTestConfig :: OkfConfig
+assistTestConfig =
+  defaultOkfConfig
+    { assist =
+        AssistSettings
+          { provider = ProviderClaude,
+            model = Just "claude-opus-4-5",
+            systemPrompt = Just "Be concise"
+          },
+      kit =
+        KitSettings
+          { repoUrl = "file:///tmp/okf-kit",
+            providers = [ProviderClaude]
+          }
+    }
 
 withIsolatedConfigEnv :: String -> IO Bool -> IO Bool
 withIsolatedConfigEnv name runTest = do

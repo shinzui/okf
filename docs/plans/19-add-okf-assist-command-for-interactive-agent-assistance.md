@@ -59,15 +59,34 @@ or inlines the identical three-field mapping if EP-3 is not yet done.
 
 ## Progress
 
-- [ ] Milestone 1: `Okf.Cli.Assist` defines `AssistOptions`, the parser, and
+- [x] Milestone 1: `Okf.Cli.Assist` defines `AssistOptions`, the parser, and
       `handleAssistCommand` that builds and (dry-run) prints the agent command line.
-- [ ] Milestone 2: `okf assist` actually launches the interactive provider CLI, inheriting
-      stdio and propagating its exit code; wired into `Okf.Cli`.
+      Completed 2026-06-30. Evidence: `okf assist --print-command` printed the expected
+      `claude` argv with `--add-dir`, config model, config system prompt, prompt quoting, and
+      command-line model override.
+- [x] Milestone 2: `okf assist` actually launches the interactive provider CLI, inheriting
+      stdio and propagating its exit code; wired into `Okf.Cli`. Completed 2026-06-30.
+      Evidence: a temporary fake `claude` executable that exited 7 caused `okf assist` to exit
+      7; `./result/bin/okf --help` lists `assist`.
 
 
 ## Surprises & Discoveries
 
-(None yet.)
+- Discovery: The `--print-command` path can validate `agentDirsForSession` without running
+  `okf kit` by creating the expected agents base directory directly. With
+  `HOME=/tmp/okf-assist-demo.1OT07O` and
+  `/tmp/okf-assist-demo.1OT07O/.config/okf/agents` present, the printed command included that
+  path via `--add-dir`.
+  Evidence:
+
+  ```text
+  claude --add-dir /tmp/okf-assist-demo.1OT07O/.config/okf/agents --model claude-opus-4-5 --append-system-prompt 'You are an OKF authoring assistant.' 'Summarize this bundle'
+  ```
+
+- Discovery: Launch and exit-code propagation can be tested without a real interactive Claude
+  session by placing a fake `claude` executable earlier on `PATH`. A fake executable that ran
+  `exit 7` made `okf assist "Summarize this bundle"` exit with status 7.
+  Date: 2026-06-30
 
 
 ## Decision Log
@@ -90,6 +109,59 @@ or inlines the identical three-field mapping if EP-3 is not yet done.
   Rationale: Makes the wiring testable and demonstrable in CI / non-interactive environments
   without spawning an interactive session, and aids debugging.
   Date: 2026-06-30
+
+- Decision: Catch `createProcess` `IOException`s and print a friendly "failed to launch
+  claude" message with exit code 127.
+  Rationale: The plan called this a recommended robustness follow-up. Implementing it now makes
+  a missing `claude` binary actionable while preserving successful child exit-code propagation.
+  Date: 2026-06-30
+
+- Decision: Quote dry-run command arguments containing spaces, tabs, single quotes, or double
+  quotes.
+  Rationale: The dry-run output should be a readable shell-shaped command line for debugging;
+  quoting makes prompts and system prompts with spaces unambiguous.
+  Date: 2026-06-30
+
+
+## Outcomes & Retrospective
+
+EP-4 is complete. `Okf.Cli.Assist` now defines `AssistOptions`, `assistOptionsParser`,
+`buildClaudeCommand`, and `handleAssistCommand`. `okf assist` is wired into `Okf.Cli`, reuses
+`loadConfigOrDie` and `Okf.Cli.Kit.Config.kitConfig`, supports Claude dry-run printing, rejects
+Codex assist with exit code 2, launches `claude` with inherited stdio, and propagates the child
+exit code.
+
+Validation completed on 2026-06-30:
+
+```text
+cabal build okf-cli
+cabal test okf-cli-test
+cabal test all
+nix build .#okf-cli
+./result/bin/okf --help
+```
+
+Manual behavior checks used isolated `HOME=/tmp/okf-assist-demo.1OT07O`:
+
+```text
+okf assist --print-command "Summarize this bundle"
+claude --add-dir /tmp/okf-assist-demo.1OT07O/.config/okf/agents --model claude-opus-4-5 --append-system-prompt 'You are an OKF authoring assistant.' 'Summarize this bundle'
+
+okf assist --print-command --model override-model "Summarize this bundle"
+claude --add-dir /tmp/okf-assist-demo.1OT07O/.config/okf/agents --model override-model --append-system-prompt 'You are an OKF authoring assistant.' 'Summarize this bundle'
+
+okf assist "Summarize this bundle"   # with assist.provider = Provider.Codex
+okf assist: the Codex provider is not yet supported; set assist.provider = Claude.
+exit code: 2
+
+okf assist "Summarize this bundle"   # with a fake claude executable that exits 7
+exit code: 7
+```
+
+The real interactive Claude session was not launched against the user's actual Claude binary
+during validation, to avoid taking over the terminal. The fake executable proves `createProcess`
+is called and the child exit status is propagated; `--print-command` proves the command line
+that a real interactive session would receive.
 
 
 ## Context and Orientation
@@ -372,3 +444,7 @@ IP-2). Reuses the `loadConfigOrDie` helper from EP-3.
 
 No new package dependency: `process` and `text` are already `okf-cli` dependencies, and
 `baikai-kit` was added by EP-1.
+
+Revision note (2026-06-30): Completed EP-4 implementation, added the missing
+`Outcomes & Retrospective` section, recorded dry-run, unsupported-provider, fake-launch,
+cabal, and nix validation evidence, and documented the friendly missing-claude behavior.
