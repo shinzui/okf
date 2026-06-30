@@ -36,6 +36,7 @@ library
   exposed-modules:
     Okf.Cli
     Okf.Cli.Completions
+    Okf.Cli.Config
     Okf.Cli.Help
     Okf.Cli.Version
 
@@ -48,6 +49,7 @@ library
     , base                  >=4.20     && <5
     , bytestring            >=0.11     && <0.13
     , containers            >=0.6      && <0.8
+    , dhall                 >=1.41     && <1.43
     , directory             >=1.3      && <1.4
     , file-embed            >=0.0.15   && <0.1
     , filepath              >=1.4      && <1.6

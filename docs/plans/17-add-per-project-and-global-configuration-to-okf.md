@@ -56,16 +56,35 @@ Term definitions:
 
 ## Progress
 
-- [ ] Milestone 1: `Okf.Cli.Config` module defines `OkfConfig` (+ sub-records and the
+- [x] Milestone 1: `Okf.Cli.Config` module defines `OkfConfig` (+ sub-records and the
       `OkfProvider` enum), its `FromDhall` instances, `defaultOkfConfig`, the path/precedence
       resolver, and `loadOkfConfig`. Unit tests cover precedence and default fallback.
-- [ ] Milestone 2: `okf config` command (`show`, `path`, `init [--global]`) wired into
-      `Okf.Cli`; `okf config show` prints the effective config and source.
+      Completed 2026-06-30. Evidence: `cabal test okf-cli-test` passed with new tests for
+      defaults, project config, `OKF_CONFIG` precedence, and malformed Dhall.
+- [x] Milestone 2: `okf config` command (`show`, `path`, `init [--global]`) wired into
+      `Okf.Cli`; `okf config show` prints the effective config and source. Completed
+      2026-06-30. Evidence: manual CLI checks in an isolated temp directory verified default
+      output, `config path`, guarded `config init`, project-file loading, edited repo URL
+      reflection, env override, and malformed-Dhall failure.
 
 
 ## Surprises & Discoveries
 
-(None yet.)
+- Discovery: `nix build .#okf-cli` failed after adding `Okf.Cli.Config` while the file was
+  still untracked, because the flake's git source did not include the new module. Staging the
+  file made the same nix build pass.
+  Evidence:
+
+  ```text
+  Error: [Cabal-7554]
+  can't find source for Okf/Cli/Config in src, dist/build/autogen, dist/build/global-autogen
+  ```
+
+- Discovery: Config-loader tests must isolate both `OKF_CONFIG` and `HOME`; otherwise a real
+  user-level `~/.config/okf/config.dhall` could make the "no files present" case load a global
+  config instead of `SourceDefaults`.
+  Evidence: the test helper `withIsolatedConfigEnv` sets `HOME` to the temporary directory,
+  unsets `OKF_CONFIG`, and runs each test from the temporary current directory.
 
 
 ## Decision Log
@@ -93,6 +112,55 @@ Term definitions:
   parallel with the build-wiring plan. The kit plan (`docs/plans/18-…`) owns the small mapping
   from `OkfProvider` to `InteractiveProvider`.
   Date: 2026-06-30
+
+- Decision: Render config values by pattern matching on `OkfConfig`, `KitSettings`, and
+  `AssistSettings` rather than composing duplicate record-field selectors.
+  Rationale: `DuplicateRecordFields` is enabled, but pattern matching avoids ambiguous selector
+  inference in `renderConfig` and keeps the module free of a lens dependency beyond what
+  `Okf.Prelude` already provides.
+  Date: 2026-06-30
+
+- Decision: The config test helper isolates `HOME`, `OKF_CONFIG`, and the current directory for
+  each test case.
+  Rationale: Config resolution intentionally consults global paths, so tests must not depend on
+  or mutate the developer's real global configuration. Isolating all three inputs makes the
+  default/source-precedence assertions deterministic.
+  Date: 2026-06-30
+
+
+## Outcomes & Retrospective
+
+EP-2 is complete. `okf-cli/src/Okf/Cli/Config.hs` defines the Dhall-backed `OkfConfig` model,
+default values, source resolution, rendering, and example config text. `okf-cli/src/Okf/Cli.hs`
+now exposes `okf config` with `show`, `path`, and `init [--global]`, and the CLI tests cover
+parser wiring plus config precedence/error behavior.
+
+Validation completed on 2026-06-30:
+
+```text
+cabal build okf-cli
+cabal test okf-cli-test
+cabal test all
+nix build .#okf-cli
+```
+
+Manual behavior checks in `/tmp/okf-config-demo.r8Bfne` proved the observable workflow:
+
+```text
+okf config show
+source: (built-in defaults)
+kit.repoUrl     = https://github.com/shinzui/okf-kit.git
+
+okf config init
+Wrote /private/tmp/okf-config-demo.r8Bfne/okf-config.dhall
+
+OKF_CONFIG=/tmp/okf-config-demo.r8Bfne/other.dhall okf config path
+OKF_CONFIG=/tmp/okf-config-demo.r8Bfne/other.dhall
+```
+
+The main lesson is that config tests for path precedence need to isolate process environment
+as carefully as filesystem state. EP-3 and EP-4 can now import `Okf.Cli.Config` and consume the
+`kit.repoUrl`, `kit.providers`, and `assist` fields.
 
 
 ## Context and Orientation
@@ -560,3 +628,7 @@ MasterPlan Integration Points and the two consuming plans.
 This plan adds the `Config` constructor to `okf-cli/src/Okf/Cli.hs`'s `Command` type (Integration
 Point IP-2). The kit and assist plans add `Kit` and `Assist` constructors to the same type; all
 three edits are additive and independent.
+
+Revision note (2026-06-30): Completed EP-2 implementation, recorded deterministic config-test
+isolation, added the missing `Outcomes & Retrospective` section, and captured validation
+evidence for cabal, nix, and the manual `okf config` workflow.

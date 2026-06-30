@@ -125,7 +125,7 @@ separate deliverable in a separate git repository with its own acceptance walkth
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
 | EP-1 | Wire baikai and baikai-kit into the okf build | docs/plans/16-wire-baikai-and-baikai-kit-into-the-okf-build.md | None | None | Complete |
-| EP-2 | Add per-project and global configuration to okf | docs/plans/17-add-per-project-and-global-configuration-to-okf.md | None | None | Not Started |
+| EP-2 | Add per-project and global configuration to okf | docs/plans/17-add-per-project-and-global-configuration-to-okf.md | None | None | Complete |
 | EP-3 | Add okf kit command for skill and subagent installation | docs/plans/18-add-okf-kit-command-for-skill-and-subagent-installation.md | EP-1, EP-2 | None | Not Started |
 | EP-4 | Add okf assist command for interactive agent assistance | docs/plans/19-add-okf-assist-command-for-interactive-agent-assistance.md | EP-1, EP-2 | EP-3 | Not Started |
 | EP-5 | Create the okf-kit repository with a seed skill and end-to-end docs | docs/plans/20-create-the-okf-kit-repository-with-a-seed-skill-and-end-to-end-docs.md | None | EP-3, EP-4 | Not Started |
@@ -227,8 +227,8 @@ Track milestone-level progress across all child plans.
 
 - [x] EP-1: baikai + baikai-kit resolve under `cabal build` (source-repository-package pin)
 - [x] EP-1: baikai + baikai-kit resolve under `nix build .#okf-cli` (flake input + overlay, license fix)
-- [ ] EP-2: `Okf.Cli.Config` loads a Dhall `OkfConfig` with project→global precedence and defaults
-- [ ] EP-2: `okf config` prints the effective config and its source path
+- [x] EP-2: `Okf.Cli.Config` loads a Dhall `OkfConfig` with project→global precedence and defaults
+- [x] EP-2: `okf config` prints the effective config and its source path
 - [ ] EP-3: `okf kit list` clones okf-kit and lists manifest items
 - [ ] EP-3: `okf kit install/uninstall/update/status` manage skills at user and project scope
 - [ ] EP-4: `okf assist` launches an interactive agent session with installed skills on its path
@@ -264,6 +264,17 @@ interactions between child plans. Provide concise evidence.
   `baikai-kit/baikai-kit.cabal` with the expected `Baikai.Kit.*` modules. Future Baikai kit
   work should trust the source tree and cabal files over the stale registry package list
   until the registry entry is refreshed.
+  Date: 2026-06-30
+
+- Discovery: EP-2 completed with deterministic config precedence tests by isolating
+  `OKF_CONFIG`, `HOME`, and the current directory per test. Future config-related tests should
+  preserve that isolation because real global files under `~/.config/okf/` are part of the
+  production search order.
+  Date: 2026-06-30
+
+- Discovery: `nix build .#okf-cli` does not include untracked source files from the git-backed
+  flake source. A new Haskell module must be staged before nix can build it from `inputs.self`;
+  otherwise Cabal inside nix reports that it cannot find the source file.
   Date: 2026-06-30
 
 
@@ -319,6 +330,12 @@ interactions between child plans. Provide concise evidence.
   initiative.
   Date: 2026-06-30
 
+- Decision: Implement EP-2's `renderConfig` by pattern matching on the config records instead
+  of relying on duplicate field selectors.
+  Rationale: This avoids ambiguity under `DuplicateRecordFields` while preserving the exact
+  field names required by the MasterPlan integration points and by EP-3/EP-4 consumers.
+  Date: 2026-06-30
+
 
 ## Outcomes & Retrospective
 
@@ -331,6 +348,16 @@ Compare the result against the original vision.
   and `cabal test all` all pass. This unblocks EP-3 and EP-4's imports of `Baikai.Kit.*` and
   `Baikai.Interactive` once EP-2 supplies configuration.
 
+- 2026-06-30: EP-2 is complete. `Okf.Cli.Config` defines the Dhall-backed config model and
+  precedence loader, `okf config show/path/init` are wired into the CLI, `cabal test all` and
+  `nix build .#okf-cli` pass, and manual checks proved default output, project config init,
+  edited repo URL reflection, env override, and malformed-Dhall failure. EP-3 and EP-4 can now
+  consume `OkfConfig`.
+
 Revision note (2026-06-30): Marked EP-1 complete, checked its MasterPlan progress items,
 recorded the required nix transitive dependency overrides, and summarized the validation
 evidence that proves the build foundation is ready for later feature plans.
+
+Revision note (2026-06-30): Marked EP-2 complete, checked its MasterPlan progress items,
+recorded deterministic config-test isolation and nix source staging discoveries, and summarized
+the validation evidence proving `Okf.Cli.Config` and `okf config` are ready for consuming plans.

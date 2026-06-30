@@ -1,12 +1,15 @@
 module Main (main) where
 
+import Control.Exception (bracket)
 import Control.Monad (unless)
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text.IO
 import Okf.Cli
+import Okf.Cli.Config
 import Okf.Cli.Help (HelpTopic (..), helpTopics)
 import Options.Applicative
-import System.Directory (createDirectoryIfMissing, getTemporaryDirectory, removeDirectoryRecursive)
+import System.Directory (createDirectoryIfMissing, getCurrentDirectory, getTemporaryDirectory, removeDirectoryRecursive, withCurrentDirectory)
+import System.Environment (lookupEnv, setEnv, unsetEnv)
 import System.Exit (exitFailure)
 import System.FilePath ((</>))
 import System.IO.Temp (createTempDirectory)
@@ -14,6 +17,10 @@ import System.IO.Temp (createTempDirectory)
 main :: IO ()
 main = do
   logAddWrites <- testLogAddWritesFile
+  configDefaults <- testConfigDefaults
+  configProjectPrecedence <- testConfigProjectPrecedence
+  configEnvPrecedence <- testConfigEnvPrecedence
+  configInvalidDhall <- testConfigInvalidDhall
   let results =
         [ parseSucceeds ["validate", "bundle"],
           parseSucceeds ["validate", "bundle", "--strict"],
@@ -78,6 +85,11 @@ main = do
           parseSucceeds ["completions", "bash"],
           parseSucceeds ["completions", "zsh"],
           parseSucceeds ["completions", "fish"],
+          parseSucceeds ["config"],
+          parseSucceeds ["config", "show"],
+          parseSucceeds ["config", "path"],
+          parseSucceeds ["config", "init"],
+          parseSucceeds ["config", "init", "--global"],
           parseFails ["completions", "elvish"],
           parseSucceeds ["help"],
           parseSucceeds ["help", "okf"],
@@ -86,7 +98,11 @@ main = do
           all (not . Text.null . topicContent) helpTopics,
           parseShowsInfo ["--version"],
           parseFails ["hello"],
-          logAddWrites
+          logAddWrites,
+          configDefaults,
+          configProjectPrecedence,
+          configEnvPrecedence,
+          configInvalidDhall
         ]
   unless (and results) exitFailure
 
@@ -149,6 +165,68 @@ testLogAddWritesFile = do
     ( "## 2026-06-23" `Text.isInfixOf` written
         && "* **Update**: Refreshed schema" `Text.isInfixOf` written
     )
+
+testConfigDefaults :: IO Bool
+testConfigDefaults =
+  withIsolatedConfigEnv "okf-cli-config-defaults" $ do
+    configSource <- findConfigSource
+    loaded <- loadOkfConfig
+    pure (configSource == SourceDefaults && loaded == Right (defaultOkfConfig, SourceDefaults))
+
+testConfigProjectPrecedence :: IO Bool
+testConfigProjectPrecedence =
+  withIsolatedConfigEnv "okf-cli-config-project" $ do
+    projectPath <- projectConfigPath
+    Text.IO.writeFile projectPath exampleConfigText
+    configSource <- findConfigSource
+    loaded <- loadOkfConfig
+    pure (configSource == SourceProject projectPath && loaded == Right (defaultOkfConfig, SourceProject projectPath))
+
+testConfigEnvPrecedence :: IO Bool
+testConfigEnvPrecedence =
+  withIsolatedConfigEnv "okf-cli-config-env" $ do
+    projectPath <- projectConfigPath
+    Text.IO.writeFile projectPath exampleConfigText
+    envPath <- (</> "env-config.dhall") <$> getCurrentDirectory
+    Text.IO.writeFile envPath exampleConfigText
+    setEnv okfConfigEnvVar envPath
+    configSource <- findConfigSource
+    loaded <- loadOkfConfig
+    pure (configSource == SourceEnv envPath && loaded == Right (defaultOkfConfig, SourceEnv envPath))
+
+testConfigInvalidDhall :: IO Bool
+testConfigInvalidDhall =
+  withIsolatedConfigEnv "okf-cli-config-invalid" $ do
+    projectPath <- projectConfigPath
+    Text.IO.writeFile projectPath "this is not valid Dhall"
+    loaded <- loadOkfConfig
+    pure $
+      case loaded of
+        Left message -> not (Text.null (Text.strip message))
+        Right _ -> False
+
+withIsolatedConfigEnv :: String -> IO Bool -> IO Bool
+withIsolatedConfigEnv name runTest = do
+  temporaryDirectory <- getTemporaryDirectory
+  originalCwd <- getCurrentDirectory
+  originalOkfConfig <- lookupEnv okfConfigEnvVar
+  originalHome <- lookupEnv "HOME"
+  bracket
+    (createTempDirectory temporaryDirectory name)
+    ( \root -> do
+        setMaybeEnv okfConfigEnvVar originalOkfConfig
+        setMaybeEnv "HOME" originalHome
+        withCurrentDirectory originalCwd (removeDirectoryRecursive root)
+    )
+    ( \root -> do
+        unsetEnv okfConfigEnvVar
+        setEnv "HOME" root
+        withCurrentDirectory root runTest
+    )
+  where
+    setMaybeEnv key = \case
+      Nothing -> unsetEnv key
+      Just envValue -> setEnv key envValue
 
 parseFails :: [String] -> Bool
 parseFails args =

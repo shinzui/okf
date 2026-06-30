@@ -3,6 +3,7 @@ module Okf.Cli
   ( Command (..),
     GraphOptions (..),
     IndexOptions (..),
+    ConfigCommand (..),
     LogAddOptions (..),
     LogOptions (..),
     LogSub (..),
@@ -27,6 +28,7 @@ import Data.Text.IO qualified as Text.IO
 import Data.Time (defaultTimeLocale, formatTime, getCurrentTime, utctDay)
 import Okf.Bundle
 import Okf.Cli.Completions (CompletionsShell, completionsParser, handleCompletions)
+import Okf.Cli.Config
 import Okf.Cli.Help (HelpCommand, handleHelpCommand, helpCommandParser)
 import Okf.Cli.Version (appVersionWithGit)
 import Okf.ConceptId
@@ -51,6 +53,7 @@ data Command
   | Log LogOptions
   | GraphCommand GraphOptions
   | ShowConcept ShowOptions
+  | Config ConfigCommand
   | Completions CompletionsShell
   | Help HelpCommand
   deriving stock (Show, Eq)
@@ -103,6 +106,12 @@ data ShowOptions = ShowOptions
   }
   deriving stock (Show, Eq)
 
+data ConfigCommand
+  = ConfigShow
+  | ConfigPath
+  | ConfigInit !Bool
+  deriving stock (Show, Eq)
+
 data Options = Options
   { cmd :: !Command
   }
@@ -139,6 +148,7 @@ commandParser =
         <> command "log" (info (Log <$> logOptionsParser <**> helper) (progDesc "Preview and check log.md files"))
         <> command "graph" (info (GraphCommand <$> graphOptionsParser <**> helper) (progDesc "Print a bundle graph"))
         <> command "show" (info (ShowConcept <$> showOptionsParser <**> helper) (progDesc "Show one concept"))
+        <> command "config" (info (Config <$> configCommandParser <**> helper) (progDesc "Show and manage okf configuration"))
         <> command "completions" (info (Completions <$> completionsParser <**> helper) (progDesc "Generate a shell completion script (bash, zsh, fish)"))
         <> command "help" (info (Help <$> helpCommandParser <**> helper) (progDesc "Show conceptual help topics"))
     )
@@ -245,6 +255,20 @@ showOptionsParser =
     <$> bundleArgument
     <*> (Text.pack <$> strArgument (metavar "CONCEPT_ID" <> help "Concept ID such as tables/users"))
 
+configCommandParser :: Parser ConfigCommand
+configCommandParser =
+  hsubparser
+    ( command "show" (info (pure ConfigShow) (progDesc "Print the effective configuration and its source"))
+        <> command "path" (info (pure ConfigPath) (progDesc "Print the path the configuration was loaded from"))
+        <> command
+          "init"
+          ( info
+              (ConfigInit <$> switch (long "global" <> help "Write to ~/.config/okf/config.dhall instead of ./okf-config.dhall"))
+              (progDesc "Write a commented example okf-config.dhall")
+          )
+    )
+    <|> pure ConfigShow
+
 bundleArgument :: Parser FilePath
 bundleArgument =
   strArgument (metavar "BUNDLE" <> help "Path to an OKF bundle directory")
@@ -256,8 +280,31 @@ runCommand = \case
   Log options -> runLog options
   GraphCommand options -> runGraph options
   ShowConcept options -> runShow options
+  Config configCommand -> runConfig configCommand
   Completions shell -> handleCompletions shell
   Help helpCommand -> handleHelpCommand helpCommand
+
+runConfig :: ConfigCommand -> IO ()
+runConfig = \case
+  ConfigShow -> do
+    result <- loadOkfConfig
+    case result of
+      Left err -> dieText ("Failed to load config: " <> err)
+      Right (config, configSource) -> do
+        Text.IO.putStrLn ("source: " <> renderConfigSource configSource)
+        Text.IO.putStr (renderConfig config)
+  ConfigPath -> do
+    configSource <- findConfigSource
+    Text.IO.putStrLn (renderConfigSource configSource)
+  ConfigInit global -> do
+    target <- if global then xdgConfigPath else projectConfigPath
+    exists <- doesFileExist target
+    if exists
+      then dieText ("Refusing to overwrite existing config: " <> Text.pack target)
+      else do
+        createDirectoryIfMissing True (FilePath.takeDirectory target)
+        Text.IO.writeFile target exampleConfigText
+        Text.IO.putStrLn ("Wrote " <> Text.pack target)
 
 runValidate :: ValidateOptions -> IO ()
 runValidate ValidateOptions {bundlePath, strictMode, profilePath, profileEnforce, logEnforce} = do
