@@ -47,7 +47,8 @@ helpTopics =
   [ HelpTopic "okf" "What the Open Knowledge Format is" okfTopicContent,
     HelpTopic "format" "Bundle layout, concept IDs, frontmatter, and links" formatTopicContent,
     HelpTopic "validation" "How bundles are validated and referential integrity" validationTopicContent,
-    HelpTopic "profiles" "Checking a bundle against house conventions" profilesTopicContent
+    HelpTopic "profiles" "Checking a bundle against house conventions" profilesTopicContent,
+    HelpTopic "agents" "Installing agent skills and launching assist" agentsTopicContent
   ]
 
 okfTopicContent :: Text
@@ -61,6 +62,9 @@ validationTopicContent = $(embedStringFile "help/validation.md")
 
 profilesTopicContent :: Text
 profilesTopicContent = $(embedStringFile "help/profiles.md")
+
+agentsTopicContent :: Text
+agentsTopicContent = $(embedStringFile "help/agents.md")
 
 -- | Parse @help [TOPIC]@. With no argument, 'pure ListTopics' wins via '<|>'.
 helpCommandParser :: Parser HelpCommand

@@ -128,7 +128,7 @@ separate deliverable in a separate git repository with its own acceptance walkth
 | EP-2 | Add per-project and global configuration to okf | docs/plans/17-add-per-project-and-global-configuration-to-okf.md | None | None | Complete |
 | EP-3 | Add okf kit command for skill and subagent installation | docs/plans/18-add-okf-kit-command-for-skill-and-subagent-installation.md | EP-1, EP-2 | None | Complete |
 | EP-4 | Add okf assist command for interactive agent assistance | docs/plans/19-add-okf-assist-command-for-interactive-agent-assistance.md | EP-1, EP-2 | EP-3 | Complete |
-| EP-5 | Create the okf-kit repository with a seed skill and end-to-end docs | docs/plans/20-create-the-okf-kit-repository-with-a-seed-skill-and-end-to-end-docs.md | None | EP-3, EP-4 | Not Started |
+| EP-5 | Create the okf-kit repository with a seed skill and end-to-end docs | docs/plans/20-create-the-okf-kit-repository-with-a-seed-skill-and-end-to-end-docs.md | None | EP-3, EP-4 | In Progress |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
 Hard Deps and Soft Deps reference other rows by their EP-# prefix.
@@ -233,7 +233,7 @@ Track milestone-level progress across all child plans.
 - [x] EP-3: `okf kit install/uninstall/update/status` manage skills at user and project scope
 - [x] EP-4: `okf assist` launches an interactive agent session with installed skills on its path
 - [ ] EP-5: `okf-kit` repository exists with a working seed skill and `kit.json`
-- [ ] EP-5: README + embedded help topic document the author → publish → install → assist loop
+- [x] EP-5: README + embedded help topic document the author → publish → install → assist loop
 
 
 ## Surprises & Discoveries
@@ -287,6 +287,13 @@ interactions between child plans. Provide concise evidence.
   combining `--print-command` for argv inspection with a fake `claude` executable for
   exit-code propagation. The real interactive path remains the same `createProcess` call and
   will use the user's `claude` binary when run without the fake `PATH`.
+  Date: 2026-06-30
+
+- Discovery: EP-5's local repository and documentation are complete, but the canonical
+  default URL cannot be validated until `https://github.com/shinzui/okf-kit.git` is published.
+  The local sibling repo at `/Users/shinzui/Keikaku/bokuno/okf-kit` has commit `4c2ec5d`, and
+  validation against its `file://` URL proved `okf kit list`, install, status, and
+  `okf assist --print-command` behavior.
   Date: 2026-06-30
 
 
@@ -360,6 +367,13 @@ interactions between child plans. Provide concise evidence.
   section and gives users a clear path when the `claude` executable is absent.
   Date: 2026-06-30
 
+- Decision: Do not publish the public `shinzui/okf-kit` GitHub repository without explicit
+  user approval.
+  Rationale: Publishing creates an externally visible repository under the user's GitHub
+  account. The local kit repository and okf documentation can be completed safely, but the
+  public push and default-config validation should happen only after explicit authorization.
+  Date: 2026-06-30
+
 
 ## Outcomes & Retrospective
 
@@ -388,6 +402,12 @@ Compare the result against the original vision.
   planned unsupported-provider message and code 2, a fake `claude` executable proved child
   exit-code propagation, and `cabal test all` plus `nix build .#okf-cli` pass.
 
+- 2026-06-30: EP-5 is in progress. The sibling `okf-kit` repo exists locally with `kit.json`,
+  `author-okf-concept`, `okf-guide`, and a README; okf now has `okf help agents` plus README
+  documentation for the kit/assist loop; and local `file://` validation proves the install to
+  assist dry-run path. Remaining work is publishing the public GitHub repository and rerunning
+  the default-config walkthrough.
+
 Revision note (2026-06-30): Marked EP-1 complete, checked its MasterPlan progress items,
 recorded the required nix transitive dependency overrides, and summarized the validation
 evidence that proves the build foundation is ready for later feature plans.
@@ -403,3 +423,7 @@ recorded the local fixture `okf kit` validation and the file-url status warning,
 Revision note (2026-06-30): Marked EP-4 complete, checked its MasterPlan progress item,
 recorded dry-run and fake-launch validation, and noted the friendly missing-Claude launch
 failure behavior.
+
+Revision note (2026-06-30): Marked EP-5 in progress, checked the documentation progress item,
+recorded local `okf-kit` validation, and left the public repository/default-config milestone
+open pending explicit approval to publish `https://github.com/shinzui/okf-kit.git`.

@@ -72,6 +72,9 @@ cabal run okf -- log <bundle> [--check-stale] [--since <git-ref>]
 cabal run okf -- log add <bundle> [<concept-id>] -m <message> [--kind <kind>] [--date YYYY-MM-DD]
 cabal run okf -- graph <bundle> [--json]
 cabal run okf -- show <bundle> <concept-id>
+cabal run okf -- config show
+cabal run okf -- kit list
+cabal run okf -- assist --print-command "PROMPT"
 cabal run okf -- completions <bash|zsh|fish>
 cabal run okf -- help [topic]
 ```
@@ -89,9 +92,12 @@ advisories fail the command.
 a dated entry to the root log or to the log in a concept's directory. `graph`
 emits JSON graph data; JSON is currently the only graph format, and `--json` is
 accepted to keep the command shape stable for future formats. `show` prints one
-concept's metadata and Markdown body. `completions` generates shell completion
-scripts for Bash, Zsh, and Fish. `help` prints embedded conceptual guides for
-`okf`, `format`, `validation`, and `profiles`.
+concept's metadata and Markdown body. `config` shows or initializes the Dhall
+configuration used by the agent commands. `kit` installs reusable AI-agent
+skills and subagents from `okf-kit`. `assist` launches an interactive Claude
+session with installed OKF skills on its path. `completions` generates shell
+completion scripts for Bash, Zsh, and Fish. `help` prints embedded conceptual
+guides for `okf`, `format`, `validation`, `profiles`, and `agents`.
 
 Invalid fixtures are available for validation behavior:
 
@@ -124,6 +130,34 @@ example bundle ([examples/postgresql-sample](./examples/postgresql-sample)) and 
 sample descriptor ([docs/profiles/postgresql.dhall](./docs/profiles/postgresql.dhall)).
 See [docs/user/profiles.md](./docs/user/profiles.md) for the descriptor schema and
 worked examples.
+
+
+## Agent Skills And Assist
+
+`okf` can install reusable AI-agent skills and subagents from the
+[okf-kit](https://github.com/shinzui/okf-kit) repository and launch an interactive
+Claude session that can use them. The default configuration points at
+`https://github.com/shinzui/okf-kit.git`; override it per project with
+`okf-config.dhall` or globally with `~/.config/okf/config.dhall`.
+
+```bash
+cabal run okf -- config show
+cabal run okf -- kit list
+cabal run okf -- kit install author-okf-concept
+cabal run okf -- kit status
+cabal run okf -- assist --print-command "add a tables/orders concept"
+```
+
+`okf kit install author-okf-concept` installs the seed skill into the agent asset
+layout managed by `baikai-kit`. `okf assist "PROMPT"` launches Claude with the
+installed OKF skill directories passed through `--add-dir`, so the session can
+discover and use those skills. Use `--print-command` to inspect the launch command
+without starting an interactive session.
+
+To publish another skill, add `skills/<name>/SKILL.md` to `okf-kit`, add a matching
+entry to `kit.json`, commit, and push. Users pick it up with `okf kit update` or
+`okf kit install <name>`; no okf rebuild is required. Run `okf help agents` for
+the embedded guide.
 
 
 ## Bundle Format

@@ -49,16 +49,45 @@ EP-3 (and ideally EP-4) to be complete.
 
 ## Progress
 
-- [ ] Milestone 1: `okf-kit` repository scaffolded locally with `kit.json`, the
-      `author-okf-concept` skill, an optional `okf-guide` subagent, and a README.
+- [x] Milestone 1: `okf-kit` repository scaffolded locally with `kit.json`, the
+      `author-okf-concept` skill, an optional `okf-guide` subagent, and a README. Completed
+      2026-06-30. Evidence: `/Users/shinzui/Keikaku/bokuno/okf-kit` is a git repository with
+      commit `4c2ec5d` containing `kit.json`, `skills/author-okf-concept/SKILL.md`,
+      `agents/okf-guide.md`, and `README.md`; `okf kit list` against its `file://` URL listed
+      both items.
 - [ ] Milestone 2: `okf-kit` published to `https://github.com/shinzui/okf-kit` and installable
-      via `okf kit install author-okf-concept` with the default config.
-- [ ] Milestone 3: `okf` documents the loop — embedded `agents` help topic + README section.
+      via `okf kit install author-okf-concept` with the default config. Not attempted in this
+      turn because publishing a public GitHub repository is an outward-facing action requiring
+      explicit approval; the prompt tool for that approval was unavailable in this mode.
+- [x] Milestone 3: `okf` documents the loop — embedded `agents` help topic + README section.
+      Completed 2026-06-30. Evidence: `okf-cli/help/agents.md` is registered in
+      `Okf.Cli.Help`, `./result/bin/okf help agents` prints the guide, `okf help` lists the
+      `agents` topic, and `README.md` includes an "Agent Skills And Assist" section.
 
 
 ## Surprises & Discoveries
 
-(None yet.)
+- Discovery: The public GitHub publishing step could not be safely performed in this turn
+  because it is an outward-facing action and the interactive approval prompt was unavailable.
+  The local repo is complete and validated via `file://`; default-config validation against
+  `https://github.com/shinzui/okf-kit.git` remains the only unfinished EP-5 milestone.
+  Date: 2026-06-30
+
+- Discovery: The local `okf-kit` repo validates the full installed-skill assist path without
+  touching the user's real home directory by running with isolated `HOME=/tmp/okf-kit-final.ItJ11h`.
+  Evidence:
+
+  ```text
+  okf kit list
+  Skills:
+    author-okf-concept  Author a new OKF concept document with valid frontmatter, path, links, and a validation check
+
+  Agents:
+    okf-guide  An assistant persona for authoring and validating OKF bundles
+
+  okf assist --print-command "add a tables/orders concept"
+  claude --add-dir /tmp/okf-kit-final.ItJ11h/.config/okf/agents 'add a tables/orders concept'
+  ```
 
 
 ## Decision Log
@@ -82,6 +111,42 @@ EP-3 (and ideally EP-4) to be complete.
   Rationale: Keeps the shipped binary self-contained (help works offline) and consistent with
   the existing `okf help okf|format|validation|profiles` topics.
   Date: 2026-06-30
+
+- Decision: Do not publish the public GitHub repository without explicit approval.
+  Rationale: `gh repo create shinzui/okf-kit --public --push` creates an externally visible
+  artifact under the user's GitHub account. The local repo and docs can be completed safely,
+  but the publish step should happen only after the user explicitly authorizes it.
+  Date: 2026-06-30
+
+
+## Outcomes & Retrospective
+
+EP-5 is partially complete. The local sibling `okf-kit` repository exists and contains the
+planned seed skill, subagent, manifest, and README. The okf repository has the embedded
+`agents` help topic and README documentation. Local validation proves the author -> install ->
+assist dry-run path works against the local `file://` repo.
+
+Validation completed on 2026-06-30:
+
+```text
+okf kit list                         # using file:///Users/shinzui/Keikaku/bokuno/okf-kit
+okf kit install author-okf-concept
+okf kit status
+okf assist --print-command "add a tables/orders concept"
+cabal build okf-cli
+cabal test all
+nix build .#okf-cli
+./result/bin/okf help agents
+```
+
+Remaining work: publish `/Users/shinzui/Keikaku/bokuno/okf-kit` to
+`https://github.com/shinzui/okf-kit.git`, then re-run the default-config walkthrough with no
+project `okf-config.dhall`. Once that succeeds, mark Milestone 2 complete and mark EP-5
+complete in the MasterPlan.
+
+Revision note (2026-06-30): Marked the local repo scaffold and okf documentation milestones
+complete, recorded the isolated local validation, and left the public GitHub publication
+milestone open pending explicit approval.
 
 
 ## Context and Orientation
