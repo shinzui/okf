@@ -38,6 +38,8 @@ library
     Okf.Cli.Completions
     Okf.Cli.Config
     Okf.Cli.Help
+    Okf.Cli.Kit
+    Okf.Cli.Kit.Config
     Okf.Cli.Version
 
   other-modules:   Paths_okf_cli

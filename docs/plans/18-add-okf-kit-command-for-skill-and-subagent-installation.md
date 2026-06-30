@@ -56,17 +56,36 @@ This plan depends on two earlier plans being complete:
 
 ## Progress
 
-- [ ] Milestone 1: bridge module `Okf.Cli.Kit.Config` maps `OkfConfig` to `baikai-kit`'s
-      `KitConfig`; compiles against EP-1/EP-2.
-- [ ] Milestone 2: `Okf.Cli.Kit` defines the okf-local `KitCommand` (Show, Eq), its parser,
-      and `handleKitCommand` dispatching to the `baikai-kit` engine.
-- [ ] Milestone 3: `okf kit` wired into `Okf.Cli`; an end-to-end install/status/uninstall
-      against a local fixture kit repo succeeds.
+- [x] Milestone 1: bridge module `Okf.Cli.Kit.Config` maps `OkfConfig` to `baikai-kit`'s
+      `KitConfig`; compiles against EP-1/EP-2. Completed 2026-06-30.
+- [x] Milestone 2: `Okf.Cli.Kit` defines the okf-local `KitCommand` (Show, Eq), its parser,
+      and `handleKitCommand` dispatching to the `baikai-kit` engine. Completed 2026-06-30.
+- [x] Milestone 3: `okf kit` wired into `Okf.Cli`; an end-to-end install/status/uninstall
+      against a local fixture kit repo succeeds. Completed 2026-06-30. Evidence: a local
+      `file:///tmp/okf-kit-demo.crsM5u/okf-kit` repo with `demo-skill` was listed, installed
+      at user and project scope, reported `up-to-date`, updated, uninstalled, and second
+      uninstall reported the friendly not-installed message.
 
 
 ## Surprises & Discoveries
 
-(None yet.)
+- Discovery: The local `file://` fixture repo can make Baikai's `kit status` print a `git pull`
+  warning about the cloned repo's configured branch, but the cached manifest fallback still
+  works and status exits successfully with `up-to-date`.
+  Evidence:
+
+  ```text
+  Warning: git pull failed, using cached data. Your configuration specifies to merge with the ref 'refs/heads/master'
+  from the remote, but no such ref was fetched.
+
+  NAME        TYPE   SCOPE  PROVIDERS  INSTALLED  LATEST  STATE
+  demo-skill  skill  user   claude     -          -       up-to-date
+  ```
+
+- Discovery: As in EP-2, nix flakes built from `inputs.self` require new source modules to be
+  staged before `nix build .#okf-cli` can see them. `Okf.Cli.Kit` and
+  `Okf.Cli.Kit.Config` were staged before the successful nix validation.
+  Date: 2026-06-30
 
 
 ## Decision Log
@@ -93,6 +112,60 @@ This plan depends on two earlier plans being complete:
   Rationale: The whole initiative's configurability requirement; the bridge module is the
   single place that reads them.
   Date: 2026-06-30
+
+- Decision: Parse kit item names directly as `Text` in `Okf.Cli.Kit.KitCommand`.
+  Rationale: The Baikai engine accepts `Text`, and `Text` derives `Eq`; parsing to `Text`
+  avoids a second conversion layer while preserving the okf-local `Eq` command mirror.
+  Date: 2026-06-30
+
+
+## Outcomes & Retrospective
+
+EP-3 is complete. `Okf.Cli.Kit.Config.kitConfig` now maps `OkfConfig` into
+`Baikai.Kit.Config.KitConfig`, `Okf.Cli.Kit` defines an okf-local `KitCommand` with parser and
+engine dispatch, and `Okf.Cli` exposes `okf kit` alongside the existing commands. The command
+uses `loadConfigOrDie`, so malformed config files fail before engine dispatch with the same
+error style as `okf config show`.
+
+Validation completed on 2026-06-30:
+
+```text
+cabal build okf-cli
+cabal test okf-cli-test
+cabal test all
+nix build .#okf-cli
+```
+
+Manual fixture validation used an isolated `HOME=/tmp/okf-kit-demo.crsM5u` and a project
+config pointing at `file:///tmp/okf-kit-demo.crsM5u/okf-kit`:
+
+```text
+okf kit list
+Fetching okf-kit...
+Skills:
+  demo-skill  A demo skill for testing okf kit
+
+okf kit install demo-skill
+Installed skill 'demo-skill' to user scope.
+
+okf kit install demo-skill --project
+Installed skill 'demo-skill' to project scope.
+
+okf kit update
+Kit repository updated.
+Updated 1 item(s).
+
+okf kit uninstall demo-skill
+Uninstalled skill 'demo-skill' from user scope.
+
+okf kit uninstall demo-skill
+'demo-skill' is not installed in user scope.
+```
+
+The installed files were verified at both
+`/tmp/okf-kit-demo.crsM5u/.config/okf/agents/.claude/skills/demo-skill/SKILL.md` and
+`/tmp/okf-kit-demo.crsM5u/project/.okf/agents/.claude/skills/demo-skill/SKILL.md`, with
+matching `.okf-kit.json` sidecars. `okf --help` lists `kit` among available commands.
 
 
 ## Context and Orientation
@@ -475,3 +548,7 @@ Defines: `Okf.Cli.Kit` (`KitCommand(..)`, `kitCommandParser :: Parser KitCommand
 `handleKitCommand :: OkfConfig -> KitCommand -> IO ()`), and adds the `Kit` constructor +
 `command "kit"` + dispatch to `okf-cli/src/Okf/Cli.hs` (Integration Point IP-2). Adds the
 shared `loadConfigOrDie :: IO OkfConfig` helper in `Okf.Cli`, reused by EP-4.
+
+Revision note (2026-06-30): Completed EP-3 implementation, added the missing
+`Outcomes & Retrospective` section, recorded the local fixture repo validation, and captured
+the file-url git-pull warning observed during status checks.
