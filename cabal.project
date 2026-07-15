@@ -5,7 +5,7 @@ packages:
 source-repository-package
   type: git
   location: https://github.com/shinzui/baikai
-  tag: 759ddc9e7d110c8935a4c863ef472ae20890aa1f
+  tag: 5f527d8534074875ac02e47ba61d6755b82aca75
   subdir:
     baikai
     baikai-kit

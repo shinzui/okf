@@ -6,7 +6,7 @@
     nixpkgs.follows = "haskell-nix-dev/nixpkgs";
 
     baikai-src = {
-      url = "github:shinzui/baikai/759ddc9e7d110c8935a4c863ef472ae20890aa1f";
+      url = "github:shinzui/baikai/5f527d8534074875ac02e47ba61d6755b82aca75";
       flake = false;
     };
 
