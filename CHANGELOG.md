@@ -7,6 +7,27 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.1.2.0] - 2026-07-14
+
+### Added
+
+- `okf kit` command for installing reusable AI-agent skills and subagents from a
+  configured `okf-kit` git repository (`list`, `install`, `update`, `uninstall`,
+  `status`), with user and project (`--project`) scopes.
+- `okf assist` command that launches an interactive Claude session seeded with a
+  prompt and your installed okf skills on its path; `--print-command` prints the
+  command line without launching.
+- `okf config` command for managing the optional agent-assistance settings
+  (`show`, `path`, `init`, `init --global`), sourced from `okf-config.dhall`,
+  `~/.config/okf/config.dhall`, or `OKF_CONFIG` with built-in defaults.
+- `okf help` topics for `kit`, `config`, and `agents` documenting the kit,
+  configuration, and assist workflows.
+
+### Changed
+
+- Wired the baikai kit and agent-assist dependencies into the build.
+- Updated the bundled baikai packages.
+
 ## [0.1.1.0] - 2026-06-28
 
 ### Added
