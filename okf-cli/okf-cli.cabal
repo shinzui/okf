@@ -1,20 +1,25 @@
-cabal-version:   3.4
-name:            okf-cli
-version:         0.1.2.0
-synopsis:        Command-line interface for Open Knowledge Format bundles
+cabal-version:      3.4
+name:               okf-cli
+version:            0.1.2.1
+synopsis:           Command-line interface for Open Knowledge Format bundles
 description:
   okf-cli provides the @okf@ executable for working with Open Knowledge Format
   (OKF) bundles: validating bundles, inspecting their concept graph, and
   authoring documents from the command line, built on the okf-core library.
 
-category:        Data, CLI
-license:         BSD-3-Clause
-license-file:    LICENSE
-author:          Nadeem Bitar
-maintainer:      nadeem@gmail.com
-copyright:       (c) 2026 Nadeem Bitar
-build-type:      Simple
-extra-doc-files: CHANGELOG.md
+category:           Data, CLI
+license:            BSD-3-Clause
+license-file:       LICENSE
+author:             Nadeem Bitar
+maintainer:         nadeem@gmail.com
+copyright:          (c) 2026 Nadeem Bitar
+build-type:         Simple
+extra-doc-files:    CHANGELOG.md
+
+-- Help topic sources embedded at compile time by Okf.Cli.Help via
+-- file-embed's embedStringFile. They must ship in the sdist or the
+-- Hackage build fails resolving the Template Haskell splices.
+extra-source-files: help/*.md
 
 common common-options
   ghc-options:
