@@ -34,6 +34,14 @@ import Okf.Bundle
 import Okf.Cli.Assist (AssistOptions, assistOptionsParser, handleAssistCommand)
 import Okf.Cli.Completions (CompletionsShell, completionsParser, handleCompletions)
 import Okf.Cli.Config
+import Okf.Cli.Fzf (FzfConfig, detectFzfConfig)
+import Okf.Cli.Fzf.Selector
+  ( BundleSelection (..),
+    ConceptSelection (..),
+    bundleSearchRootsEnvVar,
+    selectBundle,
+    selectConcept,
+  )
 import Okf.Cli.Help (HelpCommand, handleHelpCommand, helpCommandParser)
 import Okf.Cli.Kit (KitCommand, handleKitCommand, kitCommandParser)
 import Okf.Cli.Version (appVersionWithGit)
@@ -57,7 +65,7 @@ import Okf.Profile
 import Okf.Validation
 import Options.Applicative
 import System.Directory (createDirectoryIfMissing, doesFileExist)
-import System.Exit (ExitCode (..), exitFailure)
+import System.Exit (ExitCode (..), exitFailure, exitWith)
 import System.FilePath ((</>))
 import System.FilePath qualified as FilePath
 import System.IO (stderr)
@@ -120,8 +128,8 @@ data GraphOptions = GraphOptions
   deriving stock (Show, Eq)
 
 data ShowOptions = ShowOptions
-  { bundlePath :: !FilePath,
-    conceptIdText :: !Text,
+  { bundlePath :: !(Maybe FilePath),
+    conceptIdText :: !(Maybe Text),
     profilePath :: !(Maybe FilePath)
   }
   deriving stock (Show, Eq)
@@ -284,11 +292,25 @@ graphOptionsParser =
     <$> bundleArgument
     <*> switch (long "json" <> help "Print JSON graph output")
 
+-- | The @show@ command spells out its own bundle argument instead of reusing
+-- 'bundleArgument', because only here is the argument optional and the help
+-- text must say so.
 showOptionsParser :: Parser ShowOptions
 showOptionsParser =
   ShowOptions
-    <$> bundleArgument
-    <*> (Text.pack <$> strArgument (metavar "CONCEPT_ID" <> help "Concept ID such as tables/users"))
+    <$> optional
+      ( strArgument
+          ( metavar "BUNDLE"
+              <> help "Path to an OKF bundle directory; omit to choose one interactively"
+          )
+      )
+    <*> optional
+      ( Text.pack
+          <$> strArgument
+            ( metavar "CONCEPT_ID"
+                <> help "Concept ID such as tables/users; omit to choose one interactively"
+            )
+      )
     <*> optional
       ( strOption
           ( long "profile"
@@ -579,7 +601,64 @@ runGraph GraphOptions {bundlePath} = do
 
 runShow :: ShowOptions -> IO ()
 runShow ShowOptions {bundlePath, conceptIdText, profilePath} = do
-  concepts <- loadBundleOrExit bundlePath
+  fzfConfig <- detectFzfConfig
+  resolvedBundle <- resolveBundlePath fzfConfig bundlePath
+  concepts <- loadBundleOrExit resolvedBundle
+  case conceptIdText of
+    Just rawIdentifier -> showConceptByIdentifier profilePath concepts rawIdentifier
+    Nothing -> do
+      selection <- selectConcept fzfConfig resolvedBundle concepts
+      case selection of
+        ConceptChosen concept -> renderConcept concept
+        ConceptNoCandidates ->
+          dieText ("No concepts found in " <> Text.pack resolvedBundle)
+        ConceptSelectionCancelled -> exitWith (ExitFailure 130)
+        ConceptSelectionUnavailable -> dieNoPicker "CONCEPT_ID"
+        ConceptSelectionError message -> dieFzf message
+
+-- | Use the given bundle, or ask the user to pick one.
+resolveBundlePath :: FzfConfig -> Maybe FilePath -> IO FilePath
+resolveBundlePath _ (Just path) = pure path
+resolveBundlePath fzfConfig Nothing = do
+  selection <- selectBundle fzfConfig
+  case selection of
+    BundleChosen path -> pure path
+    BundleNoCandidates roots ->
+      dieText
+        ( "No OKF bundles found under "
+            <> Text.intercalate ", " (Text.pack <$> roots)
+            <> ".\nA bundle directory holds an index.md or a Markdown file whose"
+            <> " frontmatter declares a type."
+            <> "\nPass a bundle path explicitly, or set "
+            <> Text.pack bundleSearchRootsEnvVar
+            <> " to a colon-separated list of directories to search."
+        )
+    BundleSelectionCancelled -> exitWith (ExitFailure 130)
+    BundleSelectionUnavailable -> dieNoPicker "BUNDLE"
+    BundleSelectionError message -> dieFzf message
+
+-- | The argument was omitted but no interactive picker can run.
+dieNoPicker :: Text -> IO a
+dieNoPicker missingArgument =
+  dieTextWith
+    (ExitFailure 2)
+    ( "okf show: no "
+        <> missingArgument
+        <> " given and interactive selection is unavailable."
+        <> "\nInstall fzf (https://github.com/junegunn/fzf) and run okf from a terminal,"
+        <> " or pass the argument: okf show [BUNDLE] [CONCEPT_ID]"
+    )
+
+dieFzf :: Text -> IO a
+dieFzf message =
+  dieTextWith (ExitFailure 2) ("okf show: interactive selection failed: " <> message)
+
+-- | Resolve one identifier against a walked bundle: canonical concept path
+-- first, then a profile-declared document ID. Unchanged from the previous
+-- implementation of 'runShow', so the resolution order fixed by ADR 1 cannot
+-- drift.
+showConceptByIdentifier :: Maybe FilePath -> [Concept] -> Text -> IO ()
+showConceptByIdentifier profilePath concepts conceptIdText =
   case either (const Nothing) (`findConcept` concepts) (parseConceptId conceptIdText) of
     Just concept -> renderConcept concept
     Nothing ->
@@ -808,6 +887,9 @@ renderDocumentParseError = \case
   FrontmatterNotMapping -> "frontmatter must be a YAML mapping"
 
 dieText :: Text -> IO a
-dieText message = do
+dieText = dieTextWith (ExitFailure 1)
+
+dieTextWith :: ExitCode -> Text -> IO a
+dieTextWith exitCode message = do
   Text.IO.hPutStrLn stderr message
-  exitFailure
+  exitWith exitCode

@@ -84,13 +84,20 @@ Milestone 2 — fzf process layer in `okf-cli`:
 
 Milestone 3 — selectors and `okf show` wiring:
 
-- [ ] Create `okf-cli/src/Okf/Cli/Fzf/Selector.hs` with `selectBundle`, `selectConcept`, and their result types.
-- [ ] Add `Okf.Cli.Fzf.Selector` to `exposed-modules`.
-- [ ] Make `ShowOptions.bundlePath` and `ShowOptions.conceptIdText` optional and update `showOptionsParser`.
-- [ ] Rework `runShow` in `okf-cli/src/Okf/Cli.hs` to resolve the bundle then the concept, preserving the existing document-ID fallback.
-- [ ] Update the existing `show` parser tests and add tests for the three argument shapes.
-- [ ] `cabal test all` passes; manual end-to-end run of all three argument shapes.
-- [ ] Commit.
+- [x] Create `okf-cli/src/Okf/Cli/Fzf/Selector.hs` with `selectBundle`, `selectConcept`, and their result types. (2026-07-25)
+- [x] Add `Okf.Cli.Fzf.Selector` to `exposed-modules`. (2026-07-25)
+- [x] Make `ShowOptions.bundlePath` and `ShowOptions.conceptIdText` optional and update `showOptionsParser`. (2026-07-25)
+- [x] Rework `runShow` in `okf-cli/src/Okf/Cli.hs` to resolve the bundle then the concept, preserving the existing document-ID fallback in `showConceptByIdentifier`. (2026-07-25)
+- [x] Update the existing `show` parser tests and add tests for the three argument shapes. (2026-07-25)
+- [x] Add selector unit tests (`parseBundleSearchRoots`, `conceptPreviewCommand` including an embedded apostrophe, `conceptCandidates` column padding). (2026-07-25)
+- [x] `cabal test all` passes. (2026-07-25)
+- [x] End-to-end run of all three argument shapes, plus both failure paths and `OKF_BUNDLE_ROOTS`. (2026-07-25)
+- [x] Commit. (2026-07-25)
+
+Remaining for Milestone 3 (cannot be done from a non-interactive session; for the user):
+
+- [ ] Visually confirm the two menus: no index column, three aligned concept columns, live preview pane.
+- [ ] Confirm Esc at either menu exits 130 with no output.
 
 Milestone 4 — documentation:
 
@@ -247,6 +254,76 @@ fzf-0.73.1
 Before this, fzf was only present because it happened to be in the user's
 `~/.nix-profile`; a fresh clone would not have had it.
 
+**(Milestone 3, 2026-07-25) `--select-1` makes both pickers testable without a single
+keystroke.** This was the key to verifying Milestone 3 from a non-interactive session.
+When exactly one candidate exists, fzf skips its interface entirely and prints the
+selection, so a tree holding one bundle with one concept drives the whole two-picker
+path end to end. Building such a tree in a scratch directory and running the binary
+under a pty (`script -q /dev/null`) gives:
+
+```text
+$ OKF_BUNDLE_ROOTS=<scratch>/okf-one okf show
+id: only
+type: Note
+title: The Only One
+
+# The Only One
+
+Body text for the solo concept.
+```
+
+Exit 0. That single run proves bundle discovery, `bundleSearchRoots`, the bundle picker,
+`walkBundle`, the concept picker, the hidden-index protocol, and `renderConcept` all
+compose correctly — and, because the repository root it was run from contains four other
+bundles, it also proves `OKF_BUNDLE_ROOTS` redirects the search rather than merely
+extending it.
+
+**(Milestone 3, 2026-07-25) fzf's `--preview` field semantics confirmed against the
+installed binary, not just assumed.** The plan's design depends on `{2}` in `--preview`
+being the concept ID (field 2 of the *original* line) rather than the concept type
+(field 2 of the *visible* line after `--with-nth=2..` hides the index). Read directly
+from fzf 0.73.1's own man page source at
+`/Users/shinzui/.nix-profile/share/man/man1/fzf.1.gz`:
+
+```text
+When you use this option with --with-nth, the field index expressions are
+calculated against the transformed lines (unlike in --preview where fields are
+extracted from the original lines) because fzf doesn't allow searching against
+the hidden fields.
+```
+
+An attempt to verify this empirically by driving fzf under a pty and capturing what the
+preview command received did not succeed — the preview never fired, whether accepted via
+`--bind start:accept` (which accepts before the preview runs) or by feeding a delayed
+newline into the pty. The parenthetical above is unambiguous and version-matched, so it
+stands as the evidence.
+
+Separately, the generated preview command was confirmed to be a valid shell command that
+produces exactly what `okf show BUNDLE CONCEPT_ID` produces. Resolving the template by
+hand the way fzf would (it wraps the substitution in single quotes):
+
+```text
+'<...>/okf' show 'okf-core/test/fixtures/valid-bundle' 'tables/orders'
+```
+
+running that under `sh -c` printed the `tables/orders` concept.
+
+**(Milestone 3, 2026-07-25) Discovery tolerates a nonexistent search root silently, as
+designed.** `OKF_BUNDLE_ROOTS=/nonexistent/nowhere:<scratch>/okf-one okf show` found and
+printed the concept in the second root and said nothing about the first. This is
+`listDirectorySafe` swallowing the `IOException`. Two roots naming the same tree collapse
+to one candidate via `List.nub`, confirmed the same way.
+
+**(Milestone 3, 2026-07-25) When a bundle has no concepts and no picker is available,
+the message names fzf rather than the empty bundle.** `selectConcept` checks
+`isFzfAvailable` before it checks `null concepts`, so `okf show <empty-bundle>` without a
+terminal prints "no CONCEPT_ID given and interactive selection is unavailable" and exits
+2, while the same command under a terminal prints "No concepts found in <bundle>" and
+exits 1. Both were verified. The ordering is deliberate and correct: without a picker the
+`CONCEPT_ID` argument is required no matter what the bundle contains, so that is the
+actionable advice. It is recorded here because the two exit codes for what a user might
+read as "the same situation" would otherwise look like a bug.
+
 
 ## Decision Log
 
@@ -342,6 +419,18 @@ Record every decision made while working on the plan.
   `System.Environment.getExecutablePath` rather than the literal string `okf` means the
   preview works under `cabal run okf --`, from a Nix store path, or from any
   installation that is not on `PATH`.
+  Date: 2026-07-25
+
+- Decision: The selector's sample-concept test was written in full rather than taking
+  the plan's escape hatch of asserting only `conceptPreviewCommand` and
+  `parseBundleSearchRoots`.
+  Rationale: Step 3.3 permitted dropping `sampleConceptDisplays` "if building sample
+  concepts proves fiddly". It was not fiddly — `conceptFromDocument`, `parseConceptId`,
+  and `parseDocument` compose in three lines — and the column-padding rule is exactly
+  the kind of off-by-one detail that a by-eye check in a terminal misses. A test for
+  `conceptPreviewCommand` with an apostrophe in the executable path was added at the
+  same time, since `shellQuote`'s escaping is what stands between a path with a quote
+  in it and a broken preview pane.
   Date: 2026-07-25
 
 - Decision: `flake.module.nix` was created (the plan marked Step 2.3 optional and said

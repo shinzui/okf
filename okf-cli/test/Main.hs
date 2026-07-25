@@ -4,11 +4,15 @@ import Control.Exception (bracket)
 import Control.Monad (unless)
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text.IO
+import Okf.Bundle (conceptFromDocument)
 import Okf.Cli
 import Okf.Cli.Assist (AssistOptions (..), buildClaudeCommand)
 import Okf.Cli.Config (AssistSettings (..), ConfigSource (..), KitSettings (..), OkfConfig (..), OkfProvider (..), defaultOkfConfig, exampleConfigText, findConfigSource, loadOkfConfig, okfConfigEnvVar, projectConfigPath)
 import Okf.Cli.Fzf (Candidate (..), FzfOpts (..), optsToArgs, parseSelectionIndex, renderCandidateLines, shellQuote, withAnsi, withHeight, withNoSort, withPrompt)
+import Okf.Cli.Fzf.Selector (conceptCandidates, conceptPreviewCommand, parseBundleSearchRoots)
 import Okf.Cli.Help (HelpTopic (..), helpTopics)
+import Okf.ConceptId (parseConceptId)
+import Okf.Document (parseDocument)
 import Options.Applicative
 import System.Directory (createDirectoryIfMissing, getCurrentDirectory, getTemporaryDirectory, removeDirectoryRecursive, withCurrentDirectory)
 import System.Environment (lookupEnv, setEnv, unsetEnv)
@@ -88,17 +92,26 @@ main = do
           parseShowMatches
             ["show", "bundle", "tables/orders"]
             ShowOptions
-              { bundlePath = "bundle",
-                conceptIdText = "tables/orders",
+              { bundlePath = Just "bundle",
+                conceptIdText = Just "tables/orders",
                 profilePath = Nothing
               },
           parseShowMatches
             ["show", "b", "ADR-2", "--profile", "p.dhall"]
             ShowOptions
-              { bundlePath = "b",
-                conceptIdText = "ADR-2",
+              { bundlePath = Just "b",
+                conceptIdText = Just "ADR-2",
                 profilePath = Just "p.dhall"
               },
+          parseShowMatches
+            ["show"]
+            ShowOptions {bundlePath = Nothing, conceptIdText = Nothing, profilePath = Nothing},
+          parseShowMatches
+            ["show", "bundle"]
+            ShowOptions {bundlePath = Just "bundle", conceptIdText = Nothing, profilePath = Nothing},
+          parseShowMatches
+            ["show", "--profile", "p.dhall"]
+            ShowOptions {bundlePath = Nothing, conceptIdText = Nothing, profilePath = Just "p.dhall"},
           parseIdMatches
             ["id", "next", "b", "ADR", "--profile", "p.dhall"]
             IdOptions
@@ -153,6 +166,15 @@ main = do
           parseSelectionIndex "not-a-number\tx" == Nothing,
           shellQuote "plain" == "'plain'",
           shellQuote "it's" == "'it'\\''s'",
+          parseBundleSearchRoots "/a:/b" == ["/a", "/b"],
+          parseBundleSearchRoots "" == [],
+          parseBundleSearchRoots " /a : : /b " == ["/a", "/b"],
+          conceptPreviewCommand "/usr/local/bin/okf" "my bundle"
+            == "'/usr/local/bin/okf' show 'my bundle' {2}",
+          conceptPreviewCommand "/opt/o'kf/okf" "b"
+            == "'/opt/o'\\''kf/okf' show 'b' {2}",
+          sampleConceptDisplays
+            == ["tables/orders\tTable\tOrders", "x            \t     \t"],
           parseShowsInfo ["--version"],
           parseFails ["hello"],
           logAddWrites,
@@ -164,6 +186,20 @@ main = do
           assistModelOverride
         ]
   unless (and results) exitFailure
+
+-- | Two concepts whose ID and type widths differ, so the column padding in
+-- 'conceptCandidates' is actually exercised: the ID column pads to the width of
+-- @tables/orders@ and the type column to the width of @Table@. The second
+-- concept has a null @type@ and no @title@, which project to empty text.
+sampleConceptDisplays :: [Text.Text]
+sampleConceptDisplays = map candidateDisplay (conceptCandidates [longConcept, shortConcept])
+  where
+    longConcept = buildConcept "tables/orders" "---\ntype: Table\ntitle: Orders\n---\n\n# Orders\n"
+    shortConcept = buildConcept "x" "---\ntype:\n---\n\n# x\n"
+    buildConcept idText source =
+      case (parseConceptId idText, parseDocument source) of
+        (Right conceptId, Right document) -> conceptFromDocument conceptId document
+        _ -> error ("sample concept did not parse: " <> Text.unpack idText)
 
 parseSucceeds :: [String] -> Bool
 parseSucceeds args =
