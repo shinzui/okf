@@ -36,9 +36,9 @@ cabal run okf -- help okf      # what the Open Knowledge Format is
 cabal run okf -- help format   # bundle layout, concept IDs, frontmatter, links
 ```
 
-Available topics: `okf`, `format`, `validation`, `profiles`. Topic lookup is
-case-insensitive. An unknown topic name prints the list of valid topics, and the
-command still succeeds (exit 0).
+Available topics: `okf`, `format`, `validation`, `profiles`, `interactive`,
+`config`, `kit`, `agents`. Topic lookup is case-insensitive. An unknown topic
+name prints the list of valid topics, and the command still succeeds (exit 0).
 
 
 ## validate
@@ -217,7 +217,7 @@ are ignored for the concrete edge list.
 Inspect one concept by its canonical path ID or a short document ID.
 
 ```bash
-cabal run okf -- show BUNDLE CONCEPT_ID
+cabal run okf -- show [BUNDLE] [CONCEPT_ID]
 cabal run okf -- show BUNDLE DOCUMENT_ID [--profile PROFILE.dhall]
 ```
 
@@ -244,6 +244,61 @@ cabal run okf -- show okf-core/test/fixtures/doc-ids ADR-2
 Duplicate handles are rejected as ambiguous and every matching concept ID is
 listed. An invalid or missing concept ID also exits non-zero and names the
 problem.
+
+
+### Interactive selection
+
+Both positional arguments are optional. Whichever one you leave out, `show`
+asks for interactively:
+
+```bash
+cabal run okf -- show                     # pick a bundle, then pick a concept
+cabal run okf -- show BUNDLE              # pick a concept in BUNDLE
+cabal run okf -- show BUNDLE CONCEPT_ID   # no menus; unchanged behavior
+```
+
+This needs the [fzf](https://github.com/junegunn/fzf) fuzzy finder on your
+`PATH` and a terminal. fzf is an optional runtime dependency: nothing else in
+`okf` uses it, and scripted usage — which always passes both arguments — never
+touches it. Because fzf reads keystrokes from the terminal device rather than
+from standard input, the menus still work inside a pipeline such as
+`okf show | less`.
+
+The bundle menu lists the OKF bundles found under the current directory,
+searching four levels deep. A directory counts as a bundle when it holds an
+`index.md`, or when it holds a Markdown file whose frontmatter declares a
+`type`. Once a directory qualifies, `okf` does not look inside it, so
+subdirectories of a bundle are never offered separately. A bundle whose top
+directory holds neither an `index.md` nor a concept document of its own is
+offered as its first qualifying subdirectory instead; pass the bundle path
+explicitly when that happens.
+
+Set `OKF_BUNDLE_ROOTS` to a colon-separated list of directories — the same
+convention as `PATH` — to search somewhere other than the current directory:
+
+```bash
+OKF_BUNDLE_ROOTS=~/knowledge:~/work cabal run okf -- show
+```
+
+Roots that do not exist or cannot be read are skipped silently; discovery is a
+convenience and never turns a working command into an error.
+
+The concept menu lists three aligned columns — concept ID, type, title — and
+previews the highlighted concept in a pane on the right, showing exactly what
+`okf show BUNDLE CONCEPT_ID` would print. Typing filters across all three
+columns.
+
+Exit status when a menu is involved:
+
+| Status | Meaning |
+| ------ | ------- |
+| `0` | a concept was printed |
+| `1` | nothing to choose from: no bundles found, or the bundle has no concepts |
+| `2` | no interactive selection available: fzf is missing, or there is no terminal |
+| `130` | cancelled with Esc or ctrl-c; nothing is printed |
+
+Exit `2` names the argument you should pass instead, so a non-interactive
+environment always tells you how to proceed.
 
 
 ## id

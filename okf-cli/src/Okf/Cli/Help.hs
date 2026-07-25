@@ -48,6 +48,7 @@ helpTopics =
     HelpTopic "format" "Bundle layout, concept IDs, frontmatter, and links" formatTopicContent,
     HelpTopic "validation" "How bundles are validated and referential integrity" validationTopicContent,
     HelpTopic "profiles" "Checking a bundle against house conventions" profilesTopicContent,
+    HelpTopic "interactive" "Picking a bundle and concept with fzf" interactiveTopicContent,
     HelpTopic "config" "Config files, defaults, and agent settings" configTopicContent,
     HelpTopic "kit" "Installing and publishing agent skills and subagents" kitTopicContent,
     HelpTopic "agents" "Installing agent skills and launching assist" agentsTopicContent
@@ -64,6 +65,9 @@ validationTopicContent = $(embedStringFile "help/validation.md")
 
 profilesTopicContent :: Text
 profilesTopicContent = $(embedStringFile "help/profiles.md")
+
+interactiveTopicContent :: Text
+interactiveTopicContent = $(embedStringFile "help/interactive.md")
 
 configTopicContent :: Text
 configTopicContent = $(embedStringFile "help/config.md")

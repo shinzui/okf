@@ -71,7 +71,7 @@ cabal run okf -- index <bundle> [--write]
 cabal run okf -- log <bundle> [--check-stale] [--since <git-ref>]
 cabal run okf -- log add <bundle> [<concept-id>] -m <message> [--kind <kind>] [--date YYYY-MM-DD]
 cabal run okf -- graph <bundle> [--json]
-cabal run okf -- show <bundle> <concept-id-or-document-id> [--profile <descriptor>]
+cabal run okf -- show [<bundle>] [<concept-id-or-document-id>] [--profile <descriptor>]
 cabal run okf -- id next <bundle> <PREFIX> --profile <descriptor>
 cabal run okf -- id list <bundle> --profile <descriptor>
 cabal run okf -- config show
@@ -95,13 +95,19 @@ a dated entry to the root log or to the log in a concept's directory. `graph`
 emits JSON graph data; JSON is currently the only graph format, and `--json` is
 accepted to keep the command shape stable for future formats. `show` prints one
 concept's metadata and Markdown body, resolving either its canonical path ID or
-a profile-declared document ID. `id next` allocates the next numbered handle
+a profile-declared document ID. Both of `show`'s arguments are optional in a
+terminal: with either one missing, `show` opens an [fzf](https://github.com/junegunn/fzf)
+menu — of the bundles found under the current directory (or under
+`OKF_BUNDLE_ROOTS`), then of that bundle's concepts with a preview pane. fzf is
+an optional dependency; without it, `show` explains which argument to pass.
+`id next` allocates the next numbered handle
 without writing, and `id list` prints all allocated handles. `config` shows or initializes the Dhall
 configuration used by the agent commands. `kit` installs reusable AI-agent
 skills and subagents from `okf-kit`. `assist` launches an interactive Claude
 session with installed OKF skills on its path. `completions` generates shell
 completion scripts for Bash, Zsh, and Fish. `help` prints embedded conceptual
-guides for `okf`, `format`, `validation`, `profiles`, and `agents`.
+guides for `okf`, `format`, `validation`, `profiles`, `interactive`, `config`,
+`kit`, and `agents`.
 
 Invalid fixtures are available for validation behavior:
 

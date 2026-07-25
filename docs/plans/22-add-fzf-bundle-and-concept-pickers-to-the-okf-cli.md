@@ -101,11 +101,11 @@ Remaining for Milestone 3 (cannot be done from a non-interactive session; for th
 
 Milestone 4 — documentation:
 
-- [ ] Add `okf-cli/help/interactive.md` and register the topic in `okf-cli/src/Okf/Cli/Help.hs`.
-- [ ] Update `docs/user/cli.md` (`show` section, help topic list) and `README.md`.
-- [ ] Add `## [Unreleased]` entries to `CHANGELOG.md`, `okf-core/CHANGELOG.md`, and `okf-cli/CHANGELOG.md`.
-- [ ] `cabal test all` passes (the help-topic test asserts every topic has content).
-- [ ] Commit.
+- [x] Add `okf-cli/help/interactive.md` and register the topic in `okf-cli/src/Okf/Cli/Help.hs`. (2026-07-25)
+- [x] Update `docs/user/cli.md` (`show` section, help topic list) and `README.md`. (2026-07-25)
+- [x] Add `## [Unreleased]` entries to `CHANGELOG.md`, `okf-core/CHANGELOG.md`, and `okf-cli/CHANGELOG.md`. (2026-07-25)
+- [x] `cabal test all` passes (the help-topic test asserts every topic has content). (2026-07-25)
+- [x] Commit. (2026-07-25)
 
 Milestone 5 — distillation:
 

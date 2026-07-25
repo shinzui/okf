@@ -12,6 +12,11 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Profile-declared stable document IDs, including strict handle validation,
   bundle-wide duplicate detection, `okf id next`, `okf id list`, and document-ID
   fallback in `okf show`.
+- Interactive selection in `okf show`: with `BUNDLE` or `CONCEPT_ID` omitted, an
+  `fzf` menu offers the bundles discovered under the current directory (or under
+  `OKF_BUNDLE_ROOTS`) and then that bundle's concepts, with an `okf show` preview
+  pane. `fzf` is an optional dependency; without it the command explains which
+  argument to pass and exits 2. Cancelling a menu exits 130.
 
 ### Changed
 

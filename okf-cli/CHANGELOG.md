@@ -7,6 +7,12 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- Optional `BUNDLE` and `CONCEPT_ID` arguments for `okf show`, filled in with `fzf`
+  menus when omitted, plus the `okf help interactive` topic. Search roots default to
+  the current directory and can be overridden with `OKF_BUNDLE_ROOTS`.
+
 ## [0.1.2.1] - 2026-07-20
 
 ### Fixed

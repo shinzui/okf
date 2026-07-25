@@ -11,6 +11,9 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 - Profile-declared stable document IDs with strict parsing, missing/malformed/
   duplicate validation, allocation helpers, and bundle lookup by handle.
+- `Okf.Discovery`, which finds OKF bundle roots in a directory tree: directories
+  holding an `index.md` or a concept document with a non-empty `type`, pruned at
+  the first match so nested directories of a bundle are not reported separately.
 
 ### Changed
 
