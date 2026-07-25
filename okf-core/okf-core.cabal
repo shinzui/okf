@@ -39,6 +39,7 @@ library
   exposed-modules:
     Okf.Bundle
     Okf.ConceptId
+    Okf.Discovery
     Okf.Document
     Okf.Graph
     Okf.Index

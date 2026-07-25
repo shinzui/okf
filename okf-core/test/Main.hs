@@ -3,11 +3,13 @@
 module Main (main) where
 
 import Data.Aeson (object, toJSON, (.=))
+import Data.Foldable (for_)
 import Data.List qualified as List
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text.IO
 import Okf.Bundle
 import Okf.ConceptId
+import Okf.Discovery
 import Okf.Document
 import Okf.Graph
 import Okf.Index
@@ -23,7 +25,7 @@ import System.Directory
     removeDirectoryRecursive,
   )
 import System.Exit (exitFailure)
-import System.FilePath ((</>))
+import System.FilePath (normalise, takeDirectory, (</>))
 import System.IO.Temp (createTempDirectory)
 import "generic-lens" Data.Generics.Labels ()
 
@@ -44,6 +46,13 @@ main = do
         testIO "walkBundle reports a structured IO error for a missing root" testWalkBundleMissingRoot,
         testIO "walkBundle skips index.md and log.md" testWalkBundleSkipsReserved,
         testIO "walkBundle discovers nested concept IDs" testWalkBundleDiscoversNestedConceptIds,
+        testIO "discoverBundleRoots finds a directory holding index.md" testDiscoverIndexMd,
+        testIO "discoverBundleRoots finds a directory holding a typed concept" testDiscoverTypedConcept,
+        testIO "discoverBundleRoots ignores markdown without a type field" testDiscoverIgnoresPlainMarkdown,
+        testIO "discoverBundleRoots does not descend into a bundle it found" testDiscoverPrunesNestedBundles,
+        testIO "discoverBundleRoots skips hidden and build directories" testDiscoverSkipsNoise,
+        testIO "discoverBundleRoots honours maxDepth" testDiscoverHonoursMaxDepth,
+        testIO "discoverBundleRoots reports a fixture bundle as its own root" testDiscoverFixtureBundle,
         test "parseLog/serializeLog round-trips a canonical log" testLogRoundTrip,
         test "validateLog flags a non-ISO date heading" testValidateLogNonIsoDate,
         test "validateLog flags an empty date group" testValidateLogEmptyDay,
@@ -199,6 +208,83 @@ testWalkBundleDiscoversNestedConceptIds =
               assertBool "nested concept exists" (isJust (findConcept expected concepts))
           )
     )
+
+-- | Build a throwaway directory tree, run an action on it, and clean up.
+withDiscoveryTree :: String -> [(FilePath, Text)] -> (FilePath -> IO a) -> IO a
+withDiscoveryTree label files action = do
+  temporaryDirectory <- getTemporaryDirectory
+  root <- createTempDirectory temporaryDirectory label
+  for_ files $ \(relativePath, content) -> do
+    createDirectoryIfMissing True (root </> takeDirectory relativePath)
+    Text.IO.writeFile (root </> relativePath) content
+  result <- action root
+  removeDirectoryRecursive root
+  pure result
+
+typedConcept :: Text -> Text
+typedConcept titleText =
+  Text.unlines ["---", "type: Table", "title: " <> titleText, "---", "", "# " <> titleText]
+
+plainMarkdown :: Text
+plainMarkdown = "# Just prose\n\nNo frontmatter here.\n"
+
+testDiscoverIndexMd :: IO (Either Text ())
+testDiscoverIndexMd =
+  withDiscoveryTree "okf-discovery-index" [("kb/index.md", "# Index\n")] $ \root -> do
+    found <- discoverBundleRoots defaultDiscoveryOptions root
+    pure (assertEqual [normalise (root </> "kb")] found)
+
+testDiscoverTypedConcept :: IO (Either Text ())
+testDiscoverTypedConcept =
+  withDiscoveryTree "okf-discovery-typed" [("kb/tables/orders.md", typedConcept "Orders")] $ \root -> do
+    found <- discoverBundleRoots defaultDiscoveryOptions root
+    pure (assertEqual [normalise (root </> "kb" </> "tables")] found)
+
+testDiscoverIgnoresPlainMarkdown :: IO (Either Text ())
+testDiscoverIgnoresPlainMarkdown =
+  withDiscoveryTree
+    "okf-discovery-plain"
+    [("notes/README.md", plainMarkdown), ("notes/CHANGELOG.md", plainMarkdown)]
+    $ \root -> do
+      found <- discoverBundleRoots defaultDiscoveryOptions root
+      pure (assertEqual [] found)
+
+testDiscoverPrunesNestedBundles :: IO (Either Text ())
+testDiscoverPrunesNestedBundles =
+  withDiscoveryTree
+    "okf-discovery-prune"
+    [ ("kb/index.md", "# Index\n"),
+      ("kb/tables/index.md", "# Tables\n"),
+      ("kb/tables/orders.md", typedConcept "Orders")
+    ]
+    $ \root -> do
+      found <- discoverBundleRoots defaultDiscoveryOptions root
+      pure (assertEqual [normalise (root </> "kb")] found)
+
+testDiscoverSkipsNoise :: IO (Either Text ())
+testDiscoverSkipsNoise =
+  withDiscoveryTree
+    "okf-discovery-noise"
+    [ (".hidden/index.md", "# Hidden\n"),
+      ("dist-newstyle/index.md", "# Build output\n"),
+      ("kb/index.md", "# Index\n")
+    ]
+    $ \root -> do
+      found <- discoverBundleRoots defaultDiscoveryOptions root
+      pure (assertEqual [normalise (root </> "kb")] found)
+
+testDiscoverHonoursMaxDepth :: IO (Either Text ())
+testDiscoverHonoursMaxDepth =
+  withDiscoveryTree "okf-discovery-depth" [("a/b/c/index.md", "# Deep\n")] $ \root -> do
+    shallow <- discoverBundleRoots defaultDiscoveryOptions {maxDepth = 2} root
+    deep <- discoverBundleRoots defaultDiscoveryOptions {maxDepth = 3} root
+    pure (assertEqual [] shallow >> assertEqual [normalise (root </> "a" </> "b" </> "c")] deep)
+
+testDiscoverFixtureBundle :: IO (Either Text ())
+testDiscoverFixtureBundle = do
+  bundle <- fixturePath "valid-bundle"
+  found <- discoverBundleRoots defaultDiscoveryOptions bundle
+  pure (assertEqual [normalise bundle] found)
 
 testLogRoundTrip :: Either Text ()
 testLogRoundTrip = do
