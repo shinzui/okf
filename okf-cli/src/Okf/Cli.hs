@@ -2,6 +2,8 @@
 module Okf.Cli
   ( Command (..),
     GraphOptions (..),
+    IdOptions (..),
+    IdSub (..),
     IndexOptions (..),
     ConfigCommand (..),
     LogAddOptions (..),
@@ -39,7 +41,16 @@ import Okf.Graph (buildGraph)
 import Okf.Index
 import Okf.Log qualified as Log
 import Okf.Prelude
-import Okf.Profile (ProfileViolation (..), loadProfileFile, validateProfile)
+import Okf.Profile
+  ( ProfileSpec (..),
+    ProfileViolation (..),
+    TypeRule (..),
+    documentIdsInBundle,
+    loadProfileFile,
+    nextDocumentId,
+    renderDocumentId,
+    validateProfile,
+  )
 import Okf.Validation
 import Options.Applicative
 import System.Directory (createDirectoryIfMissing, doesFileExist)
@@ -55,6 +66,7 @@ data Command
   | Log LogOptions
   | GraphCommand GraphOptions
   | ShowConcept ShowOptions
+  | Id IdOptions
   | Config ConfigCommand
   | Kit KitCommand
   | Assist AssistOptions
@@ -110,6 +122,18 @@ data ShowOptions = ShowOptions
   }
   deriving stock (Show, Eq)
 
+data IdOptions = IdOptions
+  { bundlePath :: !FilePath,
+    profilePath :: !FilePath,
+    idSub :: !IdSub
+  }
+  deriving stock (Show, Eq)
+
+data IdSub
+  = IdNext !Text
+  | IdList
+  deriving stock (Show, Eq)
+
 data ConfigCommand
   = ConfigShow
   | ConfigPath
@@ -152,6 +176,7 @@ commandParser =
         <> command "log" (info (Log <$> logOptionsParser <**> helper) (progDesc "Preview and check log.md files"))
         <> command "graph" (info (GraphCommand <$> graphOptionsParser <**> helper) (progDesc "Print a bundle graph"))
         <> command "show" (info (ShowConcept <$> showOptionsParser <**> helper) (progDesc "Show one concept"))
+        <> command "id" (info (Id <$> idOptionsParser <**> helper) (progDesc "Allocate and list document IDs"))
         <> command "config" (info (Config <$> configCommandParser <**> helper) (progDesc "Show and manage okf configuration"))
         <> command "kit" (info (Kit <$> kitCommandParser <**> helper) (progDesc "Install and manage agent skills and subagents"))
         <> command "assist" (info (Assist <$> assistOptionsParser <**> helper) (progDesc "Launch an interactive agent session with installed okf skills"))
@@ -261,6 +286,35 @@ showOptionsParser =
     <$> bundleArgument
     <*> (Text.pack <$> strArgument (metavar "CONCEPT_ID" <> help "Concept ID such as tables/users"))
 
+idOptionsParser :: Parser IdOptions
+idOptionsParser =
+  hsubparser
+    ( command
+        "next"
+        ( info
+            ( IdOptions
+                <$> bundleArgument
+                <*> profileArgument
+                <*> (IdNext . Text.pack <$> strArgument (metavar "PREFIX" <> help "Profile-declared document ID prefix"))
+                  <**> helper
+            )
+            (progDesc "Print the next unused document ID")
+        )
+        <> command
+          "list"
+          ( info
+              (IdOptions <$> bundleArgument <*> profileArgument <*> pure IdList <**> helper)
+              (progDesc "List allocated document IDs")
+          )
+    )
+  where
+    profileArgument =
+      strOption
+        ( long "profile"
+            <> metavar "PROFILE"
+            <> help "Path to a Dhall profile descriptor declaring idField and idPrefix"
+        )
+
 configCommandParser :: Parser ConfigCommand
 configCommandParser =
   hsubparser
@@ -286,6 +340,7 @@ runCommand = \case
   Log options -> runLog options
   GraphCommand options -> runGraph options
   ShowConcept options -> runShow options
+  Id options -> runId options
   Config configCommand -> runConfig configCommand
   Kit kitCommand -> do
     config <- loadConfigOrDie
@@ -518,6 +573,40 @@ runShow ShowOptions {bundlePath, conceptIdText} = do
   case findConcept conceptId concepts of
     Nothing -> dieText ("Concept not found: " <> conceptIdText)
     Just concept -> renderConcept concept
+
+runId :: IdOptions -> IO ()
+runId IdOptions {bundlePath, profilePath, idSub} = do
+  loaded <- loadProfileFile profilePath
+  spec <-
+    case loaded of
+      Left err -> dieText ("Failed to load profile " <> Text.pack profilePath <> ": " <> err)
+      Right profileSpec -> pure profileSpec
+  ProfileSpec {idField = profileIdField, types = typeRules} <- pure spec
+  when (isNothing profileIdField) $
+    dieText ("Profile " <> Text.pack profilePath <> " declares no idField")
+  concepts <- loadBundleOrExit bundlePath
+  case idSub of
+    IdNext requestedPrefix -> do
+      let declaredPrefixes =
+            List.sort
+              (List.nub [declaredPrefix | TypeRule {idPrefix = Just declaredPrefix} <- typeRules])
+      unless (requestedPrefix `List.elem` declaredPrefixes) $
+        dieText
+          ( "Profile declares no idPrefix "
+              <> requestedPrefix
+              <> ". Declared prefixes: "
+              <> renderDeclaredPrefixes declaredPrefixes
+          )
+      Text.IO.putStrLn (renderDocumentId (nextDocumentId spec concepts requestedPrefix))
+    IdList ->
+      mapM_
+        ( \(documentId, cid) ->
+            Text.IO.putStrLn (renderDocumentId documentId <> "  " <> renderConceptId cid)
+        )
+        (documentIdsInBundle spec concepts)
+  where
+    renderDeclaredPrefixes [] = "(none)"
+    renderDeclaredPrefixes prefixes = Text.intercalate ", " prefixes
 
 loadBundleOrExit :: FilePath -> IO [Concept]
 loadBundleOrExit bundlePath = do

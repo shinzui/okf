@@ -74,6 +74,8 @@ main = do
         testIO "loadProfileFile decodes the postgresql fixture" testLoadProfileFixture,
         testIO "loadProfileFile decodes record-completed document ID rules" testLoadDocumentIdProfileFixture,
         test "parseDocumentId accepts only canonical handles" testParseDocumentId,
+        testIO "documentIdsInBundle sorts handles by prefix and number" testDocumentIdsInBundle,
+        test "nextDocumentId skips gaps and starts unused prefixes at one" testNextDocumentId,
         test "validateProfile accepts a conforming table concept" testProfileConformingTable,
         test "validateProfile flags a type not in the vocabulary" testProfileUnknownType,
         test "validateProfile flags a missing required field" testProfileMissingField,
@@ -689,6 +691,41 @@ testParseDocumentId = do
     (\invalid -> assertEqual Nothing (parseDocumentId invalid))
     ["ADR-007", "ADR-0", "ADR-", "-7", "ADR 7", "ADR-7-extra"]
   assertEqual (Just "ADR-7") (renderDocumentId <$> parseDocumentId "ADR-7")
+
+testDocumentIdsInBundle :: IO (Either Text ())
+testDocumentIdsInBundle = do
+  descriptorPath <- fixtureFilePath "profiles/decisions.dhall"
+  loaded <- loadProfileFile descriptorPath
+  root <- fixturePath "doc-ids"
+  concepts <- readBundle root
+  pure $ case loaded of
+    Left err -> Left ("failed to load document ID profile: " <> err)
+    Right spec -> do
+      useMarkdown <- parseTestConceptId "decisions/use-markdown"
+      usePostgres <- parseTestConceptId "decisions/use-postgres"
+      adoptOkf <- parseTestConceptId "decisions/adopt-okf"
+      assertEqual
+        [ (DocumentId "ADR" 1, useMarkdown),
+          (DocumentId "ADR" 2, usePostgres),
+          (DocumentId "ADR" 3, adoptOkf)
+        ]
+        (documentIdsInBundle spec concepts)
+
+testNextDocumentId :: Either Text ()
+testNextDocumentId = do
+  firstConcept <-
+    profileConcept
+      "decisions/first"
+      [("type", String "Decision Record"), ("title", String "First"), ("docId", String "ADR-1")]
+      "# First\n"
+  thirdConcept <-
+    profileConcept
+      "decisions/third"
+      [("type", String "Decision Record"), ("title", String "Third"), ("docId", String "ADR-3")]
+      "# Third\n"
+  let concepts = [firstConcept, thirdConcept]
+  assertEqual (DocumentId "ADR" 4) (nextDocumentId testDocumentIdProfileSpec concepts "ADR")
+  assertEqual (DocumentId "RFC" 1) (nextDocumentId testDocumentIdProfileSpec concepts "RFC")
 
 -- | A standalone profile literal so the validation tests do not depend on the
 -- Dhall fixture. One rule: PostgreSQL Table, fully constrained.

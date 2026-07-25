@@ -20,6 +20,8 @@ module Okf.Profile
     DocumentId (..),
     parseDocumentId,
     renderDocumentId,
+    documentIdsInBundle,
+    nextDocumentId,
     ProfileViolation (..),
     validateProfile,
 
@@ -148,6 +150,43 @@ parseDocumentId raw =
 renderDocumentId :: DocumentId -> Text
 renderDocumentId DocumentId {prefix, number} =
   prefix <> "-" <> Text.pack (show number)
+
+-- | Every well-formed handle under the profile's ID field, paired with the
+-- concept carrying it and sorted by prefix, number, then concept ID. Concepts
+-- without a well-formed handle are omitted. A profile with no ID field yields
+-- an empty list.
+documentIdsInBundle :: ProfileSpec -> [Concept] -> [(DocumentId, ConceptId)]
+documentIdsInBundle spec concepts =
+  case spec ^. #idField of
+    Nothing -> []
+    Just fieldName ->
+      List.sortOn
+        (\(documentId, cid) -> (documentId, renderConceptId cid))
+        [ (documentId, conceptIdOf concept)
+        | concept <- concepts,
+          Just (String rawDocumentId) <- [frontmatterLookup fieldName (conceptFrontmatter concept)],
+          Just documentId <- [parseDocumentId rawDocumentId]
+        ]
+
+-- | Allocate one more than the highest document-ID number already used for the
+-- given prefix, or number 1 when the prefix is unused. Gaps are deliberately
+-- not filled: reusing a retired number could make an old reference silently
+-- point at a different document.
+nextDocumentId :: ProfileSpec -> [Concept] -> Text -> DocumentId
+nextDocumentId spec concepts requestedPrefix =
+  DocumentId
+    { prefix = requestedPrefix,
+      number = highestNumber + 1
+    }
+  where
+    highestNumber =
+      List.foldl'
+        max
+        0
+        [ documentId ^. #number
+        | (documentId, _) <- documentIdsInBundle spec concepts,
+          documentId ^. #prefix == requestedPrefix
+        ]
 
 -- | A single deviation from a profile. Advisory by default at the CLI layer.
 data ProfileViolation

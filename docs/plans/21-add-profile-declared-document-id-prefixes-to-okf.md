@@ -77,9 +77,11 @@ is inert.
       `okf-core/src/Okf/Profile.hs`. New fixtures under `okf-core/test/fixtures/`. Both Dhall
       descriptors type-check; `nix develop --command cabal test all` passes; conforming,
       advisory, enforced, and off-by-default CLI validations were reproduced.
-- [ ] Milestone 2: Allocation. Pure `documentIdsInBundle` / `nextDocumentId` functions in
+- [x] (2026-07-25T14:53:14Z) Milestone 2: Allocation. Pure `documentIdsInBundle` / `nextDocumentId` functions in
       `okf-core/src/Okf/Profile.hs`, and the `okf id next` / `okf id list` subcommands in
-      `okf-cli/src/Okf/Cli.hs`.
+      `okf-cli/src/Okf/Cli.hs`. Core and parser tests pass; `id list` printed handles in numeric
+      order, `id next` printed `ADR-4` without modifying the fixture, and undeclared `RFC`
+      allocation failed with the documented message and exit code 1.
 - [ ] Milestone 3: Short-handle resolution. `findConceptByDocumentId` in
       `okf-core/src/Okf/Bundle.hs`, `okf show` falling back from path lookup to handle lookup,
       and `docId` printed in `okf show` output.

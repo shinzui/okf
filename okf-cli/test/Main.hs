@@ -85,6 +85,21 @@ main = do
               },
           parseSucceeds ["graph", "bundle", "--json"],
           parseSucceeds ["show", "bundle", "tables/orders"],
+          parseIdMatches
+            ["id", "next", "b", "ADR", "--profile", "p.dhall"]
+            IdOptions
+              { bundlePath = "b",
+                profilePath = "p.dhall",
+                idSub = IdNext "ADR"
+              },
+          parseIdMatches
+            ["id", "list", "b", "--profile", "p.dhall"]
+            IdOptions
+              { bundlePath = "b",
+                profilePath = "p.dhall",
+                idSub = IdList
+              },
+          parseFails ["id", "next", "b", "ADR"],
           parseSucceeds ["completions", "bash"],
           parseSucceeds ["completions", "zsh"],
           parseSucceeds ["completions", "fish"],
@@ -142,6 +157,12 @@ parseLogMatches :: [String] -> LogOptions -> Bool
 parseLogMatches args expected =
   case execParserPure defaultPrefs parserInfo args of
     Success (Options (Log opts)) -> opts == expected
+    _ -> False
+
+parseIdMatches :: [String] -> IdOptions -> Bool
+parseIdMatches args expected =
+  case execParserPure defaultPrefs parserInfo args of
+    Success (Options (Id opts)) -> opts == expected
     _ -> False
 
 testLogAddWritesFile :: IO Bool
