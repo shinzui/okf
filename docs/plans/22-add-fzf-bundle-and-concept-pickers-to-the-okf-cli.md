@@ -109,9 +109,9 @@ Milestone 4 — documentation:
 
 Milestone 5 — distillation:
 
-- [ ] Write `docs/adr/2-interactive-bundle-and-concept-selection.md`.
-- [ ] Fill in Outcomes & Retrospective in this plan.
-- [ ] Commit.
+- [x] Write `docs/adr/2-interactive-bundle-and-concept-selection.md`. (2026-07-25)
+- [x] Fill in Outcomes & Retrospective in this plan. (2026-07-25)
+- [x] Commit. (2026-07-25)
 
 
 ## Surprises & Discoveries
@@ -463,12 +463,70 @@ Record every decision made while working on the plan.
 
 ## Outcomes & Retrospective
 
-Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
-Compare the result against the original purpose. Before marking the plan complete,
-distill durable project context from the Decision Log, Surprises & Discoveries, and
-this section into docs/adr/. Keep task-local execution details here.
+**The feature works as the Purpose section described it.** `okf show` with either
+argument omitted opens a menu; with both given it is byte-for-byte what it was before.
+The five milestones landed in five commits, each leaving the tree building and both
+suites passing. Nothing in the plan had to be redesigned during implementation — the
+code in Concrete Steps compiled essentially as written, with the only substantive
+additions being test coverage the plan marked optional.
 
-(To be filled during and after implementation.)
+**What was verified, and how.** Everything except the two purely visual checks:
+
+| Behavior | Status | Evidence |
+| --- | --- | --- |
+| `show BUNDLE CONCEPT_ID` unchanged | verified | printed `tables/orders` from `valid-bundle`, exit 0 |
+| Document-ID fallback (ADR 1) unchanged | verified | `show doc-ids ADR-2` → `id: decisions/use-postgres`, exit 0 |
+| Both pickers end to end | verified | one-bundle/one-concept tree under a pty; `--select-1` auto-selects both, exit 0 |
+| `OKF_BUNDLE_ROOTS` redirects the search | verified | run from the 4-bundle repo root pointing at a 1-bundle tree |
+| Multi-root parsing and dedup | verified | unit tests plus a two-root run collapsing via `List.nub` |
+| Missing root tolerated silently | verified | `/nonexistent/nowhere:<tree>` still printed the concept |
+| No bundles found → exit 1 | verified | empty directory under a pty, with the `OKF_BUNDLE_ROOTS` hint |
+| Bundle with no concepts → exit 1 | verified | `index.md`-only bundle under a pty |
+| No picker available → exit 2 | verified | both `BUNDLE` and `CONCEPT_ID` messages, each naming the argument |
+| Preview command is valid and correct | verified | resolved template run under `sh -c` printed the concept |
+| `{2}` is the concept ID, not the type | verified | fzf 0.73.1 man page, quoted in Surprises |
+| Help topic registered and printed | verified | `okf help` lists it, `okf help interactive` prints it |
+| Menus render as described | **not verified** | needs a human at a terminal |
+| Esc exits 130 silently | **not verified** | needs a human at a terminal |
+
+The two unverified rows are the honest gap in this plan. A non-interactive agent session
+cannot press Esc or look at a rendered pane. They are left as unchecked Progress items
+under Milestone 3. Everything mechanically downstream of them is covered: the `130`
+mapping is a two-line `case` over fzf's documented exit code, `--with-nth 2..` is
+asserted in the argument vector by unit test, and the column padding is asserted exactly
+by `sampleConceptDisplays`.
+
+**The most useful thing learned.** `--select-1` turns an interactive feature into a
+testable one. Because fzf skips its interface entirely when exactly one candidate
+exists, a scratch tree holding one bundle with one concept drives the complete
+two-picker path — discovery, search roots, both menus, the hidden-index protocol, and
+rendering — with no keystrokes at all. Any future interactive command in this repository
+should be tested the same way; it is far cheaper than a pty-driving harness and it
+exercises the real binary. The complementary lesson is the boundary of the trick: a pty
+alone is not enough, since fzf with two or more candidates and no live keyboard blocks
+indefinitely rather than failing, which is why the `isFzfAvailable` gate must run before
+any spawn.
+
+**Where the plan was wrong, and it mattered little.** The bundle-root heuristic was
+prototyped in Python during planning and predicted five bundles in this repository; the
+real module finds four, because the prototype read `type:` with a regular expression
+while `Okf.Discovery` requires the document to parse. The shipped behavior is the better
+one and the discrepancy was recorded rather than papered over. This is a good argument
+for prototyping a rule with the same parser the implementation will use, not an
+approximation of it.
+
+**One rough edge left in place deliberately.** `selectConcept` checks fzf availability
+before it checks whether the bundle has any concepts, so an empty bundle reports "no
+`CONCEPT_ID` given and interactive selection is unavailable" (exit 2) without a terminal
+and "No concepts found" (exit 1) with one. Two exit codes for what a user might read as
+one situation looks like a bug until you notice that without a picker the argument is
+required regardless of what the bundle holds — which makes exit 2's message the
+actionable one. It is documented in Surprises so the next reader does not "fix" it.
+
+**Scope held.** No package versions were bumped, no `build-depends` were added beyond
+`okf-core` for the CLI test suite, and no command other than `okf show` changed. The
+durable decisions are in
+[docs/adr/2-interactive-bundle-and-concept-selection.md](../adr/2-interactive-bundle-and-concept-selection.md).
 
 
 ## Context and Orientation
