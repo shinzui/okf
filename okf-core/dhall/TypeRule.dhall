@@ -5,9 +5,13 @@
 -- the drift guard in `okf-core/test/Main.hs` (the schema-annotated profile fixture
 -- must decode). Other repositories (e.g. okf-profiles) import this type; okf
 -- imports nothing remote in return.
+--
+-- `idPrefix = Some "ADR"` means concepts governed by this rule are expected to
+-- carry a handle of the form `ADR-<number>` in the profile's ID field.
 { type : Text
 , pathPattern : Optional Text
 , resourceScheme : Optional Text
 , requireSchemaSection : Bool
 , schemaColumns : List Text
+, idPrefix : Optional Text
 }

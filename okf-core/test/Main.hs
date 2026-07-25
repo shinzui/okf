@@ -72,6 +72,8 @@ main = do
         testIO "writeBundle then walkBundle round-trips" testWriteBundleRoundTrip,
         testIO "fixture dangling link reports a bundle validation error" testFixtureDanglingLink,
         testIO "loadProfileFile decodes the postgresql fixture" testLoadProfileFixture,
+        testIO "loadProfileFile decodes record-completed document ID rules" testLoadDocumentIdProfileFixture,
+        test "parseDocumentId accepts only canonical handles" testParseDocumentId,
         test "validateProfile accepts a conforming table concept" testProfileConformingTable,
         test "validateProfile flags a type not in the vocabulary" testProfileUnknownType,
         test "validateProfile flags a missing required field" testProfileMissingField,
@@ -79,8 +81,14 @@ main = do
         test "validateProfile flags a path pattern mismatch" testProfilePathMismatch,
         test "validateProfile flags a missing # Schema section" testProfileMissingSchema,
         test "validateProfile flags mismatched # Schema columns" testProfileSchemaColumnsMismatch,
+        test "validateProfile accepts a conforming document ID" testProfileConformingDocumentId,
+        test "validateProfile flags a missing document ID" testProfileMissingDocumentId,
+        test "validateProfile flags malformed document IDs" testProfileMalformedDocumentIds,
+        test "validateProfile flags duplicate document IDs" testProfileDuplicateDocumentIds,
+        test "validateProfile document ID checks are off by default" testProfileDocumentIdsOffByDefault,
         test "schemaSectionColumns reads the header row of the Schema table" testSchemaSectionColumns,
-        testIO "validateProfile reports the expected deviations for the fixture bundle" testProfileDeviationsFixture
+        testIO "validateProfile reports the expected deviations for the fixture bundle" testProfileDeviationsFixture,
+        testIO "validateProfile reports document ID fixture deviations" testDocumentIdDeviationsFixture
       ]
   unless (and results) exitFailure
 
@@ -662,6 +670,26 @@ testLoadProfileFixture = do
         ["PostgreSQL Schema", "PostgreSQL Table", "PostgreSQL View"]
         (map (^. #type_) (spec ^. #types))
 
+testLoadDocumentIdProfileFixture :: IO (Either Text ())
+testLoadDocumentIdProfileFixture = do
+  path <- fixtureFilePath "profiles/decisions.dhall"
+  result <- loadProfileFile path
+  pure $ case result of
+    Left err -> Left ("failed to load document ID profile: " <> err)
+    Right spec -> do
+      assertEqual (Just "docId") (spec ^. #idField)
+      assertEqual [Just "ADR"] (map (^. #idPrefix) (spec ^. #types))
+
+testParseDocumentId :: Either Text ()
+testParseDocumentId = do
+  assertEqual
+    (Just (DocumentId {prefix = "ADR", number = 7}))
+    (parseDocumentId "ADR-7")
+  mapM_
+    (\invalid -> assertEqual Nothing (parseDocumentId invalid))
+    ["ADR-007", "ADR-0", "ADR-", "-7", "ADR 7", "ADR-7-extra"]
+  assertEqual (Just "ADR-7") (renderDocumentId <$> parseDocumentId "ADR-7")
+
 -- | A standalone profile literal so the validation tests do not depend on the
 -- Dhall fixture. One rule: PostgreSQL Table, fully constrained.
 testProfileSpec :: ProfileSpec
@@ -671,13 +699,35 @@ testProfileSpec =
       okfVersion = "0.1",
       frontmatter = FrontmatterRules {required = ["type", "title"], recommended = []},
       allowUnknownTypes = False,
+      idField = Nothing,
       types =
         [ TypeRule
             { type_ = "PostgreSQL Table",
               pathPattern = Just "schemas/*/tables/*",
               resourceScheme = Just "postgresql",
               requireSchemaSection = True,
-              schemaColumns = ["Column", "Type", "Nullable", "Description"]
+              schemaColumns = ["Column", "Type", "Nullable", "Description"],
+              idPrefix = Nothing
+            }
+        ]
+    }
+
+testDocumentIdProfileSpec :: ProfileSpec
+testDocumentIdProfileSpec =
+  ProfileSpec
+    { name = "test-decisions",
+      okfVersion = "0.1",
+      frontmatter = FrontmatterRules {required = ["type", "title"], recommended = []},
+      allowUnknownTypes = False,
+      idField = Just "docId",
+      types =
+        [ TypeRule
+            { type_ = "Decision Record",
+              pathPattern = Just "decisions/*",
+              resourceScheme = Nothing,
+              requireSchemaSection = False,
+              schemaColumns = [],
+              idPrefix = Just "ADR"
             }
         ]
     }
@@ -782,6 +832,78 @@ testProfileSchemaColumnsMismatch = do
     [SchemaColumnsMismatch cid "PostgreSQL Table" ["Column", "Type", "Nullable", "Description"] ["Col", "Type"]]
     (validateProfile testProfileSpec [concept])
 
+testProfileConformingDocumentId :: Either Text ()
+testProfileConformingDocumentId = do
+  concept <-
+    profileConcept
+      "decisions/one"
+      [("type", String "Decision Record"), ("title", String "One"), ("docId", String "ADR-1")]
+      "# One\n"
+  assertEqual [] (validateProfile testDocumentIdProfileSpec [concept])
+
+testProfileMissingDocumentId :: Either Text ()
+testProfileMissingDocumentId = do
+  concept <-
+    profileConcept
+      "decisions/one"
+      [("type", String "Decision Record"), ("title", String "One")]
+      "# One\n"
+  cid <- parseTestConceptId "decisions/one"
+  assertEqual
+    [MissingDocumentId cid "Decision Record" "ADR"]
+    (validateProfile testDocumentIdProfileSpec [concept])
+
+testProfileMalformedDocumentIds :: Either Text ()
+testProfileMalformedDocumentIds = do
+  leadingZero <-
+    profileConcept
+      "decisions/leading-zero"
+      [("type", String "Decision Record"), ("title", String "Leading zero"), ("docId", String "ADR-007")]
+      "# Leading zero\n"
+  wrongPrefix <-
+    profileConcept
+      "decisions/wrong-prefix"
+      [("type", String "Decision Record"), ("title", String "Wrong prefix"), ("docId", String "RFC-1")]
+      "# Wrong prefix\n"
+  leadingZeroId <- parseTestConceptId "decisions/leading-zero"
+  wrongPrefixId <- parseTestConceptId "decisions/wrong-prefix"
+  assertEqual
+    [ MalformedDocumentId leadingZeroId "ADR" "ADR-007",
+      MalformedDocumentId wrongPrefixId "ADR" "RFC-1"
+    ]
+    (validateProfile testDocumentIdProfileSpec [leadingZero, wrongPrefix])
+
+testProfileDuplicateDocumentIds :: Either Text ()
+testProfileDuplicateDocumentIds = do
+  second <-
+    profileConcept
+      "decisions/second"
+      [("type", String "Decision Record"), ("title", String "Second"), ("docId", String "ADR-1")]
+      "# Second\n"
+  firstConcept <-
+    profileConcept
+      "decisions/first"
+      [("type", String "Decision Record"), ("title", String "First"), ("docId", String "ADR-1")]
+      "# First\n"
+  firstId <- parseTestConceptId "decisions/first"
+  secondId <- parseTestConceptId "decisions/second"
+  assertEqual
+    [DuplicateDocumentId "ADR-1" firstId secondId]
+    (validateProfile testDocumentIdProfileSpec [second, firstConcept])
+
+testProfileDocumentIdsOffByDefault :: Either Text ()
+testProfileDocumentIdsOffByDefault = do
+  concept <-
+    profileConcept
+      "schemas/sales/tables/orders"
+      [ ("type", String "PostgreSQL Table"),
+        ("title", String "Orders"),
+        ("resource", String "postgresql://warehouse/sales/orders"),
+        ("docId", String "not-a-handle")
+      ]
+      schemaSectionBody
+  assertEqual [] (validateProfile testProfileSpec [concept])
+
 testSchemaSectionColumns :: Either Text ()
 testSchemaSectionColumns =
   assertEqual
@@ -803,6 +925,26 @@ testProfileDeviationsFixture = do
       ordersId <- parseTestConceptId "schemas/sales/tables/orders"
       assertEqual
         [TypeNotInProfile badId "pg table", MissingProfileField ordersId "title"]
+        (validateProfile spec concepts)
+
+testDocumentIdDeviationsFixture :: IO (Either Text ())
+testDocumentIdDeviationsFixture = do
+  descriptorPath <- fixtureFilePath "profiles/decisions.dhall"
+  loaded <- loadProfileFile descriptorPath
+  root <- fixturePath "doc-id-deviations"
+  concepts <- readBundle root
+  pure $ case loaded of
+    Left err -> Left ("failed to load document ID profile: " <> err)
+    Right spec -> do
+      firstId <- parseTestConceptId "decisions/first"
+      secondId <- parseTestConceptId "decisions/second"
+      thirdId <- parseTestConceptId "decisions/third"
+      fourthId <- parseTestConceptId "decisions/fourth"
+      assertEqual
+        [ MissingDocumentId fourthId "Decision Record" "ADR",
+          MalformedDocumentId thirdId "ADR" "ADR-007",
+          DuplicateDocumentId "ADR-1" firstId secondId
+        ]
         (validateProfile spec concepts)
 
 substringIndex :: Text -> Text -> Maybe Int

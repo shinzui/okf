@@ -54,9 +54,9 @@ title: Use PostgreSQL for the warehouse
 
 # Catch a duplicate or malformed handle during validation.
 $ cabal run okf -- validate okf-core/test/fixtures/doc-id-deviations --profile okf-core/test/fixtures/profiles/decisions.dhall
-profile: decisions/first: duplicate document ID ADR-1 (also on decisions/second)
+profile: decisions/fourth: Decision Record requires a document ID with prefix ADR
 profile: decisions/third: document ID must look like ADR-<number>, found: ADR-007
-profile: decisions/fourth: Decision Record requires a docId with prefix ADR
+profile: decisions/first: duplicate document ID ADR-1 (also on decisions/second)
 OK: 4 concepts
 profile: 3 advisory deviation(s) (use --profile-enforce to fail)
 ```
@@ -71,10 +71,12 @@ is inert.
 
 ## Progress
 
-- [ ] Milestone 1: Profile schema and core validation. `idField` on `ProfileSpec`, `idPrefix`
+- [x] (2026-07-25T14:48:37Z) Milestone 1: Profile schema and core validation. `idField` on `ProfileSpec`, `idPrefix`
       on `TypeRule`, matching Dhall schema files with record-completion defaults, three new
       `ProfileViolation` constructors, and the per-concept plus whole-bundle checks in
-      `okf-core/src/Okf/Profile.hs`. New fixtures under `okf-core/test/fixtures/`.
+      `okf-core/src/Okf/Profile.hs`. New fixtures under `okf-core/test/fixtures/`. Both Dhall
+      descriptors type-check; `nix develop --command cabal test all` passes; conforming,
+      advisory, enforced, and off-by-default CLI validations were reproduced.
 - [ ] Milestone 2: Allocation. Pure `documentIdsInBundle` / `nextDocumentId` functions in
       `okf-core/src/Okf/Profile.hs`, and the `okf id next` / `okf id list` subcommands in
       `okf-cli/src/Okf/Cli.hs`.
@@ -89,7 +91,21 @@ is inert.
 
 ## Surprises & Discoveries
 
-(None yet.)
+- Observation: Dhall rejects `Type` as a local `let` binding name even though `Type` is the
+  required exported field name for record completion.
+  Evidence: `dhall type --file okf-core/test/fixtures/profiles/decisions.dhall` initially
+  reported `Invalid input` at `let Type = ../TypeRule.dhall`; renaming the local binding to
+  `TypeRuleType` while retaining `{ Type = TypeRuleType, ... }` made all schema checks pass.
+
+- Observation: `walkBundle` sorts concept IDs lexicographically, so the deviating fixture is
+  visited as `first`, `fourth`, `second`, `third`, not in English ordinal order. Combined with
+  the plan's required two-pass validation, the observable deviations are missing `fourth`,
+  malformed `third`, then duplicate `first`/`second`.
+  Evidence: the exact fixture assertion and the CLI transcript both produce that order.
+
+- Observation: `examples/postgresql-sample` currently contains two concepts, not the four
+  stated in the original acceptance transcript.
+  Evidence: the off-by-default regression command completed successfully with `OK: 2 concepts`.
 
 
 ## Decision Log
@@ -161,6 +177,13 @@ is inert.
   anyway at this version, this is the right moment to publish defaults so that descriptors can
   be written as `TypeRule::{ type = "Decision Record", idPrefix = Some "ADR" }` and future
   field additions become non-breaking.
+  Date: 2026-07-25
+
+- Decision: For a duplicated handle, sort concepts by concept ID and report the first concept as
+  the violation subject, naming each later concept as the other occurrence.
+  Rationale: The plan's prose requires deterministic concept sorting, while its sample
+  `decisions/first: ... (also on decisions/second)` fixes which side is rendered. This rule
+  satisfies both and remains stable regardless of the caller's bundle order.
   Date: 2026-07-25
 
 
@@ -717,9 +740,9 @@ cabal run okf -- validate okf-core/test/fixtures/doc-id-deviations \
 ```
 
 ```text
-profile: decisions/first: duplicate document ID ADR-1 (also on decisions/second)
-profile: decisions/third: document ID must look like ADR-<number>, found: ADR-007
 profile: decisions/fourth: Decision Record requires a document ID with prefix ADR
+profile: decisions/third: document ID must look like ADR-<number>, found: ADR-007
+profile: decisions/first: duplicate document ID ADR-1 (also on decisions/second)
 OK: 4 concepts
 profile: 3 advisory deviation(s) (use --profile-enforce to fail)
 ```
@@ -752,7 +775,7 @@ cabal run okf -- validate examples/postgresql-sample --profile docs/profiles/pos
 ```
 
 ```text
-OK: 4 concepts
+OK: 2 concepts
 ```
 
 Commit:
@@ -934,7 +957,7 @@ established advisory-by-default contract rather than quietly becoming hard failu
 
 Existing behavior is unchanged for bundles that do not use the feature. Running
 `cabal run okf -- validate examples/postgresql-sample --profile docs/profiles/postgresql.dhall`
-prints `OK: 4 concepts` with no profile advisories, and
+prints `OK: 2 concepts` with no profile advisories, and
 `cabal run okf -- validate okf-core/test/fixtures/valid-bundle` prints `OK: 4 concepts`. This is
 the regression check that matters most: the feature is opt-in, and a profile without `idField`
 must behave precisely as it did before.

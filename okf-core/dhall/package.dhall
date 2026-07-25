@@ -1,7 +1,7 @@
 --| Entry point for okf's published profile schema.
 --
 -- Import this (by relative path within okf, or by pinned URL from another repo) to
--- get the profile schema types:
+-- get the profile schema types and record-completion defaults:
 --
 --     let okf = https://raw.githubusercontent.com/shinzui/okf/<tag>/okf-core/dhall/package.dhall sha256:<hash>
 --     in  ({ name = "acme", okfVersion = "0.1", … } : okf.Profile)
@@ -11,4 +11,9 @@
 { Profile = ./Profile.dhall
 , TypeRule = ./TypeRule.dhall
 , FrontmatterRules = ./FrontmatterRules.dhall
+, defaults =
+  { Profile = ./defaults/Profile.dhall
+  , TypeRule = ./defaults/TypeRule.dhall
+  , FrontmatterRules = ./defaults/FrontmatterRules.dhall
+  }
 }

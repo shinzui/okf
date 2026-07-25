@@ -8,6 +8,9 @@
 -- Profiles are NOT part of the OKF standard. A bundle that deviates from a profile
 -- remains fully OKF-conformant; `okf validate --profile` reports deviations as
 -- advisory by default.
+--
+-- `idField = Some "docId"` names the frontmatter key that holds stable document
+-- handles.  `None Text` disables every document-ID check.
 let TypeRule = ./TypeRule.dhall
 
 let FrontmatterRules = ./FrontmatterRules.dhall
@@ -16,5 +19,6 @@ in  { name : Text
     , okfVersion : Text
     , frontmatter : FrontmatterRules
     , allowUnknownTypes : Bool
+    , idField : Optional Text
     , types : List TypeRule
     }

@@ -581,6 +581,12 @@ renderProfileViolation = \case
       <> renderList actual
       <> " do not start with required "
       <> renderList expected
+  MissingDocumentId cid ctype prefix ->
+    renderConceptId cid <> ": " <> ctype <> " requires a document ID with prefix " <> prefix
+  MalformedDocumentId cid prefix actual ->
+    renderConceptId cid <> ": document ID must look like " <> prefix <> "-<number>, found: " <> actual
+  DuplicateDocumentId handle cid other ->
+    renderConceptId cid <> ": duplicate document ID " <> handle <> " (also on " <> renderConceptId other <> ")"
   where
     renderList xs = "[" <> Text.intercalate ", " xs <> "]"
 

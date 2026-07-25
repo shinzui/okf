@@ -17,6 +17,9 @@ module Okf.Profile
     loadProfileFile,
 
     -- * Validation
+    DocumentId (..),
+    parseDocumentId,
+    renderDocumentId,
     ProfileViolation (..),
     validateProfile,
 
@@ -27,10 +30,13 @@ where
 
 import CMarkGFM qualified
 import Control.Exception (SomeException, catch)
+import Data.Char (isAsciiLower, isAsciiUpper)
 import Data.List qualified as List
 import Data.Text qualified as Text
+import Data.Text.Read qualified as Text.Read
 import Dhall (FromDhall (..), auto, genericAutoWith)
 import Dhall qualified
+import Numeric.Natural (Natural)
 import Okf.Bundle
   ( Concept,
     conceptDocument,
@@ -49,6 +55,7 @@ data ProfileSpec = ProfileSpec
     okfVersion :: !Text,
     frontmatter :: !FrontmatterRules,
     allowUnknownTypes :: !Bool,
+    idField :: !(Maybe Text),
     types :: ![TypeRule]
   }
   deriving stock (Generic, Eq, Show)
@@ -68,7 +75,8 @@ data TypeRule = TypeRule
     pathPattern :: !(Maybe Text),
     resourceScheme :: !(Maybe Text),
     requireSchemaSection :: !Bool,
-    schemaColumns :: ![Text]
+    schemaColumns :: ![Text],
+    idPrefix :: !(Maybe Text)
   }
   deriving stock (Generic, Eq, Show)
 
@@ -90,6 +98,57 @@ loadProfileFile path =
   (Right <$> Dhall.inputFile auto path)
     `catch` \(e :: SomeException) -> pure (Left (Text.pack (show e)))
 
+-- | A parsed document handle: an ASCII-letter-led alphanumeric prefix and a
+-- positive number, rendered as @PREFIX-N@.
+data DocumentId = DocumentId
+  { prefix :: !Text,
+    number :: !Natural
+  }
+  deriving stock (Generic, Eq, Ord, Show)
+
+-- | Parse a strict document handle. The prefix contains one or more ASCII
+-- letters or digits and begins with a letter. It is followed by exactly one
+-- hyphen and a positive decimal number with no leading zero. Thus @ADR-7@
+-- parses, while @ADR-007@, @ADR-0@, @ADR-@, @-7@, @adr 7@, and
+-- @ADR-7-extra@ do not.
+parseDocumentId :: Text -> Maybe DocumentId
+parseDocumentId raw =
+  case Text.splitOn "-" raw of
+    [prefixText, numberText]
+      | validPrefix prefixText,
+        validNumberText numberText ->
+          case Text.Read.decimal numberText of
+            Right (parsedNumber, remainder)
+              | Text.null remainder,
+                parsedNumber > 0 ->
+                  Just (DocumentId prefixText parsedNumber)
+            _ -> Nothing
+    _ -> Nothing
+  where
+    validPrefix value =
+      case Text.uncons value of
+        Just (firstCharacter, rest) ->
+          isAsciiLetter firstCharacter && Text.all isAsciiAlphaNumeric rest
+        Nothing -> False
+    validNumberText value =
+      case Text.uncons value of
+        Just (firstCharacter, rest) ->
+          firstCharacter >= '1'
+            && firstCharacter <= '9'
+            && Text.all isAsciiDigit rest
+        Nothing -> False
+    isAsciiLetter character =
+      isAsciiLower character || isAsciiUpper character
+    isAsciiDigit character =
+      character >= '0' && character <= '9'
+    isAsciiAlphaNumeric character =
+      isAsciiLetter character || isAsciiDigit character
+
+-- | Render a document handle as @PREFIX-N@.
+renderDocumentId :: DocumentId -> Text
+renderDocumentId DocumentId {prefix, number} =
+  prefix <> "-" <> Text.pack (show number)
+
 -- | A single deviation from a profile. Advisory by default at the CLI layer.
 data ProfileViolation
   = -- | concept's @type@ is not listed in the profile and unknown types are disallowed
@@ -106,6 +165,12 @@ data ProfileViolation
     MissingSchemaSection ConceptId Text
   | -- | @# Schema@ table columns do not match (concept, type, expected, actual)
     SchemaColumnsMismatch ConceptId Text [Text] [Text]
+  | -- | type rule declares an @idPrefix@ but the concept has no handle (concept, type, prefix)
+    MissingDocumentId ConceptId Text Text
+  | -- | handle present but malformed for the declared prefix (concept, prefix, actual value)
+    MalformedDocumentId ConceptId Text Text
+  | -- | the same handle appears on more than one concept (handle, concept, other concept)
+    DuplicateDocumentId Text ConceptId ConceptId
   deriving stock (Generic, Eq, Show)
 
 -- | Check every concept against the profile, returning all deviations. Concepts
@@ -113,7 +178,8 @@ data ProfileViolation
 -- is no rule to check against) and only produce a 'TypeNotInProfile' violation
 -- when @allowUnknownTypes@ is @False@.
 validateProfile :: ProfileSpec -> [Concept] -> [ProfileViolation]
-validateProfile spec = concatMap checkConcept
+validateProfile spec concepts =
+  concatMap checkConcept concepts <> checkDuplicateDocumentIds spec concepts
   where
     rulesByType = [(rule ^. #type_, rule) | rule <- spec ^. #types]
 
@@ -128,12 +194,55 @@ validateProfile spec = concatMap checkConcept
                 <> checkPath cid ctype rule
                 <> checkResource cid ctype rule concept
                 <> checkSchema cid ctype rule concept
+                <> checkDocumentId spec cid ctype rule concept
 
     checkRequiredFields cid concept =
       [ MissingProfileField cid key
       | key <- spec ^. #frontmatter . #required,
         not (hasNonEmptyField key (conceptFrontmatter concept))
       ]
+
+-- | Check a profile-declared document ID for one concept.
+checkDocumentId :: ProfileSpec -> ConceptId -> Text -> TypeRule -> Concept -> [ProfileViolation]
+checkDocumentId spec cid ctype rule concept =
+  case (spec ^. #idField, rule ^. #idPrefix) of
+    (Just fieldName, Just expectedPrefix) ->
+      case frontmatterLookup fieldName (conceptFrontmatter concept) of
+        Just (String value)
+          | not (Text.null (Text.strip value)) ->
+              case parseDocumentId value of
+                Just documentId
+                  | documentId ^. #prefix == expectedPrefix -> []
+                _ -> [MalformedDocumentId cid expectedPrefix value]
+        _ -> [MissingDocumentId cid ctype expectedPrefix]
+    _ -> []
+
+-- | Check every non-empty value under the profile's ID field for bundle-wide
+-- uniqueness. Concept IDs are sorted before grouping so output is deterministic.
+checkDuplicateDocumentIds :: ProfileSpec -> [Concept] -> [ProfileViolation]
+checkDuplicateDocumentIds spec concepts =
+  case spec ^. #idField of
+    Nothing -> []
+    Just fieldName ->
+      concatMap duplicateViolations (groupedHandles fieldName)
+  where
+    groupedHandles fieldName =
+      List.groupBy
+        (\(leftHandle, _) (rightHandle, _) -> leftHandle == rightHandle)
+        (handles fieldName)
+    handles fieldName =
+      List.sortOn
+        (\(handle, cid) -> (handle, renderConceptId cid))
+        [ (handle, conceptIdOf concept)
+        | concept <- concepts,
+          Just (String handle) <- [frontmatterLookup fieldName (conceptFrontmatter concept)],
+          not (Text.null (Text.strip handle))
+        ]
+    duplicateViolations ((handle, firstConcept) : duplicates) =
+      [ DuplicateDocumentId handle firstConcept duplicateConcept
+      | (_, duplicateConcept) <- duplicates
+      ]
+    duplicateViolations [] = []
 
 -- | Project a concept's frontmatter (the document's @frontmatter@ field).
 conceptFrontmatter :: Concept -> Frontmatter
