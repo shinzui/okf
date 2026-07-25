@@ -43,6 +43,7 @@ library
     Okf.Cli.Assist
     Okf.Cli.Completions
     Okf.Cli.Config
+    Okf.Cli.Fzf
     Okf.Cli.Help
     Okf.Cli.Kit
     Okf.Cli.Kit.Config
@@ -80,6 +81,7 @@ test-suite okf-cli-test
     , directory
     , filepath
     , okf-cli
+    , okf-core
     , optparse-applicative  >=0.18
     , temporary
     , text                  ^>=2.1

@@ -74,13 +74,13 @@ Milestone 1 — bundle discovery in `okf-core`:
 
 Milestone 2 — fzf process layer in `okf-cli`:
 
-- [ ] Create `okf-cli/src/Okf/Cli/Fzf.hs` (availability detection, option monoid, candidate protocol, `runFzf`).
-- [ ] Add `Okf.Cli.Fzf` to `exposed-modules` in `okf-cli/okf-cli.cabal`.
-- [ ] Add `okf-core` to the `okf-cli-test` `build-depends`.
-- [ ] Add pure unit tests for `optsToArgs`, the `FzfOpts` monoid, `renderCandidateLines`, `parseSelectionIndex`, and `shellQuote`.
-- [ ] Optionally add `flake.module.nix` so `nix develop` ships `fzf`.
-- [ ] Manual smoke test of `runFzf` in `cabal repl okf-cli`.
-- [ ] Commit.
+- [x] Create `okf-cli/src/Okf/Cli/Fzf.hs` (availability detection, option monoid, candidate protocol, `runFzf`). (2026-07-25)
+- [x] Add `Okf.Cli.Fzf` to `exposed-modules` in `okf-cli/okf-cli.cabal`. (2026-07-25)
+- [x] Add `okf-core` to the `okf-cli-test` `build-depends`. (2026-07-25)
+- [x] Add pure unit tests for `optsToArgs`, the `FzfOpts` monoid, `renderCandidateLines`, `parseSelectionIndex`, and `shellQuote`. (2026-07-25)
+- [x] Add `flake.module.nix` so `nix develop` ships `fzf`. (2026-07-25)
+- [x] Smoke test of `runFzf` in `cabal repl okf-cli` — happy path, Unicode, and the missing-binary error path. (2026-07-25)
+- [x] Commit. (2026-07-25)
 
 Milestone 3 — selectors and `okf show` wiring:
 
@@ -200,6 +200,53 @@ repository root, because `okf-core/test/fixtures/doc-ids` sits at depth four and
 discovery stops there. Scanning from inside `okf-core/` does surface it, which is the
 documented limitation.
 
+**(Milestone 2, 2026-07-25) Without a terminal, fzf hangs rather than failing — which
+is why the `isFzfAvailable` gate is load-bearing, not merely polite.** The plan framed
+availability detection as a way to print a friendly message. It is stronger than that.
+Driving `runFzf` from a non-interactive shell with a *forced* config
+(`stdinIsTerminal = True` when it is not) and two candidates does not return an error:
+fzf opens `/dev/tty`, finds nothing to read, and blocks forever. The call had to be
+killed after five minutes. There is no timeout in `runFzf` and none is being added — the
+correct fix is the gate that already exists, which refuses to spawn fzf at all unless
+`stdinIsTerminal || ttyAvailable`.
+
+The three cases that *do* terminate were each confirmed in `cabal repl okf-cli`:
+
+```text
+-- one candidate, --select-1 short-circuits, no keystrokes needed:
+FzfSelected 1
+-- unicode display round-trips:
+FzfSelected 99
+-- missing binary is a typed error, not a crash:
+FzfError "/nonexistent/fzf: createProcess: posix_spawnp: does not exist (No such file or directory)"
+```
+
+The first proves the whole spawn path end to end — process creation, writing the
+numbered lines, `--select-1`, exit code `0`, parsing the leading index, and the `Map`
+lookup back to the caller's value. The second proves the `hSetEncoding ... utf8` calls
+do their job: a Japanese display string survives the round trip in a shell whose locale
+is not UTF-8. The third proves `try @SomeException` converts a spawn failure into
+`FzfError` instead of an exception escaping into the CLI.
+
+The genuinely interactive checks the plan asks for in Step 2.4 — a visible menu, no
+index column, and `FzfCancelled` on Esc — cannot be performed from a non-interactive
+agent session. They are left for the user; every non-interactive consequence of those
+paths (`--with-nth 2..` in the argument vector, exit `130` mapping to `FzfCancelled`) is
+covered by unit tests and by reading fzf's documented exit codes.
+
+**(Milestone 2, 2026-07-25) `nix develop` now ships fzf.** `flake.module.nix` was
+created from the example and sets `haskellProject.extraDevPackages = [ pkgs.fzf ]`.
+Confirmed without rebuilding the shell by evaluating its inputs:
+
+```text
+ghc-9.12.4
+cabal-install-3.16.1.0
+fzf-0.73.1
+```
+
+Before this, fzf was only present because it happened to be in the user's
+`~/.nix-profile`; a fresh clone would not have had it.
+
 
 ## Decision Log
 
@@ -295,6 +342,14 @@ Record every decision made while working on the plan.
   `System.Environment.getExecutablePath` rather than the literal string `okf` means the
   preview works under `cabal run okf --`, from a Nix store path, or from any
   installation that is not on `PATH`.
+  Date: 2026-07-25
+
+- Decision: `flake.module.nix` was created (the plan marked Step 2.3 optional and said
+  to skip it if `fzf --version` already works inside `nix develop`).
+  Rationale: `fzf --version` did work, but only because fzf is installed in the user's
+  `~/.nix-profile` — the dev shell itself did not provide it, so a fresh clone on
+  another machine could not exercise the pickers. The file is unmanaged by seihou and
+  survives template migrations, so the cost is one file and no future conflict.
   Date: 2026-07-25
 
 - Decision: The Purpose section's example listing of five discovered bundles is left as

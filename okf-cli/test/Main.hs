@@ -7,6 +7,7 @@ import Data.Text.IO qualified as Text.IO
 import Okf.Cli
 import Okf.Cli.Assist (AssistOptions (..), buildClaudeCommand)
 import Okf.Cli.Config (AssistSettings (..), ConfigSource (..), KitSettings (..), OkfConfig (..), OkfProvider (..), defaultOkfConfig, exampleConfigText, findConfigSource, loadOkfConfig, okfConfigEnvVar, projectConfigPath)
+import Okf.Cli.Fzf (Candidate (..), FzfOpts (..), optsToArgs, parseSelectionIndex, renderCandidateLines, shellQuote, withAnsi, withHeight, withNoSort, withPrompt)
 import Okf.Cli.Help (HelpTopic (..), helpTopics)
 import Options.Applicative
 import System.Directory (createDirectoryIfMissing, getCurrentDirectory, getTemporaryDirectory, removeDirectoryRecursive, withCurrentDirectory)
@@ -139,6 +140,19 @@ main = do
           parseSucceeds ["help", "format"],
           any ((== "okf") . topicName) helpTopics,
           all (not . Text.null . topicContent) helpTopics,
+          optsToArgs (withPrompt "bundle> " <> withHeight "40%" <> withNoSort)
+            == ["--prompt", "bundle> ", "--height", "40%", "--no-sort"],
+          optsToArgs mempty == [],
+          fzfPrompt (withPrompt "first" <> withPrompt "second") == Just "second",
+          fzfNoSort (withNoSort <> mempty) && fzfAnsi (mempty <> withAnsi),
+          renderCandidateLines [Candidate "alpha" (), Candidate "beta" ()]
+            == ["0\talpha", "1\tbeta"],
+          renderCandidateLines [Candidate "two\nlines" ()] == ["0\ttwolines"],
+          parseSelectionIndex "2\ttables/orders\tTable\n" == Just 2,
+          parseSelectionIndex "" == Nothing,
+          parseSelectionIndex "not-a-number\tx" == Nothing,
+          shellQuote "plain" == "'plain'",
+          shellQuote "it's" == "'it'\\''s'",
           parseShowsInfo ["--version"],
           parseFails ["hello"],
           logAddWrites,
