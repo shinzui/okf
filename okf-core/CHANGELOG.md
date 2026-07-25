@@ -7,6 +7,19 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- Profile-declared stable document IDs with strict parsing, missing/malformed/
+  duplicate validation, allocation helpers, and bundle lookup by handle.
+
+### Changed
+
+- The published profile Dhall schema gained required `idField` and `idPrefix`
+  record fields. Existing descriptors, including those in the separate
+  `okf-profiles` repository, must add `idField` and `idPrefix` values or adopt
+  the new record-completion defaults under `dhall/defaults/`. This is a breaking
+  schema change.
+
 ## [0.1.2.0] - 2026-07-14
 
 ### Added

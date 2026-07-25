@@ -1,0 +1,59 @@
+# ADR 1: Profile-declared document IDs
+
+Status: Accepted
+
+Date: 2026-07-25
+
+
+## Context
+
+An OKF concept's canonical identity is its bundle-relative Markdown path without
+the `.md` suffix. That identity is appropriate for named assets, but
+sequence-shaped records such as architecture decisions, RFCs, and incidents
+also need short references that survive file renames.
+
+OKF v0.1 permits producer-defined frontmatter fields, and profiles already
+describe team conventions without changing OKF conformance. This makes a
+profile the appropriate place to opt into stable handles while keeping the core
+format permissive.
+
+
+## Decision
+
+A profile may set `idField : Optional Text` to name the frontmatter key that
+stores document IDs. Each participating `TypeRule` sets
+`idPrefix : Optional Text`; rules without a prefix are unaffected.
+
+Document IDs have strict form `PREFIX-N`. The prefix starts with an ASCII letter
+and otherwise contains ASCII letters or digits. The number is positive decimal
+with no leading zeros. Handles are unique across the whole bundle under the
+configured field.
+
+The canonical concept path remains authoritative. `okf show` tries path lookup
+first and only then falls back to handle lookup. Without a profile, handle
+lookup searches all string-valued frontmatter fields; `--profile` narrows it to
+that profile's `idField`. Ambiguous handles are errors rather than arbitrary
+choices.
+
+Allocation is read-only. `okf id next` returns one more than the highest number
+already used for the requested declared prefix and does not fill gaps. This
+avoids reusing a retired reference.
+
+The published Dhall schema exposes record-completion defaults under
+`okf-core/dhall/defaults/`. Existing descriptors must add the new record fields
+once or migrate to those defaults; descriptors using record completion can
+absorb future defaulted additions without repeating every field.
+
+
+## Consequences
+
+Bundles that do not declare `idField` behave as before. A handle remains an
+ordinary producer extension, so bundles using it remain OKF-conformant and
+consumers may ignore it.
+
+Renaming a document can preserve its short handle, but links written with
+canonical paths still need updating. Duplicate and malformed handles are
+profile deviations, advisory unless `--profile-enforce` is used.
+
+The Dhall schema addition is breaking for descriptors that construct closed
+records directly. The changelogs call out the required migration.

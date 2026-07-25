@@ -71,7 +71,9 @@ cabal run okf -- index <bundle> [--write]
 cabal run okf -- log <bundle> [--check-stale] [--since <git-ref>]
 cabal run okf -- log add <bundle> [<concept-id>] -m <message> [--kind <kind>] [--date YYYY-MM-DD]
 cabal run okf -- graph <bundle> [--json]
-cabal run okf -- show <bundle> <concept-id>
+cabal run okf -- show <bundle> <concept-id-or-document-id> [--profile <descriptor>]
+cabal run okf -- id next <bundle> <PREFIX> --profile <descriptor>
+cabal run okf -- id list <bundle> --profile <descriptor>
 cabal run okf -- config show
 cabal run okf -- kit list
 cabal run okf -- assist --print-command "PROMPT"
@@ -92,7 +94,9 @@ advisories fail the command.
 a dated entry to the root log or to the log in a concept's directory. `graph`
 emits JSON graph data; JSON is currently the only graph format, and `--json` is
 accepted to keep the command shape stable for future formats. `show` prints one
-concept's metadata and Markdown body. `config` shows or initializes the Dhall
+concept's metadata and Markdown body, resolving either its canonical path ID or
+a profile-declared document ID. `id next` allocates the next numbered handle
+without writing, and `id list` prints all allocated handles. `config` shows or initializes the Dhall
 configuration used by the agent commands. `kit` installs reusable AI-agent
 skills and subagents from `okf-kit`. `assist` launches an interactive Claude
 session with installed OKF skills on its path. `completions` generates shell
@@ -128,6 +132,10 @@ Profile deviations are advisory by default (printed, but exit `0`); add
 `--profile-enforce` to fail on drift in CI. The repository ships a conforming
 example bundle ([examples/postgresql-sample](./examples/postgresql-sample)) and a
 sample descriptor ([docs/profiles/postgresql.dhall](./docs/profiles/postgresql.dhall)).
+Profiles can also opt selected concept types into stable numbered document IDs,
+such as `ADR-7`, stored in an ordinary frontmatter key. The `okf id` command
+lists and allocates those handles, and `okf show` resolves them after canonical
+path lookup.
 See [docs/user/profiles.md](./docs/user/profiles.md) for the descriptor schema and
 worked examples.
 

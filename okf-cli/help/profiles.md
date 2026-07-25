@@ -33,6 +33,14 @@ EXAMPLE (ADVISORY)
   OK: 3 concepts
   profile: 1 advisory deviation(s) (use --profile-enforce to fail)
 
+DOCUMENT IDS
+
+  A profile may name an idField such as "docId" and give selected type rules an
+  idPrefix such as "ADR". Those concepts must carry canonical handles such as
+  ADR-7. Use `okf id next BUNDLE ADR --profile PROFILE.dhall` to print the next
+  handle, `okf id list BUNDLE --profile PROFILE.dhall` to list allocations, and
+  `okf show BUNDLE ADR-7` to resolve one.
+
 SEE ALSO
 
   okf help validation   Structural validation and referential integrity.

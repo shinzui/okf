@@ -53,6 +53,39 @@ cabal run okf -- graph okf-core/test/fixtures/valid-bundle --json
 The graph includes edges from `tables/orders` to linked known concepts such as
 `tables/customers` and `datasets/sales`.
 
+## Document ID Bundle
+
+The conforming document-ID fixture is:
+
+```text
+okf-core/test/fixtures/doc-ids
+```
+
+Its three decision records carry `ADR-1`, `ADR-2`, and `ADR-3` under the
+`docId` frontmatter key. The matching descriptor is
+`okf-core/test/fixtures/profiles/decisions.dhall`; it declares `idField =
+Some "docId"` and `idPrefix = Some "ADR"` for `Decision Record` concepts.
+
+```bash
+cabal run okf -- id list okf-core/test/fixtures/doc-ids \
+  --profile okf-core/test/fixtures/profiles/decisions.dhall
+cabal run okf -- show okf-core/test/fixtures/doc-ids ADR-2
+```
+
+The deviation fixture is:
+
+```text
+okf-core/test/fixtures/doc-id-deviations
+```
+
+It contains a duplicate `ADR-1`, malformed `ADR-007`, and one decision with no
+document ID. Validate it to see all three advisory profile deviations:
+
+```bash
+cabal run okf -- validate okf-core/test/fixtures/doc-id-deviations \
+  --profile okf-core/test/fixtures/profiles/decisions.dhall
+```
+
 
 ## Invalid Bundles
 

@@ -79,12 +79,14 @@ PostgreSQL-table convention:
   , recommended = [ "description", "timestamp", "resource" ]
   }
 , allowUnknownTypes = False
+, idField = None Text
 , types =
   [ { type = "PostgreSQL Table"
     , pathPattern = Some "schemas/*/tables/*"
     , resourceScheme = Some "postgresql"
     , requireSchemaSection = True
     , schemaColumns = [ "Column", "Type", "Nullable", "Description" ]
+    , idPrefix = None Text
     }
   ]
 }
@@ -99,6 +101,7 @@ The fields:
 | `frontmatter.required` | `List Text` | Frontmatter keys every concept must have as a non-empty value. A missing or empty key is reported as `missing profile-required field`. |
 | `frontmatter.recommended` | `List Text` | Advisory-only keys; recorded for documentation. Not currently checked. |
 | `allowUnknownTypes` | `Bool` | When `False`, a concept whose `type` is not listed in `types` is reported as `type not in profile vocabulary`. When `True`, unknown types are skipped silently. |
+| `idField` | `Optional Text` | Names the frontmatter key that stores document IDs. `None Text` disables all document-ID checks. |
 | `types` | `List TypeRule` | One rule per allowed `type` string (see below). |
 
 Each `TypeRule`:
@@ -110,12 +113,60 @@ Each `TypeRule`:
 | `resourceScheme` | `Optional Text` | When set, the concept's `resource:` value must begin with `<scheme>://`. A missing resource is reported as `requires a resource with scheme`; a wrong scheme as `resource must use scheme`. |
 | `requireSchemaSection` | `Bool` | When `True`, the body must contain a `# Schema` heading followed by a GitHub-flavored Markdown table. A missing section is reported as `requires a # Schema section`. |
 | `schemaColumns` | `List Text` | The required leading columns of the `# Schema` table header, compared case-insensitively and trimmed as a **prefix** of the actual columns. Extra trailing columns are allowed. A mismatch is reported as `# Schema columns ... do not start with required ...`. |
+| `idPrefix` | `Optional Text` | When set, concepts of this type must carry a document ID under `idField` with the declared prefix. Missing IDs are reported as `requires a document ID with prefix`; malformed IDs as `document ID must look like PREFIX-<number>`; duplicates as `duplicate document ID`. |
+
+## Document IDs
+
+A document ID is a short, stable handle such as `ADR-7`. The canonical OKF
+identity remains the document's bundle path, but a numbered handle is convenient
+for decisions, RFCs, incidents, and other records people cite in commits or
+conversation. Because the handle lives in frontmatter, renaming
+`decisions/use-postgres.md` does not change `ADR-7`.
+
+Document IDs are opt-in twice: `idField` selects the frontmatter key, and
+`idPrefix` selects which concept types use numbered handles. Types with no
+`idPrefix` remain unaffected. Handles have the strict form `PREFIX-N`: the
+prefix begins with an ASCII letter and then contains only ASCII letters or
+digits; `N` is a positive decimal number with no leading zeros. `ADR-7` is
+valid, while `ADR-007`, `ADR-0`, and `ADR-7-extra` are not.
+
+The decisions fixture demonstrates the complete descriptor:
+
+```dhall
+let Profile = ../../../dhall/Profile.dhall
+
+let TypeRule = ../../../dhall/defaults/TypeRule.dhall
+
+in  { name = "decisions"
+    , okfVersion = "0.1"
+    , frontmatter =
+      { required = [ "type", "title" ]
+      , recommended = [] : List Text
+      }
+    , allowUnknownTypes = False
+    , idField = Some "docId"
+    , types =
+      [ TypeRule::{
+        , type = "Decision Record"
+        , pathPattern = Some "decisions/*"
+        , idPrefix = Some "ADR"
+        }
+      ]
+    }
+  : Profile
+```
+
+With this profile, a decision record carries `docId: ADR-1`. Validation reports
+missing, malformed, and duplicate handles as profile deviations. `okf id next`
+prints one more than the highest allocated number and never fills gaps, so a
+retired ID is not silently reused.
 
 ## The canonical schema
 
 The descriptor shape above is published as Dhall under
 [`okf-core/dhall/`](../../okf-core/dhall) — `Profile.dhall`, `TypeRule.dhall`,
-`FrontmatterRules.dhall`, and a `package.dhall` that re-exports them. This is the
+`FrontmatterRules.dhall`, matching record-completion modules under `defaults/`,
+and a `package.dhall` that re-exports both types and defaults. This is the
 single source of truth for the schema: the shipped sample and the test fixtures
 annotate their values against it (`… : ../path/to/Profile.dhall`), and a test
 guarantees this Dhall schema stays in lockstep with okf's internal decoder, so the
@@ -130,6 +181,24 @@ let okf =
         sha256:<hash>
 
 in  ({ name = "acme", okfVersion = "0.1", … } : okf.Profile)
+```
+
+Descriptors can use record completion so future defaulted fields do not require
+every caller to change:
+
+```dhall
+let okf = ./okf-core/dhall/package.dhall
+
+in  okf.defaults.Profile::{
+    , name = "acme"
+    , idField = Some "docId"
+    , types =
+      [ okf.defaults.TypeRule::{
+        , type = "Decision Record"
+        , idPrefix = Some "ADR"
+        }
+      ]
+    }
 ```
 
 The dependency is **one-way**: okf publishes the schema and imports nothing in

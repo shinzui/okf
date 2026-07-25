@@ -87,10 +87,11 @@ is inert.
       and `docId` printed in `okf show` output. Core and parser tests pass; unqualified and
       profile-narrowed `ADR-2` lookup render identically to canonical path lookup, and duplicate
       `ADR-1` lookup fails with both candidate concept IDs and exit code 1.
-- [ ] Milestone 4: Documentation and changelog. `README.md`, `docs/user/profiles.md`,
+- [x] (2026-07-25T15:00:26Z) Milestone 4: Documentation and changelog. `README.md`, `docs/user/profiles.md`,
       `docs/user/cli.md`, `docs/user/fixtures.md`, embedded help in `okf-cli/help/profiles.md`,
       and `Unreleased` entries in both `CHANGELOG.md` files noting the breaking profile-schema
-      change.
+      change. The embedded topic contains the new guidance, every documented feature command
+      reproduced, `cabal build all` completed without new warnings, and `cabal test all` passed.
 
 
 ## Surprises & Discoveries
@@ -199,14 +200,55 @@ is inert.
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+The feature is complete across all four milestones. Profiles can opt selected types into stable
+numbered handles, validation reports missing, malformed, and duplicate values, `okf id` lists
+and allocates handles without writing, and `okf show` resolves handles while preserving
+canonical path precedence. User documentation, embedded help, fixtures, and both changelogs now
+cover the behavior and the breaking Dhall-schema migration.
+
+Acceptance evidence from 2026-07-25:
+
+```text
+cabal build all: PASS, no new warnings
+cabal test all: PASS (okf-core-test and okf-cli-test)
+valid-bundle regression: OK: 4 concepts
+profile off-by-default regression: OK: 2 concepts
+document-ID bundle validation: OK: 3 concepts
+id list: ADR-1, ADR-2, ADR-3 in numeric order
+id next: ADR-4
+show ADR-2: resolved decisions/use-postgres and printed docId: ADR-2
+ambiguous ADR-1: exit 1 with decisions/first and decisions/second
+index doc-ids: rendered root and decisions indexes successfully
+```
+
+The manual end-to-end exercise copied the three-record fixture to a temporary bundle, added
+`decisions/fourth.md` with `docId: ADR-4`, and produced:
+
+```text
+$ okf validate /tmp/okf-doc-id-e2e.CkPJxV --profile okf-core/test/fixtures/profiles/decisions.dhall
+OK: 4 concepts
+$ okf show /tmp/okf-doc-id-e2e.CkPJxV ADR-4
+id: decisions/fourth
+docId: ADR-4
+type: Decision Record
+title: Adopt stable document handles
+$ okf id next /tmp/okf-doc-id-e2e.CkPJxV ADR --profile okf-core/test/fixtures/profiles/decisions.dhall
+ADR-5
+```
+
+The principal implementation lesson was to keep the two identities distinct: paths remain OKF's
+canonical identity and win lookup, while handles are stable, profile-governed aliases. Durable
+decisions and migration consequences were distilled into
+[`docs/adr/1-profile-declared-document-ids.md`](../adr/1-profile-declared-document-ids.md).
+Nothing remains for this plan.
 
 
 ## Context and Orientation
 
-There is no `docs/adr/` directory in this repository, so no Architecture Decision Records were
-consulted. If the ADR distillation pass at the end of this plan produces durable decisions,
-`docs/adr/` will be created then.
+There was no `docs/adr/` directory when planning began, so no pre-existing Architecture Decision
+Records were consulted. The completion distillation pass created
+[`docs/adr/1-profile-declared-document-ids.md`](../adr/1-profile-declared-document-ids.md) to
+preserve the durable identity, lookup, allocation, and schema-evolution decisions.
 
 ### What this repository is
 
@@ -1070,3 +1112,8 @@ After this plan it consists of `Profile.dhall`, `TypeRule.dhall`, `FrontmatterRu
 from `okf-core` to `okf-cli`, and nothing may make `okf-core` reach for the network, an LLM, or
 the `mori`/`mina` tools — README's "Implementation Boundaries" section states that the
 standalone CLI deliberately requires none of those, and this feature needs none of them.
+
+
+Revision note (2026-07-25): Updated throughout implementation with timestamped milestone
+completion, observed validation ordering and fixture counts, resolved ambiguity decisions,
+acceptance transcripts, the final retrospective, and the distilled ADR.

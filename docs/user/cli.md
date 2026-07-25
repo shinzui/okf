@@ -18,6 +18,7 @@ index
 log
 graph
 show
+id
 completions
 help
 ```
@@ -213,10 +214,11 @@ are ignored for the concrete edge list.
 
 ## show
 
-Inspect one concept.
+Inspect one concept by its canonical path ID or a short document ID.
 
 ```bash
 cabal run okf -- show BUNDLE CONCEPT_ID
+cabal run okf -- show BUNDLE DOCUMENT_ID [--profile PROFILE.dhall]
 ```
 
 Example:
@@ -225,5 +227,44 @@ Example:
 cabal run okf -- show okf-core/test/fixtures/valid-bundle tables/orders
 ```
 
-The command prints the concept ID, metadata, and Markdown body. If the concept
-ID is invalid or missing, the command exits non-zero and names the problem.
+Path lookup runs first because the path is the canonical OKF identity. If no
+path matches and the argument has document-ID form, `show` searches frontmatter
+for that exact handle. `--profile` narrows the search to the profile's
+`idField`; without it, every string-valued frontmatter key is considered. The
+command prints both identities, metadata, and Markdown body:
+
+```bash
+cabal run okf -- show okf-core/test/fixtures/doc-ids ADR-2
+# id: decisions/use-postgres
+# docId: ADR-2
+# type: Decision Record
+# title: Use PostgreSQL for the warehouse
+```
+
+Duplicate handles are rejected as ambiguous and every matching concept ID is
+listed. An invalid or missing concept ID also exits non-zero and names the
+problem.
+
+
+## id
+
+List allocated document IDs or print the next unused handle. Both subcommands
+require a profile because it declares the ID field and allowed prefixes.
+Neither command writes to the bundle.
+
+```bash
+cabal run okf -- id list okf-core/test/fixtures/doc-ids \
+  --profile okf-core/test/fixtures/profiles/decisions.dhall
+# ADR-1  decisions/use-markdown
+# ADR-2  decisions/use-postgres
+# ADR-3  decisions/adopt-okf
+
+cabal run okf -- id next okf-core/test/fixtures/doc-ids ADR \
+  --profile okf-core/test/fixtures/profiles/decisions.dhall
+# ADR-4
+```
+
+`id list` prints `<handle>  <concept-id>` in prefix-and-number order and omits
+malformed values. `id next` returns one more than the highest number for the
+requested prefix; it does not fill gaps. An undeclared prefix or a profile with
+no `idField` is a hard error.
