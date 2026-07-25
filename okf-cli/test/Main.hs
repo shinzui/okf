@@ -84,7 +84,20 @@ main = do
                       }
               },
           parseSucceeds ["graph", "bundle", "--json"],
-          parseSucceeds ["show", "bundle", "tables/orders"],
+          parseShowMatches
+            ["show", "bundle", "tables/orders"]
+            ShowOptions
+              { bundlePath = "bundle",
+                conceptIdText = "tables/orders",
+                profilePath = Nothing
+              },
+          parseShowMatches
+            ["show", "b", "ADR-2", "--profile", "p.dhall"]
+            ShowOptions
+              { bundlePath = "b",
+                conceptIdText = "ADR-2",
+                profilePath = Just "p.dhall"
+              },
           parseIdMatches
             ["id", "next", "b", "ADR", "--profile", "p.dhall"]
             IdOptions
@@ -163,6 +176,12 @@ parseIdMatches :: [String] -> IdOptions -> Bool
 parseIdMatches args expected =
   case execParserPure defaultPrefs parserInfo args of
     Success (Options (Id opts)) -> opts == expected
+    _ -> False
+
+parseShowMatches :: [String] -> ShowOptions -> Bool
+parseShowMatches args expected =
+  case execParserPure defaultPrefs parserInfo args of
+    Success (Options (ShowConcept opts)) -> opts == expected
     _ -> False
 
 testLogAddWritesFile :: IO Bool

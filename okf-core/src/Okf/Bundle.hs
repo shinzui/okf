@@ -13,6 +13,7 @@ module Okf.Bundle
     conceptTitle,
     conceptType,
     findConcept,
+    findConceptsByDocumentId,
     isReservedMarkdownFile,
     serializeConcept,
     walkBundle,
@@ -22,6 +23,7 @@ module Okf.Bundle
 where
 
 import Control.Exception (IOException, try)
+import Data.Aeson.KeyMap qualified as KeyMap
 import Data.List qualified as List
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text.IO
@@ -89,6 +91,23 @@ walkLogs root = do
 findConcept :: ConceptId -> [Concept] -> Maybe Concept
 findConcept conceptId =
   List.find (\concept -> conceptIdOf concept == conceptId)
+
+-- | Find concepts whose frontmatter carries the given document handle. When a
+-- field is supplied, only that key is examined; otherwise every frontmatter
+-- value is searched. All matches are returned so callers can report ambiguity.
+findConceptsByDocumentId :: Maybe Text -> Text -> [Concept] -> [Concept]
+findConceptsByDocumentId fieldFilter handle =
+  filter conceptMatches
+  where
+    conceptMatches concept =
+      case fieldFilter of
+        Just fieldName ->
+          valueMatches (frontmatterLookup fieldName (documentFrontmatter concept))
+        Nothing ->
+          any (valueMatches . Just) (KeyMap.elems (fields (documentFrontmatter concept)))
+    valueMatches (Just (String value)) = Text.strip value == handle
+    valueMatches _ = False
+    documentFrontmatter concept = frontmatter (conceptDocument concept)
 
 -- | Extract a concept identifier without colliding with Prelude's `id`.
 conceptIdOf :: Concept -> ConceptId

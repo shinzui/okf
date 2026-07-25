@@ -21,6 +21,8 @@ where
 
 import Control.Exception (IOException, try)
 import Data.Aeson qualified as Aeson
+import Data.Aeson.Key qualified as AesonKey
+import Data.Aeson.KeyMap qualified as KeyMap
 import Data.ByteString.Lazy.Char8 qualified as LazyByteString
 import Data.Foldable (traverse_)
 import Data.List qualified as List
@@ -36,7 +38,7 @@ import Okf.Cli.Help (HelpCommand, handleHelpCommand, helpCommandParser)
 import Okf.Cli.Kit (KitCommand, handleKitCommand, kitCommandParser)
 import Okf.Cli.Version (appVersionWithGit)
 import Okf.ConceptId
-import Okf.Document (DocumentParseError (..), body)
+import Okf.Document (DocumentParseError (..), Frontmatter (..), OKFDocument (..), body)
 import Okf.Graph (buildGraph)
 import Okf.Index
 import Okf.Log qualified as Log
@@ -48,6 +50,7 @@ import Okf.Profile
     documentIdsInBundle,
     loadProfileFile,
     nextDocumentId,
+    parseDocumentId,
     renderDocumentId,
     validateProfile,
   )
@@ -118,7 +121,8 @@ data GraphOptions = GraphOptions
 
 data ShowOptions = ShowOptions
   { bundlePath :: !FilePath,
-    conceptIdText :: !Text
+    conceptIdText :: !Text,
+    profilePath :: !(Maybe FilePath)
   }
   deriving stock (Show, Eq)
 
@@ -285,6 +289,13 @@ showOptionsParser =
   ShowOptions
     <$> bundleArgument
     <*> (Text.pack <$> strArgument (metavar "CONCEPT_ID" <> help "Concept ID such as tables/users"))
+    <*> optional
+      ( strOption
+          ( long "profile"
+              <> metavar "PROFILE"
+              <> help "Narrow document ID lookup to a profile's idField"
+          )
+      )
 
 idOptionsParser :: Parser IdOptions
 idOptionsParser =
@@ -567,20 +578,46 @@ runGraph GraphOptions {bundlePath} = do
   LazyByteString.putStrLn (Aeson.encode (buildGraph concepts))
 
 runShow :: ShowOptions -> IO ()
-runShow ShowOptions {bundlePath, conceptIdText} = do
-  conceptId <- either (dieText . renderConceptIdError conceptIdText) pure (parseConceptId conceptIdText)
+runShow ShowOptions {bundlePath, conceptIdText, profilePath} = do
   concepts <- loadBundleOrExit bundlePath
-  case findConcept conceptId concepts of
-    Nothing -> dieText ("Concept not found: " <> conceptIdText)
+  case either (const Nothing) (`findConcept` concepts) (parseConceptId conceptIdText) of
     Just concept -> renderConcept concept
+    Nothing ->
+      case parseDocumentId conceptIdText of
+        Nothing ->
+          case parseConceptId conceptIdText of
+            Left err -> dieText (renderConceptIdError conceptIdText err)
+            Right _ -> dieText ("Concept not found: " <> conceptIdText)
+        Just _ -> do
+          searchField <-
+            case profilePath of
+              Nothing -> pure Nothing
+              Just path -> do
+                ProfileSpec {idField = profileIdField} <- loadProfileOrExit path
+                maybe
+                  (dieText ("Profile " <> Text.pack path <> " declares no idField"))
+                  (pure . Just)
+                  profileIdField
+          case findConceptsByDocumentId searchField conceptIdText concepts of
+            [] ->
+              dieText
+                ( "Concept not found: "
+                    <> conceptIdText
+                    <> " (no document carries that document ID)"
+                )
+            [concept] -> renderConcept concept
+            matches ->
+              dieText
+                ( "Ambiguous document ID "
+                    <> conceptIdText
+                    <> ", found on: "
+                    <> Text.intercalate ", " (renderConceptId . conceptIdOf <$> matches)
+                    <> "\nRun okf validate --profile <descriptor> to see the duplicate as a violation."
+                )
 
 runId :: IdOptions -> IO ()
 runId IdOptions {bundlePath, profilePath, idSub} = do
-  loaded <- loadProfileFile profilePath
-  spec <-
-    case loaded of
-      Left err -> dieText ("Failed to load profile " <> Text.pack profilePath <> ": " <> err)
-      Right profileSpec -> pure profileSpec
+  spec <- loadProfileOrExit profilePath
   ProfileSpec {idField = profileIdField, types = typeRules} <- pure spec
   when (isNothing profileIdField) $
     dieText ("Profile " <> Text.pack profilePath <> " declares no idField")
@@ -607,6 +644,13 @@ runId IdOptions {bundlePath, profilePath, idSub} = do
   where
     renderDeclaredPrefixes [] = "(none)"
     renderDeclaredPrefixes prefixes = Text.intercalate ", " prefixes
+
+loadProfileOrExit :: FilePath -> IO ProfileSpec
+loadProfileOrExit profilePath = do
+  loaded <- loadProfileFile profilePath
+  case loaded of
+    Left err -> dieText ("Failed to load profile " <> Text.pack profilePath <> ": " <> err)
+    Right spec -> pure spec
 
 loadBundleOrExit :: FilePath -> IO [Concept]
 loadBundleOrExit bundlePath = do
@@ -715,6 +759,9 @@ renderLogPreview logFile =
 renderConcept :: Concept -> IO ()
 renderConcept concept = do
   Text.IO.putStrLn ("id: " <> renderConceptId (conceptIdOf concept))
+  mapM_
+    (\(fieldName, handle) -> Text.IO.putStrLn (fieldName <> ": " <> handle))
+    (documentIdFields concept)
   Text.IO.putStrLn ("type: " <> conceptType concept)
   traverse_ (Text.IO.putStrLn . ("title: " <>)) (conceptTitle concept)
   traverse_ (Text.IO.putStrLn . ("description: " <>)) (conceptDescription concept)
@@ -726,6 +773,18 @@ renderConcept concept = do
 bodyText :: Concept -> Text
 bodyText concept =
   body (conceptDocument concept)
+
+documentIdFields :: Concept -> [(Text, Text)]
+documentIdFields concept =
+  List.sortOn
+    fst
+    [ (AesonKey.toText key, fieldValue)
+    | (key, String fieldValue) <- KeyMap.toList rawFields,
+      isJust (parseDocumentId fieldValue)
+    ]
+  where
+    OKFDocument {frontmatter = Frontmatter {fields = rawFields}} =
+      conceptDocument concept
 
 renderBundleError :: BundleError -> Text
 renderBundleError = \case

@@ -76,6 +76,7 @@ main = do
         test "parseDocumentId accepts only canonical handles" testParseDocumentId,
         testIO "documentIdsInBundle sorts handles by prefix and number" testDocumentIdsInBundle,
         test "nextDocumentId skips gaps and starts unused prefixes at one" testNextDocumentId,
+        testIO "findConceptsByDocumentId resolves and reports duplicate handles" testFindConceptsByDocumentId,
         test "validateProfile accepts a conforming table concept" testProfileConformingTable,
         test "validateProfile flags a type not in the vocabulary" testProfileUnknownType,
         test "validateProfile flags a missing required field" testProfileMissingField,
@@ -726,6 +727,23 @@ testNextDocumentId = do
   let concepts = [firstConcept, thirdConcept]
   assertEqual (DocumentId "ADR" 4) (nextDocumentId testDocumentIdProfileSpec concepts "ADR")
   assertEqual (DocumentId "RFC" 1) (nextDocumentId testDocumentIdProfileSpec concepts "RFC")
+
+testFindConceptsByDocumentId :: IO (Either Text ())
+testFindConceptsByDocumentId = do
+  validRoot <- fixturePath "doc-ids"
+  validConcepts <- readBundle validRoot
+  deviationRoot <- fixturePath "doc-id-deviations"
+  deviationConcepts <- readBundle deviationRoot
+  pure $ do
+    usePostgres <- parseTestConceptId "decisions/use-postgres"
+    firstId <- parseTestConceptId "decisions/first"
+    secondId <- parseTestConceptId "decisions/second"
+    assertEqual
+      [usePostgres]
+      (conceptIdOf <$> findConceptsByDocumentId Nothing "ADR-2" validConcepts)
+    assertEqual
+      [firstId, secondId]
+      (conceptIdOf <$> findConceptsByDocumentId (Just "docId") "ADR-1" deviationConcepts)
 
 -- | A standalone profile literal so the validation tests do not depend on the
 -- Dhall fixture. One rule: PostgreSQL Table, fully constrained.
