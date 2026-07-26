@@ -7,11 +7,23 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.2.0.0] - 2026-07-26
+
 ### Added
 
+- `okf id next` and `okf id list` for allocating and listing profile-declared
+  document handles, plus document-ID fallback in `okf show` so a handle such as
+  `ADR-7` resolves to the concept that carries it.
 - Optional `BUNDLE` and `CONCEPT_ID` arguments for `okf show`, filled in with `fzf`
   menus when omitted, plus the `okf help interactive` topic. Search roots default to
   the current directory and can be overridden with `OKF_BUNDLE_ROOTS`.
+
+### Changed
+
+- Requires `okf-core >=0.2.0.0`, whose profile Dhall schema gained the required
+  `idField` and `idPrefix` record fields. Profile descriptors passed to
+  `okf validate --profile` must add those values or adopt the new
+  record-completion defaults.
 
 ## [0.1.2.1] - 2026-07-20
 

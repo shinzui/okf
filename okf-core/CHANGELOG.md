@@ -7,6 +7,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.2.0.0] - 2026-07-26
+
 ### Added
 
 - Profile-declared stable document IDs with strict parsing, missing/malformed/

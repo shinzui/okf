@@ -7,6 +7,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.2.0.0] - 2026-07-26
+
 ### Added
 
 - Profile-declared stable document IDs, including strict handle validation,
@@ -25,6 +27,17 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   `okf-profiles` repository, must add `idField` and `idPrefix` values or adopt
   the new record-completion defaults under `okf-core/dhall/defaults/`. This is a
   breaking schema change.
+
+## [0.1.2.1] - 2026-07-20
+
+Released for `okf-cli` only; `okf-core` stayed at 0.1.2.0.
+
+### Fixed
+
+- Ship the `help/*.md` topic sources in the `okf-cli` sdist via
+  `extra-source-files`. They are embedded at compile time by `Okf.Cli.Help`
+  (`file-embed`), so their absence from the 0.1.2.0 Hackage tarball made that
+  release fail to build from Hackage.
 
 ## [0.1.2.0] - 2026-07-14
 
