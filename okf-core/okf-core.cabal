@@ -1,6 +1,6 @@
-cabal-version:   3.4
-name:            okf-core
-version:         0.2.0.0
+cabal-version:      3.4
+name:               okf-core
+version:            0.2.0.0
 synopsis:
   Read, validate, index, and traverse Open Knowledge Format bundles
 
@@ -10,14 +10,22 @@ description:
   index and link graph, validates referential integrity, and writes bundles back
   out with a round-trip guarantee.
 
-category:        Data, Text
-license:         BSD-3-Clause
-license-file:    LICENSE
-author:          Nadeem Bitar
-maintainer:      nadeem@gmail.com
-copyright:       (c) 2026 Nadeem Bitar
-build-type:      Simple
-extra-doc-files: CHANGELOG.md
+category:           Data, Text
+license:            BSD-3-Clause
+license-file:       LICENSE
+author:             Nadeem Bitar
+maintainer:         nadeem@gmail.com
+copyright:          (c) 2026 Nadeem Bitar
+build-type:         Simple
+extra-doc-files:    CHANGELOG.md
+
+-- The canonical profile schema, plus the fixtures okf-core-test reads. The
+-- fixture descriptors import the schema through ../../../dhall, so both trees
+-- must ship for `cabal test` to work from the sdist.
+extra-source-files:
+  dhall/**/*.dhall
+  test/fixtures/**/*.dhall
+  test/fixtures/**/*.md
 
 common common-options
   ghc-options:
