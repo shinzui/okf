@@ -7,6 +7,14 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- A migration guide for upgrading 0.1.x profile descriptors to the 0.2.0.0
+  schema, covering the load failure a stale descriptor produces, the explicit
+  `idField`/`idPrefix` fix, the record-completion alternative, and re-pinning a
+  URL-imported schema. In `docs/user/profiles.md` and summarized in
+  `okf help profiles`.
+
 ## [0.2.0.0] - 2026-07-26
 
 ### Added

@@ -7,6 +7,11 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- An `UPGRADING FROM 0.1.x` section in the `okf help profiles` topic, summarizing
+  how to move a 0.1.x profile descriptor onto the 0.2.0.0 schema.
+
 ## [0.2.0.0] - 2026-07-26
 
 ### Added

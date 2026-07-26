@@ -208,6 +208,91 @@ made, versioned profiles to import rather than hand-write, see the separate
 `okf-profiles` repository; the `docs/profiles/postgresql.dhall` shipped here is a
 self-contained example, not the authoritative source.
 
+### Upgrading descriptors to okf 0.2.0.0
+
+okf 0.2.0.0 added `idField` to `Profile` and `idPrefix` to `TypeRule`. A Dhall
+record type is closed, so this is a **breaking schema change**: every descriptor
+written against 0.1.x must supply both fields. This applies to descriptors in the
+`okf-profiles` repository and to any hand-written descriptor in your own project.
+
+A stale descriptor fails to load, and the error names exactly what is missing:
+
+```
+Failed to load profile ./profile.dhall:
+Error: Expression doesn't match annotation
+
+{ - idField : …
+,   types : …
+            { - idPrefix : …
+            , …
+            }
+, …
+}
+```
+
+The `-` marks a field the schema requires and the descriptor lacks. Note that
+dropping the `: Profile` annotation does **not** avoid this — okf's decoder
+requires the fields too, and an unannotated descriptor fails the same way.
+
+There are two ways to fix it.
+
+**Add the fields explicitly.** Set both to `None Text` to keep 0.1.x behavior
+exactly — `idField = None Text` disables every document-ID check, so no concept
+is required to carry a handle:
+
+```dhall
+{ name = "acme"
+, okfVersion = "0.1"
+, frontmatter = { required = [ "type", "title" ], recommended = [] : List Text }
+, allowUnknownTypes = False
+, idField = None Text          -- added
+, types =
+  [ { type = "PostgreSQL Table"
+    , pathPattern = Some "schemas/*/tables/*"
+    , resourceScheme = Some "postgresql"
+    , requireSchemaSection = True
+    , schemaColumns = [ "Column", "Type", "Nullable", "Description" ]
+    , idPrefix = None Text     -- added, on every type rule
+    }
+  ]
+}
+```
+
+**Or switch to record completion**, which is the better fix: the `defaults/`
+modules supply every optional field, so the next schema addition will not break
+the descriptor again. Only the fields you care about need to appear:
+
+```dhall
+let okf = ./okf-core/dhall/package.dhall
+
+in  okf.defaults.Profile::{
+    , name = "acme"
+    , types = [ okf.defaults.TypeRule::{ type = "PostgreSQL Table" } ]
+    }
+```
+
+Descriptors that import the schema by pinned URL must move the tag **and** the
+hash together — bumping the tag alone fails the integrity check:
+
+```dhall
+let okf =
+      https://raw.githubusercontent.com/shinzui/okf/v0.2.0.0/okf-core/dhall/package.dhall
+        sha256:f4e2e6c0bb2c10d97e52648ce4b053e0f47963fee300428538db01ab625ecce2
+```
+
+That is the real hash for the `v0.2.0.0` tag. To re-pin a descriptor yourself,
+edit the tag and then run `dhall freeze ./profile.dhall` — it recomputes the
+hash of each remote import and rewrites it in place, including over a stale one.
+Confirm the descriptor loads again:
+
+```bash
+okf validate <bundle> --profile ./profile.dhall
+```
+
+Adopting the new fields is a separate, opt-in step: see
+[Document IDs](#document-ids) above for turning handles on once the descriptor
+loads again.
+
 ## A worked example
 
 The repository ships a conforming bundle at
