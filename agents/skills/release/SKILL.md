@@ -14,8 +14,14 @@ the Haskell [PVP](https://pvp.haskell.org/) (`A.B.C.D`).
 ## Versioning Strategy
 
 Both packages share the **same version number** and are released together. A
-single annotated git tag `v<version>` marks each release. The cabal versions are
-currently in sync (both `0.1.0.0`); keep them in sync.
+single annotated git tag `v<version>` marks each release. Keep the two cabal
+versions in sync.
+
+They drift only when one package needs an out-of-band hotfix (`okf-cli` went to
+`0.1.2.1` for a broken sdist while `okf-core` stayed at `0.1.2.0`). The next
+ordinary release brings them back together at a single version above both — so
+read the current version from **both** cabal files, not just `okf-core`'s, and
+bump from the higher one.
 
 PVP version format is `A.B.C.D`:
 
@@ -71,8 +77,9 @@ There is **no root `.cabal`** file. Each package directory is self-contained for
 
 ### 1. Determine what changed since the last release
 
-- Read the current version from `okf-core/okf-core.cabal` (both packages share
-  the same version).
+- Read the current version from **both** `okf-core/okf-core.cabal` and
+  `okf-cli/okf-cli.cabal`. They are normally equal; if they differ (an
+  out-of-band hotfix), bump from the higher of the two.
 - Find the latest git tag matching `v*` to identify the last release point
   (`git tag --list 'v*' --sort=-v:refname | head -1`). On the **first** release
   there will be no tag.
@@ -141,13 +148,19 @@ dates, with an `## [Unreleased]` section):
   - **Changed** / **Removed** — breaking — major
   - **Fixed** (bug fixes)
   - **Deprecated** / **Security** as applicable
-- **Sync the per-package copies.** After editing the root `CHANGELOG.md`, copy it
-  verbatim into each package directory so the sdists ship the updated changelog:
+- **Update the per-package copies by hand — do NOT `cp` the root file over
+  them.** As of 0.2.0.0 the three changelogs have deliberately diverged:
+  `okf-core/CHANGELOG.md` and `okf-cli/CHANGELOG.md` each describe only that
+  package's changes, and `okf-cli` carries a `[0.1.2.1]` section the others do
+  not (it was released for `okf-cli` alone). Copying the root file over them
+  destroys that history.
 
-  ```bash
-  cp CHANGELOG.md okf-core/CHANGELOG.md
-  cp CHANGELOG.md okf-cli/CHANGELOG.md
-  ```
+  For each release, add the new `## [<version>] - <date>` section to all three:
+
+  - root — the combined view of both packages.
+  - `okf-core/CHANGELOG.md` — library-level changes only (API, schema, modules).
+  - `okf-cli/CHANGELOG.md` — command-level changes, plus a **Changed** note when
+    the `okf-core` bound moves in a way that affects users.
 
   (The per-package `LICENSE` copies are static and only need recreating if the
   root `LICENSE` ever changes: `cp LICENSE okf-core/LICENSE okf-cli/LICENSE`.)
@@ -175,6 +188,10 @@ Run, in order, and stop on the first failure:
 
 If any check fails, fix it before proceeding.
 
+`cabal check` and `cabal test all` both pass against the **working tree**, where
+every file is present. Neither says anything about what lands in the tarball —
+that is step 5's job, and it must happen before the tag exists.
+
 > **Project nix wiring notes.** `nix fmt` and `nix flake check`'s
 > treefmt/pre-commit gates are wired through `flake.nix` → `nix/treefmt.nix` /
 > `nix/pre-commit.nix`. Because there is no root `.cabal`, `nix/haskell.nix`
@@ -186,7 +203,65 @@ If any check fails, fix it before proceeding.
 > `nix flake check` will fail with "Found neither a .cabal file nor
 > package.yaml".
 
-### 5. Commit, tag, and push
+### 5. Verify the sdists are complete (BEFORE tagging)
+
+`cabal check` does **not** detect files that are missing from the tarball. It
+validates cabal-file metadata; it never compares the tarball against the working
+tree. Every asset a component reads at compile time or at test time has to be
+listed in `extra-source-files` (or `extra-doc-files` / `data-files`), or
+`cabal sdist` silently omits it and the package fails to build **only** for
+people who install it from Hackage.
+
+This repo has been bitten twice:
+
+- `okf-cli` 0.1.2.0 shipped without `help/*.md`, which `Okf.Cli.Help` embeds via
+  `file-embed`. The library failed to compile from Hackage and needed the
+  0.1.2.1 hotfix.
+- `okf-core` 0.2.0.0 nearly shipped `test/Main.hs` without `test/fixtures/**` or
+  `dhall/**`. The fixture descriptors import the canonical schema through
+  `../../../dhall/Profile.dhall`, so `cabal test` on the tarball could not
+  resolve anything. Consumers that build with tests enabled — **nixpkgs does by
+  default** — would have hit it.
+
+So: build both sdists and run them in isolation, outside the repository, before
+creating the tag.
+
+```bash
+cd okf-core && cabal sdist && cd ..
+cd okf-cli  && cabal sdist && cd ..
+
+VERIFY="$(mktemp -d)"
+tar xzf dist-newstyle/sdist/okf-core-<version>.tar.gz -C "$VERIFY"
+tar xzf dist-newstyle/sdist/okf-cli-<version>.tar.gz  -C "$VERIFY"
+
+# Resolve okf-cli against the extracted okf-core, not Hackage -- the new
+# okf-core is not published yet, and okf-cli's ^>= bound requires it.
+cat > "$VERIFY/cabal.project" <<'PROJECT'
+packages: ./okf-core-*/ ./okf-cli-*/
+PROJECT
+
+(cd "$VERIFY" && cabal build all && cabal test all)
+```
+
+Both test suites must pass from the extracted tarballs. `$VERIFY` must be
+outside the repo — running inside it lets the working tree supply files the
+tarball forgot, which is exactly the failure being tested for.
+
+Also eyeball the tarball contents against what each component reads:
+
+```bash
+tar tzf dist-newstyle/sdist/okf-core-<version>.tar.gz
+tar tzf dist-newstyle/sdist/okf-cli-<version>.tar.gz
+```
+
+Anything a `file-embed` splice, a test fixture path, or a Dhall import
+references must appear in that listing. If something is missing, add it to
+`extra-source-files` in the relevant `.cabal`, re-run step 4, and repeat this
+step. Note that `cabal sdist` **excludes a test-suite's data** even while
+including its `.hs` sources, so a package with tests almost always needs an
+explicit fixture glob.
+
+### 6. Commit, tag, and push
 
 - Stage the modified `.cabal` files, the root `CHANGELOG.md`, and the per-package
   `okf-core/CHANGELOG.md` / `okf-cli/CHANGELOG.md` copies (plus any new/changed
@@ -197,15 +272,23 @@ If any check fails, fix it before proceeding.
 - Create a single **annotated** tag: `git tag -a v<version> -m "Release <version>"`.
 - Push commit and tag: `git push && git push --tags`.
 
-### 6. Publish to Hackage (in dependency order)
+Tag only once step 5 is green. A packaging fix discovered after the tag is
+pushed leaves the tag not reproducing the published tarball, and the only ways
+out are a force-moved tag or a wrong tag — both worse than tagging a minute
+later.
+
+### 7. Publish to Hackage (in dependency order)
 
 For EACH package, in dependency order (**okf-core → okf-cli**):
 
 1. `cd <pkg-dir>` (`okf-core/`, then `okf-cli/`).
 2. `cabal check` — verify no packaging issues.
-3. `cabal test <pkg>` — confirm tests pass (`okf-core-test`, `okf-cli-test`).
+3. `cabal test <pkg>-test` — confirm tests pass (`okf-core-test`,
+   `okf-cli-test`; note `cabal test okf-core` fails, since that names the
+   library, not the suite).
 4. `cabal sdist` then `cabal upload --publish <tarball-path>` — publish the
-   source distribution.
+   source distribution. This is the tarball step 5 already verified; do not
+   regenerate it from a dirty tree.
 5. `cabal haddock --haddock-for-hackage --haddock-hyperlink-source --haddock-quickjump`
    then `cabal upload --publish --documentation <docs-tarball-path>` — publish
    docs.
@@ -214,6 +297,22 @@ For EACH package, in dependency order (**okf-core → okf-cli**):
 > If `okf-core`'s upload fails, **do NOT** continue to `okf-cli` — its
 > `^>=` bound on the new `okf-core` version would be unsatisfiable on Hackage.
 
+Optionally, after `okf-core` is published, re-verify the `okf-cli` tarball
+against the **real** published dependency instead of the local override from
+step 5. Hackage's `01-index` lags the upload by a couple of minutes, so poll
+rather than assuming a single `cabal update` suffices:
+
+```bash
+for i in $(seq 8); do
+  cabal update >/dev/null 2>&1
+  cabal list --simple-output okf-core | grep -q '<version>' && break
+  sleep 20
+done
+```
+
+A dependency resolution failure naming `okf-core^>=<version>` right after
+upload means the index has not caught up — it is not a bad bound.
+
 After both succeed, present a summary:
 
 | Package | Version | Hackage URL |
@@ -221,7 +320,7 @@ After both succeed, present a summary:
 | okf-core | X.Y.Z.W | https://hackage.haskell.org/package/okf-core-X.Y.Z.W |
 | okf-cli  | X.Y.Z.W | https://hackage.haskell.org/package/okf-cli-X.Y.Z.W |
 
-### 7. Create GitHub release
+### 8. Create GitHub release
 
 After both Hackage uploads succeed, create a GitHub release for the tag:
 
@@ -253,6 +352,13 @@ EOF
 - Keep the per-package `LICENSE` / `CHANGELOG.md` copies in sync and never point
   a cabal file at a `../` path — both will make Hackage reject the package.
 - Never skip `cabal check`, the tests, or `nix flake check`.
+- Never skip the step 5 sdist verification, and never tag before it passes.
+  `cabal check` reporting "No errors or warnings" says nothing about whether the
+  tarball is complete; only extracting it outside the repo and running
+  `cabal test all` does.
+- Whenever a component gains an asset it reads at compile time or test time — a
+  `file-embed` splice, a test fixture, a Dhall file — add it to
+  `extra-source-files` in the same change that introduces it.
 - If any step fails (including `nix flake check`), stop and report the error
   rather than continuing.
 - If `okf-core`'s Hackage upload fails, do NOT upload `okf-cli`.
