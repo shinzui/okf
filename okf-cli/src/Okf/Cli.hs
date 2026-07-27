@@ -10,9 +10,15 @@ module Okf.Cli
     LogOptions (..),
     LogSub (..),
     Options (..),
+    ProfileCommand (..),
+    ProfileListOptions (..),
+    ProfileShowOptions (..),
     ShowOptions (..),
     ValidateOptions (..),
     parserInfo,
+    profileRegistryEnvVar,
+    renderProfileDetail,
+    renderRegistryTable,
     runCli,
     runCommand,
     runLogAdd,
@@ -52,7 +58,8 @@ import Okf.Index
 import Okf.Log qualified as Log
 import Okf.Prelude
 import Okf.Profile
-  ( ProfileSpec (..),
+  ( FrontmatterRules (..),
+    ProfileSpec (..),
     ProfileViolation (..),
     TypeRule (..),
     documentIdsInBundle,
@@ -62,9 +69,19 @@ import Okf.Profile
     renderDocumentId,
     validateProfile,
   )
+import Okf.Profile.Registry
+  ( RegistryEntry (..),
+    RegistryRef (..),
+    findRegistryEntry,
+    loadRegistry,
+    renderRegistryRef,
+    resolveRegistryRef,
+    rootExportLabel,
+  )
 import Okf.Validation
 import Options.Applicative
 import System.Directory (createDirectoryIfMissing, doesFileExist)
+import System.Environment (lookupEnv)
 import System.Exit (ExitCode (..), exitFailure, exitWith)
 import System.FilePath ((</>))
 import System.FilePath qualified as FilePath
@@ -79,6 +96,7 @@ data Command
   | ShowConcept ShowOptions
   | Id IdOptions
   | Config ConfigCommand
+  | Profile ProfileCommand
   | Kit KitCommand
   | Assist AssistOptions
   | Completions CompletionsShell
@@ -152,6 +170,24 @@ data ConfigCommand
   | ConfigInit !Bool
   deriving stock (Show, Eq)
 
+data ProfileCommand
+  = ProfileList ProfileListOptions
+  | ProfileShow ProfileShowOptions
+  deriving stock (Show, Eq)
+
+data ProfileListOptions = ProfileListOptions
+  { registryRef :: !(Maybe Text),
+    json :: !Bool
+  }
+  deriving stock (Show, Eq)
+
+data ProfileShowOptions = ProfileShowOptions
+  { registryRef :: !(Maybe Text),
+    export :: !(Maybe Text),
+    json :: !Bool
+  }
+  deriving stock (Show, Eq)
+
 data Options = Options
   { cmd :: !Command
   }
@@ -190,6 +226,7 @@ commandParser =
         <> command "show" (info (ShowConcept <$> showOptionsParser <**> helper) (progDesc "Show one concept"))
         <> command "id" (info (Id <$> idOptionsParser <**> helper) (progDesc "Allocate and list document IDs"))
         <> command "config" (info (Config <$> configCommandParser <**> helper) (progDesc "Show and manage okf configuration"))
+        <> command "profile" (info (Profile <$> profileCommandParser <**> helper) (progDesc "List and inspect profiles published by a registry"))
         <> command "kit" (info (Kit <$> kitCommandParser <**> helper) (progDesc "Install and manage agent skills and subagents"))
         <> command "assist" (info (Assist <$> assistOptionsParser <**> helper) (progDesc "Launch an interactive agent session with installed okf skills"))
         <> command "completions" (info (Completions <$> completionsParser <**> helper) (progDesc "Generate a shell completion script (bash, zsh, fish)"))
@@ -362,6 +399,55 @@ configCommandParser =
     )
     <|> pure ConfigShow
 
+profileCommandParser :: Parser ProfileCommand
+profileCommandParser =
+  hsubparser
+    ( command
+        "list"
+        ( info
+            (ProfileList <$> profileListOptionsParser <**> helper)
+            (progDesc "List the profiles a registry publishes")
+        )
+        <> command
+          "show"
+          ( info
+              (ProfileShow <$> profileShowOptionsParser <**> helper)
+              (progDesc "Print one registry profile in full")
+          )
+    )
+    <|> pure (ProfileList (ProfileListOptions Nothing False))
+
+profileListOptionsParser :: Parser ProfileListOptions
+profileListOptionsParser =
+  ProfileListOptions
+    <$> optional registryOption
+    <*> jsonSwitch
+
+profileShowOptionsParser :: Parser ProfileShowOptions
+profileShowOptionsParser =
+  ProfileShowOptions
+    <$> optional registryOption
+    <*> optional
+      ( Text.pack
+          <$> strArgument
+            ( metavar "EXPORT"
+                <> help "Dotted export path of the profile, as printed by `okf profile list`"
+            )
+      )
+    <*> jsonSwitch
+
+registryOption :: Parser Text
+registryOption =
+  Text.pack
+    <$> strOption
+      ( long "registry"
+          <> metavar "REGISTRY"
+          <> help "Dhall file, directory holding package.dhall, or Dhall expression publishing profiles"
+      )
+
+jsonSwitch :: Parser Bool
+jsonSwitch = switch (long "json" <> help "Emit JSON instead of text")
+
 bundleArgument :: Parser FilePath
 bundleArgument =
   strArgument (metavar "BUNDLE" <> help "Path to an OKF bundle directory")
@@ -375,6 +461,7 @@ runCommand = \case
   ShowConcept options -> runShow options
   Id options -> runId options
   Config configCommand -> runConfig configCommand
+  Profile profileCommand -> runProfile profileCommand
   Kit kitCommand -> do
     config <- loadConfigOrDie
     handleKitCommand config kitCommand
@@ -412,6 +499,231 @@ loadConfigWithSourceOrDie = do
   case result of
     Left err -> dieText ("Failed to load config: " <> err)
     Right loaded -> pure loaded
+
+-- | Environment override for the registry @okf profile@ reads.
+profileRegistryEnvVar :: String
+profileRegistryEnvVar = "OKF_PROFILE_REGISTRY"
+
+runProfile :: ProfileCommand -> IO ()
+runProfile = \case
+  ProfileList options -> runProfileList options
+  ProfileShow options -> runProfileShow options
+
+-- | Registry reference precedence: @--registry@, then 'profileRegistryEnvVar',
+-- then configuration (which falls back to the built-in default). Configuration
+-- is read only when it is actually needed, so a broken @okf-config.dhall@
+-- cannot stop @okf profile list --registry ./somewhere.dhall@.
+resolveRegistryReference :: Maybe Text -> IO Text
+resolveRegistryReference (Just explicit) = pure explicit
+resolveRegistryReference Nothing = do
+  fromEnvironment <- lookupEnv profileRegistryEnvVar
+  case fromEnvironment of
+    Just fromShell | not (null fromShell) -> pure (Text.pack fromShell)
+    _ -> do
+      OkfConfig {profiles = ProfileSettings {registry}} <- loadConfigOrDie
+      pure registry
+
+-- | Resolve, evaluate, and enumerate a registry, or exit 1 explaining why not.
+-- The reference is returned in the form the user gave it, for messages, along
+-- with the resolved reference, which is what @show@ quotes back as Dhall.
+loadRegistryOrDie :: Maybe Text -> IO (Text, RegistryRef, [RegistryEntry])
+loadRegistryOrDie explicit = do
+  reference <- resolveRegistryReference explicit
+  ref <- resolveRegistryRef reference
+  loaded <- loadRegistry ref
+  case loaded of
+    Left err -> dieText (renderRegistryLoadError reference err)
+    Right [] -> dieText ("No profiles found in registry " <> reference)
+    Right entries -> pure (reference, ref, entries)
+
+-- | A load failure is usually a mistyped path or a missing network, so say what
+-- a reference may be and how to work offline.
+renderRegistryLoadError :: Text -> Text -> Text
+renderRegistryLoadError reference err =
+  Text.unlines
+    [ "Failed to load profile registry " <> reference <> ": " <> err,
+      "A registry reference may be a path to a Dhall file, a directory holding package.dhall, or a",
+      "Dhall expression such as a hash-pinned URL. Remote references need network access on first",
+      "use; pass --registry with a local checkout to work offline."
+    ]
+
+runProfileList :: ProfileListOptions -> IO ()
+runProfileList ProfileListOptions {registryRef, json} = do
+  (reference, _ref, entries) <- loadRegistryOrDie registryRef
+  if json
+    then LazyByteString.putStrLn (Aeson.encode (registryListJson reference entries))
+    else traverse_ Text.IO.putStrLn (renderRegistryTable entries)
+
+registryListJson :: Text -> [RegistryEntry] -> Aeson.Value
+registryListJson reference entries =
+  Aeson.object
+    [ "registry" Aeson..= reference,
+      "profiles"
+        Aeson..= [ Aeson.object
+                     [ "export" Aeson..= export,
+                       "profile" Aeson..= spec
+                     ]
+                 | RegistryEntry {export, spec} <- entries
+                 ]
+    ]
+
+-- | An aligned table: a header row plus one row per profile, columns padded to
+-- their widest value. Pure so it can be tested without evaluating any Dhall.
+renderRegistryTable :: [RegistryEntry] -> [Text]
+renderRegistryTable entries =
+  map renderRow (headerRow : map entryRow entries)
+  where
+    headerRow = ("EXPORT", "NAME", "OKF", "TYPES", "ID FIELD")
+    entryRow
+      RegistryEntry
+        { export = exportPath,
+          spec = ProfileSpec {name, okfVersion, idField, types = typeRules}
+        } =
+        ( displayExport exportPath,
+          name,
+          okfVersion,
+          Text.pack (show (length typeRules)),
+          fromMaybe "-" idField
+        )
+
+    rows = headerRow : map entryRow entries
+    exportWidth = widest (\(cell, _, _, _, _) -> cell)
+    nameWidth = widest (\(_, cell, _, _, _) -> cell)
+    okfWidth = widest (\(_, _, cell, _, _) -> cell)
+    typesWidth = widest (\(_, _, _, cell, _) -> cell)
+    widest project = maximum (0 : map (Text.length . project) rows)
+
+    renderRow (exportValue, nameValue, okfValue, typesValue, idValue) =
+      Text.intercalate
+        "  "
+        [ padRight exportWidth exportValue,
+          padRight nameWidth nameValue,
+          padLeft okfWidth okfValue,
+          padLeft typesWidth typesValue,
+          idValue
+        ]
+
+    padRight width cell = cell <> Text.replicate (max 0 (width - Text.length cell)) " "
+    padLeft width cell = Text.replicate (max 0 (width - Text.length cell)) " " <> cell
+
+-- | An entry found at the registry root has no export path of its own.
+displayExport :: Text -> Text
+displayExport exportPath
+  | Text.null exportPath = rootExportLabel
+  | otherwise = exportPath
+
+runProfileShow :: ProfileShowOptions -> IO ()
+runProfileShow ProfileShowOptions {registryRef, export = requestedExport, json} = do
+  (reference, ref, entries) <- loadRegistryOrDie registryRef
+  RegistryEntry {export = foundExport, spec} <- selectEntry reference entries requestedExport
+  if json
+    then LazyByteString.putStrLn (Aeson.encode spec)
+    else do
+      traverse_ Text.IO.putStrLn (renderProfileDetail foundExport spec)
+      traverse_ Text.IO.putStrLn (renderProfileUsage ref foundExport)
+
+-- | Pick the profile to show. With no @EXPORT@ argument a single-profile
+-- registry needs no disambiguation; otherwise the available exports are listed,
+-- which is also what an unknown export reports.
+selectEntry :: Text -> [RegistryEntry] -> Maybe Text -> IO RegistryEntry
+selectEntry reference entries = \case
+  Nothing -> case entries of
+    [single] -> pure single
+    _ ->
+      dieText
+        ( "Registry "
+            <> reference
+            <> " publishes more than one profile; name one.\n"
+            <> availableExports entries
+        )
+  Just requested -> case findRegistryEntry requested entries of
+    Just entry -> pure entry
+    Nothing ->
+      dieText
+        ( "No profile named "
+            <> requested
+            <> " in registry "
+            <> reference
+            <> "\n"
+            <> availableExports entries
+        )
+  where
+    availableExports found =
+      "Available exports: "
+        <> Text.intercalate ", " [displayExport exportPath | RegistryEntry {export = exportPath} <- found]
+
+-- | One profile's complete rule set. Every optional field prints as @(none)@
+-- rather than being omitted, so the output shape does not change between
+-- profiles and stays reliable to eyeball or grep. Type rules print in the order
+-- the profile declares them, since that order is the author's.
+renderProfileDetail :: Text -> ProfileSpec -> [Text]
+renderProfileDetail
+  exportPath
+  ProfileSpec
+    { name,
+      okfVersion,
+      frontmatter = FrontmatterRules {required, recommended},
+      allowUnknownTypes,
+      idField,
+      types = typeRules
+    } =
+    [ "export: " <> displayExport exportPath,
+      "name: " <> name,
+      "okfVersion: " <> okfVersion,
+      "allowUnknownTypes: " <> renderFlag allowUnknownTypes,
+      "idField: " <> renderOptional idField,
+      "frontmatter.required: " <> renderList required,
+      "frontmatter.recommended: " <> renderList recommended
+    ]
+      <> concatMap renderTypeRule typeRules
+    where
+      renderTypeRule
+        TypeRule
+          { type_ = ruleType,
+            pathPattern,
+            resourceScheme,
+            requireSchemaSection,
+            schemaColumns,
+            idPrefix
+          } =
+          [ "",
+            "type: " <> ruleType,
+            "  pathPattern: " <> renderOptional pathPattern,
+            "  resourceScheme: " <> renderOptional resourceScheme,
+            "  requireSchemaSection: " <> renderFlag requireSchemaSection,
+            "  schemaColumns: " <> renderList schemaColumns,
+            "  idPrefix: " <> renderOptional idPrefix
+          ]
+
+      renderFlag True = "true"
+      renderFlag False = "false"
+      renderOptional = fromMaybe "(none)"
+      renderList [] = "(none)"
+      renderList values = Text.intercalate ", " values
+
+-- | The two-line descriptor a user writes to consume the profile with
+-- @okf validate --profile@. The reference is quoted in Dhall import syntax, not
+-- as the user typed it: Dhall only accepts a path that starts with @.\/@,
+-- @..\/@, @~\/@, or @\/@, so a bare relative path is prefixed to stay
+-- copy-pasteable.
+renderProfileUsage :: RegistryRef -> Text -> [Text]
+renderProfileUsage ref exportPath =
+  [ "",
+    "Use it with:",
+    "  let registry = " <> dhallImport ref,
+    "  in  registry" <> selector
+  ]
+  where
+    selector
+      | Text.null exportPath = ""
+      | otherwise = "." <> exportPath
+
+    dhallImport (RegistryExpression expression) = expression
+    dhallImport (RegistryFile path)
+      | any (`Text.isPrefixOf` rendered) ["./", "../", "~/", "/"] = rendered
+      | otherwise = "./" <> rendered
+      where
+        rendered = renderRegistryRef (RegistryFile path)
 
 runValidate :: ValidateOptions -> IO ()
 runValidate ValidateOptions {bundlePath, strictMode, profilePath, profileEnforce, logEnforce} = do

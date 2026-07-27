@@ -85,10 +85,11 @@ in the Decision Log.
 - [x] Milestone 3: okf-cli configuration gains `profiles.registry`, decoded so that existing
       0.2.0.0 `okf-config.dhall` files (which have no `profiles` field) still load.
       (2026-07-26)
-- [ ] Milestone 4: `okf profile list` works, in text and `--json` form, with registry
+- [x] Milestone 4: `okf profile list` works, in text and `--json` form, with registry
       reference precedence `--registry` > `OKF_PROFILE_REGISTRY` > config > built-in default.
-- [ ] Milestone 5: `okf profile show [EXPORT]` prints one profile in full, in text and
-      `--json` form.
+      (2026-07-26)
+- [x] Milestone 5: `okf profile show [EXPORT]` prints one profile in full, in text and
+      `--json` form. (2026-07-26)
 - [ ] Milestone 6: Documentation, embedded help, changelogs, and ADR 3 written; full test
       suite green; end-to-end walkthrough reproduced from a clean shell.
 
@@ -155,6 +156,29 @@ commands are reproducible.
   `defaultRegistryReference` was pointed at v0.4.2 instead, whose hash is
   `sha256:39e79b65672439cde9c1271e3d92abf68ba1e2427541598e0d04de23e741f0cb`, and the pinned
   URL was evaluated end to end to confirm it resolves and enumerates all five.
+  Date: 2026-07-26
+
+- Discovery (during implementation): the "use it with" hint has to render a Dhall *import*,
+  not the reference the user typed. Dhall only accepts a path import that begins with `./`,
+  `../`, `~/`, or `/`, so `--registry docs/profiles/postgresql.dhall` would have produced
+  `let registry = docs/profiles/postgresql.dhall`, which does not parse. `runProfileShow`
+  therefore quotes the *resolved* `RegistryRef` and prefixes `./` when needed, which also
+  usefully shows that a directory reference resolved to its `package.dhall`.
+  Date: 2026-07-26
+
+- Discovery (during implementation): Validation and Acceptance says
+  `okf profile show postgresql --json … | jq -r '.types[0].type'` prints `PostgreSQL Table`.
+  It prints `PostgreSQL Schema` — the real `okf-profiles` `postgresql` profile declares
+  Schema, Table, View in that order, and the plan's expectation was taken from the *fixture*
+  descriptor. The property the check exists to prove — that the JSON key is `type` and not
+  `type_` — holds either way. The acceptance text below is corrected.
+  Date: 2026-07-26
+
+- Discovery (during implementation): `okf profile --help` prints `-h,--help` twice. This is
+  pre-existing and not caused by this work: it falls out of the `hsubparser … <|> pure
+  default` shape that makes a bare subcommand default to one action, and `okf config --help`
+  has printed the same duplicate since `config` was added. Left alone rather than diverging
+  from the established parser idiom for one command.
   Date: 2026-07-26
 
 
@@ -1179,8 +1203,8 @@ cabal run okf -- profile list --json --registry /Users/shinzui/Keikaku/bokuno/ok
 cabal run okf -- profile show postgresql --json --registry /Users/shinzui/Keikaku/bokuno/okf-profiles | jq -r '.types[0].type'
 ```
 
-The first prints the four export paths; the second prints `PostgreSQL Table` — confirming the
-JSON key is `type`, not `type_`.
+The first prints the five export paths; the second prints `PostgreSQL Schema`, the first type
+rule the profile declares — confirming the JSON key is `type`, not `type_`.
 
 **Failures are informative and correctly coded.**
 

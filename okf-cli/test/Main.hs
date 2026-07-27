@@ -13,6 +13,8 @@ import Okf.Cli.Fzf.Selector (conceptCandidates, conceptPreviewCommand, parseBund
 import Okf.Cli.Help (HelpTopic (..), helpTopics)
 import Okf.ConceptId (parseConceptId)
 import Okf.Document (parseDocument)
+import Okf.Profile (FrontmatterRules (..), ProfileSpec (..), TypeRule (..))
+import Okf.Profile.Registry (RegistryEntry (..))
 import Options.Applicative
 import System.Directory (createDirectoryIfMissing, getCurrentDirectory, getTemporaryDirectory, removeDirectoryRecursive, withCurrentDirectory)
 import System.Environment (lookupEnv, setEnv, unsetEnv)
@@ -176,6 +178,24 @@ main = do
             == "'/opt/o'\\''kf/okf' show 'b' {2}",
           sampleConceptDisplays
             == ["tables/orders\tTable\tOrders", "x            \t     \t"],
+          parseSucceeds ["profile"],
+          parseSucceeds ["profile", "list"],
+          parseSucceeds ["profile", "list", "--json"],
+          parseSucceeds ["profile", "list", "--registry", "./r.dhall"],
+          parseSucceeds ["profile", "show"],
+          parseSucceeds ["profile", "show", "postgresql"],
+          parseProfileMatches ["profile"] (ProfileList (ProfileListOptions Nothing False)),
+          parseProfileMatches
+            ["profile", "list", "--registry", "r", "--json"]
+            (ProfileList (ProfileListOptions (Just "r") True)),
+          parseProfileMatches
+            ["profile", "show", "x", "--registry", "r", "--json"]
+            (ProfileShow (ProfileShowOptions (Just "r") (Just "x") True)),
+          parseProfileMatches
+            ["profile", "show"]
+            (ProfileShow (ProfileShowOptions Nothing Nothing False)),
+          renderRegistryTable sampleRegistryEntries == sampleRegistryTable,
+          renderProfileDetail "nested.decisions" sampleDecisionsProfile == sampleProfileDetail,
           parseShowsInfo ["--version"],
           parseFails ["hello"],
           logAddWrites,
@@ -216,6 +236,88 @@ parseValidateMatches :: [String] -> ValidateOptions -> Bool
 parseValidateMatches args expected =
   case execParserPure defaultPrefs parserInfo args of
     Success (Options (Validate opts)) -> opts == expected
+    _ -> False
+
+-- | One root-level entry and one nested entry whose columns differ in width, so
+-- the padding in 'renderRegistryTable' is actually exercised, and the @(root)@
+-- and @-@ placeholders both appear.
+sampleRegistryEntries :: [RegistryEntry]
+sampleRegistryEntries =
+  [ RegistryEntry {export = "", spec = samplePostgresqlProfile},
+    RegistryEntry {export = "nested.decisions", spec = sampleDecisionsProfile}
+  ]
+
+sampleRegistryTable :: [Text.Text]
+sampleRegistryTable =
+  [ "EXPORT            NAME                OKF  TYPES  ID FIELD",
+    "(root)            shinzui-postgresql  0.1      1  -",
+    "nested.decisions  decisions           0.1      1  docId"
+  ]
+
+samplePostgresqlProfile :: ProfileSpec
+samplePostgresqlProfile =
+  ProfileSpec
+    { name = "shinzui-postgresql",
+      okfVersion = "0.1",
+      frontmatter = FrontmatterRules {required = ["type", "title"], recommended = []},
+      allowUnknownTypes = False,
+      idField = Nothing,
+      types =
+        [ TypeRule
+            { type_ = "PostgreSQL Table",
+              pathPattern = Just "schemas/*/tables/*",
+              resourceScheme = Just "postgresql",
+              requireSchemaSection = True,
+              schemaColumns = ["Column", "Type"],
+              idPrefix = Nothing
+            }
+        ]
+    }
+
+sampleDecisionsProfile :: ProfileSpec
+sampleDecisionsProfile =
+  ProfileSpec
+    { name = "decisions",
+      okfVersion = "0.1",
+      frontmatter = FrontmatterRules {required = ["type", "title"], recommended = []},
+      allowUnknownTypes = False,
+      idField = Just "docId",
+      types =
+        [ TypeRule
+            { type_ = "Decision Record",
+              pathPattern = Just "decisions/*",
+              resourceScheme = Nothing,
+              requireSchemaSection = False,
+              schemaColumns = [],
+              idPrefix = Just "ADR"
+            }
+        ]
+    }
+
+-- | Every optional field prints, as @(none)@ when absent, so the shape does not
+-- shift between profiles.
+sampleProfileDetail :: [Text.Text]
+sampleProfileDetail =
+  [ "export: nested.decisions",
+    "name: decisions",
+    "okfVersion: 0.1",
+    "allowUnknownTypes: false",
+    "idField: docId",
+    "frontmatter.required: type, title",
+    "frontmatter.recommended: (none)",
+    "",
+    "type: Decision Record",
+    "  pathPattern: decisions/*",
+    "  resourceScheme: (none)",
+    "  requireSchemaSection: false",
+    "  schemaColumns: (none)",
+    "  idPrefix: ADR"
+  ]
+
+parseProfileMatches :: [String] -> ProfileCommand -> Bool
+parseProfileMatches args expected =
+  case execParserPure defaultPrefs parserInfo args of
+    Success (Options (Profile profileCommand)) -> profileCommand == expected
     _ -> False
 
 parseLogMatches :: [String] -> LogOptions -> Bool
