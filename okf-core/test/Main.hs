@@ -83,6 +83,7 @@ main = do
         testIO "fixture dangling link reports a bundle validation error" testFixtureDanglingLink,
         testIO "loadProfileFile decodes the postgresql fixture" testLoadProfileFixture,
         testIO "loadProfileFile decodes record-completed document ID rules" testLoadDocumentIdProfileFixture,
+        testIO "profile JSON encoding emits type, not type_" testProfileJsonShape,
         testIO "loadRegistry enumerates nested profiles and skips non-profiles" testRegistryEnumeratesProfiles,
         testIO "loadRegistry reports a bare profile as a root entry" testRegistryRootProfile,
         testIO "resolveRegistryRef prefers package.dhall inside a directory" testResolveRegistryRef,
@@ -773,6 +774,41 @@ testLoadDocumentIdProfileFixture = do
     Right spec -> do
       assertEqual (Just "docId") (spec ^. #idField)
       assertEqual [Just "ADR"] (map (^. #idPrefix) (spec ^. #types))
+
+-- | The JSON encoding is pinned field by field, so a future refactor cannot
+-- silently rename a key. The @type@ key matters most: the Haskell field is
+-- @type_@, and consumers must never see that.
+testProfileJsonShape :: IO (Either Text ())
+testProfileJsonShape = do
+  path <- fixtureFilePath "profiles/decisions.dhall"
+  result <- loadProfileFile path
+  pure $ case result of
+    Left err -> Left ("failed to load document ID profile: " <> err)
+    Right spec ->
+      assertEqual
+        ( object
+            [ "name" .= ("decisions" :: Text),
+              "okfVersion" .= ("0.1" :: Text),
+              "allowUnknownTypes" .= False,
+              "idField" .= ("docId" :: Text),
+              "frontmatter"
+                .= object
+                  [ "required" .= (["type", "title"] :: [Text]),
+                    "recommended" .= ([] :: [Text])
+                  ],
+              "types"
+                .= [ object
+                       [ "type" .= ("Decision Record" :: Text),
+                         "pathPattern" .= ("decisions/*" :: Text),
+                         "resourceScheme" .= (Nothing :: Maybe Text),
+                         "requireSchemaSection" .= False,
+                         "schemaColumns" .= ([] :: [Text]),
+                         "idPrefix" .= ("ADR" :: Text)
+                       ]
+                   ]
+            ]
+        )
+        (toJSON spec)
 
 -- | A registry record enumerates every field that decodes as a profile, one
 -- level down as well as at the top, sorted by export path. The @Profile@ schema

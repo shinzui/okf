@@ -32,6 +32,7 @@ where
 
 import CMarkGFM qualified
 import Control.Exception (SomeException, catch)
+import Data.Aeson (ToJSON (..), object, (.=))
 import Data.Char (isAsciiLower, isAsciiUpper)
 import Data.List qualified as List
 import Data.Text qualified as Text
@@ -48,7 +49,7 @@ import Okf.Bundle
   )
 import Okf.ConceptId (ConceptId, renderConceptId)
 import Okf.Document (Frontmatter, frontmatterLookup)
-import Okf.Prelude
+import Okf.Prelude hiding ((.=))
 import "generic-lens" Data.Generics.Labels ()
 
 -- | A complete house profile.
@@ -92,6 +93,47 @@ instance FromDhall TypeRule where
     where
       stripTrailingUnderscore fieldName =
         fromMaybe fieldName (Text.stripSuffix "_" fieldName)
+
+-- | Encode a profile so tooling can consume the same descriptor okf reads.
+-- Written by hand rather than derived so the key order is stable and, more
+-- importantly, so 'TypeRule' emits @type@ rather than the Haskell field name
+-- @type_@ — matching the Dhall field and how 'Okf.Graph.Node' already encodes.
+instance ToJSON ProfileSpec where
+  toJSON ProfileSpec {name, okfVersion, frontmatter, allowUnknownTypes, idField, types = typeRules} =
+    object
+      [ "name" .= name,
+        "okfVersion" .= okfVersion,
+        "allowUnknownTypes" .= allowUnknownTypes,
+        "idField" .= idField,
+        "frontmatter" .= frontmatter,
+        "types" .= typeRules
+      ]
+
+instance ToJSON FrontmatterRules where
+  toJSON FrontmatterRules {required, recommended} =
+    object
+      [ "required" .= required,
+        "recommended" .= recommended
+      ]
+
+instance ToJSON TypeRule where
+  toJSON
+    TypeRule
+      { type_ = ruleType,
+        pathPattern,
+        resourceScheme,
+        requireSchemaSection,
+        schemaColumns,
+        idPrefix
+      } =
+      object
+        [ "type" .= ruleType,
+          "pathPattern" .= pathPattern,
+          "resourceScheme" .= resourceScheme,
+          "requireSchemaSection" .= requireSchemaSection,
+          "schemaColumns" .= schemaColumns,
+          "idPrefix" .= idPrefix
+        ]
 
 -- | Load and decode a Dhall profile descriptor from a file path. Any evaluation
 -- or decoding failure is captured as a human-readable 'Left'.

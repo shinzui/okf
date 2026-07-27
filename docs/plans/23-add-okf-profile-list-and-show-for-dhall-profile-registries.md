@@ -79,8 +79,9 @@ in the Decision Log.
 
 - [x] Milestone 1: `Okf.Profile.Registry` in okf-core enumerates the profiles in an evaluated
       Dhall registry, with a self-contained offline test fixture and tests. (2026-07-26)
-- [ ] Milestone 2: `ProfileSpec`, `FrontmatterRules`, and `TypeRule` gain `ToJSON` instances
+- [x] Milestone 2: `ProfileSpec`, `FrontmatterRules`, and `TypeRule` gain `ToJSON` instances
       in okf-core, with a test pinning the JSON shape (notably `type`, not `type_`).
+      (2026-07-26)
 - [ ] Milestone 3: okf-cli configuration gains `profiles.registry`, decoded so that existing
       0.2.0.0 `okf-config.dhall` files (which have no `profiles` field) still load.
 - [ ] Milestone 4: `okf profile list` works, in text and `--json` form, with registry
