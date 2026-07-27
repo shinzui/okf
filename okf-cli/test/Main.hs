@@ -26,6 +26,7 @@ main = do
   configDefaults <- testConfigDefaults
   configProjectPrecedence <- testConfigProjectPrecedence
   configEnvPrecedence <- testConfigEnvPrecedence
+  configLegacyWithoutProfiles <- testConfigLegacyWithoutProfiles
   configInvalidDhall <- testConfigInvalidDhall
   assistCommandBuilder <- testAssistCommandBuilder
   assistModelOverride <- testAssistModelOverride
@@ -181,6 +182,7 @@ main = do
           configDefaults,
           configProjectPrecedence,
           configEnvPrecedence,
+          configLegacyWithoutProfiles,
           configInvalidDhall,
           assistCommandBuilder,
           assistModelOverride
@@ -300,6 +302,34 @@ testConfigEnvPrecedence =
     configSource <- findConfigSource
     loaded <- loadOkfConfig
     pure (configSource == SourceEnv envPath && loaded == Right (defaultOkfConfig, SourceEnv envPath))
+
+-- | A config file written for okf 0.2.0.0 has no @profiles@ field. It must
+-- still load, with the built-in default registry filled in — otherwise adding a
+-- field to the record would break every existing config file.
+testConfigLegacyWithoutProfiles :: IO Bool
+testConfigLegacyWithoutProfiles =
+  withIsolatedConfigEnv "okf-cli-config-legacy" $ do
+    projectPath <- projectConfigPath
+    Text.IO.writeFile projectPath legacyConfigText
+    loaded <- loadOkfConfig
+    pure (loaded == Right (defaultOkfConfig, SourceProject projectPath))
+
+-- | Verbatim okf 0.2.0.0 configuration: the record before @profiles@ existed.
+legacyConfigText :: Text.Text
+legacyConfigText =
+  Text.unlines
+    [ "let Provider = < Claude | Codex >",
+      "in  { kit =",
+      "        { repoUrl = \"https://github.com/shinzui/okf-kit.git\"",
+      "        , providers = [ Provider.Claude ]",
+      "        }",
+      "    , assist =",
+      "        { provider = Provider.Claude",
+      "        , model = None Text",
+      "        , systemPrompt = None Text",
+      "        }",
+      "    }"
+    ]
 
 testConfigInvalidDhall :: IO Bool
 testConfigInvalidDhall =

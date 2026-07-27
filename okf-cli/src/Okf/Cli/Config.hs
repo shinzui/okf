@@ -3,6 +3,7 @@ module Okf.Cli.Config
   ( OkfConfig (..),
     KitSettings (..),
     AssistSettings (..),
+    ProfileSettings (..),
     OkfProvider (..),
     ConfigSource (..),
     defaultOkfConfig,
@@ -23,6 +24,7 @@ import Data.Text qualified as Text
 import Dhall (FromDhall (..), auto, genericAutoWith)
 import Dhall qualified
 import Okf.Prelude
+import Okf.Profile.Registry (defaultRegistryReference)
 import System.Directory (doesFileExist, getCurrentDirectory, getHomeDirectory)
 import System.Environment (lookupEnv)
 import System.FilePath ((</>))
@@ -59,8 +61,26 @@ data AssistSettings = AssistSettings
   deriving stock (Generic, Eq, Show)
   deriving anyclass (FromDhall)
 
+-- | Profile-related settings: which registry @okf profile@ reads by default.
+data ProfileSettings = ProfileSettings
+  { registry :: !Text
+  }
+  deriving stock (Generic, Eq, Show)
+  deriving anyclass (FromDhall)
+
 -- | The whole okf configuration.
 data OkfConfig = OkfConfig
+  { kit :: !KitSettings,
+    assist :: !AssistSettings,
+    profiles :: !ProfileSettings
+  }
+  deriving stock (Generic, Eq, Show)
+  deriving anyclass (FromDhall)
+
+-- | The configuration record as okf 0.2.0.0 defined it, before @profiles@ was
+-- added. Dhall decodes records strictly, so without this fallback every config
+-- file written for 0.2.0.0 would stop loading the moment a field was added.
+data LegacyOkfConfig = LegacyOkfConfig
   { kit :: !KitSettings,
     assist :: !AssistSettings
   }
@@ -89,7 +109,15 @@ defaultOkfConfig =
           { provider = ProviderClaude,
             model = Nothing,
             systemPrompt = Nothing
-          }
+          },
+      profiles = defaultProfileSettings
+    }
+
+-- | The profile settings a config file that predates @profiles@ is given.
+defaultProfileSettings :: ProfileSettings
+defaultProfileSettings =
+  ProfileSettings
+    { registry = defaultRegistryReference
     }
 
 okfConfigEnvVar :: String
@@ -132,16 +160,38 @@ findConfigSource = do
 
 -- | Load the effective configuration and report its source. A parse or type
 -- error in a found file is returned as 'Left'; a missing file yields defaults.
+--
+-- A file that does not decode against the current record is retried against the
+-- 0.2.0.0 shape, which had no @profiles@ field; on success the built-in default
+-- registry fills the gap, so upgrading okf does not invalidate a config file the
+-- user already wrote. If the retry also fails, the /first/ error is reported,
+-- because that message describes the schema the user should be writing against.
 loadOkfConfig :: IO (Either Text (OkfConfig, ConfigSource))
 loadOkfConfig = do
   configSource <- findConfigSource
   case sourcePath configSource of
     Nothing -> pure (Right (defaultOkfConfig, configSource))
-    Just path ->
-      ( do
-          config <- Dhall.inputFile auto path
-          pure (Right (config, configSource))
-      )
+    Just path -> do
+      current <- tryDecode (Dhall.inputFile auto path)
+      case current of
+        Right config -> pure (Right (config, configSource))
+        Left currentError -> do
+          legacy <- tryDecode (Dhall.inputFile auto path)
+          pure $ case legacy of
+            Left _legacyError -> Left currentError
+            Right LegacyOkfConfig {kit = legacyKit, assist = legacyAssist} ->
+              Right
+                ( OkfConfig
+                    { kit = legacyKit,
+                      assist = legacyAssist,
+                      profiles = defaultProfileSettings
+                    },
+                  configSource
+                )
+  where
+    tryDecode :: IO a -> IO (Either Text a)
+    tryDecode action =
+      (Right <$> action)
         `catch` \(exception :: SomeException) ->
           pure (Left (Text.pack (show exception)))
 
@@ -166,14 +216,16 @@ renderConfig :: OkfConfig -> Text
 renderConfig
   OkfConfig
     { kit = KitSettings {repoUrl, providers},
-      assist = AssistSettings {provider, model, systemPrompt}
+      assist = AssistSettings {provider, model, systemPrompt},
+      profiles = ProfileSettings {registry}
     } =
     Text.unlines
       [ "kit.repoUrl     = " <> repoUrl,
         "kit.providers   = " <> renderProviders providers,
         "assist.provider = " <> renderProvider provider,
         "assist.model    = " <> fromMaybe "(unset)" model,
-        "assist.systemPrompt = " <> fromMaybe "(unset)" systemPrompt
+        "assist.systemPrompt = " <> fromMaybe "(unset)" systemPrompt,
+        "profiles.registry = " <> registry
       ]
 
 renderProviders :: [OkfProvider] -> Text
@@ -198,6 +250,9 @@ exampleConfigText =
       "        { provider = Provider.Claude",
       "        , model = None Text",
       "        , systemPrompt = None Text",
+      "        }",
+      "    , profiles =",
+      "        { registry = \"" <> defaultRegistryReference <> "\"",
       "        }",
       "    }"
     ]
