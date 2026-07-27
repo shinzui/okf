@@ -16,6 +16,7 @@ import Okf.Index
 import Okf.Log
 import Okf.Prelude hiding (setField, (.=))
 import Okf.Profile
+import Okf.Profile.Registry
 import Okf.Validation
 import System.Directory
   ( createDirectoryIfMissing,
@@ -82,6 +83,10 @@ main = do
         testIO "fixture dangling link reports a bundle validation error" testFixtureDanglingLink,
         testIO "loadProfileFile decodes the postgresql fixture" testLoadProfileFixture,
         testIO "loadProfileFile decodes record-completed document ID rules" testLoadDocumentIdProfileFixture,
+        testIO "loadRegistry enumerates nested profiles and skips non-profiles" testRegistryEnumeratesProfiles,
+        testIO "loadRegistry reports a bare profile as a root entry" testRegistryRootProfile,
+        testIO "resolveRegistryRef prefers package.dhall inside a directory" testResolveRegistryRef,
+        testIO "loadRegistry reports a missing registry as Left" testRegistryLoadFailure,
         test "parseDocumentId accepts only canonical handles" testParseDocumentId,
         testIO "documentIdsInBundle sorts handles by prefix and number" testDocumentIdsInBundle,
         test "nextDocumentId skips gaps and starts unused prefixes at one" testNextDocumentId,
@@ -768,6 +773,59 @@ testLoadDocumentIdProfileFixture = do
     Right spec -> do
       assertEqual (Just "docId") (spec ^. #idField)
       assertEqual [Just "ADR"] (map (^. #idPrefix) (spec ^. #types))
+
+-- | A registry record enumerates every field that decodes as a profile, one
+-- level down as well as at the top, sorted by export path. The @Profile@ schema
+-- record and the @note@ string contribute nothing.
+testRegistryEnumeratesProfiles :: IO (Either Text ())
+testRegistryEnumeratesProfiles = do
+  path <- fixtureFilePath "registry/package.dhall"
+  loaded <- loadRegistry (RegistryFile path)
+  pure $ case loaded of
+    Left err -> Left ("failed to load fixture registry: " <> err)
+    Right entries -> do
+      assertEqual ["nested.decisions", "postgresql"] (map (^. #export) entries)
+      case findRegistryEntry "postgresql" entries of
+        Nothing -> Left "expected an entry at export path postgresql"
+        Just entry -> assertEqual "shinzui-postgresql" (entry ^. #spec . #name)
+      assertEqual Nothing (findRegistryEntry "nope" entries)
+      assertBool
+        "expected findRegistryEntry to resolve the nested export"
+        (isJust (findRegistryEntry "nested.decisions" entries))
+
+-- | A registry reference that is itself a profile yields one entry whose export
+-- path is empty.
+testRegistryRootProfile :: IO (Either Text ())
+testRegistryRootProfile = do
+  path <- fixtureFilePath "profiles/decisions.dhall"
+  loaded <- loadRegistry (RegistryFile path)
+  pure $ case loaded of
+    Left err -> Left ("failed to load root profile registry: " <> err)
+    Right entries -> do
+      assertEqual [""] (map (^. #export) entries)
+      assertEqual ["decisions"] (map (^. #spec . #name) entries)
+
+-- | A directory holding @package.dhall@ resolves to that file; anything else
+-- is handed to Dhall verbatim.
+testResolveRegistryRef :: IO (Either Text ())
+testResolveRegistryRef = do
+  directory <- fixturePath "registry"
+  resolvedDirectory <- resolveRegistryRef (Text.pack directory)
+  filePath <- fixtureFilePath "profiles/decisions.dhall"
+  resolvedFile <- resolveRegistryRef (Text.pack filePath)
+  resolvedExpression <- resolveRegistryRef "./nowhere/at/all.dhall"
+  pure $ do
+    assertEqual (RegistryFile (directory </> "package.dhall")) resolvedDirectory
+    assertEqual (RegistryFile filePath) resolvedFile
+    assertEqual (RegistryExpression "./nowhere/at/all.dhall") resolvedExpression
+
+-- | A reference that cannot be evaluated reports an error rather than throwing.
+testRegistryLoadFailure :: IO (Either Text ())
+testRegistryLoadFailure = do
+  loaded <- loadRegistry (RegistryFile "/nonexistent/registry.dhall")
+  pure $ case loaded of
+    Right entries -> Left ("expected a load failure, got " <> Text.pack (show (length entries)) <> " entries")
+    Left message -> assertBool "expected a non-empty error message" (not (Text.null message))
 
 testParseDocumentId :: Either Text ()
 testParseDocumentId = do
