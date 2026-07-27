@@ -9,6 +9,15 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- `okf profile list` and `okf profile show`, which enumerate and inspect the
+  profiles a Dhall *registry* publishes. A registry is any Dhall expression
+  evaluating to a record of profile values, so the separate `okf-profiles`
+  repository works as one unchanged. Both accept `--registry` and `--json`; a
+  bare `okf profile` means `okf profile list`.
+- A `profiles.registry` configuration setting naming the default registry,
+  overridable with `--registry` or the `OKF_PROFILE_REGISTRY` environment
+  variable. Existing `okf-config.dhall` files, which have no `profiles` field,
+  keep loading unchanged and are given the built-in default.
 - A migration guide for upgrading 0.1.x profile descriptors to the 0.2.0.0
   schema, covering the load failure a stale descriptor produces, the explicit
   `idField`/`idPrefix` fix, the record-completion alternative, and re-pinning a

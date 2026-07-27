@@ -19,6 +19,10 @@ log
 graph
 show
 id
+config
+profile
+kit
+assist
 completions
 help
 ```
@@ -323,3 +327,58 @@ cabal run okf -- id next okf-core/test/fixtures/doc-ids ADR \
 malformed values. `id next` returns one more than the highest number for the
 requested prefix; it does not fill gaps. An undeclared prefix or a profile with
 no `idField` is a hard error.
+
+
+## profile
+
+List and inspect the profiles a *registry* publishes. A registry is any Dhall
+expression that evaluates to a record of profile values; the
+[okf-profiles](https://github.com/shinzui/okf-profiles) repository is one. Both
+subcommands are read-only and behave identically whether or not a terminal is
+attached.
+
+```bash
+cabal run okf -- profile list --registry /path/to/okf-profiles
+# EXPORT                               NAME                                   OKF  TYPES  ID FIELD
+# coordination.improvementRequests     cross-repository-improvement-requests  0.1      1  requestId
+# documentation.architectureDecisions  architecture-decision-records          0.1      1  docId
+# documentation.patternCatalog         mori-documentation-pattern-catalog     0.1      8  -
+# postgresql                           shinzui-postgresql                     0.1      3  -
+# tanPostgresql                        tan-postgresql                         0.1      4  -
+
+cabal run okf -- profile show postgresql --registry /path/to/okf-profiles
+cabal run okf -- profile list --json --registry /path/to/okf-profiles
+```
+
+A bare `okf profile` means `okf profile list`.
+
+| Flag | Applies to | Meaning |
+|------|------------|---------|
+| `--registry REGISTRY` | both | A Dhall file, a directory holding `package.dhall`, or a Dhall expression such as a hash-pinned URL. |
+| `--json` | both | Emit JSON instead of text. |
+| `EXPORT` | `show` | The dotted export path printed in the `EXPORT` column. Optional when the registry publishes exactly one profile. |
+
+Without `--registry`, the reference comes from `OKF_PROFILE_REGISTRY`, then
+`profiles.registry` in configuration, then the built-in default — the
+`okf-profiles` package pinned by tag and sha256 hash. The pin means the first run
+fetches over the network and every later run is served from Dhall's cache under
+`~/.cache/dhall`; pass `--registry` with a local checkout to stay offline
+throughout.
+
+The `EXPORT` column reads `(root)` when the reference is itself a profile rather
+than a record of profiles. The `ID FIELD` column reads `-` when the profile
+declares no `idField`.
+
+`profile show` closes with the two-line Dhall snippet that consumes the profile,
+which is all `okf validate --profile` needs — there is no separate install step.
+
+| Exit code | Meaning |
+|-----------|---------|
+| `0` | the listing or profile was printed |
+| `1` | the registry failed to load, published no profiles, or does not have the requested export |
+
+Every failure prints to stderr. A load failure also explains what a registry
+reference may be and how to work offline; an unknown or omitted `EXPORT` lists
+the exports that are available.
+
+See [profiles.md](./profiles.md) for what a registry is in more detail.

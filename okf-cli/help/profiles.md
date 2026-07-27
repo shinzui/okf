@@ -41,6 +41,36 @@ DOCUMENT IDS
   handle, `okf id list BUNDLE --profile PROFILE.dhall` to list allocations, and
   `okf show BUNDLE ADR-7` to resolve one.
 
+REGISTRIES
+
+  You do not have to write a descriptor from scratch. A registry is any Dhall
+  expression evaluating to a record whose fields -- possibly nested -- are
+  profile values. okf finds them structurally: it walks the evaluated record
+  and reports every field that decodes as a profile, under the dotted path it
+  was found at. That path is the profile's export path.
+
+    okf profile list
+    okf profile list --registry /path/to/okf-profiles
+    okf profile show postgresql --registry /path/to/okf-profiles
+
+  A bare `okf profile` means `okf profile list`. Both subcommands accept
+  --json. The EXPORT column reads "(root)" when the reference is itself a
+  profile rather than a record of profiles; the ID FIELD column reads "-" when
+  the profile declares no idField. Listings carry no description, because the
+  profile schema has none.
+
+  A registry reference may be a path to a Dhall file, a directory holding
+  package.dhall, or a Dhall expression such as a hash-pinned URL. Without
+  --registry, okf uses OKF_PROFILE_REGISTRY, then profiles.registry from
+  configuration, then the built-in default: the okf-profiles package pinned by
+  tag and sha256 hash. Because it is pinned, Dhall caches it under
+  ~/.cache/dhall after the first fetch, so later runs are offline. Pass
+  --registry with a local checkout to be offline throughout.
+
+  There is no install step. `okf profile show` closes with the two-line Dhall
+  snippet that consumes the profile; save it to a file and pass that file to
+  `okf validate --profile`.
+
 UPGRADING FROM 0.1.x
 
   okf 0.2.0.0 added idField to Profile and idPrefix to TypeRule. Dhall record

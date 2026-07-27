@@ -142,8 +142,19 @@ Profiles can also opt selected concept types into stable numbered document IDs,
 such as `ADR-7`, stored in an ordinary frontmatter key. The `okf id` command
 lists and allocates those handles, and `okf show` resolves them after canonical
 path lookup.
-See [docs/user/profiles.md](./docs/user/profiles.md) for the descriptor schema and
-worked examples.
+You do not have to write a descriptor from scratch. `okf profile list` shows what
+a *registry* — any Dhall expression evaluating to a record of profiles, such as
+the separate [okf-profiles](https://github.com/shinzui/okf-profiles) repository —
+publishes, and `okf profile show` prints one profile's complete rule set along
+with the two lines needed to pass it to `okf validate --profile`.
+
+```bash
+cabal run okf -- profile list
+cabal run okf -- profile show postgresql
+```
+
+See [docs/user/profiles.md](./docs/user/profiles.md) for the descriptor schema,
+profile registries, and worked examples.
 
 
 ## Agent Skills And Assist

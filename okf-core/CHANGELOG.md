@@ -7,6 +7,18 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- `Okf.Profile.Registry`, which evaluates a registry reference — a Dhall file, a
+  directory holding `package.dhall`, or a Dhall expression — and enumerates
+  every profile it publishes under a dotted export path. Discovery is
+  structural: each field of the normalized record is tested by decoding it, so
+  no manifest is needed. Schema records exported as `{ Type, default }` are
+  skipped, and a reference that is itself a profile reports one root entry.
+- `ToJSON` instances for `ProfileSpec`, `FrontmatterRules`, and `TypeRule`. A
+  type rule's name is emitted under the key `type`, matching the Dhall field
+  rather than the Haskell field `type_`.
+
 ## [0.2.0.0] - 2026-07-26
 
 ### Added

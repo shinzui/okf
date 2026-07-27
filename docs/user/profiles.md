@@ -115,6 +115,120 @@ Each `TypeRule`:
 | `schemaColumns` | `List Text` | The required leading columns of the `# Schema` table header, compared case-insensitively and trimmed as a **prefix** of the actual columns. Extra trailing columns are allowed. A mismatch is reported as `# Schema columns ... do not start with required ...`. |
 | `idPrefix` | `Optional Text` | When set, concepts of this type must carry a document ID under `idField` with the declared prefix. Missing IDs are reported as `requires a document ID with prefix`; malformed IDs as `document ID must look like PREFIX-<number>`; duplicates as `duplicate document ID`. |
 
+## Profile registries
+
+Writing a descriptor from scratch is not the only way to get one. A **registry**
+is any Dhall expression that evaluates to a record whose fields — possibly
+nested — are profile values. There is no manifest and no metadata format: okf
+walks the evaluated record and reports every field that decodes as a profile,
+under the dotted path at which it found it. That path is the profile's **export
+path**, and it is the handle you pass to `okf profile show`.
+
+The [okf-profiles](https://github.com/shinzui/okf-profiles) repository is already
+exactly this shape, so it works as a registry with no changes:
+
+```bash
+okf profile list --registry /path/to/okf-profiles
+```
+
+```text
+EXPORT                               NAME                                   OKF  TYPES  ID FIELD
+coordination.improvementRequests     cross-repository-improvement-requests  0.1      1  requestId
+documentation.architectureDecisions  architecture-decision-records          0.1      1  docId
+documentation.patternCatalog         mori-documentation-pattern-catalog     0.1      8  -
+postgresql                           shinzui-postgresql                     0.1      3  -
+tanPostgresql                        tan-postgresql                         0.1      4  -
+```
+
+Listings carry no human-written description. The published profile schema has no
+`description` field, and Dhall records are closed, so adding one is a breaking
+change that must move okf's decoder, okf's published schema, and every descriptor
+in every registry together — the same coordinated change `idField`/`idPrefix`
+required in 0.2.0.0. `okf profile show` compensates by printing the profile's
+full rule set.
+
+### Registry references
+
+A registry reference may take three forms, tried in this order:
+
+| Form | Example | Behavior |
+|------|---------|----------|
+| A Dhall file | `--registry ./docs/profiles/postgresql.dhall` | Evaluated with its own directory as the import root, so its relative imports resolve. |
+| A directory holding `package.dhall` | `--registry /path/to/okf-profiles` | Resolves to that `package.dhall`. |
+| A raw Dhall expression | `--registry 'https://…/package.dhall sha256:…'` | Handed to Dhall verbatim. This is the only form that can reach the network, and only if the expression says so. |
+
+A reference that is itself a profile rather than a record of profiles lists as a
+single entry whose export path prints as `(root)`.
+
+The reference is chosen from the first of these that is set:
+
+1. `--registry`
+2. the `OKF_PROFILE_REGISTRY` environment variable
+3. `profiles.registry` in [configuration](./cli.md)
+4. the built-in default — the `okf-profiles` package pinned by tag *and* sha256
+   hash
+
+Configuration is read only when it is actually needed, so a broken
+`okf-config.dhall` cannot stop `okf profile list --registry ./somewhere.dhall`.
+
+### Working offline
+
+Nothing about profile registries requires the network unless you point okf at a
+remote one. Passing `--registry` with a local checkout is fully offline.
+
+The built-in default is a URL, but it is pinned by integrity hash, so Dhall
+writes it into its content-addressed cache under `~/.cache/dhall` on first use
+and serves it from there afterwards. In practice `okf profile list` costs one
+network fetch ever. The pin also means a later `okf-profiles` release cannot
+silently change what okf reports; moving to a newer tag means changing the URL
+and the hash together.
+
+### Inspecting one profile
+
+```bash
+okf profile show documentation.architectureDecisions --registry /path/to/okf-profiles
+```
+
+```text
+export: documentation.architectureDecisions
+name: architecture-decision-records
+okfVersion: 0.1
+allowUnknownTypes: false
+idField: docId
+frontmatter.required: type, title, docId, status, date
+frontmatter.recommended: description, timestamp, supersedes, supersededBy, originatingPlan
+
+type: Architecture Decision Record
+  pathPattern: *
+  resourceScheme: (none)
+  requireSchemaSection: false
+  schemaColumns: (none)
+  idPrefix: ADR
+
+Use it with:
+  let registry = /path/to/okf-profiles/package.dhall
+  in  registry.documentation.architectureDecisions
+```
+
+Every optional field prints, as `(none)` when absent, so the output shape does
+not shift between profiles and stays reliable to grep. Type rules print in the
+order the profile declares them.
+
+The closing hint is the whole adoption path: there is no `okf profile install`,
+because `okf validate --profile` already accepts any Dhall file. Save those two
+lines as `house-profile.dhall` and pass it:
+
+```bash
+okf validate ./my-bundle --profile ./house-profile.dhall
+```
+
+Both commands also accept `--json`, so scripts and agents consume the same data.
+`profile list --json` wraps the entries with the reference that produced them
+(`{ "registry": …, "profiles": [ { "export": …, "profile": … } ] }`);
+`profile show --json` emits the profile object alone. Note that the JSON key for
+a type rule's name is `type`, matching the Dhall field.
+
+
 ## Document IDs
 
 A document ID is a short, stable handle such as `ADR-7`. The canonical OKF

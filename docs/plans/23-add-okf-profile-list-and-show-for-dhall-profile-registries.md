@@ -52,11 +52,12 @@ network access at all:
 
 ```text
 $ okf profile list --registry /Users/shinzui/Keikaku/bokuno/okf-profiles
-EXPORT                            NAME                                   OKF  TYPES  ID FIELD
-coordination.improvementRequests  cross-repository-improvement-requests  0.1      1  requestId
-documentation.patternCatalog      mori-documentation-pattern-catalog     0.1      8  -
-postgresql                        shinzui-postgresql                     0.1      3  -
-tanPostgresql                     tan-postgresql                         0.1      4  -
+EXPORT                               NAME                                   OKF  TYPES  ID FIELD
+coordination.improvementRequests     cross-repository-improvement-requests  0.1      1  requestId
+documentation.architectureDecisions  architecture-decision-records          0.1      1  docId
+documentation.patternCatalog         mori-documentation-pattern-catalog     0.1      8  -
+postgresql                           shinzui-postgresql                     0.1      3  -
+tanPostgresql                        tan-postgresql                         0.1      4  -
 ```
 
 and against the published, hash-pinned registry over the network (cached by Dhall after the
@@ -64,10 +65,13 @@ first fetch, so later runs are offline):
 
 ```text
 $ okf profile list
-EXPORT                            NAME                                   OKF  TYPES  ID FIELD
-coordination.improvementRequests  cross-repository-improvement-requests  0.1      1  requestId
+EXPORT                               NAME                                   OKF  TYPES  ID FIELD
+coordination.improvementRequests     cross-repository-improvement-requests  0.1      1  requestId
 …
 ```
+
+(Both transcripts were re-run at implementation time against `okf-profiles` v0.4.2, which
+publishes five profiles; the plan was written against v0.3.0, which published four.)
 
 This plan does **not** add a way to install, vendor, or attach a registry profile to a
 bundle. Discovery and inspection only; `okf validate --profile` keeps taking a path or a
@@ -90,8 +94,8 @@ in the Decision Log.
       (2026-07-26)
 - [x] Milestone 5: `okf profile show [EXPORT]` prints one profile in full, in text and
       `--json` form. (2026-07-26)
-- [ ] Milestone 6: Documentation, embedded help, changelogs, and ADR 3 written; full test
-      suite green; end-to-end walkthrough reproduced from a clean shell.
+- [x] Milestone 6: Documentation, embedded help, changelogs, and ADR 3 written; full test
+      suite green; end-to-end walkthrough reproduced from a clean shell. (2026-07-26)
 
 
 ## Surprises & Discoveries
@@ -252,7 +256,57 @@ commands are reproducible.
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+Completed 2026-07-26, all six milestones, in five commits (Milestones 4 and 5 shipped
+together, since the plan required the `ProfileCommand` sum type to carry both constructors
+from the start).
+
+**What shipped.** `okf profile list` and `okf profile show`, in text and `--json` form, over
+a new `Okf.Profile.Registry` in okf-core; `ToJSON` for the three profile records; a
+`profiles.registry` configuration setting with a legacy-tolerant decoder; user documentation,
+CLI reference, embedded help, README, both changelogs, and
+[docs/adr/3-profile-registries.md](../adr/3-profile-registries.md).
+
+**Verified.** `cabal test all` green (both suites, offline). Every acceptance command in
+Validation and Acceptance was run and its output pasted into this plan or the documentation,
+including the failure paths (`exit=1` for a missing registry, an unknown export, and an
+omitted `EXPORT` against a multi-profile registry) and the `/tmp` legacy-config walkthrough.
+`okf validate examples/postgresql-sample --profile docs/profiles/postgresql.dhall` still
+prints `OK: 2 concepts`.
+
+**Not verified as stated.** The plan asserts the pinned default registry lists successfully
+"with the network unplugged". The pinned URL was fetched, cached, and re-listed from cache,
+but no run was made with networking actually disabled — that claim rests on Dhall's
+documented cache behavior, not on an observation made here.
+
+**What the plan got right.** The pre-implementation spike carried its weight: `Dhall.rawInput`
+at `f ~ Maybe` was exactly the non-throwing predicate needed, so enumeration is a pure
+function over an already-evaluated expression and the interesting logic is unit-testable with
+no IO. Specifying the fixture registry as a deliberate mix of shapes (profile, nested
+namespace, schema record, plain string) meant the walk was exercised on every case it must
+handle on the first run.
+
+**What the plan missed.** Three things, all small and all caught by running the commands:
+
+- The `Use it with:` hint has to render a Dhall *import*, not the reference as typed — a bare
+  relative path does not parse as a Dhall import. `renderProfileUsage` now takes the resolved
+  `RegistryRef` and prefixes `./` when needed.
+- `okf-profiles` had moved from v0.3.0 to v0.4.2, so every four-row transcript was stale and
+  the built-in default would have shipped two releases behind.
+- `docs/user/cli.md`'s "the help output lists these commands" block was already stale
+  (missing `config`, `kit`, `assist`); adding `profile` to a list that claims to mirror
+  `okf --help` meant fixing the rest of it.
+
+**Deliberately left undone.** No command installs or vendors a profile into a project. `okf
+profile show` closes with the snippet, and `okf validate --profile` already accepts any Dhall
+file, so the manual path is two lines. A writing command needs its own overwrite and
+idempotence rules and deserves its own plan.
+
+**Durable context promoted.** [ADR 3](../adr/3-profile-registries.md) records what a registry
+is, why discovery is structural rather than manifest-driven (and why the `okf kit` pattern was
+rejected), that the okf → okf-profiles dependency stays one-way, that the default registry's
+tag and hash move as a pair, why listings carry no description, and the new general obligation
+that any future field added to the CLI configuration record must extend the legacy fallback
+chain.
 
 
 ## Context and Orientation
@@ -817,10 +871,11 @@ Tests to add to `okf-cli/test/Main.hs`:
   plus two rows with the expected padding, and a root entry renders as `(root)`.
 
 Acceptance: from the repository root, `cabal run okf -- profile list --registry
-/Users/shinzui/Keikaku/bokuno/okf-profiles` prints the four-row table shown in Purpose;
+/Users/shinzui/Keikaku/bokuno/okf-profiles` prints the table shown in Purpose;
 `cabal run okf -- profile list --registry docs/profiles/postgresql.dhall` prints one row
 whose export column reads `(root)`; `cabal run okf -- profile list --json --registry
-/Users/shinzui/Keikaku/bokuno/okf-profiles | jq '.profiles | length'` prints `4`.
+/Users/shinzui/Keikaku/bokuno/okf-profiles | jq '.profiles | length'` prints the profile
+count (`5` against v0.4.2).
 
 ### Milestone 5 — `okf profile show`
 
@@ -889,7 +944,7 @@ test that `renderProfileDetail` over a hand-built `ProfileSpec` containing one t
 Acceptance: `cabal run okf -- profile show coordination.improvementRequests --registry
 /Users/shinzui/Keikaku/bokuno/okf-profiles` prints the block above; `cabal run okf -- profile
 show nope --registry /Users/shinzui/Keikaku/bokuno/okf-profiles` prints the error with the
-four available exports and exits 1 (check with `echo $?`); `cabal run okf -- profile show
+available exports and exits 1 (check with `echo $?`); `cabal run okf -- profile show
 --registry docs/profiles/postgresql.dhall` prints the single root profile without needing an
 EXPORT argument.
 
@@ -1081,7 +1136,7 @@ OKF_PROFILE_REGISTRY=/Users/shinzui/Keikaku/bokuno/okf-profiles cabal run okf --
 cabal run okf -- profile list
 ```
 
-The first prints the four-row table; the second prints a single row whose EXPORT column is
+The first prints the table; the second prints a single row whose EXPORT column is
 `(root)`; the third prints one JSON object; the fourth proves the environment variable is
 honored; the last exercises the built-in default and is the only one that may touch the
 network (once — afterwards Dhall serves it from `~/.cache/dhall`).
@@ -1164,9 +1219,10 @@ disabled or simply against a local path:
 cabal run okf -- profile list --registry /Users/shinzui/Keikaku/bokuno/okf-profiles
 ```
 
-prints a header row and exactly four rows, one per published profile, sorted by export path,
-with `coordination.improvementRequests` showing `requestId` in the ID FIELD column and the
-other three showing `-`.
+prints a header row and one row per published profile, sorted by export path, with
+`coordination.improvementRequests` showing `requestId` in the ID FIELD column and every
+profile that declares no `idField` showing `-`. Against `okf-profiles` v0.4.2 that is five
+rows.
 
 **Listing works against the published, pinned registry.**
 
@@ -1174,7 +1230,7 @@ other three showing `-`.
 cabal run okf -- profile list
 ```
 
-prints the same four rows. Running it a second time with the network unplugged also prints
+prints the same rows. Running it a second time with the network unplugged also prints
 them, because the hash-pinned import is cached under `~/.cache/dhall`.
 
 **A registry reference that is itself a profile lists as one root entry.**
@@ -1203,7 +1259,7 @@ cabal run okf -- profile list --json --registry /Users/shinzui/Keikaku/bokuno/ok
 cabal run okf -- profile show postgresql --json --registry /Users/shinzui/Keikaku/bokuno/okf-profiles | jq -r '.types[0].type'
 ```
 
-The first prints the five export paths; the second prints `PostgreSQL Schema`, the first type
+The first prints the export paths; the second prints `PostgreSQL Schema`, the first type
 rule the profile declares — confirming the JSON key is `type`, not `type_`.
 
 **Failures are informative and correctly coded.**
@@ -1213,7 +1269,7 @@ cabal run okf -- profile list --registry /nonexistent/registry.dhall; echo "exit
 cabal run okf -- profile show nope --registry /Users/shinzui/Keikaku/bokuno/okf-profiles; echo "exit=$?"
 ```
 
-Both print an explanatory message to stderr and report `exit=1`; the second lists the four
+Both print an explanatory message to stderr and report `exit=1`; the second lists the
 available exports.
 
 **Existing configuration files keep working.** The `/tmp/okf-legacy-config` walkthrough in
