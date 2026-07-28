@@ -83,6 +83,8 @@ main = do
         testIO "fixture dangling link reports a bundle validation error" testFixtureDanglingLink,
         testIO "loadProfileFile decodes the postgresql fixture" testLoadProfileFixture,
         testIO "loadProfileFile decodes record-completed document ID rules" testLoadDocumentIdProfileFixture,
+        testIO "loadProfileFile still accepts an okf 0.2.x descriptor" testLoadLegacyProfileFixture,
+        testIO "profileFieldDescription finds required and recommended prose" testProfileFieldDescription,
         testIO "profile JSON encoding emits type, not type_" testProfileJsonShape,
         testIO "loadRegistry enumerates nested profiles and skips non-profiles" testRegistryEnumeratesProfiles,
         testIO "loadRegistry reports a bare profile as a root entry" testRegistryRootProfile,
@@ -759,11 +761,29 @@ testLoadProfileFixture = do
     Left err -> Left ("failed to load profile: " <> err)
     Right spec -> do
       assertEqual "shinzui-postgresql" (spec ^. #name)
+      assertEqual
+        (Just "Conventions for documenting a PostgreSQL database as an OKF bundle.")
+        (spec ^. #description)
       assertEqual False (spec ^. #allowUnknownTypes)
-      assertEqual ["type", "title"] (spec ^. #frontmatter . #required)
+      assertEqual ["type", "title"] (map (^. #field) (spec ^. #frontmatter . #required))
+      assertEqual
+        [ Just "The OKF concept type; must be one of the type rules below.",
+          Just "Human-readable name of the object, as a reader would say it."
+        ]
+        (map (^. #description) (spec ^. #frontmatter . #required))
+      -- `timestamp` is written with bare record completion, so it carries no prose.
+      assertEqual
+        [ Just "One or two sentences on what this object is for.",
+          Nothing,
+          Just "postgresql:// URI locating the live object."
+        ]
+        (map (^. #description) (spec ^. #frontmatter . #recommended))
       assertEqual
         ["PostgreSQL Schema", "PostgreSQL Table", "PostgreSQL View"]
         (map (^. #type_) (spec ^. #types))
+      assertEqual
+        (Just "One physical table in a schema, including its column list.")
+        (spec ^. #types . to (!! 1) . #description)
 
 testLoadDocumentIdProfileFixture :: IO (Either Text ())
 testLoadDocumentIdProfileFixture = do
@@ -774,6 +794,45 @@ testLoadDocumentIdProfileFixture = do
     Right spec -> do
       assertEqual (Just "docId") (spec ^. #idField)
       assertEqual [Just "ADR"] (map (^. #idPrefix) (spec ^. #types))
+      -- Written with the mk/FieldRule.dhall constructors, which normalize to
+      -- exactly what record completion produces.
+      assertEqual ["type", "title"] (map (^. #field) (spec ^. #frontmatter . #required))
+      assertEqual
+        [Just "The OKF concept type; must be a type rule below.", Nothing]
+        (map (^. #description) (spec ^. #frontmatter . #required))
+
+-- | The backwards-compatibility guarantee: a descriptor frozen in the okf 0.2.x
+-- shape — bare-string frontmatter keys, no descriptions anywhere — still loads,
+-- via the legacy fallback decoder, with every description absent.
+testLoadLegacyProfileFixture :: IO (Either Text ())
+testLoadLegacyProfileFixture = do
+  path <- fixtureFilePath "profiles/legacy-0.2.dhall"
+  result <- loadProfileFile path
+  pure $ case result of
+    Left err -> Left ("failed to load legacy profile: " <> err)
+    Right spec -> do
+      assertEqual "legacy" (spec ^. #name)
+      assertEqual Nothing (spec ^. #description)
+      assertEqual ["type", "title"] (map (^. #field) (spec ^. #frontmatter . #required))
+      assertEqual [Nothing, Nothing] (map (^. #description) (spec ^. #frontmatter . #required))
+      assertEqual ["Legacy Concept"] (map (^. #type_) (spec ^. #types))
+      assertEqual [Nothing] (map (^. #description) (spec ^. #types))
+
+testProfileFieldDescription :: IO (Either Text ())
+testProfileFieldDescription = do
+  path <- fixtureFilePath "profiles/postgresql.dhall"
+  result <- loadProfileFile path
+  pure $ case result of
+    Left err -> Left ("failed to load profile: " <> err)
+    Right spec -> do
+      assertEqual
+        (Just "Human-readable name of the object, as a reader would say it.")
+        (profileFieldDescription spec "title")
+      assertEqual
+        (Just "postgresql:// URI locating the live object.")
+        (profileFieldDescription spec "resource")
+      assertEqual Nothing (profileFieldDescription spec "timestamp")
+      assertEqual Nothing (profileFieldDescription spec "nope")
 
 -- | The JSON encoding is pinned field by field, so a future refactor cannot
 -- silently rename a key. The @type@ key matters most: the Haskell field is
@@ -788,17 +847,36 @@ testProfileJsonShape = do
       assertEqual
         ( object
             [ "name" .= ("decisions" :: Text),
+              "description" .= ("How this team records architectural decisions." :: Text),
               "okfVersion" .= ("0.1" :: Text),
               "allowUnknownTypes" .= False,
               "idField" .= ("docId" :: Text),
               "frontmatter"
                 .= object
-                  [ "required" .= (["type", "title"] :: [Text]),
-                    "recommended" .= ([] :: [Text])
+                  [ "required"
+                      .= [ object
+                             [ "field" .= ("type" :: Text),
+                               "description"
+                                 .= ("The OKF concept type; must be a type rule below." :: Text)
+                             ],
+                           object
+                             [ "field" .= ("title" :: Text),
+                               "description" .= (Nothing :: Maybe Text)
+                             ]
+                         ],
+                    "recommended"
+                      .= [ object
+                             [ "field" .= ("status" :: Text),
+                               "description"
+                                 .= ("One of: proposed, accepted, superseded." :: Text)
+                             ]
+                         ]
                   ],
               "types"
                 .= [ object
                        [ "type" .= ("Decision Record" :: Text),
+                         "description"
+                           .= ("One accepted decision, never edited after acceptance." :: Text),
                          "pathPattern" .= ("decisions/*" :: Text),
                          "resourceScheme" .= (Nothing :: Maybe Text),
                          "requireSchemaSection" .= False,
@@ -820,7 +898,14 @@ testRegistryEnumeratesProfiles = do
   pure $ case loaded of
     Left err -> Left ("failed to load fixture registry: " <> err)
     Right entries -> do
-      assertEqual ["nested.decisions", "postgresql"] (map (^. #export) entries)
+      -- `legacy` is a frozen okf 0.2.x descriptor: it enumerates only because
+      -- the registry walk falls back to the legacy decoder.
+      assertEqual ["legacy", "nested.decisions", "postgresql"] (map (^. #export) entries)
+      case findRegistryEntry "legacy" entries of
+        Nothing -> Left "expected an entry at export path legacy"
+        Just entry -> do
+          assertEqual "legacy" (entry ^. #spec . #name)
+          assertEqual Nothing (entry ^. #spec . #description)
       case findRegistryEntry "postgresql" entries of
         Nothing -> Left "expected an entry at export path postgresql"
         Just entry -> assertEqual "shinzui-postgresql" (entry ^. #spec . #name)
@@ -925,19 +1010,30 @@ testFindConceptsByDocumentId = do
       [firstId, secondId]
       (conceptIdOf <$> findConceptsByDocumentId (Just "docId") "ADR-1" deviationConcepts)
 
+-- | An undocumented frontmatter key: the validation tests care about names, not
+-- prose, and descriptions never affect validation.
+requiredField :: Text -> FieldRule
+requiredField key = FieldRule {field = key, description = Nothing}
+
 -- | A standalone profile literal so the validation tests do not depend on the
 -- Dhall fixture. One rule: PostgreSQL Table, fully constrained.
 testProfileSpec :: ProfileSpec
 testProfileSpec =
   ProfileSpec
     { name = "test-postgresql",
+      description = Nothing,
       okfVersion = "0.1",
-      frontmatter = FrontmatterRules {required = ["type", "title"], recommended = []},
+      frontmatter =
+        FrontmatterRules
+          { required = [requiredField "type", requiredField "title"],
+            recommended = []
+          },
       allowUnknownTypes = False,
       idField = Nothing,
       types =
         [ TypeRule
             { type_ = "PostgreSQL Table",
+              description = Nothing,
               pathPattern = Just "schemas/*/tables/*",
               resourceScheme = Just "postgresql",
               requireSchemaSection = True,
@@ -951,13 +1047,19 @@ testDocumentIdProfileSpec :: ProfileSpec
 testDocumentIdProfileSpec =
   ProfileSpec
     { name = "test-decisions",
+      description = Nothing,
       okfVersion = "0.1",
-      frontmatter = FrontmatterRules {required = ["type", "title"], recommended = []},
+      frontmatter =
+        FrontmatterRules
+          { required = [requiredField "type", requiredField "title"],
+            recommended = []
+          },
       allowUnknownTypes = False,
       idField = Just "docId",
       types =
         [ TypeRule
             { type_ = "Decision Record",
+              description = Nothing,
               pathPattern = Just "decisions/*",
               resourceScheme = Nothing,
               requireSchemaSection = False,

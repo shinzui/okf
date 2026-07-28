@@ -3,7 +3,8 @@ let TypeRuleType = ../TypeRule.dhall
 
 in  { Type = TypeRuleType
     , default =
-      { pathPattern = None Text
+      { description = None Text
+      , pathPattern = None Text
       , resourceScheme = None Text
       , requireSchemaSection = False
       , schemaColumns = [] : List Text

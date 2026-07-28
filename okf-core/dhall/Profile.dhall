@@ -11,11 +11,15 @@
 --
 -- `idField = Some "docId"` names the frontmatter key that holds stable document
 -- handles.  `None Text` disables every document-ID check.
+--
+-- `description` documents the profile as a whole, in prose, for whoever has to
+-- read or adopt it. Like every description in this schema it is documentary only.
 let TypeRule = ./TypeRule.dhall
 
 let FrontmatterRules = ./FrontmatterRules.dhall
 
 in  { name : Text
+    , description : Optional Text
     , okfVersion : Text
     , frontmatter : FrontmatterRules
     , allowUnknownTypes : Bool

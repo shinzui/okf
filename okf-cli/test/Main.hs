@@ -13,7 +13,7 @@ import Okf.Cli.Fzf.Selector (conceptCandidates, conceptPreviewCommand, parseBund
 import Okf.Cli.Help (HelpTopic (..), helpTopics)
 import Okf.ConceptId (parseConceptId)
 import Okf.Document (parseDocument)
-import Okf.Profile (FrontmatterRules (..), ProfileSpec (..), TypeRule (..))
+import Okf.Profile (FieldRule (..), FrontmatterRules (..), ProfileSpec (..), TypeRule (..))
 import Okf.Profile.Registry (RegistryEntry (..))
 import Options.Applicative
 import System.Directory (createDirectoryIfMissing, getCurrentDirectory, getTemporaryDirectory, removeDirectoryRecursive, withCurrentDirectory)
@@ -196,6 +196,7 @@ main = do
             (ProfileShow (ProfileShowOptions Nothing Nothing False)),
           renderRegistryTable sampleRegistryEntries == sampleRegistryTable,
           renderProfileDetail "nested.decisions" sampleDecisionsProfile == sampleProfileDetail,
+          renderProfileDetail "" samplePostgresqlProfile == sampleUndocumentedProfileDetail,
           parseShowsInfo ["--version"],
           parseFails ["hello"],
           logAddWrites,
@@ -247,24 +248,34 @@ sampleRegistryEntries =
     RegistryEntry {export = "nested.decisions", spec = sampleDecisionsProfile}
   ]
 
+-- | @DESCRIPTION@ is last and unpadded; the postgresql sample has none, so the
+-- @-@ placeholder appears there as well as in @ID FIELD@.
 sampleRegistryTable :: [Text.Text]
 sampleRegistryTable =
-  [ "EXPORT            NAME                OKF  TYPES  ID FIELD",
-    "(root)            shinzui-postgresql  0.1      1  -",
-    "nested.decisions  decisions           0.1      1  docId"
+  [ "EXPORT            NAME                OKF  TYPES  ID FIELD  DESCRIPTION",
+    "(root)            shinzui-postgresql  0.1      1  -         -",
+    "nested.decisions  decisions           0.1      1  docId     How this team records architectural decisions."
   ]
 
+-- | A profile with no descriptions anywhere — the shape an okf 0.2.x descriptor
+-- upgrades into.
 samplePostgresqlProfile :: ProfileSpec
 samplePostgresqlProfile =
   ProfileSpec
     { name = "shinzui-postgresql",
+      description = Nothing,
       okfVersion = "0.1",
-      frontmatter = FrontmatterRules {required = ["type", "title"], recommended = []},
+      frontmatter =
+        FrontmatterRules
+          { required = [undocumentedField "type", undocumentedField "title"],
+            recommended = []
+          },
       allowUnknownTypes = False,
       idField = Nothing,
       types =
         [ TypeRule
             { type_ = "PostgreSQL Table",
+              description = Nothing,
               pathPattern = Just "schemas/*/tables/*",
               resourceScheme = Just "postgresql",
               requireSchemaSection = True,
@@ -278,13 +289,25 @@ sampleDecisionsProfile :: ProfileSpec
 sampleDecisionsProfile =
   ProfileSpec
     { name = "decisions",
+      description = Just "How this team records architectural decisions.",
       okfVersion = "0.1",
-      frontmatter = FrontmatterRules {required = ["type", "title"], recommended = []},
+      frontmatter =
+        FrontmatterRules
+          { required =
+              [ FieldRule
+                  { field = "type",
+                    description = Just "The OKF concept type; must be a type rule below."
+                  },
+                undocumentedField "title"
+              ],
+            recommended = []
+          },
       allowUnknownTypes = False,
       idField = Just "docId",
       types =
         [ TypeRule
             { type_ = "Decision Record",
+              description = Just "One accepted decision, never edited after acceptance.",
               pathPattern = Just "decisions/*",
               resourceScheme = Nothing,
               requireSchemaSection = False,
@@ -294,24 +317,57 @@ sampleDecisionsProfile =
         ]
     }
 
+undocumentedField :: Text.Text -> FieldRule
+undocumentedField key = FieldRule {field = key, description = Nothing}
+
 -- | Every optional field prints, as @(none)@ when absent, so the shape does not
--- shift between profiles.
+-- shift between profiles. A non-empty frontmatter list becomes a headed block,
+-- one key per line, since per-field prose cannot share a comma-joined line.
 sampleProfileDetail :: [Text.Text]
 sampleProfileDetail =
   [ "export: nested.decisions",
     "name: decisions",
+    "description: How this team records architectural decisions.",
     "okfVersion: 0.1",
     "allowUnknownTypes: false",
     "idField: docId",
-    "frontmatter.required: type, title",
+    "frontmatter.required:",
+    "  - type: The OKF concept type; must be a type rule below.",
+    "  - title: (none)",
     "frontmatter.recommended: (none)",
     "",
     "type: Decision Record",
+    "  description: One accepted decision, never edited after acceptance.",
     "  pathPattern: decisions/*",
     "  resourceScheme: (none)",
     "  requireSchemaSection: false",
     "  schemaColumns: (none)",
     "  idPrefix: ADR"
+  ]
+
+-- | A profile carrying no descriptions at all still prints every line, so the
+-- output shape does not shift between an okf 0.2.x descriptor and a documented
+-- one.
+sampleUndocumentedProfileDetail :: [Text.Text]
+sampleUndocumentedProfileDetail =
+  [ "export: (root)",
+    "name: shinzui-postgresql",
+    "description: (none)",
+    "okfVersion: 0.1",
+    "allowUnknownTypes: false",
+    "idField: (none)",
+    "frontmatter.required:",
+    "  - type: (none)",
+    "  - title: (none)",
+    "frontmatter.recommended: (none)",
+    "",
+    "type: PostgreSQL Table",
+    "  description: (none)",
+    "  pathPattern: schemas/*/tables/*",
+    "  resourceScheme: postgresql",
+    "  requireSchemaSection: true",
+    "  schemaColumns: Column, Type",
+    "  idPrefix: (none)"
   ]
 
 parseProfileMatches :: [String] -> ProfileCommand -> Bool

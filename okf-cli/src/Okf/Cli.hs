@@ -66,6 +66,7 @@ import Okf.Profile
     loadProfileFile,
     nextDocumentId,
     parseDocumentId,
+    profileFieldDescription,
     renderDocumentId,
     validateProfile,
   )
@@ -569,39 +570,35 @@ registryListJson reference entries =
 
 -- | An aligned table: a header row plus one row per profile, columns padded to
 -- their widest value. Pure so it can be tested without evaluating any Dhall.
+--
+-- @DESCRIPTION@ comes last so the existing columns keep their positions and a
+-- long description cannot push anything off the right edge. Nothing follows it,
+-- so it is never padded; an absent description reads @-@, matching @ID FIELD@.
 renderRegistryTable :: [RegistryEntry] -> [Text]
 renderRegistryTable entries =
-  map renderRow (headerRow : map entryRow entries)
+  map renderRow rows
   where
-    headerRow = ("EXPORT", "NAME", "OKF", "TYPES", "ID FIELD")
+    headerRow = ["EXPORT", "NAME", "OKF", "TYPES", "ID FIELD", "DESCRIPTION"]
     entryRow
       RegistryEntry
         { export = exportPath,
-          spec = ProfileSpec {name, okfVersion, idField, types = typeRules}
+          spec = ProfileSpec {name, description, okfVersion, idField, types = typeRules}
         } =
-        ( displayExport exportPath,
+        [ displayExport exportPath,
           name,
           okfVersion,
           Text.pack (show (length typeRules)),
-          fromMaybe "-" idField
-        )
+          fromMaybe "-" idField,
+          fromMaybe "-" description
+        ]
 
     rows = headerRow : map entryRow entries
-    exportWidth = widest (\(cell, _, _, _, _) -> cell)
-    nameWidth = widest (\(_, cell, _, _, _) -> cell)
-    okfWidth = widest (\(_, _, cell, _, _) -> cell)
-    typesWidth = widest (\(_, _, _, cell, _) -> cell)
-    widest project = maximum (0 : map (Text.length . project) rows)
 
-    renderRow (exportValue, nameValue, okfValue, typesValue, idValue) =
-      Text.intercalate
-        "  "
-        [ padRight exportWidth exportValue,
-          padRight nameWidth nameValue,
-          padLeft okfWidth okfValue,
-          padLeft typesWidth typesValue,
-          idValue
-        ]
+    -- One padder per column, in order; the last column is left as it is.
+    padders = [padRight, padRight, padLeft, padLeft, padRight, \_ cell -> cell]
+    widths = [maximum (0 : map (Text.length . (!! column)) rows) | column <- [0 .. 5]]
+
+    renderRow cells = Text.intercalate "  " (zipWith3 id padders widths cells)
 
     padRight width cell = cell <> Text.replicate (max 0 (width - Text.length cell)) " "
     padLeft width cell = Text.replicate (max 0 (width - Text.length cell)) " " <> cell
@@ -661,6 +658,7 @@ renderProfileDetail
   exportPath
   ProfileSpec
     { name,
+      description,
       okfVersion,
       frontmatter = FrontmatterRules {required, recommended},
       allowUnknownTypes,
@@ -669,17 +667,29 @@ renderProfileDetail
     } =
     [ "export: " <> displayExport exportPath,
       "name: " <> name,
+      "description: " <> renderOptional description,
       "okfVersion: " <> okfVersion,
       "allowUnknownTypes: " <> renderFlag allowUnknownTypes,
-      "idField: " <> renderOptional idField,
-      "frontmatter.required: " <> renderList required,
-      "frontmatter.recommended: " <> renderList recommended
+      "idField: " <> renderOptional idField
     ]
+      <> renderFieldRules "frontmatter.required" required
+      <> renderFieldRules "frontmatter.recommended" recommended
       <> concatMap renderTypeRule typeRules
     where
+      -- A field's prose cannot share a comma-joined line with its neighbours, so
+      -- a non-empty list becomes a headed block. An empty list keeps the
+      -- single-line @(none)@ form the other optional fields use.
+      renderFieldRules label [] = [label <> ": " <> renderList []]
+      renderFieldRules label rules =
+        (label <> ":")
+          : [ "  - " <> rule ^. #field <> ": " <> renderOptional (rule ^. #description)
+            | rule <- rules
+            ]
+
       renderTypeRule
         TypeRule
           { type_ = ruleType,
+            description = ruleDescription,
             pathPattern,
             resourceScheme,
             requireSchemaSection,
@@ -688,6 +698,7 @@ renderProfileDetail
           } =
           [ "",
             "type: " <> ruleType,
+            "  description: " <> renderOptional ruleDescription,
             "  pathPattern: " <> renderOptional pathPattern,
             "  resourceScheme: " <> renderOptional resourceScheme,
             "  requireSchemaSection: " <> renderFlag requireSchemaSection,
@@ -744,7 +755,7 @@ runValidate ValidateOptions {bundlePath, strictMode, profilePath, profileEnforce
         Left err -> dieText ("Failed to load profile " <> Text.pack path <> ": " <> err)
         Right spec -> do
           let violations = validateProfile spec concepts
-          mapM_ (Text.IO.hPutStrLn stderr . ("profile: " <>) . renderProfileViolation) violations
+          mapM_ (Text.IO.hPutStrLn stderr . ("profile: " <>) . renderProfileViolation spec) violations
           pure violations
 
   let coreFailed = any bundleValidationErrorIsFailure coreErrors
@@ -1083,12 +1094,18 @@ bundleValidationErrorIsFailure = \case
 bundleValidationErrorIsAdvisory :: BundleValidationError -> Bool
 bundleValidationErrorIsAdvisory = not . bundleValidationErrorIsFailure
 
-renderProfileViolation :: ProfileViolation -> Text
-renderProfileViolation = \case
+-- | One deviation as one line. The 'ProfileSpec' is here only so a missing
+-- required field can carry the profile's own explanation of what that field is
+-- for; every other case ignores it.
+renderProfileViolation :: ProfileSpec -> ProfileViolation -> Text
+renderProfileViolation spec = \case
   TypeNotInProfile cid ctype ->
     renderConceptId cid <> ": type not in profile vocabulary: " <> ctype
   MissingProfileField cid key ->
-    renderConceptId cid <> ": missing profile-required field: " <> key
+    renderConceptId cid
+      <> ": missing profile-required field: "
+      <> key
+      <> maybe "" (\prose -> " (" <> prose <> ")") (profileFieldDescription spec key)
   PathPatternMismatch cid ctype patternText ->
     renderConceptId cid <> ": " <> ctype <> " must match path pattern: " <> patternText
   MissingResource cid ctype scheme ->

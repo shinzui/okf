@@ -36,7 +36,7 @@ import Dhall.Core (Expr (RecordLit), recordFieldValue)
 import Dhall.Map qualified
 import Dhall.Src (Src)
 import Okf.Prelude
-import Okf.Profile (ProfileSpec)
+import Okf.Profile (ProfileSpec, decodeProfileExpr)
 import System.Directory (doesDirectoryExist, doesFileExist)
 import System.FilePath (takeDirectory, (</>))
 import "generic-lens" Data.Generics.Labels ()
@@ -160,12 +160,14 @@ registryEntries expression = List.sortOn (^. #export) (walk "" expression)
       isJust (Dhall.Map.lookup "Type" fields)
         && isJust (Dhall.Map.lookup "default" fields)
 
--- | Does this expression decode as a profile? Uses 'Dhall.rawInput' at
--- @f ~ Maybe@, which normalizes, runs the decoder's extractor, and yields
--- 'Nothing' on mismatch — it cannot throw, which is what lets enumeration be a
--- pure function over an already-evaluated expression.
+-- | Does this expression decode as a profile? Delegates to
+-- 'Okf.Profile.decodeProfileExpr', which tries the current schema and then the
+-- okf 0.2.x one, so a registry written before field descriptions existed — the
+-- published @okf-profiles@ package included — still enumerates. It cannot
+-- throw, which is what lets enumeration be a pure function over an
+-- already-evaluated expression.
 profileAt :: Expr Src Void -> Maybe ProfileSpec
-profileAt = Dhall.rawInput Dhall.auto
+profileAt = decodeProfileExpr
 
 -- | Look up an entry by its exact export path.
 findRegistryEntry :: Text -> [RegistryEntry] -> Maybe RegistryEntry

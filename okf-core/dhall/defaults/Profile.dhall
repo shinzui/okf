@@ -7,7 +7,8 @@ let TypeRule = ../TypeRule.dhall
 
 in  { Type = ProfileType
     , default =
-      { okfVersion = "0.1"
+      { description = None Text
+      , okfVersion = "0.1"
       , frontmatter = FrontmatterRules.default
       , allowUnknownTypes = True
       , idField = None Text

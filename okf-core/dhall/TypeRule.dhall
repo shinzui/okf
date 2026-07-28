@@ -8,7 +8,11 @@
 --
 -- `idPrefix = Some "ADR"` means concepts governed by this rule are expected to
 -- carry a handle of the form `ADR-<number>` in the profile's ID field.
+--
+-- `description` explains, in prose, what this concept type is for. It is
+-- documentary only and is never checked against a bundle.
 { type : Text
+, description : Optional Text
 , pathPattern : Optional Text
 , resourceScheme : Optional Text
 , requireSchemaSection : Bool

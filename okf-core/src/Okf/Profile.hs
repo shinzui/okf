@@ -13,8 +13,11 @@ module Okf.Profile
   ( -- * Descriptor
     ProfileSpec (..),
     FrontmatterRules (..),
+    FieldRule (..),
     TypeRule (..),
     loadProfileFile,
+    decodeProfileExpr,
+    profileFieldDescription,
 
     -- * Validation
     DocumentId (..),
@@ -37,8 +40,11 @@ import Data.Char (isAsciiLower, isAsciiUpper)
 import Data.List qualified as List
 import Data.Text qualified as Text
 import Data.Text.Read qualified as Text.Read
+import Data.Void (Void)
 import Dhall (FromDhall (..), auto, genericAutoWith)
 import Dhall qualified
+import Dhall.Core (Expr)
+import Dhall.Src (Src)
 import Numeric.Natural (Natural)
 import Okf.Bundle
   ( Concept,
@@ -52,9 +58,12 @@ import Okf.Document (Frontmatter, frontmatterLookup)
 import Okf.Prelude hiding ((.=))
 import "generic-lens" Data.Generics.Labels ()
 
--- | A complete house profile.
+-- | A complete house profile. @description@ is prose documenting the profile as
+-- a whole; like every description in this module it is never checked against a
+-- bundle and can never produce a 'ProfileViolation'.
 data ProfileSpec = ProfileSpec
   { name :: !Text,
+    description :: !(Maybe Text),
     okfVersion :: !Text,
     frontmatter :: !FrontmatterRules,
     allowUnknownTypes :: !Bool,
@@ -66,8 +75,17 @@ data ProfileSpec = ProfileSpec
 
 -- | Frontmatter keys the profile expects on every concept.
 data FrontmatterRules = FrontmatterRules
-  { required :: ![Text],
-    recommended :: ![Text]
+  { required :: ![FieldRule],
+    recommended :: ![FieldRule]
+  }
+  deriving stock (Generic, Eq, Show)
+  deriving anyclass (FromDhall)
+
+-- | One documented frontmatter key. The description is prose for humans and is
+-- never checked against a bundle.
+data FieldRule = FieldRule
+  { field :: !Text,
+    description :: !(Maybe Text)
   }
   deriving stock (Generic, Eq, Show)
   deriving anyclass (FromDhall)
@@ -75,6 +93,7 @@ data FrontmatterRules = FrontmatterRules
 -- | One rule per allowed concept @type@ string.
 data TypeRule = TypeRule
   { type_ :: !Text,
+    description :: !(Maybe Text),
     pathPattern :: !(Maybe Text),
     resourceScheme :: !(Maybe Text),
     requireSchemaSection :: !Bool,
@@ -99,9 +118,10 @@ instance FromDhall TypeRule where
 -- importantly, so 'TypeRule' emits @type@ rather than the Haskell field name
 -- @type_@ — matching the Dhall field and how 'Okf.Graph.Node' already encodes.
 instance ToJSON ProfileSpec where
-  toJSON ProfileSpec {name, okfVersion, frontmatter, allowUnknownTypes, idField, types = typeRules} =
+  toJSON ProfileSpec {name, description, okfVersion, frontmatter, allowUnknownTypes, idField, types = typeRules} =
     object
       [ "name" .= name,
+        "description" .= description,
         "okfVersion" .= okfVersion,
         "allowUnknownTypes" .= allowUnknownTypes,
         "idField" .= idField,
@@ -116,10 +136,15 @@ instance ToJSON FrontmatterRules where
         "recommended" .= recommended
       ]
 
+instance ToJSON FieldRule where
+  toJSON FieldRule {field, description} =
+    object ["field" .= field, "description" .= description]
+
 instance ToJSON TypeRule where
   toJSON
     TypeRule
       { type_ = ruleType,
+        description,
         pathPattern,
         resourceScheme,
         requireSchemaSection,
@@ -128,6 +153,7 @@ instance ToJSON TypeRule where
       } =
       object
         [ "type" .= ruleType,
+          "description" .= description,
           "pathPattern" .= pathPattern,
           "resourceScheme" .= resourceScheme,
           "requireSchemaSection" .= requireSchemaSection,
@@ -135,12 +161,126 @@ instance ToJSON TypeRule where
           "idPrefix" .= idPrefix
         ]
 
+-- | The okf 0.2.x profile record: frontmatter keys were bare strings and
+-- nothing carried a description. Decoded only as a fallback, so descriptors
+-- written before descriptions existed keep loading unchanged. Deliberately
+-- private and deliberately frozen — it is a record of a retired shape, not a
+-- second profile model. Exercised by
+-- @okf-core\/test\/fixtures\/profiles\/legacy-0.2.dhall@.
+data LegacyProfileSpec = LegacyProfileSpec
+  { name :: !Text,
+    okfVersion :: !Text,
+    frontmatter :: !LegacyFrontmatterRules,
+    allowUnknownTypes :: !Bool,
+    idField :: !(Maybe Text),
+    types :: ![LegacyTypeRule]
+  }
+  deriving stock (Generic, Eq, Show)
+  deriving anyclass (FromDhall)
+
+-- | The okf 0.2.x frontmatter record: two lists of bare key names.
+data LegacyFrontmatterRules = LegacyFrontmatterRules
+  { required :: ![Text],
+    recommended :: ![Text]
+  }
+  deriving stock (Generic, Eq, Show)
+  deriving anyclass (FromDhall)
+
+-- | The okf 0.2.x per-@type@ rule: today's 'TypeRule' without @description@.
+data LegacyTypeRule = LegacyTypeRule
+  { type_ :: !Text,
+    pathPattern :: !(Maybe Text),
+    resourceScheme :: !(Maybe Text),
+    requireSchemaSection :: !Bool,
+    schemaColumns :: ![Text],
+    idPrefix :: !(Maybe Text)
+  }
+  deriving stock (Generic, Eq, Show)
+
+instance FromDhall LegacyTypeRule where
+  autoWith _normalizer =
+    genericAutoWith
+      (Dhall.defaultInterpretOptions {Dhall.fieldModifier = stripTrailingUnderscore})
+    where
+      stripTrailingUnderscore fieldName =
+        fromMaybe fieldName (Text.stripSuffix "_" fieldName)
+
+-- | Lift a 0.2.x profile into the current shape by attaching no descriptions.
+upgradeLegacyProfile :: LegacyProfileSpec -> ProfileSpec
+upgradeLegacyProfile legacy =
+  ProfileSpec
+    { name = legacy ^. #name,
+      description = Nothing,
+      okfVersion = legacy ^. #okfVersion,
+      frontmatter =
+        FrontmatterRules
+          { required = map undocumented (legacy ^. #frontmatter . #required),
+            recommended = map undocumented (legacy ^. #frontmatter . #recommended)
+          },
+      allowUnknownTypes = legacy ^. #allowUnknownTypes,
+      idField = legacy ^. #idField,
+      types = map upgradeRule (legacy ^. #types)
+    }
+  where
+    undocumented key = FieldRule {field = key, description = Nothing}
+    upgradeRule rule =
+      TypeRule
+        { type_ = rule ^. #type_,
+          description = Nothing,
+          pathPattern = rule ^. #pathPattern,
+          resourceScheme = rule ^. #resourceScheme,
+          requireSchemaSection = rule ^. #requireSchemaSection,
+          schemaColumns = rule ^. #schemaColumns,
+          idPrefix = rule ^. #idPrefix
+        }
+
 -- | Load and decode a Dhall profile descriptor from a file path. Any evaluation
 -- or decoding failure is captured as a human-readable 'Left'.
+--
+-- A descriptor written for okf 0.2.x — bare-string frontmatter keys, no
+-- descriptions anywhere — is accepted by falling back to the legacy decoder and
+-- upgrading the result. When both decoders fail, the /current/ decoder's error
+-- is reported: an author almost always wants to know how their descriptor
+-- differs from today's schema, not from a retired one.
 loadProfileFile :: FilePath -> IO (Either Text ProfileSpec)
-loadProfileFile path =
-  (Right <$> Dhall.inputFile auto path)
-    `catch` \(e :: SomeException) -> pure (Left (Text.pack (show e)))
+loadProfileFile path = do
+  current <- tryDecode (Dhall.inputFile auto path)
+  case current of
+    Right spec -> pure (Right spec)
+    Left currentError -> do
+      legacy <- tryDecode (Dhall.inputFile auto path)
+      pure $ case legacy of
+        Right legacySpec -> Right (upgradeLegacyProfile legacySpec)
+        Left _legacyError -> Left currentError
+  where
+    -- The two 'Dhall.inputFile' calls above look identical but are not: the
+    -- first is used at 'ProfileSpec' and the second at 'LegacyProfileSpec', and
+    -- @auto@ picks its decoder from the result type.
+    tryDecode :: IO a -> IO (Either Text a)
+    tryDecode action =
+      (Right <$> action)
+        `catch` \(exception :: SomeException) -> pure (Left (Text.pack (show exception)))
+
+-- | Does an already-evaluated Dhall expression decode as a profile? Tries the
+-- current schema, then the okf 0.2.x schema, so a registry written before field
+-- descriptions existed — the published @okf-profiles@ package included — still
+-- enumerates. Uses 'Dhall.rawInput', which normalizes and runs the decoder's
+-- extractor without throwing, which is what lets registry enumeration be pure.
+decodeProfileExpr :: Expr Src Void -> Maybe ProfileSpec
+decodeProfileExpr expression =
+  Dhall.rawInput Dhall.auto expression
+    <|> fmap upgradeLegacyProfile (Dhall.rawInput Dhall.auto expression)
+
+-- | The description a profile attaches to a frontmatter key, looking in
+-- @required@ first and then @recommended@. 'Nothing' when the key is
+-- undocumented or absent from the profile entirely.
+profileFieldDescription :: ProfileSpec -> Text -> Maybe Text
+profileFieldDescription spec key =
+  case [rule | rule <- rules, rule ^. #field == key] of
+    (rule : _) -> rule ^. #description
+    [] -> Nothing
+  where
+    rules = spec ^. #frontmatter . #required <> spec ^. #frontmatter . #recommended
 
 -- | A parsed document handle: an ASCII-letter-led alphanumeric prefix and a
 -- positive number, rendered as @PREFIX-N@.
@@ -279,7 +419,7 @@ validateProfile spec concepts =
 
     checkRequiredFields cid concept =
       [ MissingProfileField cid key
-      | key <- spec ^. #frontmatter . #required,
+      | key <- [rule ^. #field | rule <- spec ^. #frontmatter . #required],
         not (hasNonEmptyField key (conceptFrontmatter concept))
       ]
 
