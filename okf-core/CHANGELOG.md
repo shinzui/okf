@@ -18,6 +18,33 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - `ToJSON` instances for `ProfileSpec`, `FrontmatterRules`, and `TypeRule`. A
   type rule's name is emitted under the key `type`, matching the Dhall field
   rather than the Haskell field `type_`.
+- `FieldRule` — `{ field :: Text, description :: Maybe Text }` — one documented
+  frontmatter key, with a `ToJSON` instance emitting `{ "field", "description" }`.
+- `profileFieldDescription :: ProfileSpec -> Text -> Maybe Text`, the prose a
+  profile attaches to a frontmatter key, searching `required` then
+  `recommended`.
+- `decodeProfileExpr :: Expr Src Void -> Maybe ProfileSpec`, which decodes an
+  already-evaluated Dhall expression under the current schema and then the okf
+  0.2.x one. `Okf.Profile.Registry` uses it, so a registry of pre-description
+  profiles still enumerates.
+- Published Dhall: `dhall/FieldRule.dhall`, `dhall/defaults/FieldRule.dhall`,
+  and `dhall/mk/FieldRule.dhall` (constructors `plain` and `documented`), all
+  re-exported from `dhall/package.dhall`, which gains a top-level `mk` record.
+
+### Changed
+
+- **Breaking.** `FrontmatterRules`'s `required` and `recommended` are now
+  `[FieldRule]` rather than `[Text]`, and `ProfileSpec` and `TypeRule` each
+  gained `description :: Maybe Text`. The published Dhall schema changed to
+  match. Code that constructs or pattern-matches these records must be updated.
+- `loadProfileFile` accepts okf 0.2.x descriptors by falling back to a private
+  legacy decoder and upgrading the result with every description set to
+  `Nothing`. When both decoders fail it reports the *current* decoder's error,
+  since that is the schema an author is writing against. The frozen legacy
+  shape is kept exercised by `test/fixtures/profiles/legacy-0.2.dhall`, which
+  must never be updated.
+- `ProfileViolation` and `validateProfile` keep their signatures. Descriptions
+  are documentary: no new constructor, no new check.
 
 ## [0.2.0.0] - 2026-07-26
 

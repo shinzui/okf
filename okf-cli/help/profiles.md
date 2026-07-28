@@ -56,8 +56,27 @@ REGISTRIES
   A bare `okf profile` means `okf profile list`. Both subcommands accept
   --json. The EXPORT column reads "(root)" when the reference is itself a
   profile rather than a record of profiles; the ID FIELD column reads "-" when
-  the profile declares no idField. Listings carry no description, because the
-  profile schema has none.
+  the profile declares no idField.
+
+DESCRIPTIONS
+
+  A profile may document itself: one description for the profile as a whole,
+  one per required or recommended frontmatter key, and one per type rule.
+  Descriptions are prose for humans -- okf never checks one against a bundle
+  and none can produce a deviation.
+
+  `okf profile list` shows the profile's own description in a trailing
+  DESCRIPTION column, reading "-" when it has none. `okf profile show` prints
+  the profile description under the name, one "  - key: prose" line per
+  frontmatter key, and a description line in each type block, all reading
+  "(none)" when absent. When a required key is missing from a concept, the
+  advisory repeats the key's prose in parentheses:
+
+    profile: schemas/sales/tables/orders: missing profile-required field: title (Human-readable name of the object.)
+
+  Descriptions are optional and additive. A descriptor written before they
+  existed loads unchanged and simply shows none; nothing needs migrating. See
+  docs/user/profiles.md for how to add them to a descriptor you already have.
 
   A registry reference may be a path to a Dhall file, a directory holding
   package.dhall, or a Dhall expression such as a hash-pinned URL. Without

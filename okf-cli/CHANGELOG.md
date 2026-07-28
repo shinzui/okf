@@ -11,6 +11,20 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 - An `UPGRADING FROM 0.1.x` section in the `okf help profiles` topic, summarizing
   how to move a 0.1.x profile descriptor onto the 0.2.0.0 schema.
+- Profile descriptions are surfaced everywhere a profile is displayed:
+  `okf profile show` prints the profile's description, a `  - key: prose` line
+  per frontmatter key, and a description line in each type block; `okf profile
+  list` gains a trailing `DESCRIPTION` column reading `-` when absent; and
+  `okf validate --profile` appends the key's prose in parentheses to a
+  `missing profile-required field` advisory. A `DESCRIPTIONS` section in the
+  `okf help profiles` topic covers all of it.
+
+### Changed
+
+- `okf profile show` prints a non-empty `frontmatter.required` or
+  `frontmatter.recommended` as a headed block, one key per line, rather than one
+  comma-joined line — per-key prose cannot share a line. An empty list keeps the
+  single-line `(none)` form, so every optional field still prints.
 
 ## [0.2.0.0] - 2026-07-26
 

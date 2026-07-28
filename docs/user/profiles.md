@@ -36,11 +36,13 @@ OK: 2 concepts
 ```
 
 A deviating bundle prints per-concept advisories, still exits `0`, and ends with a
-summary count:
+summary count. When the profile documents a missing key, the advisory repeats that
+prose in parentheses, so the reader learns what the key was for and not only that
+it is absent:
 
 ```text
 profile: schemas/sales/tables/bad: type not in profile vocabulary: pg table
-profile: schemas/sales/tables/orders: missing profile-required field: title
+profile: schemas/sales/tables/orders: missing profile-required field: title (Human-readable name of the object, as a reader would say it.)
 OK: 3 concepts
 profile: 2 advisory deviation(s) (use --profile-enforce to fail)
 ```
@@ -72,24 +74,41 @@ A profile descriptor is a Dhall record. The shipped example
 PostgreSQL-table convention:
 
 ```dhall
-{ name = "shinzui-postgresql"
-, okfVersion = "0.1"
-, frontmatter =
-  { required = [ "type", "title" ]
-  , recommended = [ "description", "timestamp", "resource" ]
-  }
-, allowUnknownTypes = False
-, idField = None Text
-, types =
-  [ { type = "PostgreSQL Table"
-    , pathPattern = Some "schemas/*/tables/*"
-    , resourceScheme = Some "postgresql"
-    , requireSchemaSection = True
-    , schemaColumns = [ "Column", "Type", "Nullable", "Description" ]
-    , idPrefix = None Text
+let field = ../../okf-core/dhall/mk/FieldRule.dhall
+
+in  { name = "shinzui-postgresql"
+    , description = Some
+        "Conventions for documenting a PostgreSQL database as an OKF bundle."
+    , okfVersion = "0.1"
+    , frontmatter =
+      { required =
+        [ field.documented
+            "type"
+            "The OKF concept type; must be one of the type rules below."
+        , field.documented
+            "title"
+            "Human-readable name of the object, as a reader would say it."
+        ]
+      , recommended =
+        [ field.documented
+            "resource"
+            "postgresql:// URI locating the live object."
+        ]
+      }
+    , allowUnknownTypes = False
+    , idField = None Text
+    , types =
+      [ { type = "PostgreSQL Table"
+        , description = Some
+            "One physical table in a schema, including its column list."
+        , pathPattern = Some "schemas/*/tables/*"
+        , resourceScheme = Some "postgresql"
+        , requireSchemaSection = True
+        , schemaColumns = [ "Column", "Type", "Nullable", "Description" ]
+        , idPrefix = None Text
+        }
+      ]
     }
-  ]
-}
 ```
 
 The fields:
@@ -97,18 +116,32 @@ The fields:
 | Field | Type | Meaning |
 |-------|------|---------|
 | `name` | `Text` | A label for the profile. |
+| `description` | `Optional Text` | Prose documenting the profile as a whole. Shown by `okf profile show` and in the `DESCRIPTION` column of `okf profile list`. Documentary only — never checked against a bundle. |
 | `okfVersion` | `Text` | The OKF version the conventions target. |
-| `frontmatter.required` | `List Text` | Frontmatter keys every concept must have as a non-empty value. A missing or empty key is reported as `missing profile-required field`. |
-| `frontmatter.recommended` | `List Text` | Advisory-only keys; recorded for documentation. Not currently checked. |
+| `frontmatter.required` | `List FieldRule` | Frontmatter keys every concept must have as a non-empty value. A missing or empty key is reported as `missing profile-required field`. |
+| `frontmatter.recommended` | `List FieldRule` | Advisory-only keys; recorded for documentation. Not currently checked. |
 | `allowUnknownTypes` | `Bool` | When `False`, a concept whose `type` is not listed in `types` is reported as `type not in profile vocabulary`. When `True`, unknown types are skipped silently. |
 | `idField` | `Optional Text` | Names the frontmatter key that stores document IDs. `None Text` disables all document-ID checks. |
 | `types` | `List TypeRule` | One rule per allowed `type` string (see below). |
+
+Each `FieldRule` — one frontmatter key, and optionally what it is for:
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `field` | `Text` | The frontmatter key. |
+| `description` | `Optional Text` | Prose explaining what the key should contain. Printed by `okf profile show`, and repeated in the `missing profile-required field` advisory when the key is absent. Documentary only. |
+
+A description is attached to the key it documents rather than kept in a parallel
+list, so it cannot drift away from the rule or outlive it. See
+[writing a `FieldRule`](#writing-a-fieldrule) for the three equivalent ways to
+write one.
 
 Each `TypeRule`:
 
 | Field | Type | Meaning |
 |-------|------|---------|
 | `type` | `Text` | The exact `type` frontmatter string this rule applies to. |
+| `description` | `Optional Text` | Prose explaining what this concept type is for. Documentary only. |
 | `pathPattern` | `Optional Text` | A segment-glob the concept ID must match. `*` matches exactly one segment; a single trailing `**` matches one or more remaining segments; any other segment matches literally. For example `schemas/*/tables/*` matches `schemas/sales/tables/orders`. A mismatch is reported as `must match path pattern`. |
 | `resourceScheme` | `Optional Text` | When set, the concept's `resource:` value must begin with `<scheme>://`. A missing resource is reported as `requires a resource with scheme`; a wrong scheme as `resource must use scheme`. |
 | `requireSchemaSection` | `Bool` | When `True`, the body must contain a `# Schema` heading followed by a GitHub-flavored Markdown table. A missing section is reported as `requires a # Schema section`. |
@@ -132,20 +165,22 @@ okf profile list --registry /path/to/okf-profiles
 ```
 
 ```text
-EXPORT                               NAME                                   OKF  TYPES  ID FIELD
-coordination.improvementRequests     cross-repository-improvement-requests  0.1      1  requestId
-documentation.architectureDecisions  architecture-decision-records          0.1      1  docId
-documentation.patternCatalog         mori-documentation-pattern-catalog     0.1      8  -
-postgresql                           shinzui-postgresql                     0.1      3  -
-tanPostgresql                        tan-postgresql                         0.1      4  -
+EXPORT                               NAME                                   OKF  TYPES  ID FIELD   DESCRIPTION
+coordination.improvementRequests     cross-repository-improvement-requests  0.1      1  requestId  -
+documentation.architectureDecisions  architecture-decision-records          0.1      1  docId      -
+documentation.patternCatalog         mori-documentation-pattern-catalog     0.1      8  -          -
+postgresql                           shinzui-postgresql                     0.1      3  -          -
+tanPostgresql                        tan-postgresql                         0.1      4  -          -
 ```
 
-Listings carry no human-written description. The published profile schema has no
-`description` field, and Dhall records are closed, so adding one is a breaking
-change that must move okf's decoder, okf's published schema, and every descriptor
-in every registry together — the same coordinated change `idField`/`idPrefix`
-required in 0.2.0.0. `okf profile show` compensates by printing the profile's
-full rule set.
+The `DESCRIPTION` column shows the profile's own one-line summary. Descriptions
+are optional and were added after these profiles were published, so every row
+above reads `-`; a profile that declares one shows it. The column comes last so
+a long description cannot push the other columns off the right edge.
+
+A profile that carries no description is not out of date and needs no migration:
+okf reads descriptor shapes both with and without descriptions. `okf profile show`
+prints the full rule set either way.
 
 ### Registry references
 
@@ -192,13 +227,25 @@ okf profile show documentation.architectureDecisions --registry /path/to/okf-pro
 ```text
 export: documentation.architectureDecisions
 name: architecture-decision-records
+description: (none)
 okfVersion: 0.1
 allowUnknownTypes: false
 idField: docId
-frontmatter.required: type, title, docId, status, date
-frontmatter.recommended: description, timestamp, supersedes, supersededBy, originatingPlan
+frontmatter.required:
+  - type: (none)
+  - title: (none)
+  - docId: (none)
+  - status: (none)
+  - date: (none)
+frontmatter.recommended:
+  - description: (none)
+  - timestamp: (none)
+  - supersedes: (none)
+  - supersededBy: (none)
+  - originatingPlan: (none)
 
 type: Architecture Decision Record
+  description: (none)
   pathPattern: *
   resourceScheme: (none)
   requireSchemaSection: false
@@ -213,6 +260,17 @@ Use it with:
 Every optional field prints, as `(none)` when absent, so the output shape does
 not shift between profiles and stays reliable to grep. Type rules print in the
 order the profile declares them.
+
+Each frontmatter list is a headed block with one key per line, because a key's
+description cannot share a comma-joined line with its neighbours. An **empty**
+list keeps the one-line form, `frontmatter.recommended: (none)`. A profile that
+documents its keys reads like this instead:
+
+```text
+frontmatter.required:
+  - type: The OKF concept type; must be one of the type rules below.
+  - title: Human-readable name of the object, as a reader would say it.
+```
 
 The closing hint is the whole adoption path: there is no `okf profile install`,
 because `okf validate --profile` already accepts any Dhall file. Save those two
@@ -251,17 +309,28 @@ let Profile = ../../../dhall/Profile.dhall
 
 let TypeRule = ../../../dhall/defaults/TypeRule.dhall
 
+let field = ../../../dhall/mk/FieldRule.dhall
+
 in  { name = "decisions"
+    , description = Some "How this team records architectural decisions."
     , okfVersion = "0.1"
     , frontmatter =
-      { required = [ "type", "title" ]
-      , recommended = [] : List Text
+      { required =
+        [ field.documented
+            "type"
+            "The OKF concept type; must be a type rule below."
+        , field.plain "title"
+        ]
+      , recommended =
+        [ field.documented "status" "One of: proposed, accepted, superseded." ]
       }
     , allowUnknownTypes = False
     , idField = Some "docId"
     , types =
       [ TypeRule::{
         , type = "Decision Record"
+        , description = Some
+            "One accepted decision, never edited after acceptance."
         , pathPattern = Some "decisions/*"
         , idPrefix = Some "ADR"
         }
@@ -279,8 +348,10 @@ retired ID is not silently reused.
 
 The descriptor shape above is published as Dhall under
 [`okf-core/dhall/`](../../okf-core/dhall) — `Profile.dhall`, `TypeRule.dhall`,
-`FrontmatterRules.dhall`, matching record-completion modules under `defaults/`,
-and a `package.dhall` that re-exports both types and defaults. This is the
+`FrontmatterRules.dhall`, `FieldRule.dhall`, matching record-completion modules
+under `defaults/`, constructor modules under `mk/`, and a `package.dhall` that
+re-exports all three groups (`okf.Profile`, `okf.defaults.Profile`,
+`okf.mk.FieldRule`). This is the
 single source of truth for the schema: the shipped sample and the test fixtures
 annotate their values against it (`… : ../path/to/Profile.dhall`), and a test
 guarantees this Dhall schema stays in lockstep with okf's internal decoder, so the
@@ -314,6 +385,52 @@ in  okf.defaults.Profile::{
       ]
     }
 ```
+
+### Writing a `FieldRule`
+
+A `FieldRule` is the one profile value you write over and over — one per required
+or recommended frontmatter key — so it ships constructors as well as a
+record-completion module. All three forms below produce **exactly the same
+value**; Dhall normalizes the function application away long before okf's decoder
+sees it, so nothing downstream knows which you used.
+
+```dhall
+let okf = ./okf-core/dhall/package.dhall
+
+let field = okf.mk.FieldRule
+
+in  [ -- 1. constructors — the form to reach for
+      field.documented "type" "The OKF concept type."
+    , field.plain "title"
+
+      -- 2. record completion
+    , okf.defaults.FieldRule::{
+      , field = "status"
+      , description = Some "One of: proposed, accepted, superseded."
+      }
+
+      -- 3. a bare record literal — every field spelled out
+    , { field = "date", description = None Text }
+    ]
+```
+
+`okf.mk.FieldRule` exports exactly two functions:
+
+| Constructor | Type | Use |
+|-------------|------|-----|
+| `plain` | `Text -> FieldRule` | A key with no description. |
+| `documented` | `Text -> Text -> FieldRule` | A key and the prose explaining it. |
+
+**What this does and does not protect against.** Record completion and the
+constructors both shield you from *additive, defaulted* schema fields: if a fourth
+field is ever added to `FieldRule` with a default, every `::` and every
+`plain`/`documented` call site keeps working untouched, while every bare record
+literal (form 3) breaks. Neither helps with a field that is renamed or newly
+required — and, importantly, **neither does anything for a descriptor that already
+exists**, since a descriptor written before these modules existed cannot
+retroactively have used them. Descriptors written for earlier okf versions keep
+loading for a different reason entirely: okf's decoder accepts the older shape
+too. See [Adding descriptions to an existing descriptor](#adding-descriptions-to-an-existing-descriptor).
 
 The dependency is **one-way**: okf publishes the schema and imports nothing in
 return. `okf validate --profile` accepts any descriptor path — local or one that
@@ -406,6 +523,53 @@ okf validate <bundle> --profile ./profile.dhall
 Adopting the new fields is a separate, opt-in step: see
 [Document IDs](#document-ids) above for turning handles on once the descriptor
 loads again.
+
+### Adding descriptions to an existing descriptor
+
+Profile, field, and type-rule descriptions are a later, **additive** change, and
+unlike the 0.2.0.0 change above they are **not a forced migration**. A descriptor
+written for okf 0.2.x — bare-string frontmatter keys, no descriptions anywhere —
+keeps loading unchanged, in `okf validate --profile`, in `okf profile list`, and
+in `okf profile show`, with every description simply absent. okf's decoder tries
+the current descriptor shape first and falls back to the older one. You never
+have to touch a working descriptor.
+
+There is exactly one case that does require a change: a descriptor that annotates
+itself against the **current** schema, `… : okf.Profile`. That annotation is
+checked by Dhall before okf ever sees the value, so it must match the current
+shape. A descriptor with no annotation, or one pinned to an older schema URL, is
+unaffected.
+
+To adopt descriptions, convert each bare key string into a `FieldRule`:
+
+```dhall
+-- before
+, frontmatter =
+  { required = [ "type", "title" ]
+  , recommended = [] : List Text
+  }
+
+-- after
+, frontmatter =
+  { required =
+    [ field.documented
+        "type"
+        "The OKF concept type; must be one of the type rules below."
+    , field.plain "title"
+    ]
+  , recommended = [] : List Text
+  }
+```
+
+with `let field = okf.mk.FieldRule` in scope (see
+[Writing a `FieldRule`](#writing-a-fieldrule)). `field.plain "title"` is the
+mechanical translation of a bare key; replace it with
+`field.documented "title" "…"` as you have something worth saying. Adding
+`description = Some "…"` to the profile itself and to individual type rules is
+the same kind of opt-in edit.
+
+Descriptions are documentation and nothing more. They add no check, no violation,
+and no way for a bundle to fail because of one.
 
 ## A worked example
 

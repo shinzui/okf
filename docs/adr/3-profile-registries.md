@@ -73,7 +73,15 @@ integrity check on every run. `defaultRegistryReference` in
 `okf-core/src/Okf/Profile/Registry.hs` is the single place both live, and
 `okf-cli` imports it rather than repeating the string.
 
-**Profile listings deliberately carry no description.** The published profile
+**Profile listings deliberately carry no description.**
+*(Superseded 2026-07-28 by [ADR 4](./4-self-documenting-profiles.md). Kept as
+written, because an ADR records what was decided and when. The paragraph's
+reasoning still holds — Dhall records really are closed — but its conclusion
+does not: ADR 4 keeps existing descriptors loading with a fallback decoder in
+okf-core rather than by forcing every registry to move at once, so profiles now
+do carry descriptions.)*
+
+The published profile
 schema has no `description` field, and Dhall records are closed, so adding one is
 a breaking change that must move okf-core's decoder, okf's published schema, and
 every descriptor in every registry together — exactly the coordinated migration
@@ -113,3 +121,9 @@ as "not a profile" other than by not making it decode.
 Every future addition to the published Dhall profile schema remains breaking, and
 every future addition to the CLI configuration record must extend the legacy
 fallback chain.
+
+*(Amended 2026-07-28: the first half of that sentence is now qualified by
+[ADR 4](./4-self-documenting-profiles.md). A schema addition is still breaking
+for a descriptor that annotates itself against the current schema, but okf-core
+can accept the previous shape as well, so the break no longer has to propagate to
+every descriptor in every registry at once.)*

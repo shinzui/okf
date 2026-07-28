@@ -9,6 +9,18 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- Self-documenting profiles. A profile descriptor may now carry an optional
+  `description` in three places: on the profile as a whole, on each required or
+  recommended frontmatter key, and on each type rule. `okf profile show` prints
+  all three, `okf profile list` gains a trailing `DESCRIPTION` column, `--json`
+  carries them, and a `missing profile-required field` advisory repeats the
+  key's prose in parentheses. Descriptions are documentation only: they add no
+  check and no way for a bundle to fail.
+- `okf-core/dhall/FieldRule.dhall`, its record-completion module under
+  `defaults/`, and a new `mk/FieldRule.dhall` exporting the constructors
+  `plain : Text -> FieldRule` and `documented : Text -> Text -> FieldRule`, for
+  the one profile value authors write repeatedly. `package.dhall` re-exports
+  them as `okf.FieldRule`, `okf.defaults.FieldRule`, and `okf.mk.FieldRule`.
 - `okf profile list` and `okf profile show`, which enumerate and inspect the
   profiles a Dhall *registry* publishes. A registry is any Dhall expression
   evaluating to a record of profile values, so the separate `okf-profiles`
@@ -23,6 +35,23 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   `idField`/`idPrefix` fix, the record-completion alternative, and re-pinning a
   URL-imported schema. In `docs/user/profiles.md` and summarized in
   `okf help profiles`.
+
+### Changed
+
+- **Breaking (library and published schema).** `frontmatter.required` and
+  `frontmatter.recommended` are now `List FieldRule` rather than `List Text`,
+  and `Profile` and `TypeRule` each gained `description : Optional Text`. Dhall
+  records are closed, so a descriptor that annotates itself against the current
+  `Profile.dhall` must be converted; the next release is therefore a major one.
+- Existing profile *descriptors* need no migration. okf decodes the current
+  descriptor shape and falls back to the okf 0.2.x shape, so every descriptor
+  written before descriptions existed — including every profile the published
+  `okf-profiles` package ships — keeps loading and enumerating unchanged, with
+  its descriptions absent. This is a deliberate departure from the coordinated
+  break `idField`/`idPrefix` required in 0.2.0.0.
+- `okf profile show` prints each non-empty frontmatter list as a headed block
+  with one `  - key: description` line per key, instead of a single
+  comma-joined line. An empty list keeps the one-line `(none)` form.
 
 ## [0.2.0.0] - 2026-07-26
 

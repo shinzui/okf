@@ -106,10 +106,10 @@ Milestone 3 — CLI surfacing (complete 2026-07-28):
 
 Milestone 4 — documentation, changelogs, ADR (`docs/profiles/postgresql.dhall` already done above):
 
-- [ ] Update `docs/user/profiles.md` (schema tables, `profile show` transcript, registry note, new upgrade section).
-- [ ] Update `okf-cli/help/profiles.md`.
-- [ ] Add `## [Unreleased]` entries to `CHANGELOG.md`, `okf-core/CHANGELOG.md`, `okf-cli/CHANGELOG.md`.
-- [ ] Amend `docs/adr/3-profile-registries.md` and add a new ADR recording the descriptions decision.
+- [x] Update `docs/user/profiles.md` (schema tables, `FieldRule` table, `profile show` and `profile list` transcripts, registry note, "Writing a `FieldRule`" section, new upgrade section). (2026-07-28)
+- [x] Update `okf-cli/help/profiles.md` — corrected the registry sentence, added a `DESCRIPTIONS` section. (2026-07-28)
+- [x] Add `## [Unreleased]` entries to `CHANGELOG.md`, `okf-core/CHANGELOG.md`, `okf-cli/CHANGELOG.md`, each with an `### Added` and an `### Changed` marking the breaking library change. (2026-07-28)
+- [x] Amend `docs/adr/3-profile-registries.md` (superseded marker on the no-description paragraph, and on the "every future addition is breaking" consequence) and add `docs/adr/4-self-documenting-profiles.md`. (2026-07-28)
 
 
 ## Surprises & Discoveries
@@ -133,6 +133,13 @@ implementation. Provide concise evidence.
   `[Text]` with a parallel list of per-column padders. Evidence: the previous `widest`
   projections were five separate lambdas of the form `\(_, _, cell, _, _) -> cell`; a sixth
   column would have made six of them, each seven tokens wide.
+
+- The plan's closing acceptance grep expected exactly one surviving hit. It returns several,
+  all benign: ADR 3's marked-superseded paragraph (intended), ADR 4's line naming what it
+  supersedes, four hits inside `docs/plans/23-…` (a completed execution record, which like an
+  ADR is history and must not be rewritten), and phrasings such as "A key with no description"
+  in `docs/user/profiles.md`, which describe the new feature rather than deny it. No file
+  still claims profiles cannot carry descriptions.
 
 
 ## Decision Log
@@ -254,7 +261,35 @@ Compare the result against the original purpose. Before marking the plan complet
 distill durable project context from the Decision Log, Surprises & Discoveries, and
 this section into docs/adr/. Keep task-local execution details here.
 
-(To be filled during and after implementation.)
+**Delivered, 2026-07-28.** All four milestones are complete and every acceptance check in
+Validation and Acceptance reproduces exactly as written, including the JSON shape and the
+column layout of the mixed registry listing. `cabal test all` passes both suites.
+
+Against the original purpose: a profile author can now attach prose to the profile, to each
+frontmatter key, and to each type rule, and that prose survives Dhall imports, registry
+enumeration, `--json`, and the `missing profile-required field` advisory. The
+backwards-compatibility guarantee — the plan's own "single most important check" — holds:
+`okf validate … --profile okf-core/test/fixtures/profiles/legacy-0.2.dhall` loads and
+validates an unmodified okf 0.2.x descriptor, and `legacy` appears in the mixed-registry
+listing with `-` in its `DESCRIPTION` cell.
+
+What went differently from the plan, all recorded in the Decision Log and Surprises above:
+the commit split (three milestones in one commit rather than two commits, because the
+prescribed boundary did not build), the backwards-compatibility surface (one exported
+`decodeProfileExpr` rather than three exported legacy types), and the registry table
+representation (`[Text]` rows with per-column padders rather than a six-tuple).
+
+Lessons worth keeping, promoted to [ADR 4](../adr/4-self-documenting-profiles.md): the
+fallback-decoder pattern now generalizes from configuration records to the profile schema, so
+an additive schema change no longer has to move every descriptor in every registry at once;
+and the boundary between the three mechanisms — `mk/` constructors and `defaults/` record
+completion protect descriptors written from now on against additive defaulted fields, while
+only the fallback decoder protects descriptors that already exist — has to be restated
+wherever they are documented, or a reader will conflate them.
+
+One task-local note that does not belong in an ADR: the drift guard works. Every fixture
+mistake made during this change surfaced as a `dhall type` failure on an annotated fixture
+before any Haskell was compiled.
 
 
 ## Context and Orientation
