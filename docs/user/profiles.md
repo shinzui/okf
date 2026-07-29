@@ -2,8 +2,9 @@
 
 A **profile** is a small Dhall file that declares your team's house conventions
 for an OKF bundle: which `type` strings are allowed, which frontmatter keys every
-concept must carry, what `resource:` URI scheme each type needs, where each type's
-files must live, and what columns a `# Schema` table must have.
+concept or one specific type must carry, what `resource:` URI scheme each type
+needs, where each type's files must live, and what columns a `# Schema` table
+must have.
 
 Profiles are **not** part of the Open Knowledge Format. The OKF specification
 deliberately defines no fixed taxonomy of concept types and requires consumers to
@@ -56,6 +57,10 @@ teams that want CI to break on drift:
 okf validate BUNDLE --profile PROFILE.dhall --profile-enforce
 ```
 
+Add `--strict` to check the profile's `recommended` fields as well as its
+`required` fields. Recommendations remain profile deviations, so they affect
+the exit status only when `--profile-enforce` is also present.
+
 Under enforcement, the deviation lines still print to stderr, no `OK:` line is
 printed, and the command exits `1`.
 
@@ -75,6 +80,8 @@ PostgreSQL-table convention:
 
 ```dhall
 let field = ../../okf-core/dhall/mk/FieldRule.dhall
+
+let TypeRule = ../../okf-core/dhall/defaults/TypeRule.dhall
 
 in  { name = "shinzui-postgresql"
     , description = Some
@@ -98,7 +105,8 @@ in  { name = "shinzui-postgresql"
     , allowUnknownTypes = False
     , idField = None Text
     , types =
-      [ { type = "PostgreSQL Table"
+      [ TypeRule::{
+        , type = "PostgreSQL Table"
         , description = Some
             "One physical table in a schema, including its column list."
         , pathPattern = Some "schemas/*/tables/*"
@@ -119,8 +127,8 @@ The fields:
 | `description` | `Optional Text` | Prose documenting the profile as a whole. Shown by `okf profile show` and in the `DESCRIPTION` column of `okf profile list`. Documentary only — never checked against a bundle. |
 | `okfVersion` | `Text` | The OKF version the conventions target. |
 | `frontmatter.required` | `List FieldRule` | Frontmatter keys every concept must have as a non-empty value. A missing or empty key is reported as `missing profile-required field`. |
-| `frontmatter.recommended` | `List FieldRule` | Advisory-only keys; recorded for documentation. Not currently checked. |
-| `allowUnknownTypes` | `Bool` | When `False`, a concept whose `type` is not listed in `types` is reported as `type not in profile vocabulary`. When `True`, unknown types are skipped silently. |
+| `frontmatter.recommended` | `List FieldRule` | Keys checked only by `okf validate --strict`; a missing value is reported as `missing profile-recommended field`. |
+| `allowUnknownTypes` | `Bool` | When `False`, a concept whose `type` is not listed in `types` is reported as `type not in profile vocabulary`. Profile-wide frontmatter rules still apply whether this is `True` or `False`. |
 | `idField` | `Optional Text` | Names the frontmatter key that stores document IDs. `None Text` disables all document-ID checks. |
 | `types` | `List TypeRule` | One rule per allowed `type` string (see below). |
 
@@ -129,7 +137,7 @@ Each `FieldRule` — one frontmatter key, and optionally what it is for:
 | Field | Type | Meaning |
 |-------|------|---------|
 | `field` | `Text` | The frontmatter key. |
-| `description` | `Optional Text` | Prose explaining what the key should contain. Printed by `okf profile show`, and repeated in the `missing profile-required field` advisory when the key is absent. Documentary only. |
+| `description` | `Optional Text` | Prose explaining what the key should contain. Printed by `okf profile show`, and repeated in missing required or recommended advisories. Documentary only. |
 
 A description is attached to the key it documents rather than kept in a parallel
 list, so it cannot drift away from the rule or outlive it. See
@@ -142,6 +150,7 @@ Each `TypeRule`:
 |-------|------|---------|
 | `type` | `Text` | The exact `type` frontmatter string this rule applies to. |
 | `description` | `Optional Text` | Prose explaining what this concept type is for. Documentary only. |
+| `frontmatter` | `FrontmatterRules` | Required and recommended keys added for this type. Profile and type scopes merge by key: required wins, and type-level prose wins when present. `defaults.TypeRule` supplies empty lists. |
 | `pathPattern` | `Optional Text` | A segment-glob the concept ID must match. `*` matches exactly one segment; a single trailing `**` matches one or more remaining segments; any other segment matches literally. For example `schemas/*/tables/*` matches `schemas/sales/tables/orders`. A mismatch is reported as `must match path pattern`. |
 | `resourceScheme` | `Optional Text` | When set, the concept's `resource:` value must begin with `<scheme>://`. A missing resource is reported as `requires a resource with scheme`; a wrong scheme as `resource must use scheme`. |
 | `requireSchemaSection` | `Bool` | When `True`, the body must contain a `# Schema` heading followed by a GitHub-flavored Markdown table. A missing section is reported as `requires a # Schema section`. |
@@ -246,6 +255,8 @@ frontmatter.recommended:
 
 type: Architecture Decision Record
   description: (none)
+  frontmatter.required: (none)
+  frontmatter.recommended: (none)
   pathPattern: *
   resourceScheme: (none)
   requireSchemaSection: false

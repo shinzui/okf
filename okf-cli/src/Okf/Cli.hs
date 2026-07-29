@@ -30,7 +30,7 @@ import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as AesonKey
 import Data.Aeson.KeyMap qualified as KeyMap
 import Data.ByteString.Lazy.Char8 qualified as LazyByteString
-import Data.Foldable (traverse_)
+import Data.Foldable (toList, traverse_)
 import Data.List qualified as List
 import Data.Set qualified as Set
 import Data.Text qualified as Text
@@ -58,15 +58,18 @@ import Okf.Index
 import Okf.Log qualified as Log
 import Okf.Prelude
 import Okf.Profile
-  ( FrontmatterRules (..),
+  ( CompiledProfile,
+    FrontmatterRules (..),
+    ProfileDefinitionError (..),
     ProfileSpec (..),
     ProfileViolation (..),
     TypeRule (..),
+    compileProfile,
     documentIdsInBundle,
     loadProfileFile,
     nextDocumentId,
     parseDocumentId,
-    profileFieldDescription,
+    profileFieldDescriptionForType,
     renderDocumentId,
     validateProfile,
   )
@@ -672,17 +675,17 @@ renderProfileDetail
       "allowUnknownTypes: " <> renderFlag allowUnknownTypes,
       "idField: " <> renderOptional idField
     ]
-      <> renderFieldRules "frontmatter.required" required
-      <> renderFieldRules "frontmatter.recommended" recommended
+      <> renderFieldRules "" "frontmatter.required" required
+      <> renderFieldRules "" "frontmatter.recommended" recommended
       <> concatMap renderTypeRule typeRules
     where
       -- A field's prose cannot share a comma-joined line with its neighbours, so
       -- a non-empty list becomes a headed block. An empty list keeps the
       -- single-line @(none)@ form the other optional fields use.
-      renderFieldRules label [] = [label <> ": " <> renderList []]
-      renderFieldRules label rules =
-        (label <> ":")
-          : [ "  - " <> rule ^. #field <> ": " <> renderOptional (rule ^. #description)
+      renderFieldRules indent label [] = [indent <> label <> ": " <> renderList []]
+      renderFieldRules indent label rules =
+        (indent <> label <> ":")
+          : [ indent <> "  - " <> rule ^. #field <> ": " <> renderOptional (rule ^. #description)
             | rule <- rules
             ]
 
@@ -690,6 +693,7 @@ renderProfileDetail
         TypeRule
           { type_ = ruleType,
             description = ruleDescription,
+            frontmatter = FrontmatterRules {required = typeRequired, recommended = typeRecommended},
             pathPattern,
             resourceScheme,
             requireSchemaSection,
@@ -698,13 +702,16 @@ renderProfileDetail
           } =
           [ "",
             "type: " <> ruleType,
-            "  description: " <> renderOptional ruleDescription,
-            "  pathPattern: " <> renderOptional pathPattern,
-            "  resourceScheme: " <> renderOptional resourceScheme,
-            "  requireSchemaSection: " <> renderFlag requireSchemaSection,
-            "  schemaColumns: " <> renderList schemaColumns,
-            "  idPrefix: " <> renderOptional idPrefix
+            "  description: " <> renderOptional ruleDescription
           ]
+            <> renderFieldRules "  " "frontmatter.required" typeRequired
+            <> renderFieldRules "  " "frontmatter.recommended" typeRecommended
+            <> [ "  pathPattern: " <> renderOptional pathPattern,
+                 "  resourceScheme: " <> renderOptional resourceScheme,
+                 "  requireSchemaSection: " <> renderFlag requireSchemaSection,
+                 "  schemaColumns: " <> renderList schemaColumns,
+                 "  idPrefix: " <> renderOptional idPrefix
+               ]
 
       renderFlag True = "true"
       renderFlag False = "false"
@@ -753,10 +760,19 @@ runValidate ValidateOptions {bundlePath, strictMode, profilePath, profileEnforce
       loaded <- loadProfileFile path
       case loaded of
         Left err -> dieText ("Failed to load profile " <> Text.pack path <> ": " <> err)
-        Right spec -> do
-          let violations = validateProfile spec concepts
-          mapM_ (Text.IO.hPutStrLn stderr . ("profile: " <>) . renderProfileViolation spec) violations
-          pure violations
+        Right spec ->
+          case compileProfile spec of
+            Left definitionErrors ->
+              dieText
+                ( "Failed to load profile "
+                    <> Text.pack path
+                    <> ": invalid profile definition:\n"
+                    <> Text.intercalate "\n" (map (("  - " <>) . renderProfileDefinitionError) (toList definitionErrors))
+                )
+            Right compiled -> do
+              let violations = validateProfile coreProfile compiled concepts
+              mapM_ (Text.IO.hPutStrLn stderr . ("profile: " <>) . renderProfileViolation compiled concepts) violations
+              pure violations
 
   let coreFailed = any bundleValidationErrorIsFailure coreErrors
       profileFailed = profileEnforce && not (null profileViolations)
@@ -1097,15 +1113,20 @@ bundleValidationErrorIsAdvisory = not . bundleValidationErrorIsFailure
 -- | One deviation as one line. The 'ProfileSpec' is here only so a missing
 -- required field can carry the profile's own explanation of what that field is
 -- for; every other case ignores it.
-renderProfileViolation :: ProfileSpec -> ProfileViolation -> Text
-renderProfileViolation spec = \case
+renderProfileViolation :: CompiledProfile -> [Concept] -> ProfileViolation -> Text
+renderProfileViolation compiled concepts = \case
   TypeNotInProfile cid ctype ->
     renderConceptId cid <> ": type not in profile vocabulary: " <> ctype
   MissingProfileField cid key ->
     renderConceptId cid
       <> ": missing profile-required field: "
       <> key
-      <> maybe "" (\prose -> " (" <> prose <> ")") (profileFieldDescription spec key)
+      <> renderDescription cid key
+  MissingRecommendedProfileField cid key ->
+    renderConceptId cid
+      <> ": missing profile-recommended field: "
+      <> key
+      <> renderDescription cid key
   PathPatternMismatch cid ctype patternText ->
     renderConceptId cid <> ": " <> ctype <> " must match path pattern: " <> patternText
   MissingResource cid ctype scheme ->
@@ -1129,7 +1150,22 @@ renderProfileViolation spec = \case
   DuplicateDocumentId handle cid other ->
     renderConceptId cid <> ": duplicate document ID " <> handle <> " (also on " <> renderConceptId other <> ")"
   where
+    renderDescription cid key =
+      maybe "" (\prose -> " (" <> prose <> ")") $ do
+        ctype <- lookup cid [(conceptIdOf concept, conceptType concept) | concept <- concepts]
+        profileFieldDescriptionForType compiled ctype key
     renderList xs = "[" <> Text.intercalate ", " xs <> "]"
+
+renderProfileDefinitionError :: ProfileDefinitionError -> Text
+renderProfileDefinitionError = \case
+  DuplicateTypeRule ctype -> "duplicate type rule: " <> ctype
+  DuplicateFieldRule scope listName key ->
+    renderScope scope <> ": duplicate " <> listName <> " field: " <> key
+  ConflictingFieldRequirement scope key ->
+    renderScope scope <> ": field appears in required and recommended: " <> key
+  where
+    renderScope Nothing = "profile frontmatter"
+    renderScope (Just ctype) = "type " <> ctype <> " frontmatter"
 
 renderValidationErrorText :: ValidationError -> Text
 renderValidationErrorText = \case

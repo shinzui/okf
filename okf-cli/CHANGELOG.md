@@ -9,6 +9,11 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- `okf profile show` and `--json` now expose required and recommended
+  frontmatter rules beneath each type.
+- `okf validate --strict --profile ...` checks profile-recommended fields and
+  renders them as `missing profile-recommended field`; `--profile-enforce`
+  continues to control whether the deviation fails the command.
 - An `UPGRADING FROM 0.1.x` section in the `okf help profiles` topic, summarizing
   how to move a 0.1.x profile descriptor onto the 0.2.0.0 schema.
 - Profile descriptions are surfaced everywhere a profile is displayed:
@@ -21,6 +26,13 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
+- Profile descriptors are compiled before validation. Duplicate type names and
+  ambiguous required/recommended declarations are fatal profile-definition
+  errors reported once, before any concept is checked.
+- Mori and other `okf-core` consumers must call `compileProfile`, handle its
+  structured errors, pass `PermissiveConformance` or `StrictAuthoring` to
+  `validateProfile`, and handle `MissingRecommendedProfileField` in exhaustive
+  violation renderers.
 - `okf profile show` prints a non-empty `frontmatter.required` or
   `frontmatter.recommended` as a headed block, one key per line, rather than one
   comma-joined line — per-key prose cannot share a line. An empty list keeps the

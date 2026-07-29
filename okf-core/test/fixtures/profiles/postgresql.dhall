@@ -43,6 +43,7 @@ in    { name = "shinzui-postgresql"
       , types =
         [ { type = "PostgreSQL Schema"
           , description = Some "One namespace grouping tables and views."
+          , frontmatter = { required = [] : List FieldRule.Type, recommended = [] : List FieldRule.Type }
           , pathPattern = Some "schemas/*"
           , resourceScheme = Some "postgresql"
           , requireSchemaSection = False
@@ -52,6 +53,7 @@ in    { name = "shinzui-postgresql"
         , { type = "PostgreSQL Table"
           , description = Some
               "One physical table in a schema, including its column list."
+          , frontmatter = { required = [] : List FieldRule.Type, recommended = [] : List FieldRule.Type }
           , pathPattern = Some "schemas/*/tables/*"
           , resourceScheme = Some "postgresql"
           , requireSchemaSection = True
@@ -60,6 +62,7 @@ in    { name = "shinzui-postgresql"
           }
         , { type = "PostgreSQL View"
           , description = Some "One view, including the columns it projects."
+          , frontmatter = { required = [] : List FieldRule.Type, recommended = [] : List FieldRule.Type }
           , pathPattern = Some "schemas/*/views/*"
           , resourceScheme = Some "postgresql"
           , requireSchemaSection = True

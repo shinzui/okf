@@ -20,6 +20,9 @@ ADVISORY VS ENFORCED
   --profile-enforce      Make profile deviations fail the command (non-zero
                          exit).
 
+  --strict               Also check profile `recommended` fields. Required
+                         profile fields are checked in both modes.
+
 EXIT CODES
 
   - Structural errors always exit non-zero, with or without --profile.
@@ -77,6 +80,22 @@ DESCRIPTIONS
   Descriptions are optional and additive. A descriptor written before they
   existed loads unchanged and simply shows none; nothing needs migrating. See
   docs/user/profiles.md for how to add them to a descriptor you already have.
+
+TYPE-AWARE FRONTMATTER
+
+  Each type rule may add its own required and recommended frontmatter fields.
+  Profile-wide rules apply to every concept; a matching type rule adds to them.
+  Required wins over recommended when both scopes mention a key. Unknown types
+  still receive profile-wide rules.
+
+  `okf profile show` prints `frontmatter.required` and
+  `frontmatter.recommended` beneath each type. New descriptors should use
+  `okf.defaults.TypeRule::{ ... }`, whose default supplies empty lists.
+
+  Before validating a bundle, okf rejects duplicate type rules, repeated keys
+  in one list, and keys placed in both required and recommended at the same
+  scope. These are hard profile-definition errors regardless of
+  `--profile-enforce`.
 
   A registry reference may be a path to a Dhall file, a directory holding
   package.dhall, or a Dhall expression such as a hash-pinned URL. Without

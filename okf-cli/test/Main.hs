@@ -276,6 +276,7 @@ samplePostgresqlProfile =
         [ TypeRule
             { type_ = "PostgreSQL Table",
               description = Nothing,
+              frontmatter = FrontmatterRules {required = [], recommended = []},
               pathPattern = Just "schemas/*/tables/*",
               resourceScheme = Just "postgresql",
               requireSchemaSection = True,
@@ -308,6 +309,11 @@ sampleDecisionsProfile =
         [ TypeRule
             { type_ = "Decision Record",
               description = Just "One accepted decision, never edited after acceptance.",
+              frontmatter =
+                FrontmatterRules
+                  { required = [FieldRule "owner" (Just "Person responsible for the decision.")],
+                    recommended = [FieldRule "reviewer" Nothing]
+                  },
               pathPattern = Just "decisions/*",
               resourceScheme = Nothing,
               requireSchemaSection = False,
@@ -338,6 +344,10 @@ sampleProfileDetail =
     "",
     "type: Decision Record",
     "  description: One accepted decision, never edited after acceptance.",
+    "  frontmatter.required:",
+    "    - owner: Person responsible for the decision.",
+    "  frontmatter.recommended:",
+    "    - reviewer: (none)",
     "  pathPattern: decisions/*",
     "  resourceScheme: (none)",
     "  requireSchemaSection: false",
@@ -363,6 +373,8 @@ sampleUndocumentedProfileDetail =
     "",
     "type: PostgreSQL Table",
     "  description: (none)",
+    "  frontmatter.required: (none)",
+    "  frontmatter.recommended: (none)",
     "  pathPattern: schemas/*/tables/*",
     "  resourceScheme: postgresql",
     "  requireSchemaSection: true",

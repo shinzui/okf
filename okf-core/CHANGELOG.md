@@ -9,6 +9,14 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- Type-aware frontmatter rules: each `TypeRule` now carries its own
+  `FrontmatterRules`, merged with profile-wide rules for matching concepts.
+- `CompiledProfile`, `ProfileDefinitionError`, `compileProfile`,
+  `compiledProfileSpec`, and `profileFieldDescriptionForType`. Compilation
+  rejects duplicate type rules and ambiguous field declarations before bundle
+  validation begins.
+- `MissingRecommendedProfileField`, emitted for profile recommendations under
+  `StrictAuthoring`.
 - `Okf.Profile.Registry`, which evaluates a registry reference — a Dhall file, a
   directory holding `package.dhall`, or a Dhall expression — and enumerates
   every profile it publishes under a dotted export path. Discovery is
@@ -33,6 +41,18 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
+- **Breaking.** `validateProfile` now accepts `ValidationProfile` and an opaque
+  `CompiledProfile` rather than a raw `ProfileSpec`. Library consumers must call
+  `compileProfile` once, handle definition errors, and select
+  `PermissiveConformance` or `StrictAuthoring`. Exhaustive
+  `ProfileViolation` matches must handle `MissingRecommendedProfileField`.
+- **Breaking Dhall schema.** `TypeRule` gained
+  `frontmatter : FrontmatterRules`. `defaults.TypeRule` supplies empty rules;
+  direct record literals must add the field. A frozen decoder continues to load
+  the previous self-documenting shape, and the 0.2.x fallback remains intact.
+- Profile-wide frontmatter rules now apply to allowed and disallowed unknown
+  types. Required wins over recommended across profile and type scopes, while
+  type-level prose wins when present.
 - **Breaking.** `FrontmatterRules`'s `required` and `recommended` are now
   `[FieldRule]` rather than `[Text]`, and `ProfileSpec` and `TypeRule` each
   gained `description :: Maybe Text`. The published Dhall schema changed to
@@ -43,8 +63,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   since that is the schema an author is writing against. The frozen legacy
   shape is kept exercised by `test/fixtures/profiles/legacy-0.2.dhall`, which
   must never be updated.
-- `ProfileViolation` and `validateProfile` keep their signatures. Descriptions
-  are documentary: no new constructor, no new check.
+- Descriptions remain documentary, but their lookup now follows the compiled
+  effective rule for a concept type.
 
 ## [0.2.0.0] - 2026-07-26
 

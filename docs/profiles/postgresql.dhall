@@ -15,6 +15,8 @@ let Profile = ../../okf-core/dhall/Profile.dhall
 
 let field = ../../okf-core/dhall/mk/FieldRule.dhall
 
+let FieldRule = ../../okf-core/dhall/FieldRule.dhall
+
 in    { name = "shinzui-postgresql"
       , description = Some
           "Conventions for documenting a PostgreSQL database as an OKF bundle."
@@ -46,6 +48,7 @@ in    { name = "shinzui-postgresql"
         [ { type = "PostgreSQL Schema"
           , description = Some
               "One namespace: the tables and views under it, and why they belong together."
+          , frontmatter = { required = [] : List FieldRule, recommended = [] : List FieldRule }
           , pathPattern = Some "schemas/*"
           , resourceScheme = Some "postgresql"
           , requireSchemaSection = False
@@ -55,6 +58,7 @@ in    { name = "shinzui-postgresql"
         , { type = "PostgreSQL Table"
           , description = Some
               "One physical table in a schema, including its column list."
+          , frontmatter = { required = [] : List FieldRule, recommended = [] : List FieldRule }
           , pathPattern = Some "schemas/*/tables/*"
           , resourceScheme = Some "postgresql"
           , requireSchemaSection = True
@@ -64,6 +68,7 @@ in    { name = "shinzui-postgresql"
         , { type = "PostgreSQL View"
           , description = Some
               "One view: the columns it projects and the question it answers."
+          , frontmatter = { required = [] : List FieldRule, recommended = [] : List FieldRule }
           , pathPattern = Some "schemas/*/views/*"
           , resourceScheme = Some "postgresql"
           , requireSchemaSection = True

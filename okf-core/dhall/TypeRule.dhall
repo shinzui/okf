@@ -11,8 +11,12 @@
 --
 -- `description` explains, in prose, what this concept type is for. It is
 -- documentary only and is never checked against a bundle.
+let FrontmatterRules = ./FrontmatterRules.dhall
+
+in
 { type : Text
 , description : Optional Text
+, frontmatter : FrontmatterRules
 , pathPattern : Optional Text
 , resourceScheme : Optional Text
 , requireSchemaSection : Bool

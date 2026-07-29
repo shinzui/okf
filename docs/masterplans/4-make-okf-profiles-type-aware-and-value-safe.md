@@ -4,6 +4,7 @@ slug: make-okf-profiles-type-aware-and-value-safe
 title: "Make OKF profiles type-aware and value-safe"
 kind: master-plan
 created_at: 2026-07-29T17:16:33Z
+intention: intention_01kyqmnyg6esxa50egq04z2ty2
 ---
 
 # Make OKF profiles type-aware and value-safe
@@ -70,7 +71,7 @@ later plans if merge semantics change.
 
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
-| EP-1 | Compile effective type-aware profile field rules | `docs/plans/25-compile-effective-type-aware-profile-field-rules.md` | None | None | Not Started |
+| EP-1 | Compile effective type-aware profile field rules | `docs/plans/25-compile-effective-type-aware-profile-field-rules.md` | None | None | Complete |
 | EP-2 | Enforce closed field-name and field-value vocabularies | `docs/plans/26-enforce-closed-field-name-and-field-value-vocabularies.md` | EP-1 | None | Not Started |
 | EP-3 | Enforce profile field cardinality | `docs/plans/27-enforce-profile-field-cardinality.md` | EP-1 | EP-2 | Not Started |
 | EP-4 | Enforce named profile field formats | `docs/plans/28-enforce-named-profile-field-formats.md` | EP-1 | EP-2 | Not Started |
@@ -128,9 +129,9 @@ edit either external repository in this initiative.
 Track milestone-level progress across all child plans. Each entry names the child plan
 and the milestone. This section provides an at-a-glance view of the entire initiative.
 
-- [ ] EP-1: publish and decode type-aware frontmatter rules with compatibility fallbacks.
-- [ ] EP-1: compile deterministic effective rules and reject invalid definitions.
-- [ ] EP-1: enforce profile recommendations under `--strict` and document the public API.
+- [x] EP-1: publish and decode type-aware frontmatter rules with compatibility fallbacks.
+- [x] EP-1: compile deterministic effective rules and reject invalid definitions.
+- [x] EP-1: enforce profile recommendations under `--strict` and document the public API.
 - [ ] EP-2: validate allowed textual values at profile and type scope.
 - [ ] EP-2: reject unknown keys against the concept's effective vocabulary.
 - [ ] EP-3: validate scalar, list, and unconstrained cardinality without changing defaults.
@@ -164,6 +165,19 @@ interactions between child plans. Provide concise evidence.
   without a demonstrated consumer.
   Evidence: all profile and fixture field conventions in `shinzui/okf-profiles` were
   searched; no repository-specific pattern case was found.
+
+- Discovery: EP-1 must retain two fallback generations, not only the released
+  0.2 shape. The unreleased self-documenting schema from ADR 4 is already a
+  plausible authoring input, while the external v0.6.0 catalog still uses 0.2.
+  Evidence: dedicated described and legacy fixtures both load with empty
+  type-specific rules, and the external catalog registry enumerates six profiles.
+
+- Discovery: later constraint plans can share the compiled field map without
+  changing the raw `ProfileSpec` display contract. `okf profile show` and JSON
+  continue to use raw author order, while validation uses deterministic field-key
+  order from `CompiledProfile`.
+  Evidence: the type-aware fixture's human/JSON output preserves declaration
+  order, and unit tests pin merged requirement and description precedence.
 
 
 ## Decision Log
@@ -204,6 +218,13 @@ plan.
   state and makes merge semantics needlessly ambiguous.
   Date: 2026-07-29
 
+- Decision: Record the raw/compiled boundary, merge behavior, error timing,
+  compatibility chain, and consumer migration in
+  `docs/adr/5-compile-profile-rules-before-validation.md`.
+  Rationale: EP-2 through EP-4 and external consumers depend on these rules, so
+  they are durable architecture rather than task-local implementation detail.
+  Date: 2026-07-29
+
 
 ## Outcomes & Retrospective
 
@@ -212,4 +233,8 @@ Compare the result against the original vision. Before marking the MasterPlan co
 distill durable project context from this MasterPlan and its child ExecPlans into
 docs/adr/. Keep task-local execution and coordination details here.
 
-(To be filled during and after implementation.)
+EP-1 completed the shared foundation. One of four child plans is complete; the
+remaining vocabulary, cardinality, and format plans can now extend the compiled
+field rule independently. The compatibility and external-catalog acceptance
+gates passed, and no changes were made to the external okf-profiles or Mori
+repositories.

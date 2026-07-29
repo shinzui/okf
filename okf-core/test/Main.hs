@@ -3,7 +3,7 @@
 module Main (main) where
 
 import Data.Aeson (object, toJSON, (.=))
-import Data.Foldable (for_)
+import Data.Foldable (for_, toList)
 import Data.List qualified as List
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text.IO
@@ -83,6 +83,7 @@ main = do
         testIO "fixture dangling link reports a bundle validation error" testFixtureDanglingLink,
         testIO "loadProfileFile decodes the postgresql fixture" testLoadProfileFixture,
         testIO "loadProfileFile decodes record-completed document ID rules" testLoadDocumentIdProfileFixture,
+        testIO "loadProfileFile accepts the pre-type-frontmatter described schema" testLoadDescribedProfileFixture,
         testIO "loadProfileFile still accepts an okf 0.2.x descriptor" testLoadLegacyProfileFixture,
         testIO "profileFieldDescription finds required and recommended prose" testProfileFieldDescription,
         testIO "profile JSON encoding emits type, not type_" testProfileJsonShape,
@@ -94,6 +95,10 @@ main = do
         testIO "documentIdsInBundle sorts handles by prefix and number" testDocumentIdsInBundle,
         test "nextDocumentId skips gaps and starts unused prefixes at one" testNextDocumentId,
         testIO "findConceptsByDocumentId resolves and reports duplicate handles" testFindConceptsByDocumentId,
+        test "compileProfile rejects ambiguous definitions deterministically" testCompileProfileDefinitionErrors,
+        test "compiled rules merge profile and type requirements" testCompiledProfileMerge,
+        test "profile rules apply to unknown concept types" testProfileRulesApplyToUnknownTypes,
+        test "strict profile validation checks recommendations" testStrictProfileRecommendations,
         test "validateProfile accepts a conforming table concept" testProfileConformingTable,
         test "validateProfile flags a type not in the vocabulary" testProfileUnknownType,
         test "validateProfile flags a missing required field" testProfileMissingField,
@@ -108,7 +113,8 @@ main = do
         test "validateProfile document ID checks are off by default" testProfileDocumentIdsOffByDefault,
         test "schemaSectionColumns reads the header row of the Schema table" testSchemaSectionColumns,
         testIO "validateProfile reports the expected deviations for the fixture bundle" testProfileDeviationsFixture,
-        testIO "validateProfile reports document ID fixture deviations" testDocumentIdDeviationsFixture
+        testIO "validateProfile reports document ID fixture deviations" testDocumentIdDeviationsFixture,
+        testIO "type-aware fixture is permissive but reports one strict recommendation" testTypeAwareProfileFixture
       ]
   unless (and results) exitFailure
 
@@ -801,6 +807,17 @@ testLoadDocumentIdProfileFixture = do
         [Just "The OKF concept type; must be a type rule below.", Nothing]
         (map (^. #description) (spec ^. #frontmatter . #required))
 
+testLoadDescribedProfileFixture :: IO (Either Text ())
+testLoadDescribedProfileFixture = do
+  path <- fixtureFilePath "profiles/described.dhall"
+  result <- loadProfileFile path
+  pure $ case result of
+    Left err -> Left ("failed to load described profile: " <> err)
+    Right spec -> do
+      assertEqual "described" (spec ^. #name)
+      assertEqual ["Described Concept"] (map (^. #type_) (spec ^. #types))
+      assertEqual [emptyTestFrontmatterRules] (map (^. #frontmatter) (spec ^. #types))
+
 -- | The backwards-compatibility guarantee: a descriptor frozen in the okf 0.2.x
 -- shape — bare-string frontmatter keys, no descriptions anywhere — still loads,
 -- via the legacy fallback decoder, with every description absent.
@@ -877,6 +894,11 @@ testProfileJsonShape = do
                        [ "type" .= ("Decision Record" :: Text),
                          "description"
                            .= ("One accepted decision, never edited after acceptance." :: Text),
+                         "frontmatter"
+                           .= object
+                             [ "required" .= ([] :: [FieldRule]),
+                               "recommended" .= ([] :: [FieldRule])
+                             ],
                          "pathPattern" .= ("decisions/*" :: Text),
                          "resourceScheme" .= (Nothing :: Maybe Text),
                          "requireSchemaSection" .= False,
@@ -1034,6 +1056,7 @@ testProfileSpec =
         [ TypeRule
             { type_ = "PostgreSQL Table",
               description = Nothing,
+              frontmatter = emptyTestFrontmatterRules,
               pathPattern = Just "schemas/*/tables/*",
               resourceScheme = Just "postgresql",
               requireSchemaSection = True,
@@ -1060,6 +1083,7 @@ testDocumentIdProfileSpec =
         [ TypeRule
             { type_ = "Decision Record",
               description = Nothing,
+              frontmatter = emptyTestFrontmatterRules,
               pathPattern = Just "decisions/*",
               resourceScheme = Nothing,
               requireSchemaSection = False,
@@ -1068,6 +1092,97 @@ testDocumentIdProfileSpec =
             }
         ]
     }
+
+emptyTestFrontmatterRules :: FrontmatterRules
+emptyTestFrontmatterRules = FrontmatterRules {required = [], recommended = []}
+
+typeAwareProfileSpec :: ProfileSpec
+typeAwareProfileSpec =
+  ProfileSpec
+    { name = "type-aware",
+      description = Nothing,
+      okfVersion = "0.1",
+      frontmatter =
+        FrontmatterRules
+          { required = [FieldRule "type" Nothing, FieldRule "title" (Just "Global title.")],
+            recommended = [FieldRule "owner" (Just "Profile-level owner.")]
+          },
+      allowUnknownTypes = True,
+      idField = Nothing,
+      types =
+        [ TypeRule
+            { type_ = "Owned Concept",
+              description = Nothing,
+              frontmatter =
+                FrontmatterRules
+                  { required = [FieldRule "owner" (Just "Responsible person.")],
+                    recommended = [FieldRule "reviewer" (Just "Second pair of eyes."), FieldRule "title" (Just "Type title.")]
+                  },
+              pathPattern = Nothing,
+              resourceScheme = Nothing,
+              requireSchemaSection = False,
+              schemaColumns = [],
+              idPrefix = Nothing
+            }
+        ]
+    }
+
+testCompileProfileDefinitionErrors :: Either Text ()
+testCompileProfileDefinitionErrors = do
+  let duplicateField = FieldRule "title" Nothing
+      invalid =
+        typeAwareProfileSpec
+          { frontmatter =
+              FrontmatterRules
+                { required = [duplicateField, duplicateField],
+                  recommended = [duplicateField]
+                },
+            types = (typeAwareProfileSpec ^. #types) <> (typeAwareProfileSpec ^. #types)
+          }
+  case compileProfile invalid of
+    Right _ -> Left "expected invalid profile definition"
+    Left errors ->
+      assertEqual
+        [ DuplicateFieldRule Nothing "required" "title",
+          ConflictingFieldRequirement Nothing "title",
+          DuplicateTypeRule "Owned Concept"
+        ]
+        (toList errors)
+
+testCompiledProfileMerge :: Either Text ()
+testCompiledProfileMerge = do
+  compiled <- firstShow (compileProfile typeAwareProfileSpec)
+  assertEqual (Just "Type title.") (profileFieldDescriptionForType compiled "Owned Concept" "title")
+  assertEqual (Just "Responsible person.") (profileFieldDescriptionForType compiled "Owned Concept" "owner")
+  assertEqual (Just "Global title.") (profileFieldDescriptionForType compiled "Unknown Concept" "title")
+  concept <- profileConcept "owned/one" [("type", String "Owned Concept")] "# One\n"
+  cid <- parseTestConceptId "owned/one"
+  assertEqual
+    [MissingProfileField cid "owner", MissingProfileField cid "title"]
+    (validateProfile PermissiveConformance compiled [concept])
+
+testProfileRulesApplyToUnknownTypes :: Either Text ()
+testProfileRulesApplyToUnknownTypes = do
+  compiled <- firstShow (compileProfile typeAwareProfileSpec)
+  concept <- profileConcept "extensions/one" [("type", String "Extension Concept")] "# One\n"
+  cid <- parseTestConceptId "extensions/one"
+  assertEqual
+    [MissingProfileField cid "title"]
+    (validateProfile PermissiveConformance compiled [concept])
+
+testStrictProfileRecommendations :: Either Text ()
+testStrictProfileRecommendations = do
+  compiled <- firstShow (compileProfile typeAwareProfileSpec)
+  concept <-
+    profileConcept
+      "owned/one"
+      [("type", String "Owned Concept"), ("title", String "One"), ("owner", String "Ari")]
+      "# One\n"
+  cid <- parseTestConceptId "owned/one"
+  assertEqual [] (validateProfile PermissiveConformance compiled [concept])
+  assertEqual
+    [MissingRecommendedProfileField cid "reviewer"]
+    (validateProfile StrictAuthoring compiled [concept])
 
 -- | Build an in-memory concept from a raw ID, frontmatter pairs, and a body.
 profileConcept :: Text -> [(Text, Value)] -> Text -> Either Text Concept
@@ -1096,17 +1211,19 @@ testProfileConformingTable = do
         ("resource", String "postgresql://warehouse/sales/orders")
       ]
       schemaSectionBody
-  assertEqual [] (validateProfile testProfileSpec [concept])
+  assertEqual [] (validateTestProfile testProfileSpec [concept])
 
 testProfileUnknownType :: Either Text ()
 testProfileUnknownType = do
   concept <-
     profileConcept
       "schemas/sales/tables/bad"
-      [("type", String "pg table"), ("title", String "Bad"), ("resource", String "postgresql://x")]
+      [("type", String "pg table"), ("resource", String "postgresql://x")]
       schemaSectionBody
   cid <- parseTestConceptId "schemas/sales/tables/bad"
-  assertEqual [TypeNotInProfile cid "pg table"] (validateProfile testProfileSpec [concept])
+  assertEqual
+    [TypeNotInProfile cid "pg table", MissingProfileField cid "title"]
+    (validateTestProfile testProfileSpec [concept])
 
 testProfileMissingField :: Either Text ()
 testProfileMissingField = do
@@ -1116,7 +1233,7 @@ testProfileMissingField = do
       [("type", String "PostgreSQL Table"), ("resource", String "postgresql://x")]
       schemaSectionBody
   cid <- parseTestConceptId "schemas/sales/tables/orders"
-  assertEqual [MissingProfileField cid "title"] (validateProfile testProfileSpec [concept])
+  assertEqual [MissingProfileField cid "title"] (validateTestProfile testProfileSpec [concept])
 
 testProfileResourceMismatch :: Either Text ()
 testProfileResourceMismatch = do
@@ -1128,7 +1245,7 @@ testProfileResourceMismatch = do
   cid <- parseTestConceptId "schemas/sales/tables/orders"
   assertEqual
     [ResourceSchemeMismatch cid "postgresql" "mysql://x"]
-    (validateProfile testProfileSpec [concept])
+    (validateTestProfile testProfileSpec [concept])
 
 testProfilePathMismatch :: Either Text ()
 testProfilePathMismatch = do
@@ -1140,7 +1257,7 @@ testProfilePathMismatch = do
   cid <- parseTestConceptId "tables/orders"
   assertEqual
     [PathPatternMismatch cid "PostgreSQL Table" "schemas/*/tables/*"]
-    (validateProfile testProfileSpec [concept])
+    (validateTestProfile testProfileSpec [concept])
 
 testProfileMissingSchema :: Either Text ()
 testProfileMissingSchema = do
@@ -1152,7 +1269,7 @@ testProfileMissingSchema = do
   cid <- parseTestConceptId "schemas/sales/tables/orders"
   assertEqual
     [MissingSchemaSection cid "PostgreSQL Table"]
-    (validateProfile testProfileSpec [concept])
+    (validateTestProfile testProfileSpec [concept])
 
 testProfileSchemaColumnsMismatch :: Either Text ()
 testProfileSchemaColumnsMismatch = do
@@ -1167,7 +1284,7 @@ testProfileSchemaColumnsMismatch = do
   cid <- parseTestConceptId "schemas/sales/tables/orders"
   assertEqual
     [SchemaColumnsMismatch cid "PostgreSQL Table" ["Column", "Type", "Nullable", "Description"] ["Col", "Type"]]
-    (validateProfile testProfileSpec [concept])
+    (validateTestProfile testProfileSpec [concept])
 
 testProfileConformingDocumentId :: Either Text ()
 testProfileConformingDocumentId = do
@@ -1176,7 +1293,7 @@ testProfileConformingDocumentId = do
       "decisions/one"
       [("type", String "Decision Record"), ("title", String "One"), ("docId", String "ADR-1")]
       "# One\n"
-  assertEqual [] (validateProfile testDocumentIdProfileSpec [concept])
+  assertEqual [] (validateTestProfile testDocumentIdProfileSpec [concept])
 
 testProfileMissingDocumentId :: Either Text ()
 testProfileMissingDocumentId = do
@@ -1188,7 +1305,7 @@ testProfileMissingDocumentId = do
   cid <- parseTestConceptId "decisions/one"
   assertEqual
     [MissingDocumentId cid "Decision Record" "ADR"]
-    (validateProfile testDocumentIdProfileSpec [concept])
+    (validateTestProfile testDocumentIdProfileSpec [concept])
 
 testProfileMalformedDocumentIds :: Either Text ()
 testProfileMalformedDocumentIds = do
@@ -1208,7 +1325,7 @@ testProfileMalformedDocumentIds = do
     [ MalformedDocumentId leadingZeroId "ADR" "ADR-007",
       MalformedDocumentId wrongPrefixId "ADR" "RFC-1"
     ]
-    (validateProfile testDocumentIdProfileSpec [leadingZero, wrongPrefix])
+    (validateTestProfile testDocumentIdProfileSpec [leadingZero, wrongPrefix])
 
 testProfileDuplicateDocumentIds :: Either Text ()
 testProfileDuplicateDocumentIds = do
@@ -1226,7 +1343,7 @@ testProfileDuplicateDocumentIds = do
   secondId <- parseTestConceptId "decisions/second"
   assertEqual
     [DuplicateDocumentId "ADR-1" firstId secondId]
-    (validateProfile testDocumentIdProfileSpec [second, firstConcept])
+    (validateTestProfile testDocumentIdProfileSpec [second, firstConcept])
 
 testProfileDocumentIdsOffByDefault :: Either Text ()
 testProfileDocumentIdsOffByDefault = do
@@ -1239,7 +1356,7 @@ testProfileDocumentIdsOffByDefault = do
         ("docId", String "not-a-handle")
       ]
       schemaSectionBody
-  assertEqual [] (validateProfile testProfileSpec [concept])
+  assertEqual [] (validateTestProfile testProfileSpec [concept])
 
 testSchemaSectionColumns :: Either Text ()
 testSchemaSectionColumns =
@@ -1262,7 +1379,7 @@ testProfileDeviationsFixture = do
       ordersId <- parseTestConceptId "schemas/sales/tables/orders"
       assertEqual
         [TypeNotInProfile badId "pg table", MissingProfileField ordersId "title"]
-        (validateProfile spec concepts)
+        (validateTestProfile spec concepts)
 
 testDocumentIdDeviationsFixture :: IO (Either Text ())
 testDocumentIdDeviationsFixture = do
@@ -1282,7 +1399,29 @@ testDocumentIdDeviationsFixture = do
           MalformedDocumentId thirdId "ADR" "ADR-007",
           DuplicateDocumentId "ADR-1" firstId secondId
         ]
-        (validateProfile spec concepts)
+        (validateTestProfile spec concepts)
+
+testTypeAwareProfileFixture :: IO (Either Text ())
+testTypeAwareProfileFixture = do
+  descriptorPath <- fixtureFilePath "profiles/type-frontmatter.dhall"
+  loaded <- loadProfileFile descriptorPath
+  root <- fixturePath "profile-type-frontmatter"
+  concepts <- readBundle root
+  pure $ case loaded of
+    Left err -> Left ("failed to load type-aware profile: " <> err)
+    Right spec -> do
+      compiled <- firstShow (compileProfile spec)
+      ownedId <- parseTestConceptId "owned"
+      assertEqual [] (validateProfile PermissiveConformance compiled concepts)
+      assertEqual
+        [MissingRecommendedProfileField ownedId "reviewer"]
+        (validateProfile StrictAuthoring compiled concepts)
+
+validateTestProfile :: ProfileSpec -> [Concept] -> [ProfileViolation]
+validateTestProfile spec concepts =
+  case compileProfile spec of
+    Left errors -> error ("test profile failed to compile: " <> show errors)
+    Right compiled -> validateProfile PermissiveConformance compiled concepts
 
 substringIndex :: Text -> Text -> Maybe Int
 substringIndex needle haystack =

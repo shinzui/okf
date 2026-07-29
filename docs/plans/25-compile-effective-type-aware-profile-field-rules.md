@@ -4,6 +4,7 @@ slug: compile-effective-type-aware-profile-field-rules
 title: "Compile effective type-aware profile field rules"
 kind: exec-plan
 created_at: 2026-07-29T17:16:37Z
+intention: intention_01kyqmnyg6esxa50egq04z2ty2
 master_plan: "docs/masterplans/4-make-okf-profiles-type-aware-and-value-safe.md"
 ---
 
@@ -35,13 +36,13 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] Add the raw type-aware Dhall and Haskell schema with current and 0.2 compatibility decoders.
-- [ ] Add profile-definition errors and compile raw `ProfileSpec` values into `CompiledProfile`.
-- [ ] Merge profile and type rules deterministically and apply profile-level rules to unknown types.
-- [ ] Thread permissive versus strict authoring mode through `validateProfile`.
-- [ ] Update JSON, registry decoding, profile detail output, diagnostics, fixtures, and tests.
-- [ ] Update help, changelogs, and the compiled-rules ADR.
-- [ ] Run the full acceptance matrix and record results.
+- [x] (2026-07-29 12:24 PDT) Add the raw type-aware Dhall and Haskell schema with current and 0.2 compatibility decoders.
+- [x] (2026-07-29 12:24 PDT) Add profile-definition errors and compile raw `ProfileSpec` values into `CompiledProfile`.
+- [x] (2026-07-29 12:24 PDT) Merge profile and type rules deterministically and apply profile-level rules to unknown types.
+- [x] (2026-07-29 12:24 PDT) Thread permissive versus strict authoring mode through `validateProfile`.
+- [x] (2026-07-29 12:24 PDT) Update JSON, registry decoding, profile detail output, diagnostics, fixtures, and tests.
+- [x] (2026-07-29 12:24 PDT) Update help, changelogs, and the compiled-rules ADR.
+- [x] (2026-07-29 12:31 PDT) Run the full acceptance matrix and record results.
 
 
 ## Surprises & Discoveries
@@ -49,7 +50,18 @@ This section must always reflect the actual current state of the work.
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+- Discovery: running independent `cabal run` commands concurrently races on
+  Cabal's in-place package database. Sequential acceptance commands are stable.
+  Evidence: the parallel attempt failed creating `package.conf.inplace`; the same
+  permissive, strict, human-show, and JSON-show commands all completed when run
+  sequentially.
+
+- Discovery: strict core validation also activates log-staleness advisories, so
+  the two-type fixture needs a covering `log.md` to keep its expected output
+  focused on the one omitted profile recommendation.
+  Evidence: before the fixture log was added, both concepts reported that their
+  timestamp had no enclosing log; afterward the permissive command printed only
+  `OK: 2 concepts` and the strict command printed only the `reviewer` deviation.
 
 
 ## Decision Log
@@ -80,6 +92,13 @@ Record every decision made while working on the plan.
   extension type.
   Date: 2026-07-29
 
+- Decision: preserve two frozen fallback generations: the immediately preceding
+  self-documenting schema and the released 0.2 schema.
+  Rationale: the current catalog is still on 0.2, while descriptors authored from
+  the unreleased ADR 4 schema may already exist. Mutating either old shape would
+  turn compatibility tests into false positives.
+  Date: 2026-07-29
+
 
 ## Outcomes & Retrospective
 
@@ -88,7 +107,25 @@ Compare the result against the original purpose. Before marking the plan complet
 distill durable project context from the Decision Log, Surprises & Discoveries, and
 this section into docs/adr/. Keep task-local execution details here.
 
-(To be filled during and after implementation.)
+EP-1 is complete. Profiles now decode type-specific frontmatter rules, compile
+raw declarations into one deterministic effective map per type, reject ambiguous
+definitions before inspecting a bundle, apply profile-wide requirements to
+unknown types, and check profile recommendations under strict authoring. Human
+and JSON profile output expose the raw type rules without losing author order.
+
+Compatibility remained intact across both frozen generations. The described
+pre-EP-1 fixture and untouched 0.2 fixture load with empty type-specific rules,
+the external okf-profiles v0.6.0 registry enumerates all six profiles, and its
+improvement-request descriptor validates all six concepts in this repository.
+
+Validation evidence: all canonical and compatibility Dhall descriptors type
+checked; `cabal test all --test-show-details=direct` passed both suites;
+`nix flake check` passed the pre-commit and tree-format checks; the permissive
+two-type CLI scenario printed `OK: 2 concepts`; and strict enforcement exited 1
+with only the omitted `reviewer` recommendation. ADR 5 records the durable
+raw/compiled boundary, merge semantics, and migration obligations. Later child
+plans can extend the internal effective field rule without reopening those
+decisions.
 
 
 ## Context and Orientation

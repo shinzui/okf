@@ -18,6 +18,11 @@ module Okf.Profile
     loadProfileFile,
     decodeProfileExpr,
     profileFieldDescription,
+    CompiledProfile,
+    ProfileDefinitionError (..),
+    compileProfile,
+    compiledProfileSpec,
+    profileFieldDescriptionForType,
 
     -- * Validation
     DocumentId (..),
@@ -38,6 +43,9 @@ import Control.Exception (SomeException, catch)
 import Data.Aeson (ToJSON (..), object, (.=))
 import Data.Char (isAsciiLower, isAsciiUpper)
 import Data.List qualified as List
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
+import Data.Maybe (mapMaybe)
 import Data.Text qualified as Text
 import Data.Text.Read qualified as Text.Read
 import Data.Void (Void)
@@ -56,6 +64,7 @@ import Okf.Bundle
 import Okf.ConceptId (ConceptId, renderConceptId)
 import Okf.Document (Frontmatter, frontmatterLookup)
 import Okf.Prelude hiding ((.=))
+import Okf.Validation (ValidationProfile (..))
 import "generic-lens" Data.Generics.Labels ()
 
 -- | A complete house profile. @description@ is prose documenting the profile as
@@ -94,6 +103,7 @@ data FieldRule = FieldRule
 data TypeRule = TypeRule
   { type_ :: !Text,
     description :: !(Maybe Text),
+    frontmatter :: !FrontmatterRules,
     pathPattern :: !(Maybe Text),
     resourceScheme :: !(Maybe Text),
     requireSchemaSection :: !Bool,
@@ -137,14 +147,15 @@ instance ToJSON FrontmatterRules where
       ]
 
 instance ToJSON FieldRule where
-  toJSON FieldRule {field, description} =
-    object ["field" .= field, "description" .= description]
+  toJSON FieldRule {field = fieldName, description} =
+    object ["field" .= fieldName, "description" .= description]
 
 instance ToJSON TypeRule where
   toJSON
     TypeRule
       { type_ = ruleType,
         description,
+        frontmatter,
         pathPattern,
         resourceScheme,
         requireSchemaSection,
@@ -154,6 +165,7 @@ instance ToJSON TypeRule where
       object
         [ "type" .= ruleType,
           "description" .= description,
+          "frontmatter" .= frontmatter,
           "pathPattern" .= pathPattern,
           "resourceScheme" .= resourceScheme,
           "requireSchemaSection" .= requireSchemaSection,
@@ -186,7 +198,8 @@ data LegacyFrontmatterRules = LegacyFrontmatterRules
   deriving stock (Generic, Eq, Show)
   deriving anyclass (FromDhall)
 
--- | The okf 0.2.x per-@type@ rule: today's 'TypeRule' without @description@.
+-- | The okf 0.2.x per-@type@ rule: today's 'TypeRule' without descriptions or
+-- type-specific frontmatter.
 data LegacyTypeRule = LegacyTypeRule
   { type_ :: !Text,
     pathPattern :: !(Maybe Text),
@@ -205,7 +218,69 @@ instance FromDhall LegacyTypeRule where
       stripTrailingUnderscore fieldName =
         fromMaybe fieldName (Text.stripSuffix "_" fieldName)
 
--- | Lift a 0.2.x profile into the current shape by attaching no descriptions.
+-- | The self-documenting profile shape published immediately before
+-- type-specific frontmatter rules. It is frozen as a compatibility decoder in
+-- exactly the same way as the older 0.2.x shape below.
+data DescribedProfileSpec = DescribedProfileSpec
+  { name :: !Text,
+    description :: !(Maybe Text),
+    okfVersion :: !Text,
+    frontmatter :: !FrontmatterRules,
+    allowUnknownTypes :: !Bool,
+    idField :: !(Maybe Text),
+    types :: ![DescribedTypeRule]
+  }
+  deriving stock (Generic, Eq, Show)
+  deriving anyclass (FromDhall)
+
+data DescribedTypeRule = DescribedTypeRule
+  { type_ :: !Text,
+    description :: !(Maybe Text),
+    pathPattern :: !(Maybe Text),
+    resourceScheme :: !(Maybe Text),
+    requireSchemaSection :: !Bool,
+    schemaColumns :: ![Text],
+    idPrefix :: !(Maybe Text)
+  }
+  deriving stock (Generic, Eq, Show)
+
+instance FromDhall DescribedTypeRule where
+  autoWith _normalizer =
+    genericAutoWith
+      (Dhall.defaultInterpretOptions {Dhall.fieldModifier = stripTrailingUnderscore})
+    where
+      stripTrailingUnderscore fieldName =
+        fromMaybe fieldName (Text.stripSuffix "_" fieldName)
+
+emptyFrontmatterRules :: FrontmatterRules
+emptyFrontmatterRules = FrontmatterRules {required = [], recommended = []}
+
+upgradeDescribedProfile :: DescribedProfileSpec -> ProfileSpec
+upgradeDescribedProfile described =
+  ProfileSpec
+    { name = described ^. #name,
+      description = described ^. #description,
+      okfVersion = described ^. #okfVersion,
+      frontmatter = described ^. #frontmatter,
+      allowUnknownTypes = described ^. #allowUnknownTypes,
+      idField = described ^. #idField,
+      types = map upgradeRule (described ^. #types)
+    }
+  where
+    upgradeRule rule =
+      TypeRule
+        { type_ = rule ^. #type_,
+          description = rule ^. #description,
+          frontmatter = emptyFrontmatterRules,
+          pathPattern = rule ^. #pathPattern,
+          resourceScheme = rule ^. #resourceScheme,
+          requireSchemaSection = rule ^. #requireSchemaSection,
+          schemaColumns = rule ^. #schemaColumns,
+          idPrefix = rule ^. #idPrefix
+        }
+
+-- | Lift a 0.2.x profile into the current shape by attaching no descriptions
+-- and empty type-specific frontmatter.
 upgradeLegacyProfile :: LegacyProfileSpec -> ProfileSpec
 upgradeLegacyProfile legacy =
   ProfileSpec
@@ -227,6 +302,7 @@ upgradeLegacyProfile legacy =
       TypeRule
         { type_ = rule ^. #type_,
           description = Nothing,
+          frontmatter = emptyFrontmatterRules,
           pathPattern = rule ^. #pathPattern,
           resourceScheme = rule ^. #resourceScheme,
           requireSchemaSection = rule ^. #requireSchemaSection,
@@ -237,38 +313,43 @@ upgradeLegacyProfile legacy =
 -- | Load and decode a Dhall profile descriptor from a file path. Any evaluation
 -- or decoding failure is captured as a human-readable 'Left'.
 --
--- A descriptor written for okf 0.2.x — bare-string frontmatter keys, no
--- descriptions anywhere — is accepted by falling back to the legacy decoder and
--- upgrading the result. When both decoders fail, the /current/ decoder's error
--- is reported: an author almost always wants to know how their descriptor
--- differs from today's schema, not from a retired one.
+-- The immediately preceding self-documenting shape and the okf 0.2.x shape are
+-- accepted by frozen fallback decoders and upgraded with empty type-specific
+-- frontmatter. When every decoder fails, the /current/ decoder's error is
+-- reported: an author almost always wants to know how their descriptor differs
+-- from today's schema, not from a retired one.
 loadProfileFile :: FilePath -> IO (Either Text ProfileSpec)
 loadProfileFile path = do
   current <- tryDecode (Dhall.inputFile auto path)
   case current of
     Right spec -> pure (Right spec)
     Left currentError -> do
-      legacy <- tryDecode (Dhall.inputFile auto path)
-      pure $ case legacy of
-        Right legacySpec -> Right (upgradeLegacyProfile legacySpec)
-        Left _legacyError -> Left currentError
+      described <- tryDecode (Dhall.inputFile auto path)
+      case described of
+        Right describedSpec -> pure (Right (upgradeDescribedProfile describedSpec))
+        Left _describedError -> do
+          legacy <- tryDecode (Dhall.inputFile auto path)
+          pure $ case legacy of
+            Right legacySpec -> Right (upgradeLegacyProfile legacySpec)
+            Left _legacyError -> Left currentError
   where
-    -- The two 'Dhall.inputFile' calls above look identical but are not: the
-    -- first is used at 'ProfileSpec' and the second at 'LegacyProfileSpec', and
-    -- @auto@ picks its decoder from the result type.
+    -- The three 'Dhall.inputFile' calls above look identical but are not: each
+    -- result is inferred as one of the current, described, or legacy shapes,
+    -- and @auto@ picks its decoder from that result type.
     tryDecode :: IO a -> IO (Either Text a)
     tryDecode action =
       (Right <$> action)
         `catch` \(exception :: SomeException) -> pure (Left (Text.pack (show exception)))
 
 -- | Does an already-evaluated Dhall expression decode as a profile? Tries the
--- current schema, then the okf 0.2.x schema, so a registry written before field
--- descriptions existed — the published @okf-profiles@ package included — still
--- enumerates. Uses 'Dhall.rawInput', which normalizes and runs the decoder's
--- extractor without throwing, which is what lets registry enumeration be pure.
+-- current schema, the preceding self-documenting schema, then the okf 0.2.x
+-- schema, so the published @okf-profiles@ package still enumerates. Uses
+-- 'Dhall.rawInput', which normalizes and runs the decoder's extractor without
+-- throwing, which is what lets registry enumeration be pure.
 decodeProfileExpr :: Expr Src Void -> Maybe ProfileSpec
 decodeProfileExpr expression =
   Dhall.rawInput Dhall.auto expression
+    <|> fmap upgradeDescribedProfile (Dhall.rawInput Dhall.auto expression)
     <|> fmap upgradeLegacyProfile (Dhall.rawInput Dhall.auto expression)
 
 -- | The description a profile attaches to a frontmatter key, looking in
@@ -281,6 +362,116 @@ profileFieldDescription spec key =
     [] -> Nothing
   where
     rules = spec ^. #frontmatter . #required <> spec ^. #frontmatter . #recommended
+
+-- | A malformed profile definition. The optional type is absent for profile
+-- scope and present for a type-specific scope. The list name is @required@ or
+-- @recommended@.
+data ProfileDefinitionError
+  = DuplicateTypeRule Text
+  | DuplicateFieldRule (Maybe Text) Text Text
+  | ConflictingFieldRequirement (Maybe Text) Text
+  deriving stock (Generic, Eq, Ord, Show)
+
+data FieldRequirement = RecommendedField | RequiredField
+  deriving stock (Eq, Ord, Show)
+
+data EffectiveFieldRule = EffectiveFieldRule
+  { requirement :: !FieldRequirement,
+    description :: !(Maybe Text)
+  }
+  deriving stock (Generic, Eq, Show)
+
+-- | A raw profile whose authoring contradictions have been rejected and whose
+-- effective profile-plus-type frontmatter rules have been precomputed.
+data CompiledProfile = CompiledProfile
+  { spec :: !ProfileSpec,
+    baseRules :: !(Map Text EffectiveFieldRule),
+    rulesByType :: !(Map Text (Map Text EffectiveFieldRule))
+  }
+  deriving stock (Generic, Eq, Show)
+
+compiledProfileSpec :: CompiledProfile -> ProfileSpec
+compiledProfileSpec compiled = compiled ^. #spec
+
+compileProfile :: ProfileSpec -> Either (NonEmpty ProfileDefinitionError) CompiledProfile
+compileProfile rawSpec =
+  case definitionErrors of
+    firstError : remainingErrors -> Left (firstError :| remainingErrors)
+    [] ->
+      Right
+        CompiledProfile
+          { spec = rawSpec,
+            baseRules,
+            rulesByType =
+              Map.fromList
+                [ (rule ^. #type_, mergeRules baseRules (compileRules (rule ^. #frontmatter)))
+                | rule <- rawSpec ^. #types
+                ]
+          }
+  where
+    baseRules = compileRules (rawSpec ^. #frontmatter)
+    typeNames = map (^. #type_) (rawSpec ^. #types)
+    definitionErrors =
+      List.sortOn definitionErrorKey $
+        map DuplicateTypeRule (duplicates typeNames)
+          <> scopeErrors Nothing (rawSpec ^. #frontmatter)
+          <> concat
+            [ scopeErrors (Just (rule ^. #type_)) (rule ^. #frontmatter)
+            | rule <- rawSpec ^. #types
+            ]
+
+    definitionErrorKey = \case
+      DuplicateTypeRule ctype -> (1 :: Int, ctype, 0 :: Int, "", 0 :: Int)
+      DuplicateFieldRule scope listName key ->
+        let (scopeRank, typeName) = scopeKey scope
+         in (scopeRank, typeName, listKey listName, key, 0)
+      ConflictingFieldRequirement scope key ->
+        let (scopeRank, typeName) = scopeKey scope
+         in (scopeRank, typeName, 2, key, 0)
+
+    scopeKey Nothing = (0, "")
+    scopeKey (Just ctype) = (1, ctype)
+    listKey "required" = 0
+    listKey _ = 1
+
+    scopeErrors scope FrontmatterRules {required, recommended} =
+      [DuplicateFieldRule scope "required" key | key <- duplicates (map (^. #field) required)]
+        <> [DuplicateFieldRule scope "recommended" key | key <- duplicates (map (^. #field) recommended)]
+        <> [ ConflictingFieldRequirement scope key
+           | key <- List.nub (List.sort (List.intersect (map (^. #field) required) (map (^. #field) recommended)))
+           ]
+
+    duplicates = mapMaybe duplicateHead . List.group . List.sort
+    duplicateHead (candidate : _ : _) = Just candidate
+    duplicateHead _ = Nothing
+
+compileRules :: FrontmatterRules -> Map Text EffectiveFieldRule
+compileRules FrontmatterRules {required, recommended} =
+  Map.fromList
+    ( [ (rule ^. #field, EffectiveFieldRule RequiredField (rule ^. #description))
+      | rule <- required
+      ]
+        <> [ (rule ^. #field, EffectiveFieldRule RecommendedField (rule ^. #description))
+           | rule <- recommended
+           ]
+    )
+
+mergeRules :: Map Text EffectiveFieldRule -> Map Text EffectiveFieldRule -> Map Text EffectiveFieldRule
+mergeRules = Map.unionWith mergeRule
+  where
+    mergeRule profileRule typeRule =
+      EffectiveFieldRule
+        { requirement = max (profileRule ^. #requirement) (typeRule ^. #requirement),
+          description = typeRule ^. #description <|> profileRule ^. #description
+        }
+
+effectiveRulesForType :: CompiledProfile -> Text -> Map Text EffectiveFieldRule
+effectiveRulesForType compiled ctype =
+  Map.findWithDefault (compiled ^. #baseRules) ctype (compiled ^. #rulesByType)
+
+profileFieldDescriptionForType :: CompiledProfile -> Text -> Text -> Maybe Text
+profileFieldDescriptionForType compiled ctype key =
+  Map.lookup key (effectiveRulesForType compiled ctype) >>= (^. #description)
 
 -- | A parsed document handle: an ASCII-letter-led alphanumeric prefix and a
 -- positive number, rendered as @PREFIX-N@.
@@ -376,6 +567,8 @@ data ProfileViolation
     TypeNotInProfile ConceptId Text
   | -- | a required frontmatter key is missing or empty (concept, key)
     MissingProfileField ConceptId Text
+  | -- | a recommended frontmatter key is missing under strict authoring (concept, key)
+    MissingRecommendedProfileField ConceptId Text
   | -- | concept's file path does not match the type rule's pattern (concept, type, pattern)
     PathPatternMismatch ConceptId Text Text
   | -- | type rule requires a resource scheme but resource is absent (concept, type, scheme)
@@ -394,32 +587,38 @@ data ProfileViolation
     DuplicateDocumentId Text ConceptId ConceptId
   deriving stock (Generic, Eq, Show)
 
--- | Check every concept against the profile, returning all deviations. Concepts
--- whose @type@ is not in the profile vocabulary skip the per-rule checks (there
--- is no rule to check against) and only produce a 'TypeNotInProfile' violation
--- when @allowUnknownTypes@ is @False@.
-validateProfile :: ProfileSpec -> [Concept] -> [ProfileViolation]
-validateProfile spec concepts =
-  concatMap checkConcept concepts <> checkDuplicateDocumentIds spec concepts
+-- | Check every concept against a compiled profile, returning all deviations.
+-- Profile-wide rules apply even to unknown types; a matching type rule adds its
+-- frontmatter rules and the existing type-specific structural checks.
+validateProfile :: ValidationProfile -> CompiledProfile -> [Concept] -> [ProfileViolation]
+validateProfile validationProfile compiled concepts =
+  concatMap checkConcept sortedConcepts <> checkDuplicateDocumentIds spec sortedConcepts
   where
+    spec = compiledProfileSpec compiled
+    sortedConcepts = List.sortOn (renderConceptId . conceptIdOf) concepts
     rulesByType = [(rule ^. #type_, rule) | rule <- spec ^. #types]
 
     checkConcept concept =
       let cid = conceptIdOf concept
           ctype = conceptType concept
+          fieldViolations = checkFields cid ctype concept
        in case lookup ctype rulesByType of
             Nothing ->
-              [TypeNotInProfile cid ctype | not (spec ^. #allowUnknownTypes)]
+              [TypeNotInProfile cid ctype | not (spec ^. #allowUnknownTypes)] <> fieldViolations
             Just rule ->
-              checkRequiredFields cid concept
+              fieldViolations
                 <> checkPath cid ctype rule
                 <> checkResource cid ctype rule concept
                 <> checkSchema cid ctype rule concept
                 <> checkDocumentId spec cid ctype rule concept
 
-    checkRequiredFields cid concept =
-      [ MissingProfileField cid key
-      | key <- [rule ^. #field | rule <- spec ^. #frontmatter . #required],
+    checkFields cid ctype concept =
+      [ violation cid key
+      | (key, rule) <- Map.toAscList (effectiveRulesForType compiled ctype),
+        let violation = case rule ^. #requirement of
+              RequiredField -> MissingProfileField
+              RecommendedField -> MissingRecommendedProfileField,
+        rule ^. #requirement == RequiredField || validationProfile == StrictAuthoring,
         not (hasNonEmptyField key (conceptFrontmatter concept))
       ]
 
