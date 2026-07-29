@@ -4,22 +4,54 @@ title: Check that document handles referenced in frontmatter resolve to real con
 description: Let a profile declare that a field holds handles of governed concepts,
   so a supersedes or sourceStreams reference to a nonexistent document is reported
   instead of silently accepted.
-timestamp: "2026-07-28T17:06:37Z"
+timestamp: "2026-07-29T17:30:21Z"
 requestId: IR-6
-status: proposed
+status: accepted
 origin: mori://shinzui/okf-profiles
+targetPlan: docs/plans/31-validate-profile-declared-document-references.md
+relatedPlans:
+  - docs/masterplans/5-validate-structured-metadata-and-document-relationships-in-okf-profiles.md
+reviews:
+  - kind: model
+    reviewer: openai-codex
+    reviewed_at: "2026-07-29T17:30:21Z"
+    document_timestamp: "2026-07-29T17:30:21Z"
+    scope: technical-accuracy
+    outcome: approved
+    provider: openai
+    model: unspecified
+    effort: unspecified
+    context: >-
+      Verified against okf source, tests, ADRs, the authoritative okf-profiles
+      v0.6.0 catalog, and dependency sources. Approval applies to explicit local,
+      external-scheme, and self-reference policy.
 ---
 
 # Improvement Request: Check that document handles referenced in frontmatter resolve to real concepts
 
 ## Status
 
-- **Status:** proposed
+- **Status:** accepted with design corrections on 2026-07-29
 - **Origin:** `shinzui/okf-profiles` (the authoritative profile catalog)
 - **Owner of the build:** `shinzui/okf`
 - **Size:** moderate. The check is cheap; the design question is the boundary
   between okf's bundle-local knowledge and Mori's cross-repository resolution, and
   this request exists partly to draw that line explicitly.
+
+## Review disposition
+
+Accepted under
+[Master Plan 5](../masterplans/5-validate-structured-metadata-and-document-relationships-in-okf-profiles.md)
+and [ExecPlan 31](../plans/31-validate-profile-declared-document-references.md),
+but not with the proposed `referencesHandle : Optional Text`.
+
+The accepted rule explicitly declares a local handle prefix, allowed external
+URI schemes, and whether self-reference is legal. This fixes two defects in the
+proposal: any URI-like value cannot silently bypass a handle rule, and
+self-reference is not universally invalid for every possible relationship.
+`sourceStreams` is not an acceptance case because the current catalog describes
+stream categories, not stable document handles. External existence remains
+Mori's responsibility; OKF performs no network or registry lookup.
 
 ## Problem
 
@@ -48,10 +80,10 @@ the next free handle. Both are about handles a bundle *owns*. Handles a bundle
 
 **Handle-carrying fields are declared across the catalog.**
 `documentation.architectureDecisions` recommends `supersedes` and `supersededBy`.
-`documentation.patternCatalog` recommends `supersedes`. `tan-postgresql` documents
-`sourceStreams` as a list of event-stream categories. Every one of these holds a
-reference to another concept, and none is distinguishable in the profile from a
-free-text field.
+`documentation.patternCatalog` recommends `supersedes`. Those fields may hold
+stable document handles and are indistinguishable in the profile from free text.
+`tan-postgresql.sourceStreams` is not evidence for this request: the current
+catalog documents stream categories, not `PREFIX-N` handles.
 
 **IR-3 gets the shape and stops there.** A `DocumentHandle "ADR"` format would
 confirm that `supersedes: ADR-7` is well-formed. Well-formed and nonexistent is the
@@ -65,23 +97,30 @@ get none of the same treatment.
 
 ## Proposal
 
-A field rule may declare that its value holds handles of concepts governed by the
-profile:
+A field rule may declare a local-handle reference policy plus explicit external
+URI alternatives:
 
 ```dhall
 { field : Text
 , …
-, referencesHandle : Optional Text     -- the expected ID prefix, e.g. "ADR"
+, reference :
+    Optional
+      { localPrefix : Text
+      , externalUriSchemes : List Text
+      , allowSelf : Bool
+      }
 }
 ```
 
 The check, per concept, for each value in the field (element-wise on lists, as
 with `allowedValues`):
 
-1. Parse the value as a handle with the declared prefix, reusing `parseDocumentId`.
-   A malformed value is a shape violation, already IR-3's `ValueFormatMismatch` if
-   that has landed, or a new constructor if it has not.
-2. Look the handle up in `documentIdsInBundle`. A miss is:
+1. Parse the value as a handle, reusing `parseDocumentId`. A wrong prefix is a
+   distinct category error. A handle with the declared prefix must exist in the
+   compiled valid-ID index.
+2. Otherwise parse an absolute URI. Its scheme must appear in
+   `externalUriSchemes`; OKF validates syntax and scheme but does not resolve it.
+3. A value that is neither is a malformed document reference.
 
 ```haskell
 | -- | referenced handle does not exist in this bundle (concept, key, handle)
@@ -96,22 +135,20 @@ touches the network. This preserves the property the okf README states plainly �
 that "the standalone CLI does not require Mori, Mina, an LLM, or network access" —
 and it is the reason this request is small.
 
-**Self-reference is a violation.** `supersedes: ADR-3` on ADR-3 is a defect, cheap
-to detect while the table is in hand, and a real outcome of copy-paste authoring.
+**Self-reference is explicit policy.** `supersedes: ADR-3` on ADR-3 is normally a
+defect, while a generic relationship field may have different semantics.
+`allowSelf` keeps that choice in the profile instead of hard-coding it globally.
 
-Values that are not bundle-local handles are the boundary case. A `supersedes`
-pointing at another repository's ADR would be a `mori://` URI, not an `ADR-N`
-handle, and `referencesHandle` should not fire on it. The rule: a value that parses
-as a URI is out of scope for this check and belongs to IR-3's `UriWithScheme`. A
-value that parses as a handle with the declared prefix is in scope and must
-resolve. A value that is neither is a shape violation.
+Values that are not bundle-local handles are accepted only through the explicit
+URI-scheme list. A `supersedes` field that permits cross-repository ADRs may list
+`mori`; a local-only relationship leaves the list empty. An arbitrary URI cannot
+silently bypass the rule.
 
 ## Why this shape
 
-**Prefix-scoped, not "any handle".** `referencesHandle = Some "ADR"` says both that
-the value is a handle and which kind. Accepting any handle in the bundle would let
-`supersedes: PAT-3` pass in an ADR corpus, which is a category error, not a
-reference.
+**Prefix-scoped, not "any handle".** `localPrefix = "ADR"` says which local kind
+the field may target. Accepting any handle in the bundle would let
+`supersedes: PAT-3` pass in an ADR corpus, which is a category error.
 
 **No reverse-direction inference.** A tempting extension is symmetry checking: if
 ADR-3 says `supersededBy: ADR-9`, then ADR-9 should say `supersedes: ADR-3`. That
@@ -162,9 +199,9 @@ handles near that number, naming the highest allocated handle is better still,
 since the common cause is a reference written against a plan that renumbered.
 
 The negative-fixture pattern in `shinzui/okf-profiles` should cover a dangling
-reference, a self-reference, a wrong-prefix reference, and a `mori://` value in a
-`referencesHandle` field passing untouched — that last one is the boundary this
-request draws, and it should be pinned by a test rather than by this paragraph.
+reference, a disallowed self-reference, a wrong-prefix reference, a disallowed
+external scheme, and malformed text. A positive `mori://` case must use a rule
+that explicitly lists `mori`.
 
 Worth landing after IR-3, so that shape violations and resolution violations come
 from one coherent pair of checks rather than this request growing its own

@@ -4,23 +4,55 @@ title: Declare field cardinality and the shape of nested frontmatter records
 description: Let a profile say whether a field is a scalar or a list, and describe
   the fields of records inside a list, so structured frontmatter like review
   records can be governed instead of merely mentioned.
-timestamp: "2026-07-28T17:04:37Z"
+timestamp: "2026-07-29T17:30:21Z"
 requestId: IR-4
-status: proposed
+status: accepted
 origin: mori://shinzui/okf-profiles
+targetPlan: docs/plans/27-enforce-profile-field-cardinality.md
+relatedPlans:
+  - docs/masterplans/4-make-okf-profiles-type-aware-and-value-safe.md
+  - docs/masterplans/5-validate-structured-metadata-and-document-relationships-in-okf-profiles.md
+  - docs/plans/29-validate-one-level-nested-profile-records.md
+reviews:
+  - kind: model
+    reviewer: openai-codex
+    reviewed_at: "2026-07-29T17:30:21Z"
+    document_timestamp: "2026-07-29T17:30:21Z"
+    scope: technical-accuracy
+    outcome: approved
+    provider: openai
+    model: unspecified
+    effort: unspecified
+    context: >-
+      Verified against okf source, tests, ADRs, the authoritative okf-profiles
+      v0.6.0 catalog, and dependency sources. Approval applies to the corrected
+      non-recursive, one-level shape.
 ---
 
 # Improvement Request: Declare field cardinality and the shape of nested frontmatter records
 
 ## Status
 
-- **Status:** proposed
+- **Status:** accepted with design corrections on 2026-07-29
 - **Origin:** `shinzui/okf-profiles` (the authoritative profile catalog)
 - **Owner of the build:** `shinzui/okf`
-- **Size:** the largest request in this bundle. It makes `FieldRule` recursive,
-  which is a change to the shape of the profile model rather than another field on
-  it. Worth landing after IR-1 and IR-3, whose constraints it then applies one
-  level down.
+- **Size:** the largest request in this bundle. It adds explicit cardinality plus
+  a separate, one-level `NestedFieldRule` model. Worth landing after IR-1 and
+  IR-3, whose constraints it then applies one level down.
+
+## Review disposition
+
+Accepted across [Master Plan 4](../masterplans/4-make-okf-profiles-type-aware-and-value-safe.md)
+and [Master Plan 5](../masterplans/5-validate-structured-metadata-and-document-relationships-in-okf-profiles.md).
+Top-level cardinality belongs to
+[ExecPlan 27](../plans/27-enforce-profile-field-cardinality.md); bounded nested
+records belong to
+[ExecPlan 29](../plans/29-validate-one-level-nested-profile-records.md).
+
+`cardinality` is non-optional with `Any` as its only unconstrained spelling.
+Nested rules use a separate `NestedFieldRule` that cannot itself contain nested
+rules; the accepted schema is therefore genuinely one level deep rather than
+being described as recursive while implemented as a fixed pair.
 
 ## Problem
 
@@ -90,8 +122,8 @@ Neither piece is expressible today, and the nested half is the harder one.
 < Scalar | List | Any >
 ```
 
-as an optional `cardinality` on `FieldRule`, defaulting to `Any` — today's
-behavior, where either shape satisfies presence.
+as a `cardinality` on `FieldRule`, defaulting to `Any` — today's behavior,
+where either legacy-supported shape satisfies presence.
 
 ```haskell
 | -- | value's cardinality disagrees with the rule (concept, key, expected, actual)
@@ -104,26 +136,25 @@ are `List`, and none of it is currently stated.
 
 ### 2. Nested field rules
 
-`FieldRule` gains a recursive member describing the fields of the records inside a
-list:
+`FieldRule` gains a member describing the fields of records inside a list:
 
 ```dhall
 { field : Text
 , description : Optional Text
 , allowedValues : List Text
 , format : Optional Format
-, cardinality : Optional Cardinality
-, fields : Optional NestedRules      -- shape of records inside a list
+, cardinality : Cardinality
+, elementFields : Optional NestedRules -- shape of records inside a list
 }
 ```
 
 where `NestedRules` mirrors `FrontmatterRules` — `required` and `recommended`
-lists of `FieldRule` — applied to each record in the list rather than to the
-document.
+lists of `NestedFieldRule` — applied to each record in the list rather than to
+the document. `NestedFieldRule` carries the same value constraints but has no
+`elementFields` member.
 
-Dhall has no direct recursive record types, so `FieldRule` and `NestedRules` are
-written as a fixed two-level pair: a top-level `FieldRule` may carry `fields`, and
-a nested `FieldRule` may not. Depth is capped at one, deliberately.
+The two distinct rule types make the model non-recursive. Depth is capped at one,
+deliberately.
 
 Violations carry the index so a message can point at the offending record:
 
@@ -151,8 +182,8 @@ a smaller change than unwinding a general mechanism nobody needed.
 
 **Cardinality as a three-valued enum with `Any` as default.** `Optional Bool`
 spelled `isList` would be shorter and would read badly at the call site;
-`Scalar`/`List`/`Any` says what it means and leaves room for a future `NonEmptyList`
-without changing the field's type.
+`Scalar`/`List`/`Any` says what it means. The field itself is not optional,
+because `None` and `Some Any` would duplicate the unconstrained state.
 
 **Nested rules mirror `FrontmatterRules` rather than inventing a shape.** A record
 inside `reviews` has required and recommended fields for the same reasons a

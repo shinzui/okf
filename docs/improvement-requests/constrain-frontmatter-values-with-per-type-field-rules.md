@@ -4,22 +4,56 @@ title: Constrain frontmatter values with closed vocabularies, scoped per concept
 description: Let a profile declare the allowed values of a field, and let field
   rules attach to a type rule instead of only to the profile, so a closed vocabulary
   can apply to the types it actually governs.
-timestamp: "2026-07-28T17:01:37Z"
+timestamp: "2026-07-29T17:30:21Z"
 requestId: IR-1
-status: proposed
+status: accepted
 origin: mori://shinzui/okf-profiles
+targetPlan: docs/plans/26-enforce-closed-field-name-and-field-value-vocabularies.md
+relatedPlans:
+  - docs/masterplans/4-make-okf-profiles-type-aware-and-value-safe.md
+  - docs/plans/25-compile-effective-type-aware-profile-field-rules.md
+reviews:
+  - kind: model
+    reviewer: openai-codex
+    reviewed_at: "2026-07-29T17:30:21Z"
+    document_timestamp: "2026-07-29T17:30:21Z"
+    scope: technical-accuracy
+    outcome: approved
+    provider: openai
+    model: unspecified
+    effort: unspecified
+    context: >-
+      Verified against okf source, tests, ADRs, the authoritative okf-profiles
+      v0.6.0 catalog, and dependency sources. Approval applies to the corrected
+      Review disposition and linked plans.
 ---
 
 # Improvement Request: Constrain frontmatter values with closed vocabularies, scoped per concept type
 
 ## Status
 
-- **Status:** proposed
+- **Status:** accepted with design corrections on 2026-07-29
 - **Origin:** `shinzui/okf-profiles` (the authoritative profile catalog)
 - **Owner of the build:** `shinzui/okf`
-- **Size:** additive — one new optional field on `FieldRule`, one new field on
-  `TypeRule`, two new `ProfileViolation` constructors. No existing descriptor
-  changes shape.
+- **Size:** a coordinated raw-schema and validator change: `allowedValues` on
+  `FieldRule`, `frontmatter` on `TypeRule`, effective-rule compilation,
+  definition errors, violations, rendering, and strict-mode wiring.
+
+## Review disposition
+
+Accepted and assigned to
+[Master Plan 4](../masterplans/4-make-okf-profiles-type-aware-and-value-safe.md),
+principally [ExecPlan 25](../plans/25-compile-effective-type-aware-profile-field-rules.md)
+and [ExecPlan 26](../plans/26-enforce-closed-field-name-and-field-value-vocabularies.md).
+
+The implementation must correct four points in the proposal. `TypeRule.frontmatter`
+is a direct, default-empty `FrontmatterRules`, not an `Optional`, because `None`
+and `Some` empty are the same behavior. Raw descriptors are compiled before
+bundle validation so duplicates and unsatisfiable intersections are
+profile-definition errors, not `ProfileViolation`s. Profile recommendations
+must first be wired to `--strict`; the current validator never checks them.
+Finally, profile-scope rules apply even to allowed unknown types, which the
+current matching-type branch accidentally skips.
 
 ## Problem
 
@@ -137,7 +171,7 @@ field.enum "status" [ "proposed", "accepted", "superseded" ]
 ```dhall
 { type : Text
 , description : Optional Text
-, frontmatter : Optional FrontmatterRules   -- None = profile-level rules only
+, frontmatter : FrontmatterRules            -- empty = profile-level rules only
 , pathPattern : Optional Text
 , …
 }
@@ -153,8 +187,8 @@ When both levels constrain the same key:
 - `recommended` at either level, with `required` at neither, makes it recommended.
 - `allowedValues` at both levels **intersects**. A type rule may narrow a
   profile-wide vocabulary; it may not widen it. An empty intersection is a
-  profile authoring error, reported once at load time rather than once per
-  concept:
+  profile-definition error, reported once during compilation rather than once
+  per concept:
 
 ```haskell
 | -- | type rule's vocabulary cannot overlap the profile's (type, key)
@@ -180,10 +214,10 @@ same thing, and a field with two spellings for one meaning invites the wrong one
 likely to want a controlled vocabulary in `documentation.patternCatalog`, and it
 is a list. Rejecting lists outright would exclude the best use case.
 
-**`Optional FrontmatterRules` on `TypeRule`, not a flat `List FieldRule`.** Reusing
+**`FrontmatterRules` on `TypeRule`, not a flat `List FieldRule`.** Reusing
 the existing record keeps `required`/`recommended` meaning exactly what they mean
-at the profile level, and it means a later field added to `FrontmatterRules` lands
-in both places at once.
+at the profile level. Its empty default is the only spelling of “no type-specific
+rules,” and a later field added to `FrontmatterRules` lands in both places at once.
 
 **Union rather than override.** A reader of a profile should be able to say "every
 concept in this bundle has `title`" by reading the profile block alone. Override

@@ -4,21 +4,51 @@ title: Let a profile close its frontmatter vocabulary
 description: Add an allowUnknownFields switch so a profile can reject frontmatter
   keys it does not declare, catching misspelled and abandoned keys that every
   value-level check is blind to.
-timestamp: "2026-07-28T17:02:37Z"
+timestamp: "2026-07-29T17:30:21Z"
 requestId: IR-2
-status: proposed
+status: accepted
 origin: mori://shinzui/okf-profiles
+targetPlan: docs/plans/26-enforce-closed-field-name-and-field-value-vocabularies.md
+relatedPlans:
+  - docs/masterplans/4-make-okf-profiles-type-aware-and-value-safe.md
+reviews:
+  - kind: model
+    reviewer: openai-codex
+    reviewed_at: "2026-07-29T17:30:21Z"
+    document_timestamp: "2026-07-29T17:30:21Z"
+    scope: technical-accuracy
+    outcome: approved
+    provider: openai
+    model: unspecified
+    effort: unspecified
+    context: >-
+      Verified against okf source, tests, ADRs, the authoritative okf-profiles
+      v0.6.0 catalog, and dependency sources. Approval applies to the corrected
+      Review disposition and linked plans.
 ---
 
 # Improvement Request: Let a profile close its frontmatter vocabulary
 
 ## Status
 
-- **Status:** proposed
+- **Status:** accepted with design corrections on 2026-07-29
 - **Origin:** `shinzui/okf-profiles` (the authoritative profile catalog)
 - **Owner of the build:** `shinzui/okf`
 - **Size:** small — one `Bool` on `Profile`, one violation constructor, one check.
   Independent of every other request in this bundle.
+
+## Review disposition
+
+Accepted and assigned to
+[Master Plan 4](../masterplans/4-make-okf-profiles-type-aware-and-value-safe.md)
+and [ExecPlan 26](../plans/26-enforce-closed-field-name-and-field-value-vocabularies.md).
+
+The original global union of every type rule's keys is rejected. Closure is
+computed for each concept from core-known OKF keys, the profile's configured
+`idField`, profile-level rules, and only the matching type rule. Otherwise a key
+declared for one type would be silently allowed on every other type. The
+default remains open, and catalog profiles must opt into closure only after
+running their real corpora.
 
 ## Problem
 
@@ -91,19 +121,17 @@ One violation:
 The check, when `allowUnknownFields = False`: every key in the concept's
 frontmatter must appear in the profile's declared set.
 
-The declared set is the union of:
+The declared set for one concept is the union of:
 
 - `frontmatter.required` and `frontmatter.recommended` field names;
-- the same lists from the concept's type rule, if IR-1's per-type frontmatter has
-  landed;
-- OKF's own reserved keys.
+- the same lists from the concept's matching type rule, if IR-1's per-type
+  frontmatter has landed;
+- OKF's core-known keys and the profile's configured `idField`.
 
-That last item is the part to get right. `type` is required by OKF itself, and
-`resource` is meaningful to okf whether or not a profile lists it — a profile that
-sets `requireSchemaSection` or `resourceScheme` is already talking about keys it
-may not have listed in `frontmatter`. The reserved set must be derived from what
-the core validator and the type rules actually consume, not hand-maintained, or
-the first closed profile will produce false positives on keys okf itself defined.
+That last item is the part to get right. `type`, `title`, `description`,
+`timestamp`, `resource`, and `tags` are core-known, while `idField` may name an
+arbitrary key such as `docId`. The set must have one owner shared with core
+validation and authoring rather than a second literal inside the profile check.
 
 Naming follows `allowUnknownTypes` deliberately: same polarity, same default
 direction, same one-word difference. A profile author who understands one

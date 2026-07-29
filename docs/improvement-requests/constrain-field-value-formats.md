@@ -1,25 +1,56 @@
 ---
 type: Improvement Request
 title: Constrain field value formats for the open-ended keys a vocabulary cannot describe
-description: Add a named format and a regular-expression pattern to FieldRule so
-  profiles can check timestamps, URIs, and handle shapes rather than only checking
-  that a value is non-empty.
-timestamp: "2026-07-28T17:03:37Z"
+description: Add named formats to FieldRule so profiles can check UTC timestamps,
+  dates, URIs, URI schemes, and handle shapes rather than only checking that a
+  value is non-empty.
+timestamp: "2026-07-29T17:30:21Z"
 requestId: IR-3
-status: proposed
+status: accepted
 origin: mori://shinzui/okf-profiles
+targetPlan: docs/plans/28-enforce-named-profile-field-formats.md
+relatedPlans:
+  - docs/masterplans/4-make-okf-profiles-type-aware-and-value-safe.md
+reviews:
+  - kind: model
+    reviewer: openai-codex
+    reviewed_at: "2026-07-29T17:30:21Z"
+    document_timestamp: "2026-07-29T17:30:21Z"
+    scope: technical-accuracy
+    outcome: approved
+    provider: openai
+    model: unspecified
+    effort: unspecified
+    context: >-
+      Verified against okf source, tests, ADRs, the authoritative okf-profiles
+      v0.6.0 catalog, and dependency sources. Approval is limited to named
+      formats; arbitrary regular expressions remain deferred.
 ---
 
 # Improvement Request: Constrain field value formats for the open-ended keys a vocabulary cannot describe
 
 ## Status
 
-- **Status:** proposed
+- **Status:** accepted in named-format scope on 2026-07-29
 - **Origin:** `shinzui/okf-profiles` (the authoritative profile catalog)
 - **Owner of the build:** `shinzui/okf`
-- **Size:** additive — two optional fields on `FieldRule`, two violation
-  constructors. Introduces okf's first regular-expression dependency, which is the
-  part worth arguing about.
+- **Size:** additive — one optional field on `FieldRule`, one violation
+  constructor, and one RFC 3986 URI parser dependency.
+
+## Review disposition
+
+The named-format portion is accepted and assigned to
+[Master Plan 4](../masterplans/4-make-okf-profiles-type-aware-and-value-safe.md)
+and [ExecPlan 28](../plans/28-enforce-named-profile-field-formats.md). The
+accepted timestamp format is named `Rfc3339Utc` because the catalog requires a
+trailing `Z`; generic RFC3339 also permits numeric offsets.
+
+The arbitrary `pattern` escape hatch is not approved. A search of the
+authoritative v0.6.0 catalog found no constraint that the named formats cannot
+express. Regex can return as a separate improvement request when a concrete
+consumer exists and can justify syntax, anchoring, compilation errors, and
+resource limits. The accepted plan uses the existing `time` parser and the
+released `network-uri` RFC 3986 parser.
 
 ## Problem
 
@@ -68,14 +99,13 @@ ordering silently in every consumer that sorts by it.
 
 ## Proposal
 
-Two optional fields on `FieldRule`, alongside IR-1's `allowedValues`:
+One optional field on `FieldRule`, alongside IR-1's `allowedValues`:
 
 ```dhall
 { field : Text
 , description : Optional Text
 , allowedValues : List Text
 , format : Optional Format          -- named, closed set of well-known shapes
-, pattern : Optional Text           -- regular expression, for everything else
 }
 ```
 
@@ -84,11 +114,11 @@ Two optional fields on `FieldRule`, alongside IR-1's `allowedValues`:
 `Format` is a Dhall union with a fixed set of alternatives that okf implements:
 
 ```dhall
-< Rfc3339Timestamp | Date | Uri | UriWithScheme : Text | DocumentHandle : Text >
+< Rfc3339Utc | Date | Uri | UriWithScheme : Text | DocumentHandle : Text >
 ```
 
 Named formats exist because the important cases are few, shared, and easy to get
-wrong as regular expressions. `Rfc3339Timestamp` covers the catalog's single most
+wrong as regular expressions. `Rfc3339Utc` covers the catalog's single most
 common constraint. `UriWithScheme "mori"` generalizes `resourceScheme` to any key.
 `DocumentHandle "ADR"` generalizes `idPrefix` to any key, which is what makes
 `supersedes` checkable at all.
@@ -102,31 +132,14 @@ distinction IR-1 draws in declining a union for vocabularies.
   ValueFormatMismatch ConceptId Text Text Text
 ```
 
-### Patterns
-
-`pattern` is an escape hatch for repository-specific shapes okf should not be
-expected to name — internal ticket references, project-specific slugs. It is
-anchored implicitly (the whole value must match) and applies element-wise to lists,
-matching `allowedValues`.
-
-```haskell
-| -- | value does not match the declared pattern (concept, key, pattern, actual)
-  ValuePatternMismatch ConceptId Text Text Text
-```
-
-A malformed pattern is a profile error reported once at load time, not once per
-concept, on the same reasoning as IR-1's `UnsatisfiableVocabulary`.
-
-Both fields, like `allowedValues`, say nothing about presence: an absent key is
+The format field, like `allowedValues`, says nothing about presence: an absent key is
 `required`'s business.
 
 ## Why this shape
 
-**Both, not one.** Named formats alone cannot cover the long tail. Patterns alone
-push every profile author into writing an RFC3339 regex, and RFC3339 regexes are
-uniformly wrong — the common ones accept month 13, or reject leading `+00:00`
-offsets, or accept 60-second minutes in the wrong contexts. `Rfc3339Timestamp`
-delegates to a parser that is right once, centrally.
+**Named formats first, with evidence.** Every current catalog case fits the
+closed set above. UTC timestamp and URI syntax delegate to parsers that are right
+once, centrally rather than to profile-authored regular expressions.
 
 **Named formats as a union, deliberately closed.** An open `format : Text` with
 okf matching on strings would silently ignore misspellings, which is the failure
@@ -139,18 +152,11 @@ descriptors. If they are ever removed, that is a separate deprecation with its o
 migration note, of the kind `docs/profiles/` already carries for the 0.2.0.0 schema
 change.
 
-**Regex engine choice is a real decision, not a detail.** okf currently has no
-regex dependency, and `matchPathPattern`
-(`okf-core/src/Okf/Profile.hs:496`) is a hand-rolled glob matcher precisely because
-of that. Adding one is the main cost of this request, and it should be a
-non-backtracking engine — profiles are authored by hand, patterns are checked
-against every concept in a bundle, and a catastrophically backtracking pattern in a
-shared profile would degrade every consumer that pins it. If that dependency is
-unwelcome, landing named formats alone still resolves the catalog's actual
-constraints; `pattern` can wait for a case that named formats genuinely cannot
-express.
-
 ## Scope — what this deliberately does not do
+
+**No arbitrary regular expressions.** The reviewed catalog has no pattern-only
+case. A future request must supply one and decide syntax, anchoring, compile-time
+errors, and resource limits before adding a regex engine to core.
 
 **No cross-field comparison.** "`document_timestamp` must equal the document's
 `timestamp`" is a relation between two values, not a property of one, and no
@@ -175,17 +181,16 @@ new checks should produce messages of the same shape and land in the same
 
 Ordering matters when several constraints apply to one field. A value that is
 absent should produce only `MissingProfileField`; a value that is present should be
-checked against `allowedValues`, `format`, and `pattern` independently, reporting
-each failure rather than stopping at the first. Profile violations are advisory and
+checked against `allowedValues` and `format` independently, reporting each failure
+rather than stopping at the first. Profile violations are advisory and
 collected, not fatal and short-circuited, and one document with three problems
 should require one edit cycle rather than three.
 
 Suggested sequencing:
 
-1. `format` with `Rfc3339Timestamp` only. No new dependency, and it closes the
+1. `format` with `Rfc3339Utc` only. No new dependency, and it closes the
    catalog's most common unchecked constraint on the day it lands.
 2. The remaining named formats, generalizing `resourceScheme` and `idPrefix`.
-3. `pattern`, with the regex-engine decision made explicitly and recorded.
 
 ## Related
 

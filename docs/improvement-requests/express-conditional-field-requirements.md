@@ -4,17 +4,34 @@ title: Express field requirements that depend on another field's value
 description: Let a profile state that a key becomes required when another key holds
   a particular value, so rules like "supersededBy is required when status is
   superseded" stop living in prose.
-timestamp: "2026-07-28T17:05:37Z"
+timestamp: "2026-07-29T17:30:21Z"
 requestId: IR-5
-status: proposed
+status: accepted
 origin: mori://shinzui/okf-profiles
+targetPlan: docs/plans/30-enforce-same-scope-conditional-field-requirements.md
+relatedPlans:
+  - docs/masterplans/5-validate-structured-metadata-and-document-relationships-in-okf-profiles.md
+reviews:
+  - kind: model
+    reviewer: openai-codex
+    reviewed_at: "2026-07-29T17:30:21Z"
+    document_timestamp: "2026-07-29T17:30:21Z"
+    scope: technical-accuracy
+    outcome: approved
+    provider: openai
+    model: unspecified
+    effort: unspecified
+    context: >-
+      Verified against okf source, tests, ADRs, the authoritative okf-profiles
+      v0.6.0 catalog, and dependency sources. Approval applies to same-scope
+      sibling conditions and presence-only gating.
 ---
 
 # Improvement Request: Express field requirements that depend on another field's value
 
 ## Status
 
-- **Status:** proposed
+- **Status:** accepted with design corrections on 2026-07-29
 - **Origin:** `shinzui/okf-profiles` (the authoritative profile catalog)
 - **Owner of the build:** `shinzui/okf`
 - **Size:** moderate. Small in implementation, but it introduces the profile
@@ -22,6 +39,19 @@ origin: mori://shinzui/okf-profiles
   substance of the request.
 - **Depends on:** IR-1. A conditional whose predicate ranges over an open set of
   strings is not worth specifying.
+
+## Review disposition
+
+Accepted after the field-contract and nested-record foundations, under
+[Master Plan 5](../masterplans/5-validate-structured-metadata-and-document-relationships-in-okf-profiles.md)
+and [ExecPlan 30](../plans/30-enforce-same-scope-conditional-field-requirements.md).
+
+The original nested semantics are rejected because they cannot express the
+request's own model-review case: `reviews[].provider` must depend on sibling
+`reviews[].kind`, not a top-level field. Conditions resolve in the current
+object scope. The raw field is named `when`, because it can appear in either
+the required or recommended list; it gates only presence, not the target
+field's value constraints.
 
 ## Problem
 
@@ -82,25 +112,28 @@ vocabulary that the predicate can be checked against.
 ```dhall
 { field : Text
 , …
-, requiredWhen : Optional { field : Text, hasValue : List Text }
+, when : Optional { field : Text, hasValue : List Text }
 }
 ```
 
-Read as: this rule applies to a concept only when the named field holds one of the
-listed values. A rule with `requiredWhen = None` — every rule today — always
-applies, so nothing changes shape.
+Read as: this rule's presence clause applies only when the named sibling field
+holds one of the listed values. A rule with `when = None` — every rule today —
+always applies. Vocabulary, cardinality, format, and reference constraints still
+apply whenever the target field is present.
 
 Deliberate restrictions on what a condition may be:
 
 - **One condition per rule.** No conjunction, no disjunction across fields, no
   negation. `hasValue` being a list gives the only disjunction anyone has needed:
   "when `status` is `superseded` or `withdrawn`."
-- **The condition names a top-level field**, even for a nested rule. This keeps
-  the predicate's meaning independent of where the rule sits.
-- **The condition's field must be declared in the same profile** and, where IR-1
-  has landed, every value in `hasValue` must be in that field's `allowedValues`.
+- **The condition names a sibling in the same object scope.** A top-level rule
+  names a top-level field; a nested review rule names a field in the same review
+  record.
+- **The condition's field must be declared in the same effective scope**, be
+  explicitly scalar, and have a non-empty `allowedValues`. Every value in
+  `hasValue` must be in that vocabulary.
   A condition on a value the field can never hold is dead, and it should be
-  reported at profile load time rather than never firing:
+  reported during profile compilation rather than never firing:
 
 ```haskell
 | -- | condition can never be satisfied (rule field, condition field, value)
@@ -162,20 +195,15 @@ with its own violation, and requirement covers the cases the catalog has.
 IR-6's territory.
 
 **Nested conditions follow IR-4.** The model-review case works only once nested
-field rules exist. The design here is deliberately compatible — the condition names
-a top-level field, which for a nested rule means the condition and the rule live at
-different levels. Whether a nested rule should also be able to condition on a
-*sibling* field within the same record (`kind`, in the review case) is the one open
-question this request leaves for IR-4's implementation to answer, and it is the
-more useful of the two for that specific convention.
+field rules exist. Its condition names sibling `kind` in the same review record;
+cross-level conditions are deliberately out of scope.
 
 ## Notes for whoever builds it
 
 The per-concept work is a lookup and a membership test before the existing presence
-check, so the check itself is cheap. The condition-validity pass at load time is
-the new code path, and it belongs next to profile decoding rather than in
-`validateProfile` — a profile with a dead condition is broken regardless of what
-bundle it is pointed at.
+check, so the check itself is cheap. The condition-validity pass belongs in the
+raw-to-compiled profile step — a profile with a dead condition is broken regardless
+of what bundle it is pointed at.
 
 `okf profile show` should render the condition inline with the field, since a
 required-list entry that is conditional is otherwise indistinguishable from an
