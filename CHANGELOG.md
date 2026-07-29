@@ -9,6 +9,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- Profile field cardinality with `Any`, `Scalar`, and `List` constraints,
+  including shape-aware required fields and deterministic profile/type merging.
 - Type-aware value vocabularies and opt-in closed field names for profiles.
   `allowedValues = []` and `allowUnknownFields = True` preserve existing open
   behavior; contradictory profile/type vocabularies fail during compilation.
@@ -21,9 +23,9 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   check and no way for a bundle to fail.
 - `okf-core/dhall/FieldRule.dhall`, its record-completion module under
   `defaults/`, and a new `mk/FieldRule.dhall` exporting the constructors
-  `plain : Text -> FieldRule` and `documented : Text -> Text -> FieldRule`, for
-  the one profile value authors write repeatedly. `package.dhall` re-exports
-  them as `okf.FieldRule`, `okf.defaults.FieldRule`, and `okf.mk.FieldRule`.
+  `plain`, `documented`, `enum`, `scalar`, and `list`, for the one profile value
+  authors write repeatedly. `package.dhall` re-exports them as `okf.FieldRule`,
+  `okf.defaults.FieldRule`, and `okf.mk.FieldRule`.
 - `okf profile list` and `okf profile show`, which enumerate and inspect the
   profiles a Dhall *registry* publishes. A registry is any Dhall expression
   evaluating to a record of profile values, so the separate `okf-profiles`

@@ -9,6 +9,9 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- `Cardinality` (`Any`, `Scalar`, or `List`) on every `FieldRule`, compiled
+  profile/type merge checks, shape-aware presence, and
+  `CardinalityMismatch`. Frozen older descriptors upgrade to `Any`.
 - `FieldRule.allowedValues`, `ProfileSpec.allowUnknownFields`, structural
   `FieldPath` diagnostics, and compiled validation for textual vocabularies and
   closed top-level field names. Older descriptors upgrade to unconstrained,
@@ -32,18 +35,18 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - `ToJSON` instances for `ProfileSpec`, `FrontmatterRules`, and `TypeRule`. A
   type rule's name is emitted under the key `type`, matching the Dhall field
   rather than the Haskell field `type_`.
-- `FieldRule` — `{ field :: Text, description :: Maybe Text, allowedValues :: [Text] }`
+- `FieldRule` — `{ field :: Text, description :: Maybe Text, allowedValues :: [Text], cardinality :: Cardinality }`
   — one documented and optionally constrained frontmatter key.
 - `profileFieldDescription :: ProfileSpec -> Text -> Maybe Text`, the prose a
   profile attaches to a frontmatter key, searching `required` then
   `recommended`.
 - `decodeProfileExpr :: Expr Src Void -> Maybe ProfileSpec`, which decodes an
-  already-evaluated Dhall expression under the current schema and then the okf
-  0.2.x one. `Okf.Profile.Registry` uses it, so a registry of pre-description
-  profiles still enumerates.
+  already-evaluated Dhall expression under the current schema and each frozen
+  compatibility generation. `Okf.Profile.Registry` uses it, so older profile
+  registries still enumerate.
 - Published Dhall: `dhall/FieldRule.dhall`, `dhall/defaults/FieldRule.dhall`,
-  and `dhall/mk/FieldRule.dhall` (constructors `plain`, `documented`, and
-  `enum`), all
+  and `dhall/mk/FieldRule.dhall` (constructors `plain`, `documented`, `enum`,
+  `scalar`, and `list`), all
   re-exported from `dhall/package.dhall`, which gains a top-level `mk` record.
 
 ### Changed

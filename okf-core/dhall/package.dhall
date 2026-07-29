@@ -17,6 +17,7 @@
 , TypeRule = ./TypeRule.dhall
 , FrontmatterRules = ./FrontmatterRules.dhall
 , FieldRule = ./FieldRule.dhall
+, Cardinality = ./Cardinality.dhall
 , defaults =
   { Profile = ./defaults/Profile.dhall
   , TypeRule = ./defaults/TypeRule.dhall

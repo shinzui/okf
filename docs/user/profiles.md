@@ -141,6 +141,7 @@ Each `FieldRule` — one frontmatter key, and optionally what it is for:
 | `field` | `Text` | The frontmatter key. |
 | `description` | `Optional Text` | Prose explaining what the key should contain. Printed by `okf profile show`, and repeated in missing required or recommended advisories. Documentary only. |
 | `allowedValues` | `List Text` | Legal textual values. `[]` means unconstrained. Strings and lists of strings are checked whenever present, including recommended fields outside strict mode. |
+| `cardinality` | `Cardinality` | `Any` preserves legacy presence behavior; `Scalar` accepts non-blank text, numbers, and booleans; `List` accepts arrays. Objects and null do not satisfy explicit cardinality. |
 
 A description is attached to the key it documents rather than kept in a parallel
 list, so it cannot drift away from the rule or outlive it. See
@@ -246,25 +247,35 @@ idField: docId
 frontmatter.required:
   - type: (none)
     allowedValues: (any)
+    cardinality: any
   - title: (none)
     allowedValues: (any)
+    cardinality: any
   - docId: (none)
     allowedValues: (any)
+    cardinality: any
   - status: (none)
     allowedValues: (any)
+    cardinality: any
   - date: (none)
     allowedValues: (any)
+    cardinality: any
 frontmatter.recommended:
   - description: (none)
     allowedValues: (any)
+    cardinality: any
   - timestamp: (none)
     allowedValues: (any)
+    cardinality: any
   - supersedes: (none)
     allowedValues: (any)
+    cardinality: any
   - supersededBy: (none)
     allowedValues: (any)
+    cardinality: any
   - originatingPlan: (none)
     allowedValues: (any)
+    cardinality: any
 
 type: Architecture Decision Record
   description: (none)
@@ -285,8 +296,9 @@ Every optional field prints, as `(none)` when absent, so the output shape does
 not shift between profiles and stays reliable to grep. Type rules print in the
 order the profile declares them.
 
-Each frontmatter list is a headed block with one key and its value vocabulary,
-because those details cannot share a comma-joined line with neighbouring rules.
+Each frontmatter list is a headed block with one key, its value vocabulary, and
+its cardinality, because those details cannot share a comma-joined line with
+neighbouring rules.
 An **empty** list keeps the one-line form,
 `frontmatter.recommended: (none)`. `(any)` means the field has no value
 vocabulary. A profile that documents and constrains its keys reads like this:
@@ -295,11 +307,14 @@ vocabulary. A profile that documents and constrains its keys reads like this:
 frontmatter.required:
   - type: The OKF concept type; must be one of the type rules below.
     allowedValues: (any)
+    cardinality: scalar
   - title: Human-readable name of the object, as a reader would say it.
     allowedValues: (any)
+    cardinality: scalar
 frontmatter.recommended:
   - status: Lifecycle state.
     allowedValues: proposed, accepted, closed
+    cardinality: scalar
 ```
 
 `field.enum "status" [ "proposed", "accepted" ]` constructs a rule with a
@@ -312,6 +327,18 @@ Set `allowUnknownFields = False` to close field names. The allowed set is built
 for each concept type, so a field declared only by type A is rejected on type B.
 The core keys `type`, `title`, `description`, `timestamp`, `resource`, and
 `tags`, plus the configured `idField`, remain legal without redundant rules.
+
+Cardinality is a shape constraint, separate from textual vocabularies.
+`field.scalar "domain"` accepts `domain: false` as present, while
+`field.list "tags"` requires an array. Empty text and an empty required list
+remain missing rather than becoming shape mismatches. `Any` is the default and
+retains the older non-empty-text-or-non-empty-list presence rule.
+
+At profile and type scope, `Any` is the identity and matching explicit
+cardinalities agree. A `Scalar`/`List` contradiction is rejected as a profile
+definition error before bundle traversal. A wrong-shape value produces one
+cardinality diagnostic; it does not also produce a missing-field or redundant
+vocabulary-shape diagnostic.
 
 The closing hint is the whole adoption path: there is no `okf profile install`,
 because `okf validate --profile` already accepts any Dhall file. Save those two
@@ -443,6 +470,8 @@ in  [ -- 1. constructors — the form to reach for
       field.documented "type" "The OKF concept type."
     , field.plain "title"
     , field.enum "status" [ "proposed", "accepted", "superseded" ]
+    , field.scalar "domain"
+    , field.list "tags"
 
       -- 2. record completion
     , okf.defaults.FieldRule::{
@@ -451,22 +480,28 @@ in  [ -- 1. constructors — the form to reach for
       }
 
       -- 3. a bare record literal — every field spelled out
-    , { field = "date", description = None Text, allowedValues = [] : List Text }
+    , { field = "date"
+      , description = None Text
+      , allowedValues = [] : List Text
+      , cardinality = okf.Cardinality.Any
+      }
     ]
 ```
 
-`okf.mk.FieldRule` exports three functions:
+`okf.mk.FieldRule` exports five functions:
 
 | Constructor | Type | Use |
 |-------------|------|-----|
 | `plain` | `Text -> FieldRule` | A key with no description. |
 | `documented` | `Text -> Text -> FieldRule` | A key and the prose explaining it. |
 | `enum` | `Text -> List Text -> FieldRule` | A key with a closed textual vocabulary and no description. |
+| `scalar` | `Text -> FieldRule` | A key constrained to text, numbers, or booleans. |
+| `list` | `Text -> FieldRule` | A key constrained to an array. |
 
 **What this does and does not protect against.** Record completion and the
-constructors both shield you from *additive, defaulted* schema fields: if a fourth
-field is ever added to `FieldRule` with a default, every `::` and every
-`plain`/`documented` call site keeps working untouched, while every bare record
+constructors both shield you from *additive, defaulted* schema fields: if another
+field is added to `FieldRule` with a default, every `::` and constructor call
+site keeps working untouched, while every bare record
 literal (form 3) breaks. Neither helps with a field that is renamed or newly
 required — and, importantly, **neither does anything for a descriptor that already
 exists**, since a descriptor written before these modules existed cannot

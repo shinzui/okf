@@ -4,6 +4,7 @@ slug: enforce-profile-field-cardinality
 title: "Enforce profile field cardinality"
 kind: exec-plan
 created_at: 2026-07-29T17:16:45Z
+intention: intention_01kyqmnyg6esxa50egq04z2ty2
 master_plan: "docs/masterplans/4-make-okf-profiles-type-aware-and-value-safe.md"
 ---
 
@@ -32,12 +33,12 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] Add non-optional `Cardinality` to Dhall, Haskell, defaults, constructors, JSON, and profile show.
-- [ ] Merge profile/type cardinality and reject contradictory definitions.
-- [ ] Centralize presence and cardinality evaluation for required, recommended, and optional fields.
-- [ ] Add scalar, list, object, null, boolean, number, empty-value, and type-scope tests.
-- [ ] Update compatibility upgrades, help, changelogs, and the compiled-rule ADR.
-- [ ] Run the complete validation and external-catalog acceptance matrix.
+- [x] Add non-optional `Cardinality` to Dhall, Haskell, defaults, constructors, JSON, and profile show.
+- [x] Merge profile/type cardinality and reject contradictory definitions.
+- [x] Centralize presence and cardinality evaluation for required, recommended, and optional fields.
+- [x] Add scalar, list, object, null, boolean, number, empty-value, and type-scope tests.
+- [x] Update compatibility upgrades, help, changelogs, and the compiled-rule ADR.
+- [x] Run the complete validation and external-catalog acceptance matrix.
 
 
 ## Surprises & Discoveries
@@ -45,7 +46,18 @@ This section must always reflect the actual current state of the work.
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+- Discovery: EP-2 is a distinct compatibility generation, not an extension of
+  the frozen EP-1 decoder. Adding cardinality therefore requires a fifth decoder
+  branch that preserves `allowedValues` and `allowUnknownFields` while attaching
+  `Any`.
+  Evidence: the frozen `vocabulary-ep2.dhall` fixture loads with its closed-field
+  policy and vocabulary intact and every rule upgraded to `Any`.
+
+- Discovery: the public constructor name `List` collides with the `List` prism
+  re-exported by `Okf.Prelude` from lens.
+  Evidence: GHC reports an ambiguous occurrence unless modules using the
+  cardinality constructor hide the lens export; no API rename is needed because
+  downstream users importing `Okf.Profile` directly do not inherit that prism.
 
 
 ## Decision Log
@@ -77,7 +89,20 @@ Compare the result against the original purpose. Before marking the plan complet
 distill durable project context from the Decision Log, Surprises & Discoveries, and
 this section into docs/adr/. Keep task-local execution details here.
 
-(To be filled during and after implementation.)
+EP-3 delivered explicit `Any`, `Scalar`, and `List` cardinality as one component
+of the compiled effective field rule. `Any` preserves old presence behavior;
+explicit scalar rules admit non-blank text, numbers, and booleans, while list
+rules admit arrays. Empty correctly shaped required values remain missing, and
+wrong shapes produce one `CardinalityMismatch` without duplicate presence or
+vocabulary-shape diagnostics.
+
+Profile/type `Any` acts as the identity, matching explicit constraints merge,
+and `Scalar`/`List` contradictions fail during compilation. Current and four
+frozen descriptor generations load with the intended defaults. Dhall type
+checks, focused and full Cabal tests, the scalar/list CLI fixture, external
+v0.6 registry enumeration and strict improvement-request validation, and
+`nix flake check` passed. No external repository was modified. ADR 5 now owns
+the durable merge, presence, compatibility, and consumer contracts.
 
 
 ## Context and Orientation

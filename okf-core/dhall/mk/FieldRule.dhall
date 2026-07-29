@@ -14,6 +14,8 @@
 -- `okf-core/src/Okf/Profile.hs`.
 let FieldRule = ../defaults/FieldRule.dhall
 
+let Cardinality = ../Cardinality.dhall
+
 in  { plain = \(field : Text) -> FieldRule::{ field }
     , documented =
         \(field : Text) ->
@@ -23,4 +25,8 @@ in  { plain = \(field : Text) -> FieldRule::{ field }
         \(field : Text) ->
         \(allowedValues : List Text) ->
           FieldRule::{ field, allowedValues }
+    , scalar =
+        \(field : Text) -> FieldRule::{ field, cardinality = Cardinality.Scalar }
+    , list =
+        \(field : Text) -> FieldRule::{ field, cardinality = Cardinality.List }
     }

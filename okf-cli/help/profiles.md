@@ -113,6 +113,22 @@ VALUE VOCABULARIES AND CLOSED FIELDS
     profile: requests/typo: missing profile-required field: status
     profile: requests/typo: frontmatter field not declared by profile: stauts
 
+FIELD CARDINALITY
+
+  Every FieldRule has a cardinality: Any, Scalar, or List. Any is the default
+  and preserves the legacy non-empty-text-or-non-empty-list presence behavior.
+  Scalar accepts non-blank text, numbers, and booleans. List accepts arrays.
+  Objects and null fail an explicit cardinality constraint.
+
+  Use `field.scalar "title"` or `field.list "tags"`. At profile and type scope,
+  Any is the identity; contradictory Scalar and List declarations are a hard
+  profile-definition error. Wrong-shape values are reported even for a
+  recommended field outside --strict, without a duplicate missing-field or
+  vocabulary-shape diagnostic.
+
+    profile: bad: frontmatter cardinality at title must be scalar, found list: ["One","Two"]
+    profile: bad: frontmatter cardinality at tags must be list, found scalar: "one"
+
   A registry reference may be a path to a Dhall file, a directory holding
   package.dhall, or a Dhall expression such as a hash-pinned URL. Without
   --registry, okf uses OKF_PROFILE_REGISTRY, then profiles.registry from

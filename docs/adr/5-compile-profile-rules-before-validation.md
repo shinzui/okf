@@ -41,9 +41,9 @@ validation. Profile deviations remain advisory unless the CLI is given
 
 The published Dhall schema gives `TypeRule` a direct
 `frontmatter : FrontmatterRules` field. Record-completion defaults supply empty
-lists. A private frozen decoder retains the immediately preceding
-self-documenting shape, followed by the already-frozen okf 0.2.x decoder, so
-unannotated older profiles and registries continue to load.
+lists. Private frozen decoders retain each additive schema generation, followed
+by the already-frozen okf 0.2.x decoder, so unannotated older profiles and
+registries continue to load.
 
 Field-value vocabularies extend the same compiled rule. An empty vocabulary is
 unconstrained. When profile and type scopes both declare non-empty vocabularies,
@@ -57,6 +57,14 @@ effective fields, the centrally owned core-key set, and the configured
 `idField`. Its default is `True`. Frozen compatibility decoders upgrade older
 descriptors to that open default and attach empty vocabularies.
 
+Cardinality is another component of the compiled field rule. `Any` is its
+identity and preserves the legacy presence predicate. Matching explicit
+`Scalar` or `List` declarations merge; contradictory explicit declarations are
+a structured definition error. Explicit scalar presence includes numbers and
+booleans, while list presence requires a non-empty array. Correctly shaped empty
+values remain missing, and wrong shapes produce one cardinality violation
+rather than an additional missing or vocabulary-shape violation.
+
 
 ## Consequences
 
@@ -64,8 +72,9 @@ Library consumers must call `compileProfile`, handle definition errors, and pass
 `PermissiveConformance` or `StrictAuthoring` to `validateProfile`. Consumers
 that exhaustively match `ProfileViolation`, including Mori, must also handle
 `MissingRecommendedProfileField`, `ValueNotInVocabulary`, and
-`FieldNotInProfile`. Consumers that exhaustively match
-`ProfileDefinitionError` must handle `UnsatisfiableVocabulary`.
+`FieldNotInProfile`, and `CardinalityMismatch`. Consumers that exhaustively
+match `ProfileDefinitionError` must handle `UnsatisfiableVocabulary` and
+`ConflictingCardinality`.
 
 Later profile constraints extend the compiled field rule rather than scanning
 raw declarations again. Human and JSON profile display continue to preserve the

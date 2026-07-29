@@ -6,4 +6,12 @@
 -- against a bundle and can never produce a profile violation. It exists so a
 -- profile can explain what a key is for at the point the key is declared.
 -- `allowedValues = []` leaves textual values unconstrained.
-{ field : Text, description : Optional Text, allowedValues : List Text }
+-- `cardinality = Cardinality.Any` preserves the legacy scalar-or-list presence
+-- behavior.
+let Cardinality = ./Cardinality.dhall
+
+in  { field : Text
+    , description : Optional Text
+    , allowedValues : List Text
+    , cardinality : Cardinality
+    }

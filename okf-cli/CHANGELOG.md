@@ -9,6 +9,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- Profile detail output and validation diagnostics for `Any`, `Scalar`, and
+  `List` field cardinality.
 - `okf profile show` now displays `allowUnknownFields` and each field's
   `allowedValues`; validation renders value-vocabulary and undeclared-field
   deviations.

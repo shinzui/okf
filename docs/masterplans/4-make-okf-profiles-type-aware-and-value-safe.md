@@ -73,7 +73,7 @@ later plans if merge semantics change.
 |---|-------|------|-----------|-----------|--------|
 | EP-1 | Compile effective type-aware profile field rules | `docs/plans/25-compile-effective-type-aware-profile-field-rules.md` | None | None | Complete |
 | EP-2 | Enforce closed field-name and field-value vocabularies | `docs/plans/26-enforce-closed-field-name-and-field-value-vocabularies.md` | EP-1 | None | Complete |
-| EP-3 | Enforce profile field cardinality | `docs/plans/27-enforce-profile-field-cardinality.md` | EP-1 | EP-2 | Not Started |
+| EP-3 | Enforce profile field cardinality | `docs/plans/27-enforce-profile-field-cardinality.md` | EP-1 | EP-2 | Complete |
 | EP-4 | Enforce named profile field formats | `docs/plans/28-enforce-named-profile-field-formats.md` | EP-1 | EP-2 | Not Started |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
@@ -134,7 +134,7 @@ and the milestone. This section provides an at-a-glance view of the entire initi
 - [x] EP-1: enforce profile recommendations under `--strict` and document the public API.
 - [x] EP-2: validate allowed textual values at profile and type scope.
 - [x] EP-2: reject unknown keys against the concept's effective vocabulary.
-- [ ] EP-3: validate scalar, list, and unconstrained cardinality without changing defaults.
+- [x] EP-3: validate scalar, list, and unconstrained cardinality without changing defaults.
 - [ ] EP-4: validate UTC timestamps, dates, URIs, URI schemes, and document handles.
 - [ ] EP-4: complete cross-feature regression, help, changelog, and release-consumer notes.
 
@@ -184,6 +184,14 @@ interactions between child plans. Provide concise evidence.
   they should extend it rather than introduce rendered text paths.
   Evidence: vocabulary violations already carry a non-empty sequence of field
   names and array indexes while emitting top-level paths today.
+
+- Discovery: each additive `FieldRule` generation needs its own frozen decoder
+  when it carries behavior absent from earlier generations. EP-3 therefore adds
+  an EP-2 decoder that preserves vocabularies and field closure while defaulting
+  cardinality to `Any`; EP-4 must preserve this full current shape when it adds
+  formats.
+  Evidence: compatibility tests now cover current, EP-2, EP-1,
+  self-documenting, and 0.2 descriptors independently.
 
 
 ## Decision Log
@@ -239,9 +247,9 @@ Compare the result against the original vision. Before marking the MasterPlan co
 distill durable project context from this MasterPlan and its child ExecPlans into
 docs/adr/. Keep task-local execution and coordination details here.
 
-EP-1 completed the shared foundation, and EP-2 added opt-in textual
-vocabularies and closed field names. Two of four child plans are complete; the
-remaining cardinality and format plans can extend the compiled field rule and
-structural field path independently. Compatibility, full-suite, Nix, and
-external-catalog acceptance gates passed, and no changes were made to the
-external okf-profiles or Mori repositories.
+EP-1 completed the shared foundation, EP-2 added opt-in textual vocabularies and
+closed field names, and EP-3 added explicit scalar/list cardinality with
+shape-aware presence. Three of four child plans are complete; the remaining
+format plan can extend the same compiled field rule and structural field path.
+Compatibility, full-suite, Nix, and external-catalog acceptance gates passed,
+and no changes were made to the external okf-profiles or Mori repositories.

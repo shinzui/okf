@@ -14,7 +14,7 @@ import Okf.Document
 import Okf.Graph
 import Okf.Index
 import Okf.Log
-import Okf.Prelude hiding (setField, (.=))
+import Okf.Prelude hiding (List, setField, (.=))
 import Okf.Profile
 import Okf.Profile.Registry
 import Okf.Validation
@@ -85,6 +85,7 @@ main = do
         testIO "loadProfileFile decodes record-completed document ID rules" testLoadDocumentIdProfileFixture,
         testIO "loadProfileFile accepts the pre-type-frontmatter described schema" testLoadDescribedProfileFixture,
         testIO "loadProfileFile accepts the frozen EP-1 type-aware schema" testLoadTypeAwareCompatibilityFixture,
+        testIO "loadProfileFile accepts the frozen EP-2 vocabulary schema" testLoadVocabularyCompatibilityFixture,
         testIO "loadProfileFile still accepts an okf 0.2.x descriptor" testLoadLegacyProfileFixture,
         testIO "profileFieldDescription finds required and recommended prose" testProfileFieldDescription,
         testIO "profile JSON encoding emits type, not type_" testProfileJsonShape,
@@ -100,7 +101,10 @@ main = do
         test "compiled rules merge profile and type requirements" testCompiledProfileMerge,
         test "compiled vocabularies intersect in profile declaration order" testCompiledVocabularyIntersection,
         test "compileProfile rejects disjoint vocabularies" testUnsatisfiableVocabulary,
+        test "compiled cardinality uses Any as identity and rejects contradictions" testCompiledCardinality,
         test "profile vocabularies validate strings, lists, and shapes" testVocabularyValidation,
+        test "profile cardinality validates all JSON shapes and presence" testCardinalityValidation,
+        test "cardinality suppresses redundant vocabulary shape errors" testCardinalityVocabularyInteraction,
         test "closed profiles reject unknown fields and isolate type fields" testClosedFieldValidation,
         test "profile rules apply to unknown concept types" testProfileRulesApplyToUnknownTypes,
         test "strict profile validation checks recommendations" testStrictProfileRecommendations,
@@ -120,7 +124,8 @@ main = do
         testIO "validateProfile reports the expected deviations for the fixture bundle" testProfileDeviationsFixture,
         testIO "validateProfile reports document ID fixture deviations" testDocumentIdDeviationsFixture,
         testIO "type-aware fixture is permissive but reports one strict recommendation" testTypeAwareProfileFixture,
-        testIO "closed-field fixture reports missing and misspelled fields" testClosedFieldsFixture
+        testIO "closed-field fixture reports missing and misspelled fields" testClosedFieldsFixture,
+        testIO "cardinality fixture reports scalar and list mismatches" testCardinalityFixture
       ]
   unless (and results) exitFailure
 
@@ -825,6 +830,7 @@ testLoadDescribedProfileFixture = do
       assertEqual [emptyTestFrontmatterRules] (map (^. #frontmatter) (spec ^. #types))
       assertEqual True (spec ^. #allowUnknownFields)
       assertEqual [[]] (map (^. #allowedValues) (spec ^. #frontmatter . #required))
+      assertEqual [Any] (map (^. #cardinality) (spec ^. #frontmatter . #required))
 
 testLoadTypeAwareCompatibilityFixture :: IO (Either Text ())
 testLoadTypeAwareCompatibilityFixture = do
@@ -837,6 +843,19 @@ testLoadTypeAwareCompatibilityFixture = do
       assertEqual True (spec ^. #allowUnknownFields)
       assertEqual [[]] (map (^. #allowedValues) (spec ^. #frontmatter . #required))
       assertEqual [[[]]] (map (map (^. #allowedValues) . (^. #frontmatter . #required)) (spec ^. #types))
+      assertEqual [Any] (map (^. #cardinality) (spec ^. #frontmatter . #required))
+
+testLoadVocabularyCompatibilityFixture :: IO (Either Text ())
+testLoadVocabularyCompatibilityFixture = do
+  path <- fixtureFilePath "profiles/vocabulary-ep2.dhall"
+  result <- loadProfileFile path
+  pure $ case result of
+    Left err -> Left ("failed to load EP-2 profile: " <> err)
+    Right spec -> do
+      assertEqual "vocabulary-ep2" (spec ^. #name)
+      assertEqual False (spec ^. #allowUnknownFields)
+      assertEqual [[], ["draft", "accepted"]] (map (^. #allowedValues) (spec ^. #frontmatter . #required))
+      assertEqual [Any, Any] (map (^. #cardinality) (spec ^. #frontmatter . #required))
 
 -- | The backwards-compatibility guarantee: a descriptor frozen in the okf 0.2.x
 -- shape — bare-string frontmatter keys, no descriptions anywhere — still loads,
@@ -856,6 +875,7 @@ testLoadLegacyProfileFixture = do
       assertEqual [Nothing] (map (^. #description) (spec ^. #types))
       assertEqual True (spec ^. #allowUnknownFields)
       assertEqual [[], []] (map (^. #allowedValues) (spec ^. #frontmatter . #required))
+      assertEqual [Any, Any] (map (^. #cardinality) (spec ^. #frontmatter . #required))
 
 testProfileFieldDescription :: IO (Either Text ())
 testProfileFieldDescription = do
@@ -898,12 +918,14 @@ testProfileJsonShape = do
                              [ "field" .= ("type" :: Text),
                                "description"
                                  .= ("The OKF concept type; must be a type rule below." :: Text),
-                               "allowedValues" .= ([] :: [Text])
+                               "allowedValues" .= ([] :: [Text]),
+                               "cardinality" .= ("any" :: Text)
                              ],
                            object
                              [ "field" .= ("title" :: Text),
                                "description" .= (Nothing :: Maybe Text),
-                               "allowedValues" .= ([] :: [Text])
+                               "allowedValues" .= ([] :: [Text]),
+                               "cardinality" .= ("any" :: Text)
                              ]
                          ],
                     "recommended"
@@ -911,7 +933,8 @@ testProfileJsonShape = do
                              [ "field" .= ("status" :: Text),
                                "description"
                                  .= ("One of: proposed, accepted, superseded." :: Text),
-                               "allowedValues" .= ([] :: [Text])
+                               "allowedValues" .= ([] :: [Text]),
+                               "cardinality" .= ("any" :: Text)
                              ]
                          ]
                   ],
@@ -1061,7 +1084,7 @@ testFindConceptsByDocumentId = do
 -- | An undocumented frontmatter key: the validation tests care about names, not
 -- prose, and descriptions never affect validation.
 requiredField :: Text -> FieldRule
-requiredField key = FieldRule {field = key, description = Nothing, allowedValues = []}
+requiredField key = FieldRule {field = key, description = Nothing, allowedValues = [], cardinality = Any}
 
 -- | A standalone profile literal so the validation tests do not depend on the
 -- Dhall fixture. One rule: PostgreSQL Table, fully constrained.
@@ -1132,8 +1155,8 @@ typeAwareProfileSpec =
       okfVersion = "0.1",
       frontmatter =
         FrontmatterRules
-          { required = [FieldRule "type" Nothing [], FieldRule "title" (Just "Global title.") []],
-            recommended = [FieldRule "owner" (Just "Profile-level owner.") []]
+          { required = [FieldRule "type" Nothing [] Any, FieldRule "title" (Just "Global title.") [] Any],
+            recommended = [FieldRule "owner" (Just "Profile-level owner.") [] Any]
           },
       allowUnknownTypes = True,
       allowUnknownFields = True,
@@ -1144,8 +1167,8 @@ typeAwareProfileSpec =
               description = Nothing,
               frontmatter =
                 FrontmatterRules
-                  { required = [FieldRule "owner" (Just "Responsible person.") []],
-                    recommended = [FieldRule "reviewer" (Just "Second pair of eyes.") [], FieldRule "title" (Just "Type title.") []]
+                  { required = [FieldRule "owner" (Just "Responsible person.") [] Any],
+                    recommended = [FieldRule "reviewer" (Just "Second pair of eyes.") [] Any, FieldRule "title" (Just "Type title.") [] Any]
                   },
               pathPattern = Nothing,
               resourceScheme = Nothing,
@@ -1158,7 +1181,7 @@ typeAwareProfileSpec =
 
 testCompileProfileDefinitionErrors :: Either Text ()
 testCompileProfileDefinitionErrors = do
-  let duplicateField = FieldRule "title" Nothing []
+  let duplicateField = FieldRule "title" Nothing [] Any
       invalid =
         typeAwareProfileSpec
           { frontmatter =
@@ -1195,13 +1218,13 @@ vocabularyProfileSpec =
   typeAwareProfileSpec
     { frontmatter =
         FrontmatterRules
-          { required = [FieldRule "type" Nothing []],
-            recommended = [FieldRule "status" Nothing ["draft", "approved", "approved"]]
+          { required = [FieldRule "type" Nothing [] Any],
+            recommended = [FieldRule "status" Nothing ["draft", "approved", "approved"] Any]
           },
       types =
         [ withTypeFrontmatter
             FrontmatterRules
-              { required = [FieldRule "status" Nothing ["approved", "archived"]],
+              { required = [FieldRule "status" Nothing ["approved", "archived"] Any],
                 recommended = []
               }
             (firstTypeRule typeAwareProfileSpec)
@@ -1227,7 +1250,7 @@ testUnsatisfiableVocabulary = do
           { types =
               [ withTypeFrontmatter
                   FrontmatterRules
-                    { required = [FieldRule "status" Nothing ["closed"]],
+                    { required = [FieldRule "status" Nothing ["closed"] Any],
                       recommended = []
                     }
                   (firstTypeRule vocabularyProfileSpec)
@@ -1237,14 +1260,45 @@ testUnsatisfiableVocabulary = do
     (Left (UnsatisfiableVocabulary (Just "Owned Concept") "status" ["draft", "approved"] ["closed"] :| []))
     (compileProfile disjoint)
 
+testCompiledCardinality :: Either Text ()
+testCompiledCardinality = do
+  let profileRules =
+        FrontmatterRules
+          { required = [FieldRule "type" Nothing [] Any],
+            recommended = [FieldRule "status" Nothing [] Scalar]
+          }
+      typeRules cardinality =
+        FrontmatterRules
+          { required = [FieldRule "status" Nothing [] cardinality],
+            recommended = []
+          }
+      baseType = firstTypeRule typeAwareProfileSpec
+      compatible =
+        typeAwareProfileSpec
+          { frontmatter = profileRules,
+            types = [withTypeFrontmatter (typeRules Any) baseType]
+          }
+      contradictory = compatible {types = [withTypeFrontmatter (typeRules List) baseType]}
+  compiled <- firstShow (compileProfile compatible)
+  valid <- profileConcept "owned/cardinality" [("type", String "Owned Concept"), ("status", Number 3)] "# Valid\n"
+  invalid <- profileConcept "owned/cardinality" [("type", String "Owned Concept"), ("status", toJSON (["draft"] :: [Text]))] "# Invalid\n"
+  cid <- parseTestConceptId "owned/cardinality"
+  assertEqual [] (validateProfile PermissiveConformance compiled [valid])
+  assertEqual
+    [CardinalityMismatch cid (fieldPath "status") Scalar (toJSON (["draft"] :: [Text]))]
+    (validateProfile PermissiveConformance compiled [invalid])
+  assertEqual
+    (Left (ConflictingCardinality (Just "Owned Concept") "status" Scalar List :| []))
+    (compileProfile contradictory)
+
 testVocabularyValidation :: Either Text ()
 testVocabularyValidation = do
   let openVocabulary =
         vocabularyProfileSpec
           { frontmatter =
               FrontmatterRules
-                { required = [FieldRule "type" Nothing []],
-                  recommended = [FieldRule "status" Nothing ["draft", "approved"]]
+                { required = [FieldRule "type" Nothing [] Any],
+                  recommended = [FieldRule "status" Nothing ["draft", "approved"] Any]
                 },
             types = []
           }
@@ -1268,6 +1322,65 @@ testVocabularyValidation = do
   assertEqual
     [ValueNotInVocabulary invalidShapeId (fieldPath "status") ["draft", "approved"] (toJSON (1 :: Int))]
     (validateProfile PermissiveConformance compiled [invalidShape])
+
+testCardinalityValidation :: Either Text ()
+testCardinalityValidation = do
+  cid <- parseTestConceptId "cardinality"
+  let check cardinality actual = do
+        compiled <- firstShow (compileProfile (singleCardinalityProfile True cardinality []))
+        concept <- profileConcept "cardinality" [("type", String "Extension"), ("value", actual)] "# Cardinality\n"
+        pure (validateProfile PermissiveConformance compiled [concept])
+      mismatch cardinality actual = [CardinalityMismatch cid (fieldPath "value") cardinality actual]
+      objectValue = object ["nested" .= (True :: Bool)]
+      textList = toJSON (["one"] :: [Text])
+      emptyList = toJSON ([] :: [Text])
+  for_ [String "one", Number 0, Bool False] $ \actual ->
+    check Scalar actual >>= assertEqual []
+  for_ [textList, objectValue, Null] $ \actual ->
+    check Scalar actual >>= assertEqual (mismatch Scalar actual)
+  check List textList >>= assertEqual []
+  for_ [String "one", Number 0, Bool False, objectValue, Null] $ \actual ->
+    check List actual >>= assertEqual (mismatch List actual)
+  check Any (String "one") >>= assertEqual []
+  check Any textList >>= assertEqual []
+  check Any (Bool False) >>= assertEqual [MissingProfileField cid "value"]
+  check Scalar (String "   ") >>= assertEqual [MissingProfileField cid "value"]
+  check List emptyList >>= assertEqual [MissingProfileField cid "value"]
+  optionalCompiled <- firstShow (compileProfile (singleCardinalityProfile False Scalar []))
+  optionalConcept <- profileConcept "cardinality" [("type", String "Extension"), ("value", textList)] "# Optional\n"
+  assertEqual
+    (mismatch Scalar textList)
+    (validateProfile PermissiveConformance optionalCompiled [optionalConcept])
+
+testCardinalityVocabularyInteraction :: Either Text ()
+testCardinalityVocabularyInteraction = do
+  cid <- parseTestConceptId "cardinality"
+  scalarCompiled <- firstShow (compileProfile (singleCardinalityProfile True Scalar ["draft"]))
+  let objectValue = object ["status" .= ("draft" :: Text)]
+  objectConcept <- profileConcept "cardinality" [("type", String "Extension"), ("value", objectValue)] "# Object\n"
+  assertEqual
+    [CardinalityMismatch cid (fieldPath "value") Scalar objectValue]
+    (validateProfile PermissiveConformance scalarCompiled [objectConcept])
+  listCompiled <- firstShow (compileProfile (singleCardinalityProfile True List ["draft"]))
+  let mixedList = toJSON ([String "draft", Number 1] :: [Value])
+  listConcept <- profileConcept "cardinality" [("type", String "Extension"), ("value", mixedList)] "# List\n"
+  assertEqual
+    [ValueNotInVocabulary cid (fieldPath "value") ["draft"] mixedList]
+    (validateProfile PermissiveConformance listCompiled [listConcept])
+
+singleCardinalityProfile :: Bool -> Cardinality -> [Text] -> ProfileSpec
+singleCardinalityProfile isRequired cardinality allowed =
+  typeAwareProfileSpec
+    { frontmatter =
+        FrontmatterRules
+          { required = [FieldRule "type" Nothing [] Any] <> [rule | isRequired],
+            recommended = [rule | not isRequired]
+          },
+      allowUnknownTypes = True,
+      types = []
+    }
+  where
+    rule = FieldRule "value" Nothing allowed cardinality
 
 testClosedFieldValidation :: Either Text ()
 testClosedFieldValidation = do
@@ -1637,6 +1750,23 @@ testClosedFieldsFixture = do
       typoId <- parseTestConceptId "requests/typo"
       assertEqual
         [MissingProfileField typoId "status", FieldNotInProfile typoId "stauts"]
+        (validateProfile PermissiveConformance compiled concepts)
+
+testCardinalityFixture :: IO (Either Text ())
+testCardinalityFixture = do
+  descriptorPath <- fixtureFilePath "profiles/cardinality.dhall"
+  loaded <- loadProfileFile descriptorPath
+  root <- fixturePath "profile-cardinality"
+  concepts <- readBundle root
+  pure $ case loaded of
+    Left err -> Left ("failed to load cardinality profile: " <> err)
+    Right spec -> do
+      compiled <- firstShow (compileProfile spec)
+      badId <- parseTestConceptId "bad"
+      assertEqual
+        [ CardinalityMismatch badId (fieldPath "tags") List (String "one"),
+          CardinalityMismatch badId (fieldPath "title") Scalar (toJSON (["One", "Two"] :: [Text]))
+        ]
         (validateProfile PermissiveConformance compiled concepts)
 
 validateTestProfile :: ProfileSpec -> [Concept] -> [ProfileViolation]

@@ -56,9 +56,10 @@ import Okf.Document (DocumentParseError (..), Frontmatter (..), OKFDocument (..)
 import Okf.Graph (buildGraph)
 import Okf.Index
 import Okf.Log qualified as Log
-import Okf.Prelude
+import Okf.Prelude hiding (List)
 import Okf.Profile
-  ( CompiledProfile,
+  ( Cardinality (..),
+    CompiledProfile,
     FieldPath (..),
     FieldPathSegment (..),
     FrontmatterRules (..),
@@ -692,7 +693,8 @@ renderProfileDetail
           : concatMap
             ( \rule ->
                 [ indent <> "  - " <> rule ^. #field <> ": " <> renderOptional (rule ^. #description),
-                  indent <> "    allowedValues: " <> renderVocabulary (rule ^. #allowedValues)
+                  indent <> "    allowedValues: " <> renderVocabulary (rule ^. #allowedValues),
+                  indent <> "    cardinality: " <> renderCardinality (rule ^. #cardinality)
                 ]
             )
             rules
@@ -1145,6 +1147,16 @@ renderProfileViolation compiled concepts = \case
       <> Text.intercalate ", " allowed
       <> "], found: "
       <> Text.pack (LazyByteString.unpack (Aeson.encode actual))
+  CardinalityMismatch cid fieldPath expected actual ->
+    renderConceptId cid
+      <> ": frontmatter cardinality at "
+      <> renderFieldPath fieldPath
+      <> " must be "
+      <> renderCardinality expected
+      <> ", found "
+      <> valueCardinalityName actual
+      <> ": "
+      <> Text.pack (LazyByteString.unpack (Aeson.encode actual))
   FieldNotInProfile cid key ->
     renderConceptId cid <> ": frontmatter field not declared by profile: " <> key
   PathPatternMismatch cid ctype patternText ->
@@ -1192,9 +1204,33 @@ renderProfileDefinitionError = \case
       <> "], type: ["
       <> Text.intercalate ", " typeValues
       <> "])"
+  ConflictingCardinality scope key profileCardinality typeCardinality ->
+    renderScope scope
+      <> ": conflicting cardinality for "
+      <> key
+      <> " (profile: "
+      <> renderCardinality profileCardinality
+      <> ", type: "
+      <> renderCardinality typeCardinality
+      <> ")"
   where
     renderScope Nothing = "profile frontmatter"
     renderScope (Just ctype) = "type " <> ctype <> " frontmatter"
+
+renderCardinality :: Cardinality -> Text
+renderCardinality = \case
+  Any -> "any"
+  Scalar -> "scalar"
+  List -> "list"
+
+valueCardinalityName :: Aeson.Value -> Text
+valueCardinalityName = \case
+  Aeson.Array _ -> "list"
+  Aeson.String _ -> "scalar"
+  Aeson.Number _ -> "scalar"
+  Aeson.Bool _ -> "scalar"
+  Aeson.Object _ -> "object"
+  Aeson.Null -> "null"
 
 renderFieldPath :: FieldPath -> Text
 renderFieldPath (FieldPath pathSegments) = go (toList pathSegments)
