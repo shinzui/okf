@@ -45,13 +45,27 @@ lists. A private frozen decoder retains the immediately preceding
 self-documenting shape, followed by the already-frozen okf 0.2.x decoder, so
 unannotated older profiles and registries continue to load.
 
+Field-value vocabularies extend the same compiled rule. An empty vocabulary is
+unconstrained. When profile and type scopes both declare non-empty vocabularies,
+compilation takes their intersection in profile declaration order; an empty
+intersection is a structured definition error. This makes narrowing explicit
+and prevents contradictory descriptors from producing per-concept noise.
+
+Field-name closure is likewise evaluated from compiled effective rules, not a
+union of every type. `allowUnknownFields = False` permits the current concept's
+effective fields, the centrally owned core-key set, and the configured
+`idField`. Its default is `True`. Frozen compatibility decoders upgrade older
+descriptors to that open default and attach empty vocabularies.
+
 
 ## Consequences
 
 Library consumers must call `compileProfile`, handle definition errors, and pass
 `PermissiveConformance` or `StrictAuthoring` to `validateProfile`. Consumers
 that exhaustively match `ProfileViolation`, including Mori, must also handle
-`MissingRecommendedProfileField`.
+`MissingRecommendedProfileField`, `ValueNotInVocabulary`, and
+`FieldNotInProfile`. Consumers that exhaustively match
+`ProfileDefinitionError` must handle `UnsatisfiableVocabulary`.
 
 Later profile constraints extend the compiled field rule rather than scanning
 raw declarations again. Human and JSON profile display continue to preserve the

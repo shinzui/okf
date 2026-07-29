@@ -43,6 +43,7 @@ in    { name = "shinzui-postgresql"
           ]
         }
       , allowUnknownTypes = False
+      , allowUnknownFields = True
       , idField = None Text
       , types =
         [ { type = "PostgreSQL Schema"

@@ -9,6 +9,9 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- Type-aware value vocabularies and opt-in closed field names for profiles.
+  `allowedValues = []` and `allowUnknownFields = True` preserve existing open
+  behavior; contradictory profile/type vocabularies fail during compilation.
 - Self-documenting profiles. A profile descriptor may now carry an optional
   `description` in three places: on the profile as a whole, on each required or
   recommended frontmatter key, and on each type rule. `okf profile show` prints

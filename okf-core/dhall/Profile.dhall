@@ -14,6 +14,8 @@
 --
 -- `description` documents the profile as a whole, in prose, for whoever has to
 -- read or adopt it. Like every description in this schema it is documentary only.
+-- `allowUnknownFields = False` closes top-level frontmatter to core OKF keys,
+-- the configured `idField`, and the effective profile/type field rules.
 let TypeRule = ./TypeRule.dhall
 
 let FrontmatterRules = ./FrontmatterRules.dhall
@@ -23,6 +25,7 @@ in  { name : Text
     , okfVersion : Text
     , frontmatter : FrontmatterRules
     , allowUnknownTypes : Bool
+    , allowUnknownFields : Bool
     , idField : Optional Text
     , types : List TypeRule
     }

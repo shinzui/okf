@@ -23,6 +23,7 @@ in    { name = "decisions"
           [ field.documented "status" "One of: proposed, accepted, superseded." ]
         }
       , allowUnknownTypes = False
+      , allowUnknownFields = True
       , idField = Some "docId"
       , types =
         [ TypeRule::{

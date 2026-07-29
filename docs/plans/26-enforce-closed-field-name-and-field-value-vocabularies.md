@@ -4,6 +4,7 @@ slug: enforce-closed-field-name-and-field-value-vocabularies
 title: "Enforce closed field-name and field-value vocabularies"
 kind: exec-plan
 created_at: 2026-07-29T17:16:41Z
+intention: intention_01kyqmnyg6esxa50egq04z2ty2
 master_plan: "docs/masterplans/4-make-okf-profiles-type-aware-and-value-safe.md"
 ---
 
@@ -33,13 +34,13 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] Add `allowedValues` and `allowUnknownFields` to raw schema, defaults, constructors, compatibility upgrades, JSON, and profile show.
-- [ ] Extend compilation with vocabulary intersection and unsatisfiable-definition errors.
-- [ ] Validate present string and list-of-string values against effective vocabularies.
-- [ ] Centralize core-known frontmatter keys and enforce closure against effective field names.
-- [ ] Add positive, negative, type-isolation, and compatibility fixtures.
-- [ ] Update help, changelogs, and the compiled-rule ADR.
-- [ ] Run focused, full-suite, and external-catalog acceptance checks.
+- [x] Add `allowedValues` and `allowUnknownFields` to raw schema, defaults, constructors, compatibility upgrades, JSON, and profile show.
+- [x] Extend compilation with vocabulary intersection and unsatisfiable-definition errors.
+- [x] Validate present string and list-of-string values against effective vocabularies.
+- [x] Centralize core-known frontmatter keys and enforce closure against effective field names.
+- [x] Add positive, negative, type-isolation, and compatibility fixtures.
+- [x] Update help, changelogs, and the compiled-rule ADR.
+- [x] Run focused, full-suite, and external-catalog acceptance checks.
 
 
 ## Surprises & Discoveries
@@ -47,7 +48,16 @@ This section must always reflect the actual current state of the work.
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+- Discovery: Aeson's `KeyMap.keys` does not promise the lexical ordering needed
+  for stable diagnostics, so `Okf.Document.frontmatterKeys` sorts converted
+  text keys before closure validation.
+  Evidence: the registered Aeson source located through Mori documents keys in
+  backing-map order; the closed-profile test pins lexical output.
+
+- Discovery: the canonical type-aware fixture contained an explicitly typed
+  empty list using the EP-1 `FieldRule` shape. Updating the canonical fixture
+  and adding a separate unannotated frozen EP-1 fixture keeps schema drift and
+  fallback compatibility as distinct tests.
 
 
 ## Decision Log
@@ -72,6 +82,12 @@ Record every decision made while working on the plan.
   while simultaneously relying on core or type-rule checks that consume them.
   Date: 2026-07-29
 
+- Decision: `FieldPath` is structural from its first release even though this
+  plan emits only top-level `FieldName` paths.
+  Rationale: cardinality and nested-shape plans can append array indexes and
+  child names without changing the public diagnostic representation.
+  Date: 2026-07-29
+
 
 ## Outcomes & Retrospective
 
@@ -80,7 +96,20 @@ Compare the result against the original purpose. Before marking the plan complet
 distill durable project context from the Decision Log, Surprises & Discoveries, and
 this section into docs/adr/. Keep task-local execution details here.
 
-(To be filled during and after implementation.)
+EP-2 delivered both opt-in vocabulary controls without changing existing
+descriptor behavior. `allowedValues` validates present strings and string
+lists through the compiled effective rule, with deterministic narrowing and an
+early error for disjoint declarations. `allowUnknownFields = False` validates
+lexically ordered top-level keys against the concept's own effective type rules,
+the shared core-key set, and `idField`.
+
+Current, frozen EP-1, self-documenting, and 0.2 descriptors all load; the three
+older generations receive `allowedValues = []` and
+`allowUnknownFields = True`. Focused tests, `cabal test all`, Dhall type checks,
+the exact two-line typo fixture, external v0.6 catalog enumeration and strict
+improvement-request validation, and `nix flake check` passed. No external
+repository was modified. The durable merge, compatibility, and consumer
+contracts were added to ADR 5.
 
 
 ## Context and Orientation

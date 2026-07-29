@@ -9,6 +9,9 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- `okf profile show` now displays `allowUnknownFields` and each field's
+  `allowedValues`; validation renders value-vocabulary and undeclared-field
+  deviations.
 - `okf profile show` and `--json` now expose required and recommended
   frontmatter rules beneath each type.
 - `okf validate --strict --profile ...` checks profile-recommended fields and

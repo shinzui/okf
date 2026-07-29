@@ -84,6 +84,7 @@ main = do
         testIO "loadProfileFile decodes the postgresql fixture" testLoadProfileFixture,
         testIO "loadProfileFile decodes record-completed document ID rules" testLoadDocumentIdProfileFixture,
         testIO "loadProfileFile accepts the pre-type-frontmatter described schema" testLoadDescribedProfileFixture,
+        testIO "loadProfileFile accepts the frozen EP-1 type-aware schema" testLoadTypeAwareCompatibilityFixture,
         testIO "loadProfileFile still accepts an okf 0.2.x descriptor" testLoadLegacyProfileFixture,
         testIO "profileFieldDescription finds required and recommended prose" testProfileFieldDescription,
         testIO "profile JSON encoding emits type, not type_" testProfileJsonShape,
@@ -97,6 +98,10 @@ main = do
         testIO "findConceptsByDocumentId resolves and reports duplicate handles" testFindConceptsByDocumentId,
         test "compileProfile rejects ambiguous definitions deterministically" testCompileProfileDefinitionErrors,
         test "compiled rules merge profile and type requirements" testCompiledProfileMerge,
+        test "compiled vocabularies intersect in profile declaration order" testCompiledVocabularyIntersection,
+        test "compileProfile rejects disjoint vocabularies" testUnsatisfiableVocabulary,
+        test "profile vocabularies validate strings, lists, and shapes" testVocabularyValidation,
+        test "closed profiles reject unknown fields and isolate type fields" testClosedFieldValidation,
         test "profile rules apply to unknown concept types" testProfileRulesApplyToUnknownTypes,
         test "strict profile validation checks recommendations" testStrictProfileRecommendations,
         test "validateProfile accepts a conforming table concept" testProfileConformingTable,
@@ -114,7 +119,8 @@ main = do
         test "schemaSectionColumns reads the header row of the Schema table" testSchemaSectionColumns,
         testIO "validateProfile reports the expected deviations for the fixture bundle" testProfileDeviationsFixture,
         testIO "validateProfile reports document ID fixture deviations" testDocumentIdDeviationsFixture,
-        testIO "type-aware fixture is permissive but reports one strict recommendation" testTypeAwareProfileFixture
+        testIO "type-aware fixture is permissive but reports one strict recommendation" testTypeAwareProfileFixture,
+        testIO "closed-field fixture reports missing and misspelled fields" testClosedFieldsFixture
       ]
   unless (and results) exitFailure
 
@@ -817,6 +823,20 @@ testLoadDescribedProfileFixture = do
       assertEqual "described" (spec ^. #name)
       assertEqual ["Described Concept"] (map (^. #type_) (spec ^. #types))
       assertEqual [emptyTestFrontmatterRules] (map (^. #frontmatter) (spec ^. #types))
+      assertEqual True (spec ^. #allowUnknownFields)
+      assertEqual [[]] (map (^. #allowedValues) (spec ^. #frontmatter . #required))
+
+testLoadTypeAwareCompatibilityFixture :: IO (Either Text ())
+testLoadTypeAwareCompatibilityFixture = do
+  path <- fixtureFilePath "profiles/type-aware-ep1.dhall"
+  result <- loadProfileFile path
+  pure $ case result of
+    Left err -> Left ("failed to load EP-1 profile: " <> err)
+    Right spec -> do
+      assertEqual "type-aware-ep1" (spec ^. #name)
+      assertEqual True (spec ^. #allowUnknownFields)
+      assertEqual [[]] (map (^. #allowedValues) (spec ^. #frontmatter . #required))
+      assertEqual [[[]]] (map (map (^. #allowedValues) . (^. #frontmatter . #required)) (spec ^. #types))
 
 -- | The backwards-compatibility guarantee: a descriptor frozen in the okf 0.2.x
 -- shape — bare-string frontmatter keys, no descriptions anywhere — still loads,
@@ -834,6 +854,8 @@ testLoadLegacyProfileFixture = do
       assertEqual [Nothing, Nothing] (map (^. #description) (spec ^. #frontmatter . #required))
       assertEqual ["Legacy Concept"] (map (^. #type_) (spec ^. #types))
       assertEqual [Nothing] (map (^. #description) (spec ^. #types))
+      assertEqual True (spec ^. #allowUnknownFields)
+      assertEqual [[], []] (map (^. #allowedValues) (spec ^. #frontmatter . #required))
 
 testProfileFieldDescription :: IO (Either Text ())
 testProfileFieldDescription = do
@@ -867,6 +889,7 @@ testProfileJsonShape = do
               "description" .= ("How this team records architectural decisions." :: Text),
               "okfVersion" .= ("0.1" :: Text),
               "allowUnknownTypes" .= False,
+              "allowUnknownFields" .= True,
               "idField" .= ("docId" :: Text),
               "frontmatter"
                 .= object
@@ -874,18 +897,21 @@ testProfileJsonShape = do
                       .= [ object
                              [ "field" .= ("type" :: Text),
                                "description"
-                                 .= ("The OKF concept type; must be a type rule below." :: Text)
+                                 .= ("The OKF concept type; must be a type rule below." :: Text),
+                               "allowedValues" .= ([] :: [Text])
                              ],
                            object
                              [ "field" .= ("title" :: Text),
-                               "description" .= (Nothing :: Maybe Text)
+                               "description" .= (Nothing :: Maybe Text),
+                               "allowedValues" .= ([] :: [Text])
                              ]
                          ],
                     "recommended"
                       .= [ object
                              [ "field" .= ("status" :: Text),
                                "description"
-                                 .= ("One of: proposed, accepted, superseded." :: Text)
+                                 .= ("One of: proposed, accepted, superseded." :: Text),
+                               "allowedValues" .= ([] :: [Text])
                              ]
                          ]
                   ],
@@ -1035,7 +1061,7 @@ testFindConceptsByDocumentId = do
 -- | An undocumented frontmatter key: the validation tests care about names, not
 -- prose, and descriptions never affect validation.
 requiredField :: Text -> FieldRule
-requiredField key = FieldRule {field = key, description = Nothing}
+requiredField key = FieldRule {field = key, description = Nothing, allowedValues = []}
 
 -- | A standalone profile literal so the validation tests do not depend on the
 -- Dhall fixture. One rule: PostgreSQL Table, fully constrained.
@@ -1051,6 +1077,7 @@ testProfileSpec =
             recommended = []
           },
       allowUnknownTypes = False,
+      allowUnknownFields = True,
       idField = Nothing,
       types =
         [ TypeRule
@@ -1078,6 +1105,7 @@ testDocumentIdProfileSpec =
             recommended = []
           },
       allowUnknownTypes = False,
+      allowUnknownFields = True,
       idField = Just "docId",
       types =
         [ TypeRule
@@ -1104,10 +1132,11 @@ typeAwareProfileSpec =
       okfVersion = "0.1",
       frontmatter =
         FrontmatterRules
-          { required = [FieldRule "type" Nothing, FieldRule "title" (Just "Global title.")],
-            recommended = [FieldRule "owner" (Just "Profile-level owner.")]
+          { required = [FieldRule "type" Nothing [], FieldRule "title" (Just "Global title.") []],
+            recommended = [FieldRule "owner" (Just "Profile-level owner.") []]
           },
       allowUnknownTypes = True,
+      allowUnknownFields = True,
       idField = Nothing,
       types =
         [ TypeRule
@@ -1115,8 +1144,8 @@ typeAwareProfileSpec =
               description = Nothing,
               frontmatter =
                 FrontmatterRules
-                  { required = [FieldRule "owner" (Just "Responsible person.")],
-                    recommended = [FieldRule "reviewer" (Just "Second pair of eyes."), FieldRule "title" (Just "Type title.")]
+                  { required = [FieldRule "owner" (Just "Responsible person.") []],
+                    recommended = [FieldRule "reviewer" (Just "Second pair of eyes.") [], FieldRule "title" (Just "Type title.") []]
                   },
               pathPattern = Nothing,
               resourceScheme = Nothing,
@@ -1129,7 +1158,7 @@ typeAwareProfileSpec =
 
 testCompileProfileDefinitionErrors :: Either Text ()
 testCompileProfileDefinitionErrors = do
-  let duplicateField = FieldRule "title" Nothing
+  let duplicateField = FieldRule "title" Nothing []
       invalid =
         typeAwareProfileSpec
           { frontmatter =
@@ -1160,6 +1189,184 @@ testCompiledProfileMerge = do
   assertEqual
     [MissingProfileField cid "owner", MissingProfileField cid "title"]
     (validateProfile PermissiveConformance compiled [concept])
+
+vocabularyProfileSpec :: ProfileSpec
+vocabularyProfileSpec =
+  typeAwareProfileSpec
+    { frontmatter =
+        FrontmatterRules
+          { required = [FieldRule "type" Nothing []],
+            recommended = [FieldRule "status" Nothing ["draft", "approved", "approved"]]
+          },
+      types =
+        [ withTypeFrontmatter
+            FrontmatterRules
+              { required = [FieldRule "status" Nothing ["approved", "archived"]],
+                recommended = []
+              }
+            (firstTypeRule typeAwareProfileSpec)
+        ]
+    }
+
+fieldPath :: Text -> FieldPath
+fieldPath key = FieldPath (FieldName key :| [])
+
+testCompiledVocabularyIntersection :: Either Text ()
+testCompiledVocabularyIntersection = do
+  compiled <- firstShow (compileProfile vocabularyProfileSpec)
+  concept <- profileConcept "owned/one" [("type", String "Owned Concept"), ("status", String "draft")] "# One\n"
+  cid <- parseTestConceptId "owned/one"
+  assertEqual
+    [ValueNotInVocabulary cid (fieldPath "status") ["approved"] (String "draft")]
+    (validateProfile PermissiveConformance compiled [concept])
+
+testUnsatisfiableVocabulary :: Either Text ()
+testUnsatisfiableVocabulary = do
+  let disjoint =
+        vocabularyProfileSpec
+          { types =
+              [ withTypeFrontmatter
+                  FrontmatterRules
+                    { required = [FieldRule "status" Nothing ["closed"]],
+                      recommended = []
+                    }
+                  (firstTypeRule vocabularyProfileSpec)
+              ]
+          }
+  assertEqual
+    (Left (UnsatisfiableVocabulary (Just "Owned Concept") "status" ["draft", "approved"] ["closed"] :| []))
+    (compileProfile disjoint)
+
+testVocabularyValidation :: Either Text ()
+testVocabularyValidation = do
+  let openVocabulary =
+        vocabularyProfileSpec
+          { frontmatter =
+              FrontmatterRules
+                { required = [FieldRule "type" Nothing []],
+                  recommended = [FieldRule "status" Nothing ["draft", "approved"]]
+                },
+            types = []
+          }
+  compiled <- firstShow (compileProfile openVocabulary)
+  validString <- profileConcept "valid-string" [("type", String "Extension"), ("status", String "draft")] "# Valid\n"
+  validList <- profileConcept "valid-list" [("type", String "Extension"), ("status", toJSON (["draft", "approved"] :: [Text]))] "# Valid\n"
+  absent <- profileConcept "absent" [("type", String "Extension")] "# Absent\n"
+  invalidString <- profileConcept "invalid-string" [("type", String "Extension"), ("status", String "banana")] "# Invalid\n"
+  invalidList <- profileConcept "invalid-list" [("type", String "Extension"), ("status", toJSON (["draft", "banana"] :: [Text]))] "# Invalid\n"
+  invalidShape <- profileConcept "invalid-shape" [("type", String "Extension"), ("status", toJSON (1 :: Int))] "# Invalid\n"
+  invalidStringId <- parseTestConceptId "invalid-string"
+  invalidListId <- parseTestConceptId "invalid-list"
+  invalidShapeId <- parseTestConceptId "invalid-shape"
+  assertEqual [] (validateProfile PermissiveConformance compiled [validString, validList, absent])
+  assertEqual
+    [ValueNotInVocabulary invalidStringId (fieldPath "status") ["draft", "approved"] (String "banana")]
+    (validateProfile PermissiveConformance compiled [invalidString])
+  assertEqual
+    [ValueNotInVocabulary invalidListId (fieldPath "status") ["draft", "approved"] (toJSON (["draft", "banana"] :: [Text]))]
+    (validateProfile PermissiveConformance compiled [invalidList])
+  assertEqual
+    [ValueNotInVocabulary invalidShapeId (fieldPath "status") ["draft", "approved"] (toJSON (1 :: Int))]
+    (validateProfile PermissiveConformance compiled [invalidShape])
+
+testClosedFieldValidation :: Either Text ()
+testClosedFieldValidation = do
+  let ownedRule :: TypeRule
+      ownedRule =
+        withTypeFrontmatter
+          FrontmatterRules {required = [requiredField "owner"], recommended = []}
+          (firstTypeRule typeAwareProfileSpec)
+      reviewRule =
+        withTypeName
+          "Review"
+          (withTypeFrontmatter FrontmatterRules {required = [requiredField "reviewer"], recommended = []} ownedRule)
+      closed =
+        typeAwareProfileSpec
+          { frontmatter = FrontmatterRules {required = [requiredField "type", requiredField "status"], recommended = []},
+            allowUnknownFields = False,
+            idField = Just "requestId",
+            types = [ownedRule, reviewRule]
+          }
+  compiled <- firstShow (compileProfile closed)
+  typo <-
+    profileConcept
+      "owned/typo"
+      [ ("type", String "Owned Concept"),
+        ("title", String "Typo"),
+        ("description", String "Core"),
+        ("timestamp", String "2026-07-29T00:00:00Z"),
+        ("resource", String "https://example.test/typo"),
+        ("tags", toJSON (["profiles"] :: [Text])),
+        ("requestId", String "IR-1"),
+        ("owner", String "Ari"),
+        ("reviewer", String "Bo"),
+        ("stauts", String "draft")
+      ]
+      "# Typo\n"
+  cid <- parseTestConceptId "owned/typo"
+  assertEqual
+    [ MissingProfileField cid "status",
+      FieldNotInProfile cid "reviewer",
+      FieldNotInProfile cid "stauts"
+    ]
+    (validateProfile PermissiveConformance compiled [typo])
+  let reopened = closed {allowUnknownFields = True}
+  reopenedCompiled <- firstShow (compileProfile reopened)
+  assertEqual
+    [MissingProfileField cid "status"]
+    (validateProfile PermissiveConformance reopenedCompiled [typo])
+
+firstTypeRule :: ProfileSpec -> TypeRule
+firstTypeRule spec =
+  case spec ^. #types of
+    rule : _ -> rule
+    [] -> error "test profile unexpectedly has no type rules"
+
+withTypeFrontmatter :: FrontmatterRules -> TypeRule -> TypeRule
+withTypeFrontmatter
+  replacement
+  TypeRule
+    { type_,
+      description,
+      pathPattern,
+      resourceScheme,
+      requireSchemaSection,
+      schemaColumns,
+      idPrefix
+    } =
+    TypeRule
+      { type_,
+        description,
+        frontmatter = replacement,
+        pathPattern,
+        resourceScheme,
+        requireSchemaSection,
+        schemaColumns,
+        idPrefix
+      }
+
+withTypeName :: Text -> TypeRule -> TypeRule
+withTypeName
+  replacement
+  TypeRule
+    { description,
+      frontmatter,
+      pathPattern,
+      resourceScheme,
+      requireSchemaSection,
+      schemaColumns,
+      idPrefix
+    } =
+    TypeRule
+      { type_ = replacement,
+        description,
+        frontmatter,
+        pathPattern,
+        resourceScheme,
+        requireSchemaSection,
+        schemaColumns,
+        idPrefix
+      }
 
 testProfileRulesApplyToUnknownTypes :: Either Text ()
 testProfileRulesApplyToUnknownTypes = do
@@ -1416,6 +1623,21 @@ testTypeAwareProfileFixture = do
       assertEqual
         [MissingRecommendedProfileField ownedId "reviewer"]
         (validateProfile StrictAuthoring compiled concepts)
+
+testClosedFieldsFixture :: IO (Either Text ())
+testClosedFieldsFixture = do
+  descriptorPath <- fixtureFilePath "profiles/closed-fields.dhall"
+  loaded <- loadProfileFile descriptorPath
+  root <- fixturePath "profile-closed-fields"
+  concepts <- readBundle root
+  pure $ case loaded of
+    Left err -> Left ("failed to load closed-field profile: " <> err)
+    Right spec -> do
+      compiled <- firstShow (compileProfile spec)
+      typoId <- parseTestConceptId "requests/typo"
+      assertEqual
+        [MissingProfileField typoId "status", FieldNotInProfile typoId "stauts"]
+        (validateProfile PermissiveConformance compiled concepts)
 
 validateTestProfile :: ProfileSpec -> [Concept] -> [ProfileViolation]
 validateTestProfile spec concepts =

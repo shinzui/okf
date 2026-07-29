@@ -97,6 +97,22 @@ TYPE-AWARE FRONTMATTER
   scope. These are hard profile-definition errors regardless of
   `--profile-enforce`.
 
+VALUE VOCABULARIES AND CLOSED FIELDS
+
+  A FieldRule may set allowedValues to a list of legal text values. An empty
+  list means unconstrained. Present strings and lists of strings are checked in
+  both permissive and strict modes; a type-level vocabulary narrows a
+  profile-wide vocabulary by intersection. Disjoint vocabularies are rejected
+  as a profile-definition error before bundle validation.
+
+  Set allowUnknownFields = False to reject undeclared top-level frontmatter
+  keys. The allowed names come from the effective rules for that concept's own
+  type, plus the core OKF keys and the profile's idField. The default is True,
+  so existing profiles continue to allow producer extensions.
+
+    profile: requests/typo: missing profile-required field: status
+    profile: requests/typo: frontmatter field not declared by profile: stauts
+
   A registry reference may be a path to a Dhall file, a directory holding
   package.dhall, or a Dhall expression such as a hash-pinned URL. Without
   --registry, okf uses OKF_PROFILE_REGISTRY, then profiles.registry from

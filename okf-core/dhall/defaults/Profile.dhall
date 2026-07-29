@@ -11,6 +11,7 @@ in  { Type = ProfileType
       , okfVersion = "0.1"
       , frontmatter = FrontmatterRules.default
       , allowUnknownTypes = True
+      , allowUnknownFields = True
       , idField = None Text
       , types = [] : List TypeRule
       }

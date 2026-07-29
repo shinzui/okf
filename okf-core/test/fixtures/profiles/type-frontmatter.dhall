@@ -4,6 +4,8 @@ let TypeRule = ../../../dhall/defaults/TypeRule.dhall
 
 let field = ../../../dhall/mk/FieldRule.dhall
 
+let FieldRule = ../../../dhall/FieldRule.dhall
+
 in    { name = "type-frontmatter"
       , description = Some "Exercises profile-wide and type-specific field rules."
       , okfVersion = "0.1"
@@ -12,9 +14,10 @@ in    { name = "type-frontmatter"
           [ field.plain "type"
           , field.documented "title" "Human-readable concept title."
           ]
-        , recommended = [] : List { field : Text, description : Optional Text }
+        , recommended = [] : List FieldRule
         }
       , allowUnknownTypes = False
+      , allowUnknownFields = True
       , idField = None Text
       , types =
         [ TypeRule::{

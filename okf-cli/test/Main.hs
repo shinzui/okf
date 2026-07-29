@@ -271,6 +271,7 @@ samplePostgresqlProfile =
             recommended = []
           },
       allowUnknownTypes = False,
+      allowUnknownFields = True,
       idField = Nothing,
       types =
         [ TypeRule
@@ -297,13 +298,15 @@ sampleDecisionsProfile =
           { required =
               [ FieldRule
                   { field = "type",
-                    description = Just "The OKF concept type; must be a type rule below."
+                    description = Just "The OKF concept type; must be a type rule below.",
+                    allowedValues = []
                   },
                 undocumentedField "title"
               ],
             recommended = []
           },
       allowUnknownTypes = False,
+      allowUnknownFields = True,
       idField = Just "docId",
       types =
         [ TypeRule
@@ -311,8 +314,8 @@ sampleDecisionsProfile =
               description = Just "One accepted decision, never edited after acceptance.",
               frontmatter =
                 FrontmatterRules
-                  { required = [FieldRule "owner" (Just "Person responsible for the decision.")],
-                    recommended = [FieldRule "reviewer" Nothing]
+                  { required = [FieldRule "owner" (Just "Person responsible for the decision.") []],
+                    recommended = [FieldRule "reviewer" Nothing ["Ari", "Bo"]]
                   },
               pathPattern = Just "decisions/*",
               resourceScheme = Nothing,
@@ -324,7 +327,7 @@ sampleDecisionsProfile =
     }
 
 undocumentedField :: Text.Text -> FieldRule
-undocumentedField key = FieldRule {field = key, description = Nothing}
+undocumentedField key = FieldRule {field = key, description = Nothing, allowedValues = []}
 
 -- | Every optional field prints, as @(none)@ when absent, so the shape does not
 -- shift between profiles. A non-empty frontmatter list becomes a headed block,
@@ -336,18 +339,23 @@ sampleProfileDetail =
     "description: How this team records architectural decisions.",
     "okfVersion: 0.1",
     "allowUnknownTypes: false",
+    "allowUnknownFields: true",
     "idField: docId",
     "frontmatter.required:",
     "  - type: The OKF concept type; must be a type rule below.",
+    "    allowedValues: (any)",
     "  - title: (none)",
+    "    allowedValues: (any)",
     "frontmatter.recommended: (none)",
     "",
     "type: Decision Record",
     "  description: One accepted decision, never edited after acceptance.",
     "  frontmatter.required:",
     "    - owner: Person responsible for the decision.",
+    "      allowedValues: (any)",
     "  frontmatter.recommended:",
     "    - reviewer: (none)",
+    "      allowedValues: Ari, Bo",
     "  pathPattern: decisions/*",
     "  resourceScheme: (none)",
     "  requireSchemaSection: false",
@@ -365,10 +373,13 @@ sampleUndocumentedProfileDetail =
     "description: (none)",
     "okfVersion: 0.1",
     "allowUnknownTypes: false",
+    "allowUnknownFields: true",
     "idField: (none)",
     "frontmatter.required:",
     "  - type: (none)",
+    "    allowedValues: (any)",
     "  - title: (none)",
+    "    allowedValues: (any)",
     "frontmatter.recommended: (none)",
     "",
     "type: PostgreSQL Table",

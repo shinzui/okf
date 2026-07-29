@@ -19,4 +19,8 @@ in  { plain = \(field : Text) -> FieldRule::{ field }
         \(field : Text) ->
         \(description : Text) ->
           FieldRule::{ field, description = Some description }
+    , enum =
+        \(field : Text) ->
+        \(allowedValues : List Text) ->
+          FieldRule::{ field, allowedValues }
     }

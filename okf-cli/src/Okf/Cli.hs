@@ -59,6 +59,8 @@ import Okf.Log qualified as Log
 import Okf.Prelude
 import Okf.Profile
   ( CompiledProfile,
+    FieldPath (..),
+    FieldPathSegment (..),
     FrontmatterRules (..),
     ProfileDefinitionError (..),
     ProfileSpec (..),
@@ -665,6 +667,7 @@ renderProfileDetail
       okfVersion,
       frontmatter = FrontmatterRules {required, recommended},
       allowUnknownTypes,
+      allowUnknownFields,
       idField,
       types = typeRules
     } =
@@ -673,6 +676,7 @@ renderProfileDetail
       "description: " <> renderOptional description,
       "okfVersion: " <> okfVersion,
       "allowUnknownTypes: " <> renderFlag allowUnknownTypes,
+      "allowUnknownFields: " <> renderFlag allowUnknownFields,
       "idField: " <> renderOptional idField
     ]
       <> renderFieldRules "" "frontmatter.required" required
@@ -685,9 +689,13 @@ renderProfileDetail
       renderFieldRules indent label [] = [indent <> label <> ": " <> renderList []]
       renderFieldRules indent label rules =
         (indent <> label <> ":")
-          : [ indent <> "  - " <> rule ^. #field <> ": " <> renderOptional (rule ^. #description)
-            | rule <- rules
-            ]
+          : concatMap
+            ( \rule ->
+                [ indent <> "  - " <> rule ^. #field <> ": " <> renderOptional (rule ^. #description),
+                  indent <> "    allowedValues: " <> renderVocabulary (rule ^. #allowedValues)
+                ]
+            )
+            rules
 
       renderTypeRule
         TypeRule
@@ -718,6 +726,8 @@ renderProfileDetail
       renderOptional = fromMaybe "(none)"
       renderList [] = "(none)"
       renderList values = Text.intercalate ", " values
+      renderVocabulary [] = "(any)"
+      renderVocabulary values = Text.intercalate ", " values
 
 -- | The two-line descriptor a user writes to consume the profile with
 -- @okf validate --profile@. The reference is quoted in Dhall import syntax, not
@@ -1127,6 +1137,16 @@ renderProfileViolation compiled concepts = \case
       <> ": missing profile-recommended field: "
       <> key
       <> renderDescription cid key
+  ValueNotInVocabulary cid fieldPath allowed actual ->
+    renderConceptId cid
+      <> ": frontmatter value at "
+      <> renderFieldPath fieldPath
+      <> " must be one of ["
+      <> Text.intercalate ", " allowed
+      <> "], found: "
+      <> Text.pack (LazyByteString.unpack (Aeson.encode actual))
+  FieldNotInProfile cid key ->
+    renderConceptId cid <> ": frontmatter field not declared by profile: " <> key
   PathPatternMismatch cid ctype patternText ->
     renderConceptId cid <> ": " <> ctype <> " must match path pattern: " <> patternText
   MissingResource cid ctype scheme ->
@@ -1163,9 +1183,27 @@ renderProfileDefinitionError = \case
     renderScope scope <> ": duplicate " <> listName <> " field: " <> key
   ConflictingFieldRequirement scope key ->
     renderScope scope <> ": field appears in required and recommended: " <> key
+  UnsatisfiableVocabulary scope key profileValues typeValues ->
+    renderScope scope
+      <> ": disjoint allowed values for "
+      <> key
+      <> " (profile: ["
+      <> Text.intercalate ", " profileValues
+      <> "], type: ["
+      <> Text.intercalate ", " typeValues
+      <> "])"
   where
     renderScope Nothing = "profile frontmatter"
     renderScope (Just ctype) = "type " <> ctype <> " frontmatter"
+
+renderFieldPath :: FieldPath -> Text
+renderFieldPath (FieldPath pathSegments) = go (toList pathSegments)
+  where
+    go [] = ""
+    go (FieldName name : rest) = name <> foldMap renderSegment rest
+    go (ArrayIndex elementIndex : rest) = Text.pack (show elementIndex) <> foldMap renderSegment rest
+    renderSegment (FieldName name) = "." <> name
+    renderSegment (ArrayIndex elementIndex) = "[" <> Text.pack (show elementIndex) <> "]"
 
 renderValidationErrorText :: ValidationError -> Text
 renderValidationErrorText = \case

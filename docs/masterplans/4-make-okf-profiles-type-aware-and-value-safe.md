@@ -72,7 +72,7 @@ later plans if merge semantics change.
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
 | EP-1 | Compile effective type-aware profile field rules | `docs/plans/25-compile-effective-type-aware-profile-field-rules.md` | None | None | Complete |
-| EP-2 | Enforce closed field-name and field-value vocabularies | `docs/plans/26-enforce-closed-field-name-and-field-value-vocabularies.md` | EP-1 | None | Not Started |
+| EP-2 | Enforce closed field-name and field-value vocabularies | `docs/plans/26-enforce-closed-field-name-and-field-value-vocabularies.md` | EP-1 | None | Complete |
 | EP-3 | Enforce profile field cardinality | `docs/plans/27-enforce-profile-field-cardinality.md` | EP-1 | EP-2 | Not Started |
 | EP-4 | Enforce named profile field formats | `docs/plans/28-enforce-named-profile-field-formats.md` | EP-1 | EP-2 | Not Started |
 
@@ -132,8 +132,8 @@ and the milestone. This section provides an at-a-glance view of the entire initi
 - [x] EP-1: publish and decode type-aware frontmatter rules with compatibility fallbacks.
 - [x] EP-1: compile deterministic effective rules and reject invalid definitions.
 - [x] EP-1: enforce profile recommendations under `--strict` and document the public API.
-- [ ] EP-2: validate allowed textual values at profile and type scope.
-- [ ] EP-2: reject unknown keys against the concept's effective vocabulary.
+- [x] EP-2: validate allowed textual values at profile and type scope.
+- [x] EP-2: reject unknown keys against the concept's effective vocabulary.
 - [ ] EP-3: validate scalar, list, and unconstrained cardinality without changing defaults.
 - [ ] EP-4: validate UTC timestamps, dates, URIs, URI schemes, and document handles.
 - [ ] EP-4: complete cross-feature regression, help, changelog, and release-consumer notes.
@@ -178,6 +178,12 @@ interactions between child plans. Provide concise evidence.
   order from `CompiledProfile`.
   Evidence: the type-aware fixture's human/JSON output preserves declaration
   order, and unit tests pin merged requirement and description precedence.
+
+- Discovery: EP-2's structural `FieldPath` and effective-rule constraint slot
+  give EP-3 and the nested-metadata initiative a stable diagnostic path model;
+  they should extend it rather than introduce rendered text paths.
+  Evidence: vocabulary violations already carry a non-empty sequence of field
+  names and array indexes while emitting top-level paths today.
 
 
 ## Decision Log
@@ -233,8 +239,9 @@ Compare the result against the original vision. Before marking the MasterPlan co
 distill durable project context from this MasterPlan and its child ExecPlans into
 docs/adr/. Keep task-local execution and coordination details here.
 
-EP-1 completed the shared foundation. One of four child plans is complete; the
-remaining vocabulary, cardinality, and format plans can now extend the compiled
-field rule independently. The compatibility and external-catalog acceptance
-gates passed, and no changes were made to the external okf-profiles or Mori
-repositories.
+EP-1 completed the shared foundation, and EP-2 added opt-in textual
+vocabularies and closed field names. Two of four child plans are complete; the
+remaining cardinality and format plans can extend the compiled field rule and
+structural field path independently. Compatibility, full-suite, Nix, and
+external-catalog acceptance gates passed, and no changes were made to the
+external okf-profiles or Mori repositories.

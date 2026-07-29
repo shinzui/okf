@@ -103,6 +103,7 @@ in  { name = "shinzui-postgresql"
         ]
       }
     , allowUnknownTypes = False
+    , allowUnknownFields = True
     , idField = None Text
     , types =
       [ TypeRule::{
@@ -129,6 +130,7 @@ The fields:
 | `frontmatter.required` | `List FieldRule` | Frontmatter keys every concept must have as a non-empty value. A missing or empty key is reported as `missing profile-required field`. |
 | `frontmatter.recommended` | `List FieldRule` | Keys checked only by `okf validate --strict`; a missing value is reported as `missing profile-recommended field`. |
 | `allowUnknownTypes` | `Bool` | When `False`, a concept whose `type` is not listed in `types` is reported as `type not in profile vocabulary`. Profile-wide frontmatter rules still apply whether this is `True` or `False`. |
+| `allowUnknownFields` | `Bool` | When `False`, top-level keys must be declared by the effective profile/type rules. Core OKF keys and `idField` are always permitted. The default is `True`, preserving producer extensions. |
 | `idField` | `Optional Text` | Names the frontmatter key that stores document IDs. `None Text` disables all document-ID checks. |
 | `types` | `List TypeRule` | One rule per allowed `type` string (see below). |
 
@@ -138,11 +140,11 @@ Each `FieldRule` — one frontmatter key, and optionally what it is for:
 |-------|------|---------|
 | `field` | `Text` | The frontmatter key. |
 | `description` | `Optional Text` | Prose explaining what the key should contain. Printed by `okf profile show`, and repeated in missing required or recommended advisories. Documentary only. |
+| `allowedValues` | `List Text` | Legal textual values. `[]` means unconstrained. Strings and lists of strings are checked whenever present, including recommended fields outside strict mode. |
 
 A description is attached to the key it documents rather than kept in a parallel
 list, so it cannot drift away from the rule or outlive it. See
-[writing a `FieldRule`](#writing-a-fieldrule) for the three equivalent ways to
-write one.
+[writing a `FieldRule`](#writing-a-fieldrule) for the available authoring forms.
 
 Each `TypeRule`:
 
@@ -150,7 +152,7 @@ Each `TypeRule`:
 |-------|------|---------|
 | `type` | `Text` | The exact `type` frontmatter string this rule applies to. |
 | `description` | `Optional Text` | Prose explaining what this concept type is for. Documentary only. |
-| `frontmatter` | `FrontmatterRules` | Required and recommended keys added for this type. Profile and type scopes merge by key: required wins, and type-level prose wins when present. `defaults.TypeRule` supplies empty lists. |
+| `frontmatter` | `FrontmatterRules` | Required and recommended keys added for this type. Profile and type scopes merge by key: required wins, type-level prose wins when present, and two non-empty value vocabularies intersect. `defaults.TypeRule` supplies empty lists. |
 | `pathPattern` | `Optional Text` | A segment-glob the concept ID must match. `*` matches exactly one segment; a single trailing `**` matches one or more remaining segments; any other segment matches literally. For example `schemas/*/tables/*` matches `schemas/sales/tables/orders`. A mismatch is reported as `must match path pattern`. |
 | `resourceScheme` | `Optional Text` | When set, the concept's `resource:` value must begin with `<scheme>://`. A missing resource is reported as `requires a resource with scheme`; a wrong scheme as `resource must use scheme`. |
 | `requireSchemaSection` | `Bool` | When `True`, the body must contain a `# Schema` heading followed by a GitHub-flavored Markdown table. A missing section is reported as `requires a # Schema section`. |
@@ -239,19 +241,30 @@ name: architecture-decision-records
 description: (none)
 okfVersion: 0.1
 allowUnknownTypes: false
+allowUnknownFields: true
 idField: docId
 frontmatter.required:
   - type: (none)
+    allowedValues: (any)
   - title: (none)
+    allowedValues: (any)
   - docId: (none)
+    allowedValues: (any)
   - status: (none)
+    allowedValues: (any)
   - date: (none)
+    allowedValues: (any)
 frontmatter.recommended:
   - description: (none)
+    allowedValues: (any)
   - timestamp: (none)
+    allowedValues: (any)
   - supersedes: (none)
+    allowedValues: (any)
   - supersededBy: (none)
+    allowedValues: (any)
   - originatingPlan: (none)
+    allowedValues: (any)
 
 type: Architecture Decision Record
   description: (none)
@@ -272,16 +285,33 @@ Every optional field prints, as `(none)` when absent, so the output shape does
 not shift between profiles and stays reliable to grep. Type rules print in the
 order the profile declares them.
 
-Each frontmatter list is a headed block with one key per line, because a key's
-description cannot share a comma-joined line with its neighbours. An **empty**
-list keeps the one-line form, `frontmatter.recommended: (none)`. A profile that
-documents its keys reads like this instead:
+Each frontmatter list is a headed block with one key and its value vocabulary,
+because those details cannot share a comma-joined line with neighbouring rules.
+An **empty** list keeps the one-line form,
+`frontmatter.recommended: (none)`. `(any)` means the field has no value
+vocabulary. A profile that documents and constrains its keys reads like this:
 
 ```text
 frontmatter.required:
   - type: The OKF concept type; must be one of the type rules below.
+    allowedValues: (any)
   - title: Human-readable name of the object, as a reader would say it.
+    allowedValues: (any)
+frontmatter.recommended:
+  - status: Lifecycle state.
+    allowedValues: proposed, accepted, closed
 ```
+
+`field.enum "status" [ "proposed", "accepted" ]` constructs a rule with a
+closed textual vocabulary. If profile and type scopes both constrain the same
+field, the type may narrow the profile vocabulary: their intersection is used
+in profile declaration order. A disjoint pair is rejected as a profile
+definition error before any bundle is traversed.
+
+Set `allowUnknownFields = False` to close field names. The allowed set is built
+for each concept type, so a field declared only by type A is rejected on type B.
+The core keys `type`, `title`, `description`, `timestamp`, `resource`, and
+`tags`, plus the configured `idField`, remain legal without redundant rules.
 
 The closing hint is the whole adoption path: there is no `okf profile install`,
 because `okf validate --profile` already accepts any Dhall file. Save those two
@@ -401,9 +431,8 @@ in  okf.defaults.Profile::{
 
 A `FieldRule` is the one profile value you write over and over — one per required
 or recommended frontmatter key — so it ships constructors as well as a
-record-completion module. All three forms below produce **exactly the same
-value**; Dhall normalizes the function application away long before okf's decoder
-sees it, so nothing downstream knows which you used.
+record-completion module. Dhall normalizes constructor applications long before
+okf's decoder sees them.
 
 ```dhall
 let okf = ./okf-core/dhall/package.dhall
@@ -413,24 +442,26 @@ let field = okf.mk.FieldRule
 in  [ -- 1. constructors — the form to reach for
       field.documented "type" "The OKF concept type."
     , field.plain "title"
+    , field.enum "status" [ "proposed", "accepted", "superseded" ]
 
       -- 2. record completion
     , okf.defaults.FieldRule::{
-      , field = "status"
-      , description = Some "One of: proposed, accepted, superseded."
+      , field = "reviewer"
+      , description = Some "Person who approved the change."
       }
 
       -- 3. a bare record literal — every field spelled out
-    , { field = "date", description = None Text }
+    , { field = "date", description = None Text, allowedValues = [] : List Text }
     ]
 ```
 
-`okf.mk.FieldRule` exports exactly two functions:
+`okf.mk.FieldRule` exports three functions:
 
 | Constructor | Type | Use |
 |-------------|------|-----|
 | `plain` | `Text -> FieldRule` | A key with no description. |
 | `documented` | `Text -> Text -> FieldRule` | A key and the prose explaining it. |
+| `enum` | `Text -> List Text -> FieldRule` | A key with a closed textual vocabulary and no description. |
 
 **What this does and does not protect against.** Record completion and the
 constructors both shield you from *additive, defaulted* schema fields: if a fourth

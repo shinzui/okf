@@ -5,6 +5,8 @@ module Okf.Document
     DocumentParseError (..),
     emptyFrontmatter,
     frontmatterLookup,
+    frontmatterKeys,
+    coreFrontmatterFields,
     parseDocument,
     serializeDocument,
 
@@ -28,7 +30,10 @@ import Data.Aeson.KeyMap qualified as KeyMap
 import Data.Attoparsec.ByteString qualified as Attoparsec
 import Data.ByteString qualified as ByteString
 import Data.Frontmatter qualified as Frontmatter
+import Data.List qualified as List
 import Data.Ord (comparing)
+import Data.Set (Set)
+import Data.Set qualified as Set
 import Data.Text qualified as Text
 import Data.Text.Encoding qualified as Text.Encoding
 import Data.Vector qualified as Vector
@@ -64,6 +69,19 @@ emptyFrontmatter = Frontmatter KeyMap.empty
 frontmatterLookup :: Text -> Frontmatter -> Maybe Value
 frontmatterLookup key (Frontmatter rawFields) =
   KeyMap.lookup (AesonKey.fromText key) rawFields
+
+-- | All top-level frontmatter keys in lexical order. Aeson's 'KeyMap.keys'
+-- order depends on its backing representation, so callers must not expose it
+-- directly when deterministic diagnostics matter.
+frontmatterKeys :: Frontmatter -> [Text]
+frontmatterKeys (Frontmatter rawFields) =
+  List.sort (map AesonKey.toText (KeyMap.keys rawFields))
+
+-- | Frontmatter keys understood directly by OKF parsing, validation, and
+-- authoring. Closed profiles always permit these keys even when they are not
+-- repeated as profile field rules.
+coreFrontmatterFields :: Set Text
+coreFrontmatterFields = Set.fromList coreFrontmatterFieldOrder
 
 -- | Build frontmatter from a list of @(key, value)@ pairs. Later duplicate
 -- keys overwrite earlier ones.
@@ -166,8 +184,10 @@ okfKeyRank keyText =
     Just rank -> (rank, "")
     Nothing -> (length commonRanks, keyText)
   where
-    commonRanks =
-      zip ["type", "title", "description", "timestamp", "resource", "tags"] [0 ..]
+    commonRanks = zip coreFrontmatterFieldOrder [0 ..]
+
+coreFrontmatterFieldOrder :: [Text]
+coreFrontmatterFieldOrder = ["type", "title", "description", "timestamp", "resource", "tags"]
 
 parseFrontmatterDocument :: ByteString.ByteString -> Either DocumentParseError OKFDocument
 parseFrontmatterDocument inputBytes =

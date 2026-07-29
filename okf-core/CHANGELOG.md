@@ -9,6 +9,12 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- `FieldRule.allowedValues`, `ProfileSpec.allowUnknownFields`, structural
+  `FieldPath` diagnostics, and compiled validation for textual vocabularies and
+  closed top-level field names. Older descriptors upgrade to unconstrained,
+  open defaults.
+- `coreFrontmatterFields` and deterministic `frontmatterKeys` in
+  `Okf.Document`, shared by closed-profile validation.
 - Type-aware frontmatter rules: each `TypeRule` now carries its own
   `FrontmatterRules`, merged with profile-wide rules for matching concepts.
 - `CompiledProfile`, `ProfileDefinitionError`, `compileProfile`,
@@ -26,8 +32,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - `ToJSON` instances for `ProfileSpec`, `FrontmatterRules`, and `TypeRule`. A
   type rule's name is emitted under the key `type`, matching the Dhall field
   rather than the Haskell field `type_`.
-- `FieldRule` — `{ field :: Text, description :: Maybe Text }` — one documented
-  frontmatter key, with a `ToJSON` instance emitting `{ "field", "description" }`.
+- `FieldRule` — `{ field :: Text, description :: Maybe Text, allowedValues :: [Text] }`
+  — one documented and optionally constrained frontmatter key.
 - `profileFieldDescription :: ProfileSpec -> Text -> Maybe Text`, the prose a
   profile attaches to a frontmatter key, searching `required` then
   `recommended`.
@@ -36,7 +42,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   0.2.x one. `Okf.Profile.Registry` uses it, so a registry of pre-description
   profiles still enumerates.
 - Published Dhall: `dhall/FieldRule.dhall`, `dhall/defaults/FieldRule.dhall`,
-  and `dhall/mk/FieldRule.dhall` (constructors `plain` and `documented`), all
+  and `dhall/mk/FieldRule.dhall` (constructors `plain`, `documented`, and
+  `enum`), all
   re-exported from `dhall/package.dhall`, which gains a top-level `mk` record.
 
 ### Changed
