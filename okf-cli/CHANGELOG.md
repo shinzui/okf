@@ -38,7 +38,9 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   contradictory profile/type formats. Mori and other exhaustive `okf-core`
   consumers must add cases for `InvalidFormatParameter`,
   `ConflictingFieldFormat`, and `ValueFormatMismatch` before updating their
-  `okf-core` pin.
+  `okf-core` pin. Mori's renderer is
+  `mori-cli/src/Mori/Okf/Advisory.hs`, and its matching `cabal.project` and
+  `flake.nix` pins must move together.
 - Profile descriptors are compiled before validation. Duplicate type names and
   ambiguous required/recommended declarations are fatal profile-definition
   errors reported once, before any concept is checked.

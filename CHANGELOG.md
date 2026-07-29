@@ -51,7 +51,9 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - **Breaking library API.** `FieldRule`, `ProfileDefinitionError`, and
   `ProfileViolation` gain format-related fields and constructors. Mori must
   update its exhaustive advisory renderer before moving its `okf-core` commit
-  pin. The external `okf-profiles` catalog remains on its released schema until
+  pin in both `cabal.project` and `flake.nix`; the renderer lives in
+  `mori-cli/src/Mori/Okf/Advisory.hs`. The external `okf-profiles` catalog
+  remains on its released schema until
   a coordinated catalog release updates the okf tag and Dhall hash together.
 - **Breaking (library and published schema).** `frontmatter.required` and
   `frontmatter.recommended` are now `List FieldRule` rather than `List Text`,

@@ -75,6 +75,13 @@ RFC 3986 parser; document handles reuse `parseDocumentId`. Formats apply to text
 and lists of text without implying presence, and explicit cardinality mismatches
 suppress a redundant format-shape diagnostic.
 
+JSON encodes `Rfc3339Utc`, `Date`, and `Uri` as the lowercase strings
+`rfc3339-utc`, `date`, and `uri`. Parameterized formats are one-key objects:
+`{ "uriWithScheme": "mori" }` and `{ "documentHandle": "ADR" }`. Human
+profile display uses the corresponding stable lowercase names. This keeps raw
+format parameters machine-readable without depending on generic Haskell sum
+encoding.
+
 
 ## Consequences
 
@@ -94,3 +101,6 @@ must add type-level frontmatter or use `defaults.TypeRule` record completion;
 the fallback decoders cannot bypass an annotation that Dhall itself rejects.
 The compatibility chain freezes the complete EP-3 cardinality generation before
 the format-aware decoder and upgrades every older field to `format = None`.
+Mori's direct consumer must update
+`mori-cli/src/Mori/Okf/Advisory.hs` and move the matching okf commit in both
+`cabal.project` and `flake.nix`; those two pins are one integration contract.

@@ -41,7 +41,7 @@ This section must always reflect the actual current state of the work.
 - [x] (2026-07-29 21:00Z) Implement scalar and list validation for every named format.
 - [x] (2026-07-29 21:00Z) Add parser edge-case, type-scope, interaction, and compatibility fixtures.
 - [x] (2026-07-29 21:00Z) Update Cabal/Nix inputs, help, changelogs, and the compiled-rule ADR.
-- [ ] Run full tests and external-catalog acceptance checks.
+- [x] (2026-07-29 21:05Z) Run full tests and external-catalog acceptance checks.
 
 
 ## Surprises & Discoveries
@@ -63,6 +63,13 @@ implementation. Provide concise evidence.
   release line and avoids the deprecated candidate.
   Evidence: Mori returned no registered project, Hackage `preferred.json`,
   `cabal info network-uri`, upstream tags, and the unpacked 2.6.4.2 source.
+
+- Discovery: Mori's current advisory integration predates the compiled profile
+  API and exhaustively matches the older violation set in
+  `mori-cli/src/Mori/Okf/Advisory.hs`. Its `cabal.project` and `flake.nix` pins
+  must move to the same okf commit after that renderer and call site are updated.
+  Evidence: the Mori source located by `mori registry show shinzui/mori --full`
+  pins okf commit `c66a51cc337ce2b08662f5809668fa4585609e13` in both files.
 
 
 ## Decision Log
@@ -87,6 +94,14 @@ Record every decision made while working on the plan.
   so the released Hackage source was inspected after Mori lookup failed.
   Date: 2026-07-29
 
+- Decision: encode nullary formats as lowercase JSON strings and parameterized
+  formats as one-key JSON objects; render the same values as stable lowercase
+  CLI names.
+  Rationale: `"uri"`, `{ "uriWithScheme": "mori" }`, and
+  `{ "documentHandle": "ADR" }` are unambiguous without exposing Haskell
+  constructor encoding details, and the parameter remains machine-readable.
+  Date: 2026-07-29
+
 
 ## Outcomes & Retrospective
 
@@ -95,7 +110,28 @@ Compare the result against the original purpose. Before marking the plan complet
 distill durable project context from the Decision Log, Surprises & Discoveries, and
 this section into docs/adr/. Keep task-local execution details here.
 
-(To be filled during and after implementation.)
+EP-4 is complete. Profiles now expose five named formats in Haskell and Dhall,
+compile parameter validity and profile/type refinement once, and validate text
+or lists of text with `time`, `network-uri`, and the existing document-handle
+parser. Explicit cardinality mismatches suppress redundant format-shape noise;
+absent fields remain unaffected. Human profile display, JSON, CLI diagnostics,
+the shipped PostgreSQL example, help, user documentation, and changelogs all
+carry the same raw format values.
+
+The compatibility chain now freezes the complete EP-3 descriptor generation
+and upgrades it and all older generations to `format = None`. Boundary and
+fixture tests cover leap dates, invalid calendar values, UTC `Z` versus numeric
+offsets, absolute and malformed URIs, case-insensitive URI schemes,
+case-sensitive canonical handles, list elements, non-text values, invalid
+parameters, and conflicting scope declarations.
+
+Validation evidence: the published package and both format-aware profile
+descriptors type checked; focused and full Cabal suites passed; the enforced
+negative fixture exited 1 with exactly five ordered format diagnostics;
+`nix flake check` passed; the unchanged v0.6.0 external catalog enumerated all
+six profiles; and its improvement-request profile strictly validated all six
+concepts in this repository. No external repository was modified. ADR 5 now
+records the durable merge, parser, compatibility, JSON, and consumer contracts.
 
 
 ## Context and Orientation

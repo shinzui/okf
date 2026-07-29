@@ -74,7 +74,7 @@ later plans if merge semantics change.
 | EP-1 | Compile effective type-aware profile field rules | `docs/plans/25-compile-effective-type-aware-profile-field-rules.md` | None | None | Complete |
 | EP-2 | Enforce closed field-name and field-value vocabularies | `docs/plans/26-enforce-closed-field-name-and-field-value-vocabularies.md` | EP-1 | None | Complete |
 | EP-3 | Enforce profile field cardinality | `docs/plans/27-enforce-profile-field-cardinality.md` | EP-1 | EP-2 | Complete |
-| EP-4 | Enforce named profile field formats | `docs/plans/28-enforce-named-profile-field-formats.md` | EP-1 | EP-2 | In Progress |
+| EP-4 | Enforce named profile field formats | `docs/plans/28-enforce-named-profile-field-formats.md` | EP-1 | EP-2 | Complete |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
 Hard Deps and Soft Deps reference other rows by their # prefix (e.g., EP-1, EP-3).
@@ -135,8 +135,8 @@ and the milestone. This section provides an at-a-glance view of the entire initi
 - [x] EP-2: validate allowed textual values at profile and type scope.
 - [x] EP-2: reject unknown keys against the concept's effective vocabulary.
 - [x] EP-3: validate scalar, list, and unconstrained cardinality without changing defaults.
-- [ ] EP-4: validate UTC timestamps, dates, URIs, URI schemes, and document handles.
-- [ ] EP-4: complete cross-feature regression, help, changelog, and release-consumer notes.
+- [x] EP-4: validate UTC timestamps, dates, URIs, URI schemes, and document handles.
+- [x] EP-4: complete cross-feature regression, help, changelog, and release-consumer notes.
 
 
 ## Surprises & Discoveries
@@ -193,6 +193,19 @@ interactions between child plans. Provide concise evidence.
   Evidence: compatibility tests now cover current, EP-2, EP-1,
   self-documenting, and 0.2 descriptors independently.
 
+- Discovery: the final format generation needs a frozen EP-3 decoder, and the
+  selected URI dependency line remains `network-uri >=2.6.4 && <2.7` because
+  Hackage deprecates 2.7.0.0 while upstream tags stop at v2.6.4.2.
+  Evidence: the EP-3 compatibility fixture preserves cardinality and upgrades
+  format to `None`; Mori-first lookup, Hackage metadata, unpacked source, and
+  upstream tags agree on the dependency choice.
+
+- Discovery: Mori's current exhaustive renderer and old validation call site
+  are in `mori-cli/src/Mori/Okf/Advisory.hs`; its okf commit must be updated in
+  both `cabal.project` and `flake.nix` after migration.
+  Evidence: read-only inspection of the Mori project registered by Mori found
+  the same commit pin in both files. No external repository was modified.
+
 
 ## Decision Log
 
@@ -247,9 +260,19 @@ Compare the result against the original vision. Before marking the MasterPlan co
 distill durable project context from this MasterPlan and its child ExecPlans into
 docs/adr/. Keep task-local execution and coordination details here.
 
-EP-1 completed the shared foundation, EP-2 added opt-in textual vocabularies and
-closed field names, and EP-3 added explicit scalar/list cardinality with
-shape-aware presence. Three of four child plans are complete; the remaining
-format plan can extend the same compiled field rule and structural field path.
-Compatibility, full-suite, Nix, and external-catalog acceptance gates passed,
-and no changes were made to the external okf-profiles or Mori repositories.
+The initiative is complete. EP-1 established raw-versus-compiled type-aware
+rules and strict recommendations; EP-2 added textual vocabularies, structural
+paths, and opt-in field-name closure; EP-3 added shape-aware cardinality; and
+EP-4 added parser-backed timestamps, dates, URIs, URI schemes, and document
+handles. Each constraint is one orthogonal component of the same deterministic
+effective field rule, while profile show and JSON preserve the raw descriptor.
+
+Compatibility now covers the released 0.2 shape and every additive generation
+through EP-3, with each frozen decoder preserving the behavior that existed in
+that generation and supplying only later no-op defaults. The full Cabal suites,
+Dhall type checks, feature fixtures, `nix flake check`, six-profile external
+catalog enumeration, and strict validation of all six improvement requests
+passed after the final integration. ADR 5 contains the durable compilation,
+merge, parser, compatibility, JSON, and consumer-migration contracts. The
+external okf-profiles and Mori repositories were inspected read-only and remain
+unchanged; their coordinated release and pin updates remain external gates.
