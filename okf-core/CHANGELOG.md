@@ -9,6 +9,12 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- Bounded one-level nested record rules through `FieldRule.elementFields`,
+  non-recursive `NestedRules`/`NestedFieldRule` Dhall and Haskell types,
+  profile/type compilation, indexed `FieldPath` diagnostics, JSON, constructors,
+  and validation of nested presence, vocabulary, cardinality, and named formats.
+  The complete EP-4 descriptor shape is frozen as a compatibility decoder and
+  upgrades with no nested rule.
 - Named `FieldFormat` constraints (`Rfc3339Utc`, `Date`, `Uri`,
   `UriWithScheme`, and `DocumentHandle`) on `FieldRule`, including parser-backed
   scalar/list validation, parameter checks, profile/type refinement, JSON and
@@ -57,6 +63,11 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
+- **Breaking.** `FieldRule` gains `elementFields :: Maybe NestedRules` and
+  `ProfileViolation` gains `MissingNestedProfileField`,
+  `MissingRecommendedNestedProfileField`, and `NestedElementNotRecord`.
+  `ProfileDefinitionError` gains `ElementFieldsRequireList`. Exhaustive library
+  consumers, including Mori, must handle the new diagnostics.
 - **Breaking.** `FieldRule` gains `format :: Maybe FieldFormat`;
   `ProfileDefinitionError` gains `InvalidFormatParameter` and
   `ConflictingFieldFormat`; and `ProfileViolation` gains

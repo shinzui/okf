@@ -4,6 +4,7 @@ slug: validate-one-level-nested-profile-records
 title: "Validate one-level nested profile records"
 kind: exec-plan
 created_at: 2026-07-29T17:16:56Z
+intention: intention_01kyqwbdgjen0reqtmzqv8mwb7
 master_plan: "docs/masterplans/5-validate-structured-metadata-and-document-relationships-in-okf-profiles.md"
 ---
 
@@ -32,13 +33,13 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] Verify completion of every child in MasterPlan 4 and read its compiled-rule ADR.
-- [ ] Add non-recursive `NestedRules` and `NestedFieldRule` schema, defaults, constructors, JSON, and rendering.
-- [ ] Extend field paths and compile profile/type nested rules with contradiction checks.
-- [ ] Validate list elements, nested presence, strict recommendations, and all existing value constraints.
-- [ ] Add review-shape fixtures and path-precise CLI/core tests.
-- [ ] Update compatibility decoders, help, changelogs, and ADRs.
-- [ ] Run full tests and validate an external-catalog-style review fragment.
+- [x] (2026-07-29 10:38 PDT) Verify completion of every child in MasterPlan 4 and read its compiled-rule ADR.
+- [x] (2026-07-29 14:42 PDT) Add non-recursive `NestedRules` and `NestedFieldRule` schema, defaults, constructors, JSON, and rendering.
+- [x] (2026-07-29 14:42 PDT) Extend field paths and compile profile/type nested rules with contradiction checks.
+- [x] (2026-07-29 14:42 PDT) Validate list elements, nested presence, strict recommendations, and all existing value constraints.
+- [x] (2026-07-29 14:42 PDT) Add review-shape fixtures and path-precise CLI/core tests.
+- [x] (2026-07-29 14:42 PDT) Update compatibility decoders, help, changelogs, and ADRs.
+- [x] (2026-07-29 14:47 PDT) Run full tests and validate an external-catalog-style review fragment.
 
 
 ## Surprises & Discoveries
@@ -46,7 +47,24 @@ This section must always reflect the actual current state of the work.
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+- Discovery: `FieldPath` was already structural after MasterPlan 4 EP-2, including
+  both `FieldName` and `ArrayIndex`; nested validation only needed constructors for
+  definition paths, indexed field paths, and indexed element paths.
+  Evidence: `okf-core/src/Okf/Profile.hs` carried the two segment constructors
+  before this plan, and focused tests render `reviews[2].outcome` without changing
+  the public path representation.
+
+- Discovery: adding `elementFields` requires freezing the complete EP-4
+  format-aware descriptor as its own compatibility generation. Relying on the
+  older EP-3 decoder would discard format constraints from descriptors authored
+  between EP-4 and this plan.
+  Evidence: `formats-ep4.dhall` loads through `FormatProfileSpec` with its
+  `Rfc3339Utc` constraint intact and `elementFields = Nothing`.
+
+- Discovery: concurrent Cabal commands still race on the in-place package
+  database after a library schema change.
+  Evidence: parallel core and CLI test runs produced `package.conf.inplace already
+  exists`; the same commands pass sequentially.
 
 
 ## Decision Log
@@ -71,6 +89,20 @@ Record every decision made while working on the plan.
   scalar declaration would make the schema impossible to satisfy.
   Date: 2026-07-29
 
+- Decision: keep the raw schema non-recursive while reusing the compiled
+  `EffectiveFieldRule` for nested values with `elementFields = Nothing`.
+  Rationale: the raw Dhall and Haskell types enforce the public depth cap; one
+  compiled evaluator then preserves identical merge and validation semantics at
+  both levels without creating a second constraint implementation.
+  Date: 2026-07-29
+
+- Decision: use distinct missing-nested and non-record violation constructors,
+  while reusing `FieldPath` for vocabulary, cardinality, and format failures.
+  Rationale: existing top-level missing constructors carry plain field names and
+  cannot express an index, while the existing value-constraint diagnostics already
+  have the structural path needed by nested fields.
+  Date: 2026-07-29
+
 
 ## Outcomes & Retrospective
 
@@ -79,7 +111,29 @@ Compare the result against the original purpose. Before marking the plan complet
 distill durable project context from the Decision Log, Surprises & Discoveries, and
 this section into docs/adr/. Keep task-local execution details here.
 
-(To be filled during and after implementation.)
+EP-1 is complete. Profiles now expose bounded `NestedRules` and
+`NestedFieldRule` values in Dhall, Haskell, JSON, constructor modules, and
+`okf profile show`. A top-level `elementFields` declaration compiles into the
+existing effective-rule model, refines `Any` to `List`, rejects explicit
+`Scalar`, and merges profile/type nested keys with the established requirement,
+vocabulary, cardinality, format, and prose semantics.
+
+Validation now requires each array element to be an object, applies required and
+strict-recommended nested presence rules, and reuses all value constraints with
+structural paths such as `reviews[2].outcome`. Extra nested keys remain allowed.
+The external catalog's human/model review vocabulary, both timestamps, scope,
+outcome, context, and model-provider extensions are represented by the acceptance
+fixtures. The pre-EP-1 EP-4 schema is frozen as a compatibility decoder so format
+constraints survive while older descriptors receive `elementFields = Nothing`.
+
+Validation evidence: the canonical package and nested descriptor type checked;
+`cabal test all --test-show-details=direct` passed both suites; the valid strict
+CLI fixture printed `OK: 1 concepts`; the negative fixture printed indexed
+non-record, cardinality, recommendation, requirement, format, and vocabulary
+diagnostics; all six external catalog profiles enumerated; its improvement-request
+profile strictly validated six concepts; and `nix flake check` passed treefmt and
+pre-commit. ADR 5 now records the durable bounded-schema, compilation,
+compatibility, and consumer-migration contracts.
 
 
 ## Context and Orientation

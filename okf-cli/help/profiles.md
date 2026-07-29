@@ -159,6 +159,28 @@ NAMED FIELD FORMATS
     profile: bad: frontmatter value at timestamp must match format rfc3339-utc, found: "2026-07-29T17:00:00+01:00"
     profile: bad: frontmatter value at originPlan must match format uri-with-scheme(mori), found: "https://example.test"
 
+NESTED RECORD FIELDS
+
+  A top-level FieldRule may set elementFields to required and recommended rules
+  for every record in a list. The public schema is intentionally bounded to one
+  level: NestedFieldRule has vocabulary, cardinality, and format constraints but
+  cannot contain another elementFields value.
+
+  Use field.recordList with NestedFieldRule constructors or record completion.
+  Declaring elementFields implies list cardinality; combining it with Scalar is
+  a hard profile-definition error. Profile-wide and type-specific nested rules
+  merge by sibling key just like top-level rules.
+
+  Each list element must be a record. Required nested keys are always checked;
+  recommended nested keys only under --strict. Present nested values are checked
+  in both modes, and diagnostics identify the exact index:
+
+    profile: requests/example: missing profile-required field: reviews[2].outcome
+    profile: requests/example: frontmatter element at reviews[1] must be a record, found: "not-a-record"
+
+  Extra keys inside a record remain allowed. Nested field-name closure and a
+  second nested level are not part of this schema.
+
   A registry reference may be a path to a Dhall file, a directory holding
   package.dhall, or a Dhall expression such as a hash-pinned URL. Without
   --registry, okf uses OKF_PROFILE_REGISTRY, then profiles.registry from

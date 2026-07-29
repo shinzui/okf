@@ -82,6 +82,23 @@ profile display uses the corresponding stable lowercase names. This keeps raw
 format parameters machine-readable without depending on generic Haskell sum
 encoding.
 
+One-level nested records extend the same compiler without making the raw schema
+recursive. A top-level `FieldRule` may carry `elementFields : Maybe NestedRules`;
+`NestedRules` contains required and recommended `NestedFieldRule` values, and a
+`NestedFieldRule` deliberately has no `elementFields` member. Declaring
+`elementFields` refines `Any` outer cardinality to `List`, while an explicit
+`Scalar` declaration is a definition error. Profile and type scopes merge nested
+keys with the same requirement, vocabulary, cardinality, format, and prose rules
+as top-level keys.
+
+Nested validation traverses only array elements that are objects. Diagnostics
+carry structural paths such as `reviews[2].outcome`; non-object elements are
+reported at paths such as `reviews[1]`. Required nested fields are always checked,
+recommended nested fields only under `StrictAuthoring`, and value constraints run
+whenever a nested field is present. Undeclared keys inside a record remain allowed.
+The complete EP-4 format-aware descriptor generation is frozen before this schema
+addition and upgrades with `elementFields = Nothing`.
+
 
 ## Consequences
 
@@ -92,15 +109,22 @@ that exhaustively match `ProfileViolation`, including Mori, must also handle
 `CardinalityMismatch`, and `ValueFormatMismatch`. Consumers that exhaustively
 match `ProfileDefinitionError` must handle `UnsatisfiableVocabulary`,
 `ConflictingCardinality`, `InvalidFormatParameter`, and
-`ConflictingFieldFormat`. This includes Mori's advisory renderer.
+`ConflictingFieldFormat`, plus `ElementFieldsRequireList` for a scalar parent
+that declares nested records. This includes Mori's advisory renderer.
+
+Nested-record support adds `MissingNestedProfileField`,
+`MissingRecommendedNestedProfileField`, and `NestedElementNotRecord` to
+`ProfileViolation`. Exhaustive consumers must render their `FieldPath` values and
+continue treating them as advisory profile deviations.
 
 Later profile constraints extend the compiled field rule rather than scanning
 raw declarations again. Human and JSON profile display continue to preserve the
 raw descriptor. Descriptors annotated against the newest closed Dhall schema
 must add type-level frontmatter or use `defaults.TypeRule` record completion;
 the fallback decoders cannot bypass an annotation that Dhall itself rejects.
-The compatibility chain freezes the complete EP-3 cardinality generation before
-the format-aware decoder and upgrades every older field to `format = None`.
+The compatibility chain freezes the complete EP-4 format-aware generation before
+the nested-aware decoder and upgrades it with `elementFields = Nothing`; older
+generations continue to receive their established no-op defaults.
 Mori's direct consumer must update
 `mori-cli/src/Mori/Okf/Advisory.hs` and move the matching okf commit in both
 `cabal.project` and `flake.nix`; those two pins are one integration contract.

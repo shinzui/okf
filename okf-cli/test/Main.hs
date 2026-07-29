@@ -13,7 +13,7 @@ import Okf.Cli.Fzf.Selector (conceptCandidates, conceptPreviewCommand, parseBund
 import Okf.Cli.Help (HelpTopic (..), helpTopics)
 import Okf.ConceptId (parseConceptId)
 import Okf.Document (parseDocument)
-import Okf.Profile (Cardinality (..), FieldFormat (..), FieldRule (..), FrontmatterRules (..), ProfileSpec (..), TypeRule (..))
+import Okf.Profile (Cardinality (..), FieldFormat (..), FieldRule (..), FrontmatterRules (..), NestedFieldRule (..), NestedRules (..), ProfileSpec (..), TypeRule (..))
 import Okf.Profile.Registry (RegistryEntry (..))
 import Options.Applicative
 import System.Directory (createDirectoryIfMissing, getCurrentDirectory, getTemporaryDirectory, removeDirectoryRecursive, withCurrentDirectory)
@@ -197,6 +197,7 @@ main = do
           renderRegistryTable sampleRegistryEntries == sampleRegistryTable,
           renderProfileDetail "nested.decisions" sampleDecisionsProfile == sampleProfileDetail,
           renderProfileDetail "" samplePostgresqlProfile == sampleUndocumentedProfileDetail,
+          renderProfileDetail "" sampleNestedProfile == sampleNestedProfileDetail,
           parseShowsInfo ["--version"],
           parseFails ["hello"],
           logAddWrites,
@@ -301,7 +302,8 @@ sampleDecisionsProfile =
                     description = Just "The OKF concept type; must be a type rule below.",
                     allowedValues = [],
                     cardinality = Any,
-                    format = Nothing
+                    format = Nothing,
+                    elementFields = Nothing
                   },
                 undocumentedField "title"
               ],
@@ -316,8 +318,8 @@ sampleDecisionsProfile =
               description = Just "One accepted decision, never edited after acceptance.",
               frontmatter =
                 FrontmatterRules
-                  { required = [FieldRule "owner" (Just "Person responsible for the decision.") [] Scalar (Just (DocumentHandle "USR"))],
-                    recommended = [FieldRule "reviewer" Nothing ["Ari", "Bo"] List (Just Uri)]
+                  { required = [FieldRule "owner" (Just "Person responsible for the decision.") [] Scalar (Just (DocumentHandle "USR")) Nothing],
+                    recommended = [FieldRule "reviewer" Nothing ["Ari", "Bo"] List (Just Uri) Nothing]
                   },
               pathPattern = Just "decisions/*",
               resourceScheme = Nothing,
@@ -329,7 +331,65 @@ sampleDecisionsProfile =
     }
 
 undocumentedField :: Text.Text -> FieldRule
-undocumentedField key = FieldRule {field = key, description = Nothing, allowedValues = [], cardinality = Any, format = Nothing}
+undocumentedField key = FieldRule {field = key, description = Nothing, allowedValues = [], cardinality = Any, format = Nothing, elementFields = Nothing}
+
+sampleNestedProfile :: ProfileSpec
+sampleNestedProfile =
+  ProfileSpec
+    { name = "nested",
+      description = Nothing,
+      okfVersion = "0.1",
+      frontmatter =
+        FrontmatterRules
+          { required =
+              [ FieldRule
+                  "reviews"
+                  Nothing
+                  []
+                  Any
+                  Nothing
+                  ( Just
+                      NestedRules
+                        { required = [NestedFieldRule "outcome" Nothing ["approved", "rejected"] Any Nothing],
+                          recommended = [NestedFieldRule "notes" Nothing [] Scalar Nothing]
+                        }
+                  )
+              ],
+            recommended = []
+          },
+      allowUnknownTypes = True,
+      allowUnknownFields = True,
+      idField = Nothing,
+      types = []
+    }
+
+sampleNestedProfileDetail :: [Text.Text]
+sampleNestedProfileDetail =
+  [ "export: (root)",
+    "name: nested",
+    "description: (none)",
+    "okfVersion: 0.1",
+    "allowUnknownTypes: true",
+    "allowUnknownFields: true",
+    "idField: (none)",
+    "frontmatter.required:",
+    "  - reviews: (none)",
+    "    allowedValues: (any)",
+    "    cardinality: any",
+    "    format: (none)",
+    "    elementFields:",
+    "      required:",
+    "        - outcome: (none)",
+    "          allowedValues: approved, rejected",
+    "          cardinality: any",
+    "          format: (none)",
+    "      recommended:",
+    "        - notes: (none)",
+    "          allowedValues: (any)",
+    "          cardinality: scalar",
+    "          format: (none)",
+    "frontmatter.recommended: (none)"
+  ]
 
 -- | Every optional field prints, as @(none)@ when absent, so the shape does not
 -- shift between profiles. A non-empty frontmatter list becomes a headed block,
@@ -348,10 +408,12 @@ sampleProfileDetail =
     "    allowedValues: (any)",
     "    cardinality: any",
     "    format: (none)",
+    "    elementFields: (none)",
     "  - title: (none)",
     "    allowedValues: (any)",
     "    cardinality: any",
     "    format: (none)",
+    "    elementFields: (none)",
     "frontmatter.recommended: (none)",
     "",
     "type: Decision Record",
@@ -361,11 +423,13 @@ sampleProfileDetail =
     "      allowedValues: (any)",
     "      cardinality: scalar",
     "      format: document-handle(USR)",
+    "      elementFields: (none)",
     "  frontmatter.recommended:",
     "    - reviewer: (none)",
     "      allowedValues: Ari, Bo",
     "      cardinality: list",
     "      format: uri",
+    "      elementFields: (none)",
     "  pathPattern: decisions/*",
     "  resourceScheme: (none)",
     "  requireSchemaSection: false",
@@ -390,10 +454,12 @@ sampleUndocumentedProfileDetail =
     "    allowedValues: (any)",
     "    cardinality: any",
     "    format: (none)",
+    "    elementFields: (none)",
     "  - title: (none)",
     "    allowedValues: (any)",
     "    cardinality: any",
     "    format: (none)",
+    "    elementFields: (none)",
     "frontmatter.recommended: (none)",
     "",
     "type: PostgreSQL Table",

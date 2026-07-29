@@ -64,6 +64,7 @@ import Okf.Profile
     FieldPath (..),
     FieldPathSegment (..),
     FrontmatterRules (..),
+    NestedRules (..),
     ProfileDefinitionError (..),
     ProfileSpec (..),
     ProfileViolation (..),
@@ -691,15 +692,31 @@ renderProfileDetail
       renderFieldRules indent label [] = [indent <> label <> ": " <> renderList []]
       renderFieldRules indent label rules =
         (indent <> label <> ":")
-          : concatMap
-            ( \rule ->
-                [ indent <> "  - " <> rule ^. #field <> ": " <> renderOptional (rule ^. #description),
-                  indent <> "    allowedValues: " <> renderVocabulary (rule ^. #allowedValues),
-                  indent <> "    cardinality: " <> renderCardinality (rule ^. #cardinality),
-                  indent <> "    format: " <> maybe "(none)" renderFieldFormat (rule ^. #format)
-                ]
-            )
-            rules
+          : concatMap (renderFieldRule indent) rules
+
+      renderFieldRule indent rule =
+        [ indent <> "  - " <> rule ^. #field <> ": " <> renderOptional (rule ^. #description),
+          indent <> "    allowedValues: " <> renderVocabulary (rule ^. #allowedValues),
+          indent <> "    cardinality: " <> renderCardinality (rule ^. #cardinality),
+          indent <> "    format: " <> maybe "(none)" renderFieldFormat (rule ^. #format)
+        ]
+          <> case rule ^. #elementFields of
+            Nothing -> [indent <> "    elementFields: (none)"]
+            Just NestedRules {required = nestedRequired, recommended = nestedRecommended} ->
+              [indent <> "    elementFields:"]
+                <> renderNestedFieldRules (indent <> "      ") "required" nestedRequired
+                <> renderNestedFieldRules (indent <> "      ") "recommended" nestedRecommended
+
+      renderNestedFieldRules indent label [] = [indent <> label <> ": " <> renderList []]
+      renderNestedFieldRules indent label rules =
+        (indent <> label <> ":") : concatMap (renderNestedFieldRule indent) rules
+
+      renderNestedFieldRule indent rule =
+        [ indent <> "  - " <> rule ^. #field <> ": " <> renderOptional (rule ^. #description),
+          indent <> "    allowedValues: " <> renderVocabulary (rule ^. #allowedValues),
+          indent <> "    cardinality: " <> renderCardinality (rule ^. #cardinality),
+          indent <> "    format: " <> maybe "(none)" renderFieldFormat (rule ^. #format)
+        ]
 
       renderTypeRule
         TypeRule
@@ -1141,6 +1158,14 @@ renderProfileViolation compiled concepts = \case
       <> ": missing profile-recommended field: "
       <> key
       <> renderDescription cid key
+  MissingNestedProfileField cid fieldPath ->
+    renderConceptId cid
+      <> ": missing profile-required field: "
+      <> renderFieldPath fieldPath
+  MissingRecommendedNestedProfileField cid fieldPath ->
+    renderConceptId cid
+      <> ": missing profile-recommended field: "
+      <> renderFieldPath fieldPath
   ValueNotInVocabulary cid fieldPath allowed actual ->
     renderConceptId cid
       <> ": frontmatter value at "
@@ -1169,6 +1194,12 @@ renderProfileViolation compiled concepts = \case
       <> Text.pack (LazyByteString.unpack (Aeson.encode actual))
   FieldNotInProfile cid key ->
     renderConceptId cid <> ": frontmatter field not declared by profile: " <> key
+  NestedElementNotRecord cid fieldPath actual ->
+    renderConceptId cid
+      <> ": frontmatter element at "
+      <> renderFieldPath fieldPath
+      <> " must be a record, found: "
+      <> Text.pack (LazyByteString.unpack (Aeson.encode actual))
   PathPatternMismatch cid ctype patternText ->
     renderConceptId cid <> ": " <> ctype <> " must match path pattern: " <> patternText
   MissingResource cid ctype scheme ->
@@ -1223,6 +1254,12 @@ renderProfileDefinitionError = \case
       <> ", type: "
       <> renderCardinality typeCardinality
       <> ")"
+  ElementFieldsRequireList scope fieldPath actualCardinality ->
+    renderScope scope
+      <> ": elementFields at "
+      <> renderFieldPath fieldPath
+      <> " requires list cardinality, found: "
+      <> renderCardinality actualCardinality
   InvalidFormatParameter fieldPath fieldFormat parameter ->
     "invalid parameter for format "
       <> renderFieldFormat fieldFormat

@@ -17,6 +17,8 @@
 , TypeRule = ./TypeRule.dhall
 , FrontmatterRules = ./FrontmatterRules.dhall
 , FieldRule = ./FieldRule.dhall
+, NestedRules = ./NestedRules.dhall
+, NestedFieldRule = ./NestedFieldRule.dhall
 , Cardinality = ./Cardinality.dhall
 , FieldFormat = ./FieldFormat.dhall
 , defaults =
@@ -24,6 +26,11 @@
   , TypeRule = ./defaults/TypeRule.dhall
   , FrontmatterRules = ./defaults/FrontmatterRules.dhall
   , FieldRule = ./defaults/FieldRule.dhall
+  , NestedRules = ./defaults/NestedRules.dhall
+  , NestedFieldRule = ./defaults/NestedFieldRule.dhall
   }
-, mk = { FieldRule = ./mk/FieldRule.dhall }
+, mk =
+  { FieldRule = ./mk/FieldRule.dhall
+  , NestedFieldRule = ./mk/NestedFieldRule.dhall
+  }
 }

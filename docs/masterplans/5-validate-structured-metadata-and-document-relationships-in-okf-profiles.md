@@ -4,6 +4,7 @@ slug: validate-structured-metadata-and-document-relationships-in-okf-profiles
 title: "Validate structured metadata and document relationships in OKF profiles"
 kind: master-plan
 created_at: 2026-07-29T17:16:53Z
+intention: intention_01kyqwbdgjen0reqtmzqv8mwb7
 ---
 
 # Validate structured metadata and document relationships in OKF profiles
@@ -60,7 +61,7 @@ ADR for local-reference versus external-resolution ownership.
 
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
-| EP-1 | Validate one-level nested profile records | `docs/plans/29-validate-one-level-nested-profile-records.md` | None | None | Not Started |
+| EP-1 | Validate one-level nested profile records | `docs/plans/29-validate-one-level-nested-profile-records.md` | None | None | Complete |
 | EP-2 | Enforce same-scope conditional field requirements | `docs/plans/30-enforce-same-scope-conditional-field-requirements.md` | EP-1 | None | Not Started |
 | EP-3 | Validate profile-declared document references | `docs/plans/31-validate-profile-declared-document-references.md` | None | EP-1 | Not Started |
 
@@ -111,9 +112,9 @@ separate coordinated rollout.
 Track milestone-level progress across all child plans. Each entry names the child plan
 and the milestone. This section provides an at-a-glance view of the entire initiative.
 
-- [ ] Initiative gate: complete every child of MasterPlan 4.
-- [ ] EP-1: publish a non-recursive one-level nested-rule schema and authoring helpers.
-- [ ] EP-1: validate nested record presence, shape, cardinality, vocabulary, and format.
+- [x] Initiative gate: complete every child of MasterPlan 4.
+- [x] EP-1: publish a non-recursive one-level nested-rule schema and authoring helpers.
+- [x] EP-1: validate nested record presence, shape, cardinality, vocabulary, and format.
 - [ ] EP-2: compile and reject dead or cross-scope conditions.
 - [ ] EP-2: enforce top-level and nested sibling conditions in permissive and strict modes.
 - [ ] EP-3: compile explicit local-handle/external-URI reference policies.
@@ -141,6 +142,20 @@ interactions between child plans. Provide concise evidence.
 - Discovery: `sourceStreams` in the PostgreSQL catalog is described as event-stream
   categories, not as `PREFIX-N` document handles. It is not acceptance evidence for IR-6
   until a profile actually assigns stable handles to those targets.
+
+- Discovery: EP-1 must freeze the complete EP-4 format-aware descriptor before
+  adding `elementFields`; otherwise compatibility would preserve old cardinality
+  but silently discard old format declarations. EP-2 must likewise freeze the
+  completed nested-aware generation before adding conditions.
+  Evidence: `formats-ep4.dhall` retains `Rfc3339Utc` through the new
+  `FormatProfileSpec` fallback, while the nested descriptor decodes directly.
+
+- Discovery: the structural `FieldPath` delivered by MasterPlan 4 already
+  supports both child names and array indexes. EP-2 should reuse the same path
+  constructors for same-scope condition diagnostics, and EP-3 should continue to
+  consume the shared renderer rather than introducing reference-specific strings.
+  Evidence: EP-1 renders `reviews[2].outcome` and `reviews[1]` without changing
+  the public path representation.
 
 
 ## Decision Log

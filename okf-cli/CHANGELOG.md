@@ -9,6 +9,9 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- `okf profile show` renders bounded nested field rules, and `okf validate`
+  reports missing nested fields, non-record list elements, and nested value
+  violations with indexed paths such as `reviews[2].outcome`.
 - `okf profile show` and profile JSON expose named field formats, and
   `okf validate` renders parser-backed timestamp, date, URI, URI-scheme, and
   document-handle mismatches.

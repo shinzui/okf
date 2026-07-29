@@ -18,6 +18,8 @@ let Cardinality = ../Cardinality.dhall
 
 let FieldFormat = ../FieldFormat.dhall
 
+let NestedRules = ../NestedRules.dhall
+
 in  { plain = \(field : Text) -> FieldRule::{ field }
     , documented =
         \(field : Text) ->
@@ -45,4 +47,12 @@ in  { plain = \(field : Text) -> FieldRule::{ field }
         \(field : Text) ->
         \(prefix : Text) ->
           FieldRule::{ field, format = Some (FieldFormat.DocumentHandle prefix) }
+    , recordList =
+        \(field : Text) ->
+        \(elementFields : NestedRules) ->
+          FieldRule::{
+          , field
+          , cardinality = Cardinality.List
+          , elementFields = Some elementFields
+          }
     }

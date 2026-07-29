@@ -143,6 +143,7 @@ Each `FieldRule` — one frontmatter key, and optionally what it is for:
 | `allowedValues` | `List Text` | Legal textual values. `[]` means unconstrained. Strings and lists of strings are checked whenever present, including recommended fields outside strict mode. |
 | `cardinality` | `Cardinality` | `Any` preserves legacy presence behavior; `Scalar` accepts non-blank text, numbers, and booleans; `List` accepts arrays. Objects and null do not satisfy explicit cardinality. |
 | `format` | `Optional FieldFormat` | A parser-backed textual contract: UTC RFC3339 timestamp, calendar date, absolute URI, URI with a required scheme, or document handle. `None` means unconstrained. |
+| `elementFields` | `Optional NestedRules` | When present, the field must be a list whose elements are flat records checked with nested required and recommended rules. `None` means no element schema. |
 
 A description is attached to the key it documents rather than kept in a parallel
 list, so it cannot drift away from the rule or outlive it. See
@@ -160,6 +161,42 @@ Each `TypeRule`:
 | `requireSchemaSection` | `Bool` | When `True`, the body must contain a `# Schema` heading followed by a GitHub-flavored Markdown table. A missing section is reported as `requires a # Schema section`. |
 | `schemaColumns` | `List Text` | The required leading columns of the `# Schema` table header, compared case-insensitively and trimmed as a **prefix** of the actual columns. Extra trailing columns are allowed. A mismatch is reported as `# Schema columns ... do not start with required ...`. |
 | `idPrefix` | `Optional Text` | When set, concepts of this type must carry a document ID under `idField` with the declared prefix. Missing IDs are reported as `requires a document ID with prefix`; malformed IDs as `document ID must look like PREFIX-<number>`; duplicates as `duplicate document ID`. |
+
+### One-level nested record rules
+
+Use `elementFields` when one frontmatter key contains a list of flat records,
+such as reviews. `NestedFieldRule` has the same description, vocabulary,
+cardinality, and named-format fields as `FieldRule`, but deliberately has no
+`elementFields`; the schema cannot recurse beyond one list-of-records level.
+
+```dhall
+let field = ../../okf-core/dhall/mk/FieldRule.dhall
+
+let NestedFieldRule = ../../okf-core/dhall/defaults/NestedFieldRule.dhall
+
+let FieldFormat = ../../okf-core/dhall/FieldFormat.dhall
+
+in  field.recordList
+      "reviews"
+      { required =
+        [ NestedFieldRule::{ field = "outcome", allowedValues = [ "approved", "rejected" ] }
+        , NestedFieldRule::{ field = "reviewed_at", format = Some FieldFormat.Rfc3339Utc }
+        ]
+      , recommended = [] : List NestedFieldRule.Type
+      }
+```
+
+Declaring `elementFields` refines the outer field's `Any` cardinality to `List`;
+an explicit `Scalar` is a profile-definition error. Profile and type scopes
+merge nested rules by sibling key with the same semantics as top-level rules.
+Every array element must be an object. Required nested fields are checked in all
+modes, recommended nested fields under `--strict`, and present values always
+receive vocabulary, cardinality, and format checks.
+
+Diagnostics carry the complete path, including the list index, for example
+`reviews[2].outcome`. Extra keys inside each record remain allowed. The profile
+does not compare records, capture top-level fields, or validate a second nested
+level.
 
 ## Profile registries
 
