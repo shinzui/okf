@@ -15,7 +15,9 @@ let Profile = ../../okf-core/dhall/Profile.dhall
 
 let field = ../../okf-core/dhall/mk/FieldRule.dhall
 
-let FieldRule = ../../okf-core/dhall/FieldRule.dhall
+let FieldRule = ../../okf-core/dhall/defaults/FieldRule.dhall
+
+let FieldFormat = ../../okf-core/dhall/FieldFormat.dhall
 
 in    { name = "shinzui-postgresql"
       , description = Some
@@ -34,12 +36,17 @@ in    { name = "shinzui-postgresql"
           [ field.documented
               "description"
               "One or two sentences on what this object is for."
-          , field.documented
-              "timestamp"
-              "ISO-8601 date the description was last confirmed accurate."
-          , field.documented
-              "resource"
-              "postgresql:// URI locating the live object."
+          , FieldRule::{
+            , field = "timestamp"
+            , description = Some
+                "UTC RFC3339 timestamp when the description was last confirmed accurate."
+            , format = Some FieldFormat.Rfc3339Utc
+            }
+          , FieldRule::{
+            , field = "resource"
+            , description = Some "postgresql:// URI locating the live object."
+            , format = Some (FieldFormat.UriWithScheme "postgresql")
+            }
           ]
         }
       , allowUnknownTypes = False
@@ -49,7 +56,7 @@ in    { name = "shinzui-postgresql"
         [ { type = "PostgreSQL Schema"
           , description = Some
               "One namespace: the tables and views under it, and why they belong together."
-          , frontmatter = { required = [] : List FieldRule, recommended = [] : List FieldRule }
+          , frontmatter = { required = [] : List FieldRule.Type, recommended = [] : List FieldRule.Type }
           , pathPattern = Some "schemas/*"
           , resourceScheme = Some "postgresql"
           , requireSchemaSection = False
@@ -59,7 +66,7 @@ in    { name = "shinzui-postgresql"
         , { type = "PostgreSQL Table"
           , description = Some
               "One physical table in a schema, including its column list."
-          , frontmatter = { required = [] : List FieldRule, recommended = [] : List FieldRule }
+          , frontmatter = { required = [] : List FieldRule.Type, recommended = [] : List FieldRule.Type }
           , pathPattern = Some "schemas/*/tables/*"
           , resourceScheme = Some "postgresql"
           , requireSchemaSection = True
@@ -69,7 +76,7 @@ in    { name = "shinzui-postgresql"
         , { type = "PostgreSQL View"
           , description = Some
               "One view: the columns it projects and the question it answers."
-          , frontmatter = { required = [] : List FieldRule, recommended = [] : List FieldRule }
+          , frontmatter = { required = [] : List FieldRule.Type, recommended = [] : List FieldRule.Type }
           , pathPattern = Some "schemas/*/views/*"
           , resourceScheme = Some "postgresql"
           , requireSchemaSection = True

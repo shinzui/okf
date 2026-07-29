@@ -129,6 +129,36 @@ FIELD CARDINALITY
     profile: bad: frontmatter cardinality at title must be scalar, found list: ["One","Two"]
     profile: bad: frontmatter cardinality at tags must be list, found scalar: "one"
 
+NAMED FIELD FORMATS
+
+  A FieldRule may set format to one of five parser-backed textual contracts:
+  Rfc3339Utc, Date, Uri, UriWithScheme Text, or DocumentHandle Text. The default
+  is None, so existing fields remain unconstrained. Formats check present strings
+  and every string in a list; they do not make an absent field required.
+
+  Rfc3339Utc accepts extended timestamps such as 2026-07-29T17:00:00Z and
+  requires uppercase Z rather than a numeric offset. Date accepts exactly
+  YYYY-MM-DD and rejects impossible calendar dates. Uri requires an absolute RFC
+  3986 URI. UriWithScheme additionally requires the named scheme, compared
+  case-insensitively. DocumentHandle requires the canonical PREFIX-N form and
+  compares the prefix case-sensitively.
+
+  The FieldRule constructors cover the common forms:
+
+    field.rfc3339Utc "timestamp"
+    field.date "published"
+    field.uri "source"
+    field.uriWithScheme "originPlan" "mori"
+    field.documentHandle "decision" "ADR"
+
+  Uri at profile scope may be narrowed to UriWithScheme at type scope. Equal
+  formats merge unchanged; other unequal pairs are a hard profile-definition
+  error. URI scheme parameters must follow RFC 3986 scheme syntax, and document
+  prefixes must follow the same grammar as okf document IDs.
+
+    profile: bad: frontmatter value at timestamp must match format rfc3339-utc, found: "2026-07-29T17:00:00+01:00"
+    profile: bad: frontmatter value at originPlan must match format uri-with-scheme(mori), found: "https://example.test"
+
   A registry reference may be a path to a Dhall file, a directory holding
   package.dhall, or a Dhall expression such as a hash-pinned URL. Without
   --registry, okf uses OKF_PROFILE_REGISTRY, then profiles.registry from

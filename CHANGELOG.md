@@ -9,6 +9,11 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- Profiles can constrain textual fields with named UTC timestamp, calendar
+  date, absolute URI, required URI scheme, and document-handle formats. Checks
+  use real parsers, apply element-wise to lists, and appear in profile show,
+  JSON, validation output, the published Dhall schema, and the shipped
+  PostgreSQL example.
 - Profile field cardinality with `Any`, `Scalar`, and `List` constraints,
   including shape-aware required fields and deterministic profile/type merging.
 - Type-aware value vocabularies and opt-in closed field names for profiles.
@@ -43,6 +48,11 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
+- **Breaking library API.** `FieldRule`, `ProfileDefinitionError`, and
+  `ProfileViolation` gain format-related fields and constructors. Mori must
+  update its exhaustive advisory renderer before moving its `okf-core` commit
+  pin. The external `okf-profiles` catalog remains on its released schema until
+  a coordinated catalog release updates the okf tag and Dhall hash together.
 - **Breaking (library and published schema).** `frontmatter.required` and
   `frontmatter.recommended` are now `List FieldRule` rather than `List Text`,
   and `Profile` and `TypeRule` each gained `description : Optional Text`. Dhall

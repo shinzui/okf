@@ -4,6 +4,7 @@ slug: enforce-named-profile-field-formats
 title: "Enforce named profile field formats"
 kind: exec-plan
 created_at: 2026-07-29T17:16:50Z
+intention: intention_01kyqmnyg6esxa50egq04z2ty2
 master_plan: "docs/masterplans/4-make-okf-profiles-type-aware-and-value-safe.md"
 ---
 
@@ -34,12 +35,12 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] Verify the released `time` and `network-uri` APIs and dependency bounds.
-- [ ] Add `FieldFormat` and optional `format` to schema, defaults, constructors, JSON, and profile show.
-- [ ] Compile compatible format refinements and reject contradictory profile/type formats.
-- [ ] Implement scalar and list validation for every named format.
-- [ ] Add parser edge-case, type-scope, interaction, and compatibility fixtures.
-- [ ] Update Cabal/Nix inputs, help, changelogs, and the compiled-rule ADR.
+- [x] (2026-07-29 20:46Z) Verify the released `time` and `network-uri` APIs and dependency bounds.
+- [x] (2026-07-29 21:00Z) Add `FieldFormat` and optional `format` to schema, defaults, constructors, JSON, and profile show.
+- [x] (2026-07-29 21:00Z) Compile compatible format refinements and reject contradictory profile/type formats.
+- [x] (2026-07-29 21:00Z) Implement scalar and list validation for every named format.
+- [x] (2026-07-29 21:00Z) Add parser edge-case, type-scope, interaction, and compatibility fixtures.
+- [x] (2026-07-29 21:00Z) Update Cabal/Nix inputs, help, changelogs, and the compiled-rule ADR.
 - [ ] Run full tests and external-catalog acceptance checks.
 
 
@@ -48,7 +49,20 @@ This section must always reflect the actual current state of the work.
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+- Discovery: Hackage now lists `time` 1.16.0.1 as a normal release, but the
+  required `iso8601ParseM` `Day` and `UTCTime` instances are already present in
+  the locally registered Mori source and the repository's supported
+  `time >=1.12 && <1.15` range. No bound widening is needed for this feature.
+  Evidence: `mori registry show haskell/time --full`, the source under
+  `/Users/shinzui/Keikaku/hub/haskell/time-project/time`, and Hackage
+  `preferred.json` on 2026-07-29.
+
+- Discovery: Hackage marks `network-uri` 2.7.0.0 deprecated and treats 2.6.4.2
+  as the newest normal release; upstream tags also stop at v2.6.4.2. The
+  planned `>=2.6.4 && <2.7` bound therefore selects the current supported
+  release line and avoids the deprecated candidate.
+  Evidence: Mori returned no registered project, Hackage `preferred.json`,
+  `cabal info network-uri`, upstream tags, and the unpacked 2.6.4.2 source.
 
 
 ## Decision Log
@@ -93,16 +107,16 @@ rule and validation ordering, but they can be implemented independently after EP
 `okf-core` already depends on `time >=1.12 && <1.15`. Mori located its source at
 `/Users/shinzui/Keikaku/hub/haskell/time-project/time`; the inspected
 `Data.Time.Format.ISO8601` module exposes `iso8601ParseM` instances for `Day` and `UTCTime`.
-The authoritative Hackage registry reported time 1.15 as the current release on
-2026-07-29, while upstream has later unreleased tags. This plan does not need to widen the
-existing time bound because the required API exists in the supported range.
+The authoritative Hackage registry reports time 1.16.0.1 as the current normal
+release on 2026-07-29. This plan does not need to widen the existing time bound
+because the required API exists in the supported range.
 
 Mori had no registered URI project. The authoritative Hackage page and unpacked release
 source for `network-uri-2.6.4.2` were therefore inspected. `Network.URI.parseURI` parses an
 absolute RFC 3986 URI with optional fragment and returns a `URI` whose `uriScheme` includes
-the trailing colon. Upstream tag `v2.6.4.2` matches the release; 2.7.0.0 was a Hackage
-candidate, not the selected release. Reverify both registry and upstream tags immediately
-before choosing final bounds during implementation.
+the trailing colon. Hackage marks 2.7.0.0 deprecated, while 2.6.4.2 is the
+newest normal release and upstream tag. The selected `>=2.6.4 && <2.7` bound
+therefore stays on the supported release line.
 
 Today `TypeRule.resourceScheme` checks only `scheme <> "://"` as a text prefix, and
 `idPrefix` checks only the configured ID field. This plan does not remove either legacy

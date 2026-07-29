@@ -65,19 +65,32 @@ booleans, while list presence requires a non-empty array. Correctly shaped empty
 values remain missing, and wrong shapes produce one cardinality violation
 rather than an additional missing or vocabulary-shape violation.
 
+Named textual formats are another orthogonal component. `None` is the identity,
+equal formats merge unchanged, and a general `Uri` may be narrowed by
+`UriWithScheme` at the other scope. Other unequal pairs are rejected as
+`ConflictingFieldFormat`. URI scheme and document-handle prefix parameters are
+validated during compilation, so malformed profile definitions never become
+per-concept noise. Runtime checks use `time`'s ISO8601 parser and `network-uri`'s
+RFC 3986 parser; document handles reuse `parseDocumentId`. Formats apply to text
+and lists of text without implying presence, and explicit cardinality mismatches
+suppress a redundant format-shape diagnostic.
+
 
 ## Consequences
 
 Library consumers must call `compileProfile`, handle definition errors, and pass
 `PermissiveConformance` or `StrictAuthoring` to `validateProfile`. Consumers
 that exhaustively match `ProfileViolation`, including Mori, must also handle
-`MissingRecommendedProfileField`, `ValueNotInVocabulary`, and
-`FieldNotInProfile`, and `CardinalityMismatch`. Consumers that exhaustively
-match `ProfileDefinitionError` must handle `UnsatisfiableVocabulary` and
-`ConflictingCardinality`.
+`MissingRecommendedProfileField`, `ValueNotInVocabulary`, `FieldNotInProfile`,
+`CardinalityMismatch`, and `ValueFormatMismatch`. Consumers that exhaustively
+match `ProfileDefinitionError` must handle `UnsatisfiableVocabulary`,
+`ConflictingCardinality`, `InvalidFormatParameter`, and
+`ConflictingFieldFormat`. This includes Mori's advisory renderer.
 
 Later profile constraints extend the compiled field rule rather than scanning
 raw declarations again. Human and JSON profile display continue to preserve the
 raw descriptor. Descriptors annotated against the newest closed Dhall schema
 must add type-level frontmatter or use `defaults.TypeRule` record completion;
 the fallback decoders cannot bypass an annotation that Dhall itself rejects.
+The compatibility chain freezes the complete EP-3 cardinality generation before
+the format-aware decoder and upgrades every older field to `format = None`.

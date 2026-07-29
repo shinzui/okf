@@ -86,9 +86,11 @@ main = do
         testIO "loadProfileFile accepts the pre-type-frontmatter described schema" testLoadDescribedProfileFixture,
         testIO "loadProfileFile accepts the frozen EP-1 type-aware schema" testLoadTypeAwareCompatibilityFixture,
         testIO "loadProfileFile accepts the frozen EP-2 vocabulary schema" testLoadVocabularyCompatibilityFixture,
+        testIO "loadProfileFile accepts the frozen EP-3 cardinality schema" testLoadCardinalityCompatibilityFixture,
         testIO "loadProfileFile still accepts an okf 0.2.x descriptor" testLoadLegacyProfileFixture,
         testIO "profileFieldDescription finds required and recommended prose" testProfileFieldDescription,
         testIO "profile JSON encoding emits type, not type_" testProfileJsonShape,
+        test "field format JSON encoding is stable" testFieldFormatJsonShape,
         testIO "loadRegistry enumerates nested profiles and skips non-profiles" testRegistryEnumeratesProfiles,
         testIO "loadRegistry reports a bare profile as a root entry" testRegistryRootProfile,
         testIO "resolveRegistryRef prefers package.dhall inside a directory" testResolveRegistryRef,
@@ -105,6 +107,9 @@ main = do
         test "profile vocabularies validate strings, lists, and shapes" testVocabularyValidation,
         test "profile cardinality validates all JSON shapes and presence" testCardinalityValidation,
         test "cardinality suppresses redundant vocabulary shape errors" testCardinalityVocabularyInteraction,
+        test "compiled formats refine Uri and reject contradictions" testCompiledFieldFormats,
+        test "compileProfile rejects invalid format parameters" testInvalidFormatParameters,
+        test "named formats validate parser boundaries, lists, and shapes" testNamedFormatValidation,
         test "closed profiles reject unknown fields and isolate type fields" testClosedFieldValidation,
         test "profile rules apply to unknown concept types" testProfileRulesApplyToUnknownTypes,
         test "strict profile validation checks recommendations" testStrictProfileRecommendations,
@@ -125,7 +130,8 @@ main = do
         testIO "validateProfile reports document ID fixture deviations" testDocumentIdDeviationsFixture,
         testIO "type-aware fixture is permissive but reports one strict recommendation" testTypeAwareProfileFixture,
         testIO "closed-field fixture reports missing and misspelled fields" testClosedFieldsFixture,
-        testIO "cardinality fixture reports scalar and list mismatches" testCardinalityFixture
+        testIO "cardinality fixture reports scalar and list mismatches" testCardinalityFixture,
+        testIO "format fixture reports parser-backed mismatches" testFormatsFixture
       ]
   unless (and results) exitFailure
 
@@ -856,6 +862,19 @@ testLoadVocabularyCompatibilityFixture = do
       assertEqual False (spec ^. #allowUnknownFields)
       assertEqual [[], ["draft", "accepted"]] (map (^. #allowedValues) (spec ^. #frontmatter . #required))
       assertEqual [Any, Any] (map (^. #cardinality) (spec ^. #frontmatter . #required))
+      assertEqual [Nothing, Nothing] (map (^. #format) (spec ^. #frontmatter . #required))
+
+testLoadCardinalityCompatibilityFixture :: IO (Either Text ())
+testLoadCardinalityCompatibilityFixture = do
+  path <- fixtureFilePath "profiles/cardinality-ep3.dhall"
+  result <- loadProfileFile path
+  pure $ case result of
+    Left err -> Left ("failed to load EP-3 profile: " <> err)
+    Right spec -> do
+      assertEqual "cardinality-ep3" (spec ^. #name)
+      assertEqual False (spec ^. #allowUnknownFields)
+      assertEqual [Any, Scalar] (map (^. #cardinality) (spec ^. #frontmatter . #required))
+      assertEqual [Nothing, Nothing] (map (^. #format) (spec ^. #frontmatter . #required))
 
 -- | The backwards-compatibility guarantee: a descriptor frozen in the okf 0.2.x
 -- shape — bare-string frontmatter keys, no descriptions anywhere — still loads,
@@ -919,13 +938,15 @@ testProfileJsonShape = do
                                "description"
                                  .= ("The OKF concept type; must be a type rule below." :: Text),
                                "allowedValues" .= ([] :: [Text]),
-                               "cardinality" .= ("any" :: Text)
+                               "cardinality" .= ("any" :: Text),
+                               "format" .= (Nothing :: Maybe Text)
                              ],
                            object
                              [ "field" .= ("title" :: Text),
                                "description" .= (Nothing :: Maybe Text),
                                "allowedValues" .= ([] :: [Text]),
-                               "cardinality" .= ("any" :: Text)
+                               "cardinality" .= ("any" :: Text),
+                               "format" .= (Nothing :: Maybe Text)
                              ]
                          ],
                     "recommended"
@@ -934,7 +955,8 @@ testProfileJsonShape = do
                                "description"
                                  .= ("One of: proposed, accepted, superseded." :: Text),
                                "allowedValues" .= ([] :: [Text]),
-                               "cardinality" .= ("any" :: Text)
+                               "cardinality" .= ("any" :: Text),
+                               "format" .= (Nothing :: Maybe Text)
                              ]
                          ]
                   ],
@@ -958,6 +980,17 @@ testProfileJsonShape = do
             ]
         )
         (toJSON spec)
+
+testFieldFormatJsonShape :: Either Text ()
+testFieldFormatJsonShape =
+  assertEqual
+    [ String "rfc3339-utc",
+      String "date",
+      String "uri",
+      object ["uriWithScheme" .= ("mori" :: Text)],
+      object ["documentHandle" .= ("ADR" :: Text)]
+    ]
+    (map toJSON [Rfc3339Utc, Date, Uri, UriWithScheme "mori", DocumentHandle "ADR"])
 
 -- | A registry record enumerates every field that decodes as a profile, one
 -- level down as well as at the top, sorted by export path. The @Profile@ schema
@@ -1084,7 +1117,7 @@ testFindConceptsByDocumentId = do
 -- | An undocumented frontmatter key: the validation tests care about names, not
 -- prose, and descriptions never affect validation.
 requiredField :: Text -> FieldRule
-requiredField key = FieldRule {field = key, description = Nothing, allowedValues = [], cardinality = Any}
+requiredField key = FieldRule {field = key, description = Nothing, allowedValues = [], cardinality = Any, format = Nothing}
 
 -- | A standalone profile literal so the validation tests do not depend on the
 -- Dhall fixture. One rule: PostgreSQL Table, fully constrained.
@@ -1155,8 +1188,8 @@ typeAwareProfileSpec =
       okfVersion = "0.1",
       frontmatter =
         FrontmatterRules
-          { required = [FieldRule "type" Nothing [] Any, FieldRule "title" (Just "Global title.") [] Any],
-            recommended = [FieldRule "owner" (Just "Profile-level owner.") [] Any]
+          { required = [FieldRule "type" Nothing [] Any Nothing, FieldRule "title" (Just "Global title.") [] Any Nothing],
+            recommended = [FieldRule "owner" (Just "Profile-level owner.") [] Any Nothing]
           },
       allowUnknownTypes = True,
       allowUnknownFields = True,
@@ -1167,8 +1200,8 @@ typeAwareProfileSpec =
               description = Nothing,
               frontmatter =
                 FrontmatterRules
-                  { required = [FieldRule "owner" (Just "Responsible person.") [] Any],
-                    recommended = [FieldRule "reviewer" (Just "Second pair of eyes.") [] Any, FieldRule "title" (Just "Type title.") [] Any]
+                  { required = [FieldRule "owner" (Just "Responsible person.") [] Any Nothing],
+                    recommended = [FieldRule "reviewer" (Just "Second pair of eyes.") [] Any Nothing, FieldRule "title" (Just "Type title.") [] Any Nothing]
                   },
               pathPattern = Nothing,
               resourceScheme = Nothing,
@@ -1181,7 +1214,7 @@ typeAwareProfileSpec =
 
 testCompileProfileDefinitionErrors :: Either Text ()
 testCompileProfileDefinitionErrors = do
-  let duplicateField = FieldRule "title" Nothing [] Any
+  let duplicateField = FieldRule "title" Nothing [] Any Nothing
       invalid =
         typeAwareProfileSpec
           { frontmatter =
@@ -1218,13 +1251,13 @@ vocabularyProfileSpec =
   typeAwareProfileSpec
     { frontmatter =
         FrontmatterRules
-          { required = [FieldRule "type" Nothing [] Any],
-            recommended = [FieldRule "status" Nothing ["draft", "approved", "approved"] Any]
+          { required = [FieldRule "type" Nothing [] Any Nothing],
+            recommended = [FieldRule "status" Nothing ["draft", "approved", "approved"] Any Nothing]
           },
       types =
         [ withTypeFrontmatter
             FrontmatterRules
-              { required = [FieldRule "status" Nothing ["approved", "archived"] Any],
+              { required = [FieldRule "status" Nothing ["approved", "archived"] Any Nothing],
                 recommended = []
               }
             (firstTypeRule typeAwareProfileSpec)
@@ -1250,7 +1283,7 @@ testUnsatisfiableVocabulary = do
           { types =
               [ withTypeFrontmatter
                   FrontmatterRules
-                    { required = [FieldRule "status" Nothing ["closed"] Any],
+                    { required = [FieldRule "status" Nothing ["closed"] Any Nothing],
                       recommended = []
                     }
                   (firstTypeRule vocabularyProfileSpec)
@@ -1264,12 +1297,12 @@ testCompiledCardinality :: Either Text ()
 testCompiledCardinality = do
   let profileRules =
         FrontmatterRules
-          { required = [FieldRule "type" Nothing [] Any],
-            recommended = [FieldRule "status" Nothing [] Scalar]
+          { required = [FieldRule "type" Nothing [] Any Nothing],
+            recommended = [FieldRule "status" Nothing [] Scalar Nothing]
           }
       typeRules cardinality =
         FrontmatterRules
-          { required = [FieldRule "status" Nothing [] cardinality],
+          { required = [FieldRule "status" Nothing [] cardinality Nothing],
             recommended = []
           }
       baseType = firstTypeRule typeAwareProfileSpec
@@ -1297,8 +1330,8 @@ testVocabularyValidation = do
         vocabularyProfileSpec
           { frontmatter =
               FrontmatterRules
-                { required = [FieldRule "type" Nothing [] Any],
-                  recommended = [FieldRule "status" Nothing ["draft", "approved"] Any]
+                { required = [FieldRule "type" Nothing [] Any Nothing],
+                  recommended = [FieldRule "status" Nothing ["draft", "approved"] Any Nothing]
                 },
             types = []
           }
@@ -1368,19 +1401,124 @@ testCardinalityVocabularyInteraction = do
     [ValueNotInVocabulary cid (fieldPath "value") ["draft"] mixedList]
     (validateProfile PermissiveConformance listCompiled [listConcept])
 
+testCompiledFieldFormats :: Either Text ()
+testCompiledFieldFormats = do
+  let baseType = firstTypeRule typeAwareProfileSpec
+      profileWith profileFormat typeFormat =
+        typeAwareProfileSpec
+          { frontmatter =
+              FrontmatterRules
+                { required = [FieldRule "type" Nothing [] Any Nothing, FieldRule "homepage" Nothing [] Any (Just profileFormat)],
+                  recommended = []
+                },
+            types =
+              [ withTypeFrontmatter
+                  FrontmatterRules
+                    { required = [FieldRule "homepage" Nothing [] Any (Just typeFormat)],
+                      recommended = []
+                    }
+                  baseType
+              ]
+          }
+  refined <- firstShow (compileProfile (profileWith Uri (UriWithScheme "https")))
+  valid <- profileConcept "format-refinement" [("type", String "Owned Concept"), ("homepage", String "HTTPS://example.test/path")] "# Valid\n"
+  invalid <- profileConcept "format-refinement" [("type", String "Owned Concept"), ("homepage", String "http://example.test/path")] "# Invalid\n"
+  cid <- parseTestConceptId "format-refinement"
+  assertEqual [] (validateProfile PermissiveConformance refined [valid])
+  assertEqual
+    [ValueFormatMismatch cid (fieldPath "homepage") (UriWithScheme "https") (String "http://example.test/path")]
+    (validateProfile PermissiveConformance refined [invalid])
+  assertEqual
+    (Left (ConflictingFieldFormat (fieldPath "homepage") Date Rfc3339Utc :| []))
+    (compileProfile (profileWith Date Rfc3339Utc))
+
+testInvalidFormatParameters :: Either Text ()
+testInvalidFormatParameters = do
+  let invalid =
+        typeAwareProfileSpec
+          { frontmatter =
+              FrontmatterRules
+                { required =
+                    [ FieldRule "type" Nothing [] Any Nothing,
+                      FieldRule "handle" Nothing [] Any (Just (DocumentHandle "1ADR")),
+                      FieldRule "source" Nothing [] Any (Just (UriWithScheme "https_"))
+                    ],
+                  recommended = []
+                },
+            types = []
+          }
+  assertEqual
+    ( Left
+        ( InvalidFormatParameter (fieldPath "handle") (DocumentHandle "1ADR") "1ADR"
+            :| [InvalidFormatParameter (fieldPath "source") (UriWithScheme "https_") "https_"]
+        )
+    )
+    (compileProfile invalid)
+
+testNamedFormatValidation :: Either Text ()
+testNamedFormatValidation = do
+  cid <- parseTestConceptId "format"
+  let check fieldFormat cardinality actual = do
+        compiled <- firstShow (compileProfile (singleFormatProfile cardinality fieldFormat))
+        concept <-
+          profileConcept
+            "format"
+            ([("type", String "Extension")] <> maybe [] (\value -> [("value", value)]) actual)
+            "# Format\n"
+        pure (validateProfile PermissiveConformance compiled [concept])
+      mismatch fieldFormat actual = [ValueFormatMismatch cid (fieldPath "value") fieldFormat actual]
+  for_ ["2024-02-29T23:59:59Z", "2026-07-29T17:00:00.125Z"] $ \value ->
+    check Rfc3339Utc Any (Just (String value)) >>= assertEqual []
+  for_ ["2026-13-45T99:99:99Z", "2026-07-29T17:00:00+01:00", "2026-07-29 17:00:00Z"] $ \value ->
+    check Rfc3339Utc Any (Just (String value)) >>= assertEqual (mismatch Rfc3339Utc (String value))
+  check Date Any (Just (String "2024-02-29")) >>= assertEqual []
+  for_ ["2023-02-29", "2026-13-01", "2026-07-29T00:00:00Z"] $ \value ->
+    check Date Any (Just (String value)) >>= assertEqual (mismatch Date (String value))
+  for_ ["https://example.test/path", "urn:example:item"] $ \value ->
+    check Uri Any (Just (String value)) >>= assertEqual []
+  for_ ["relative/path", "https://example.test/bad%ZZ"] $ \value ->
+    check Uri Any (Just (String value)) >>= assertEqual (mismatch Uri (String value))
+  check (UriWithScheme "mori") Any (Just (String "MORI://haskell/time")) >>= assertEqual []
+  check (UriWithScheme "mori") Any (Just (String "https://example.test"))
+    >>= assertEqual (mismatch (UriWithScheme "mori") (String "https://example.test"))
+  check (DocumentHandle "ADR") Any (Just (String "ADR-7")) >>= assertEqual []
+  for_ ["ADR-007", "IR-7"] $ \value ->
+    check (DocumentHandle "ADR") Any (Just (String value))
+      >>= assertEqual (mismatch (DocumentHandle "ADR") (String value))
+  let validUris = toJSON (["https://example.test", "urn:example:item"] :: [Text])
+      mixedUris = toJSON ([String "https://example.test", Number 1] :: [Value])
+  check Uri List (Just validUris) >>= assertEqual []
+  check Uri List (Just mixedUris) >>= assertEqual (mismatch Uri mixedUris)
+  check Uri Scalar (Just validUris)
+    >>= assertEqual [CardinalityMismatch cid (fieldPath "value") Scalar validUris]
+  check Uri Any (Just (Number 1)) >>= assertEqual (mismatch Uri (Number 1))
+  check Uri Any Nothing >>= assertEqual []
+
+singleFormatProfile :: Cardinality -> FieldFormat -> ProfileSpec
+singleFormatProfile cardinality fieldFormat =
+  typeAwareProfileSpec
+    { frontmatter =
+        FrontmatterRules
+          { required = [FieldRule "type" Nothing [] Any Nothing],
+            recommended = [FieldRule "value" Nothing [] cardinality (Just fieldFormat)]
+          },
+      allowUnknownTypes = True,
+      types = []
+    }
+
 singleCardinalityProfile :: Bool -> Cardinality -> [Text] -> ProfileSpec
 singleCardinalityProfile isRequired cardinality allowed =
   typeAwareProfileSpec
     { frontmatter =
         FrontmatterRules
-          { required = [FieldRule "type" Nothing [] Any] <> [rule | isRequired],
+          { required = [FieldRule "type" Nothing [] Any Nothing] <> [rule | isRequired],
             recommended = [rule | not isRequired]
           },
       allowUnknownTypes = True,
       types = []
     }
   where
-    rule = FieldRule "value" Nothing allowed cardinality
+    rule = FieldRule "value" Nothing allowed cardinality Nothing
 
 testClosedFieldValidation :: Either Text ()
 testClosedFieldValidation = do
@@ -1766,6 +1904,26 @@ testCardinalityFixture = do
       assertEqual
         [ CardinalityMismatch badId (fieldPath "tags") List (String "one"),
           CardinalityMismatch badId (fieldPath "title") Scalar (toJSON (["One", "Two"] :: [Text]))
+        ]
+        (validateProfile PermissiveConformance compiled concepts)
+
+testFormatsFixture :: IO (Either Text ())
+testFormatsFixture = do
+  descriptorPath <- fixtureFilePath "profiles/formats.dhall"
+  loaded <- loadProfileFile descriptorPath
+  root <- fixturePath "profile-formats"
+  concepts <- readBundle root
+  pure $ case loaded of
+    Left err -> Left ("failed to load format profile: " <> err)
+    Right spec -> do
+      compiled <- firstShow (compileProfile spec)
+      badId <- parseTestConceptId "bad"
+      assertEqual
+        [ ValueFormatMismatch badId (fieldPath "docId") (DocumentHandle "ADR") (String "ADR-007"),
+          ValueFormatMismatch badId (fieldPath "homepage") (UriWithScheme "https") (String "mailto:owner@example.test"),
+          ValueFormatMismatch badId (fieldPath "links") Uri (toJSON (["https://example.test/good", "https://example.test/bad%ZZ"] :: [Text])),
+          ValueFormatMismatch badId (fieldPath "published") Date (String "2026-13-45"),
+          ValueFormatMismatch badId (fieldPath "timestamp") Rfc3339Utc (String "2026-07-29T17:00:00+01:00")
         ]
         (validateProfile PermissiveConformance compiled concepts)
 

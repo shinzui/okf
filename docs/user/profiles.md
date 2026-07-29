@@ -142,6 +142,7 @@ Each `FieldRule` — one frontmatter key, and optionally what it is for:
 | `description` | `Optional Text` | Prose explaining what the key should contain. Printed by `okf profile show`, and repeated in missing required or recommended advisories. Documentary only. |
 | `allowedValues` | `List Text` | Legal textual values. `[]` means unconstrained. Strings and lists of strings are checked whenever present, including recommended fields outside strict mode. |
 | `cardinality` | `Cardinality` | `Any` preserves legacy presence behavior; `Scalar` accepts non-blank text, numbers, and booleans; `List` accepts arrays. Objects and null do not satisfy explicit cardinality. |
+| `format` | `Optional FieldFormat` | A parser-backed textual contract: UTC RFC3339 timestamp, calendar date, absolute URI, URI with a required scheme, or document handle. `None` means unconstrained. |
 
 A description is attached to the key it documents rather than kept in a parallel
 list, so it cannot drift away from the rule or outlive it. See
@@ -340,6 +341,19 @@ definition error before bundle traversal. A wrong-shape value produces one
 cardinality diagnostic; it does not also produce a missing-field or redundant
 vocabulary-shape diagnostic.
 
+Named formats constrain textual syntax without implying presence.
+`field.rfc3339Utc "timestamp"` requires extended UTC timestamps ending in
+uppercase `Z`; `field.date "published"` requires exactly `YYYY-MM-DD` and a real
+calendar date. `field.uri "source"` accepts absolute RFC 3986 URIs,
+`field.uriWithScheme "originPlan" "mori"` additionally checks the scheme
+case-insensitively, and `field.documentHandle "decision" "ADR"` requires a
+canonical handle with that exact prefix. Lists are checked element-wise.
+
+At profile and type scope, equal formats agree, and `Uri` may be narrowed to
+`UriWithScheme`. Other unequal pairs are rejected during profile compilation.
+Malformed URI-scheme and document-prefix parameters are also definition errors,
+before any bundle is traversed.
+
 The closing hint is the whole adoption path: there is no `okf profile install`,
 because `okf validate --profile` already accepts any Dhall file. Save those two
 lines as `house-profile.dhall` and pass it:
@@ -472,6 +486,11 @@ in  [ -- 1. constructors — the form to reach for
     , field.enum "status" [ "proposed", "accepted", "superseded" ]
     , field.scalar "domain"
     , field.list "tags"
+    , field.rfc3339Utc "timestamp"
+    , field.date "published"
+    , field.uri "source"
+    , field.uriWithScheme "originPlan" "mori"
+    , field.documentHandle "decision" "ADR"
 
       -- 2. record completion
     , okf.defaults.FieldRule::{
@@ -484,11 +503,12 @@ in  [ -- 1. constructors — the form to reach for
       , description = None Text
       , allowedValues = [] : List Text
       , cardinality = okf.Cardinality.Any
+      , format = None okf.FieldFormat
       }
     ]
 ```
 
-`okf.mk.FieldRule` exports five functions:
+`okf.mk.FieldRule` exports ten functions:
 
 | Constructor | Type | Use |
 |-------------|------|-----|
@@ -497,6 +517,11 @@ in  [ -- 1. constructors — the form to reach for
 | `enum` | `Text -> List Text -> FieldRule` | A key with a closed textual vocabulary and no description. |
 | `scalar` | `Text -> FieldRule` | A key constrained to text, numbers, or booleans. |
 | `list` | `Text -> FieldRule` | A key constrained to an array. |
+| `rfc3339Utc` | `Text -> FieldRule` | A key constrained to an extended UTC timestamp ending in `Z`. |
+| `date` | `Text -> FieldRule` | A key constrained to an exact calendar date. |
+| `uri` | `Text -> FieldRule` | A key constrained to an absolute URI. |
+| `uriWithScheme` | `Text -> Text -> FieldRule` | A key constrained to an absolute URI with the given scheme. |
+| `documentHandle` | `Text -> Text -> FieldRule` | A key constrained to a canonical document handle with the given prefix. |
 
 **What this does and does not protect against.** Record completion and the
 constructors both shield you from *additive, defaulted* schema fields: if another

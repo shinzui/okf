@@ -8,6 +8,8 @@ let Profile = ../../../dhall/Profile.dhall
 
 let FieldRule = ../../../dhall/defaults/FieldRule.dhall
 
+let FieldFormat = ../../../dhall/FieldFormat.dhall
+
 in    { name = "shinzui-postgresql"
       , description = Some
           "Conventions for documenting a PostgreSQL database as an OKF bundle."
@@ -31,10 +33,14 @@ in    { name = "shinzui-postgresql"
             , description = Some
                 "One or two sentences on what this object is for."
             }
-          , FieldRule::{ field = "timestamp" }
+          , FieldRule::{
+            , field = "timestamp"
+            , format = Some FieldFormat.Rfc3339Utc
+            }
           , FieldRule::{
             , field = "resource"
             , description = Some "postgresql:// URI locating the live object."
+            , format = Some (FieldFormat.UriWithScheme "postgresql")
             }
           ]
         }

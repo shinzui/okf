@@ -16,6 +16,8 @@ let FieldRule = ../defaults/FieldRule.dhall
 
 let Cardinality = ../Cardinality.dhall
 
+let FieldFormat = ../FieldFormat.dhall
+
 in  { plain = \(field : Text) -> FieldRule::{ field }
     , documented =
         \(field : Text) ->
@@ -29,4 +31,18 @@ in  { plain = \(field : Text) -> FieldRule::{ field }
         \(field : Text) -> FieldRule::{ field, cardinality = Cardinality.Scalar }
     , list =
         \(field : Text) -> FieldRule::{ field, cardinality = Cardinality.List }
+    , rfc3339Utc =
+        \(field : Text) -> FieldRule::{ field, format = Some FieldFormat.Rfc3339Utc }
+    , date =
+        \(field : Text) -> FieldRule::{ field, format = Some FieldFormat.Date }
+    , uri =
+        \(field : Text) -> FieldRule::{ field, format = Some FieldFormat.Uri }
+    , uriWithScheme =
+        \(field : Text) ->
+        \(scheme : Text) ->
+          FieldRule::{ field, format = Some (FieldFormat.UriWithScheme scheme) }
+    , documentHandle =
+        \(field : Text) ->
+        \(prefix : Text) ->
+          FieldRule::{ field, format = Some (FieldFormat.DocumentHandle prefix) }
     }

@@ -13,7 +13,7 @@ import Okf.Cli.Fzf.Selector (conceptCandidates, conceptPreviewCommand, parseBund
 import Okf.Cli.Help (HelpTopic (..), helpTopics)
 import Okf.ConceptId (parseConceptId)
 import Okf.Document (parseDocument)
-import Okf.Profile (Cardinality (..), FieldRule (..), FrontmatterRules (..), ProfileSpec (..), TypeRule (..))
+import Okf.Profile (Cardinality (..), FieldFormat (..), FieldRule (..), FrontmatterRules (..), ProfileSpec (..), TypeRule (..))
 import Okf.Profile.Registry (RegistryEntry (..))
 import Options.Applicative
 import System.Directory (createDirectoryIfMissing, getCurrentDirectory, getTemporaryDirectory, removeDirectoryRecursive, withCurrentDirectory)
@@ -300,7 +300,8 @@ sampleDecisionsProfile =
                   { field = "type",
                     description = Just "The OKF concept type; must be a type rule below.",
                     allowedValues = [],
-                    cardinality = Any
+                    cardinality = Any,
+                    format = Nothing
                   },
                 undocumentedField "title"
               ],
@@ -315,8 +316,8 @@ sampleDecisionsProfile =
               description = Just "One accepted decision, never edited after acceptance.",
               frontmatter =
                 FrontmatterRules
-                  { required = [FieldRule "owner" (Just "Person responsible for the decision.") [] Scalar],
-                    recommended = [FieldRule "reviewer" Nothing ["Ari", "Bo"] List]
+                  { required = [FieldRule "owner" (Just "Person responsible for the decision.") [] Scalar (Just (DocumentHandle "USR"))],
+                    recommended = [FieldRule "reviewer" Nothing ["Ari", "Bo"] List (Just Uri)]
                   },
               pathPattern = Just "decisions/*",
               resourceScheme = Nothing,
@@ -328,7 +329,7 @@ sampleDecisionsProfile =
     }
 
 undocumentedField :: Text.Text -> FieldRule
-undocumentedField key = FieldRule {field = key, description = Nothing, allowedValues = [], cardinality = Any}
+undocumentedField key = FieldRule {field = key, description = Nothing, allowedValues = [], cardinality = Any, format = Nothing}
 
 -- | Every optional field prints, as @(none)@ when absent, so the shape does not
 -- shift between profiles. A non-empty frontmatter list becomes a headed block,
@@ -346,9 +347,11 @@ sampleProfileDetail =
     "  - type: The OKF concept type; must be a type rule below.",
     "    allowedValues: (any)",
     "    cardinality: any",
+    "    format: (none)",
     "  - title: (none)",
     "    allowedValues: (any)",
     "    cardinality: any",
+    "    format: (none)",
     "frontmatter.recommended: (none)",
     "",
     "type: Decision Record",
@@ -357,10 +360,12 @@ sampleProfileDetail =
     "    - owner: Person responsible for the decision.",
     "      allowedValues: (any)",
     "      cardinality: scalar",
+    "      format: document-handle(USR)",
     "  frontmatter.recommended:",
     "    - reviewer: (none)",
     "      allowedValues: Ari, Bo",
     "      cardinality: list",
+    "      format: uri",
     "  pathPattern: decisions/*",
     "  resourceScheme: (none)",
     "  requireSchemaSection: false",
@@ -384,9 +389,11 @@ sampleUndocumentedProfileDetail =
     "  - type: (none)",
     "    allowedValues: (any)",
     "    cardinality: any",
+    "    format: (none)",
     "  - title: (none)",
     "    allowedValues: (any)",
     "    cardinality: any",
+    "    format: (none)",
     "frontmatter.recommended: (none)",
     "",
     "type: PostgreSQL Table",

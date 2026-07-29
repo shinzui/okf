@@ -74,7 +74,7 @@ later plans if merge semantics change.
 | EP-1 | Compile effective type-aware profile field rules | `docs/plans/25-compile-effective-type-aware-profile-field-rules.md` | None | None | Complete |
 | EP-2 | Enforce closed field-name and field-value vocabularies | `docs/plans/26-enforce-closed-field-name-and-field-value-vocabularies.md` | EP-1 | None | Complete |
 | EP-3 | Enforce profile field cardinality | `docs/plans/27-enforce-profile-field-cardinality.md` | EP-1 | EP-2 | Complete |
-| EP-4 | Enforce named profile field formats | `docs/plans/28-enforce-named-profile-field-formats.md` | EP-1 | EP-2 | Not Started |
+| EP-4 | Enforce named profile field formats | `docs/plans/28-enforce-named-profile-field-formats.md` | EP-1 | EP-2 | In Progress |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
 Hard Deps and Soft Deps reference other rows by their # prefix (e.g., EP-1, EP-3).

@@ -9,6 +9,9 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- `okf profile show` and profile JSON expose named field formats, and
+  `okf validate` renders parser-backed timestamp, date, URI, URI-scheme, and
+  document-handle mismatches.
 - Profile detail output and validation diagnostics for `Any`, `Scalar`, and
   `List` field cardinality.
 - `okf profile show` now displays `allowUnknownFields` and each field's
@@ -31,6 +34,11 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
+- Profile-definition output now reports invalid format parameters and
+  contradictory profile/type formats. Mori and other exhaustive `okf-core`
+  consumers must add cases for `InvalidFormatParameter`,
+  `ConflictingFieldFormat`, and `ValueFormatMismatch` before updating their
+  `okf-core` pin.
 - Profile descriptors are compiled before validation. Duplicate type names and
   ambiguous required/recommended declarations are fatal profile-definition
   errors reported once, before any concept is checked.

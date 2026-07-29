@@ -9,6 +9,12 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- Named `FieldFormat` constraints (`Rfc3339Utc`, `Date`, `Uri`,
+  `UriWithScheme`, and `DocumentHandle`) on `FieldRule`, including parser-backed
+  scalar/list validation, parameter checks, profile/type refinement, JSON and
+  Dhall representations, and `ValueFormatMismatch` diagnostics. The complete
+  EP-3 schema is frozen as a compatibility decoder whose fields upgrade to no
+  format constraint.
 - `Cardinality` (`Any`, `Scalar`, or `List`) on every `FieldRule`, compiled
   profile/type merge checks, shape-aware presence, and
   `CardinalityMismatch`. Frozen older descriptors upgrade to `Any`.
@@ -51,6 +57,15 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
+- **Breaking.** `FieldRule` gains `format :: Maybe FieldFormat`;
+  `ProfileDefinitionError` gains `InvalidFormatParameter` and
+  `ConflictingFieldFormat`; and `ProfileViolation` gains
+  `ValueFormatMismatch`. Exhaustive consumers, including Mori, must handle the
+  new constructors. The published Dhall schema adds defaulted
+  `format : Optional FieldFormat` and exports format constructors.
+- `okf-core` now depends on `network-uri >=2.6.4 && <2.7` for absolute RFC 3986
+  URI parsing. Hackage marks 2.7.0.0 deprecated; 2.6.4.2 is the newest normal,
+  upstream-tagged release.
 - **Breaking.** `validateProfile` now accepts `ValidationProfile` and an opaque
   `CompiledProfile` rather than a raw `ProfileSpec`. Library consumers must call
   `compileProfile` once, handle definition errors, and select

@@ -60,6 +60,7 @@ import Okf.Prelude hiding (List)
 import Okf.Profile
   ( Cardinality (..),
     CompiledProfile,
+    FieldFormat (..),
     FieldPath (..),
     FieldPathSegment (..),
     FrontmatterRules (..),
@@ -694,7 +695,8 @@ renderProfileDetail
             ( \rule ->
                 [ indent <> "  - " <> rule ^. #field <> ": " <> renderOptional (rule ^. #description),
                   indent <> "    allowedValues: " <> renderVocabulary (rule ^. #allowedValues),
-                  indent <> "    cardinality: " <> renderCardinality (rule ^. #cardinality)
+                  indent <> "    cardinality: " <> renderCardinality (rule ^. #cardinality),
+                  indent <> "    format: " <> maybe "(none)" renderFieldFormat (rule ^. #format)
                 ]
             )
             rules
@@ -1157,6 +1159,14 @@ renderProfileViolation compiled concepts = \case
       <> valueCardinalityName actual
       <> ": "
       <> Text.pack (LazyByteString.unpack (Aeson.encode actual))
+  ValueFormatMismatch cid fieldPath expected actual ->
+    renderConceptId cid
+      <> ": frontmatter value at "
+      <> renderFieldPath fieldPath
+      <> " must match format "
+      <> renderFieldFormat expected
+      <> ", found: "
+      <> Text.pack (LazyByteString.unpack (Aeson.encode actual))
   FieldNotInProfile cid key ->
     renderConceptId cid <> ": frontmatter field not declared by profile: " <> key
   PathPatternMismatch cid ctype patternText ->
@@ -1213,6 +1223,21 @@ renderProfileDefinitionError = \case
       <> ", type: "
       <> renderCardinality typeCardinality
       <> ")"
+  InvalidFormatParameter fieldPath fieldFormat parameter ->
+    "invalid parameter for format "
+      <> renderFieldFormat fieldFormat
+      <> " at "
+      <> renderFieldPath fieldPath
+      <> ": "
+      <> parameter
+  ConflictingFieldFormat fieldPath profileFormat typeFormat ->
+    "conflicting formats for "
+      <> renderFieldPath fieldPath
+      <> " (profile: "
+      <> renderFieldFormat profileFormat
+      <> ", type: "
+      <> renderFieldFormat typeFormat
+      <> ")"
   where
     renderScope Nothing = "profile frontmatter"
     renderScope (Just ctype) = "type " <> ctype <> " frontmatter"
@@ -1222,6 +1247,14 @@ renderCardinality = \case
   Any -> "any"
   Scalar -> "scalar"
   List -> "list"
+
+renderFieldFormat :: FieldFormat -> Text
+renderFieldFormat = \case
+  Rfc3339Utc -> "rfc3339-utc"
+  Date -> "date"
+  Uri -> "uri"
+  UriWithScheme scheme -> "uri-with-scheme(" <> scheme <> ")"
+  DocumentHandle prefix -> "document-handle(" <> prefix <> ")"
 
 valueCardinalityName :: Aeson.Value -> Text
 valueCardinalityName = \case
