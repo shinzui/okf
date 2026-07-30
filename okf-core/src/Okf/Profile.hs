@@ -13,6 +13,7 @@ module Okf.Profile
   ( -- * Descriptor
     ProfileSpec (..),
     FrontmatterRules (..),
+    FieldCondition (..),
     FieldRule (..),
     NestedRules (..),
     NestedFieldRule (..),
@@ -105,6 +106,15 @@ data FrontmatterRules = FrontmatterRules
   deriving stock (Generic, Eq, Show)
   deriving anyclass (FromDhall)
 
+-- | A same-scope predicate controlling whether a field's presence rule applies.
+-- The source field must compile to a closed scalar textual vocabulary.
+data FieldCondition = FieldCondition
+  { field :: !Text,
+    hasValue :: ![Text]
+  }
+  deriving stock (Generic, Eq, Ord, Show)
+  deriving anyclass (FromDhall)
+
 -- | One documented frontmatter key. The description is prose for humans and is
 -- never checked against a bundle.
 data FieldRule = FieldRule
@@ -113,7 +123,8 @@ data FieldRule = FieldRule
     allowedValues :: ![Text],
     cardinality :: !Cardinality,
     format :: !(Maybe FieldFormat),
-    elementFields :: !(Maybe NestedRules)
+    elementFields :: !(Maybe NestedRules),
+    when :: !(Maybe FieldCondition)
   }
   deriving stock (Generic, Eq, Show)
   deriving anyclass (FromDhall)
@@ -133,7 +144,8 @@ data NestedFieldRule = NestedFieldRule
     description :: !(Maybe Text),
     allowedValues :: ![Text],
     cardinality :: !Cardinality,
-    format :: !(Maybe FieldFormat)
+    format :: !(Maybe FieldFormat),
+    when :: !(Maybe FieldCondition)
   }
   deriving stock (Generic, Eq, Show)
   deriving anyclass (FromDhall)
@@ -201,15 +213,23 @@ instance ToJSON FrontmatterRules where
         "recommended" .= recommended
       ]
 
+instance ToJSON FieldCondition where
+  toJSON FieldCondition {field = fieldName, hasValue} =
+    object
+      [ "field" .= fieldName,
+        "hasValue" .= hasValue
+      ]
+
 instance ToJSON FieldRule where
-  toJSON FieldRule {field = fieldName, description, allowedValues, cardinality, format, elementFields} =
+  toJSON FieldRule {field = fieldName, description, allowedValues, cardinality, format, elementFields, when = condition} =
     object
       [ "field" .= fieldName,
         "description" .= description,
         "allowedValues" .= allowedValues,
         "cardinality" .= cardinality,
         "format" .= format,
-        "elementFields" .= elementFields
+        "elementFields" .= elementFields,
+        "when" .= condition
       ]
 
 instance ToJSON NestedRules where
@@ -220,13 +240,14 @@ instance ToJSON NestedRules where
       ]
 
 instance ToJSON NestedFieldRule where
-  toJSON NestedFieldRule {field = fieldName, description, allowedValues, cardinality, format} =
+  toJSON NestedFieldRule {field = fieldName, description, allowedValues, cardinality, format, when = condition} =
     object
       [ "field" .= fieldName,
         "description" .= description,
         "allowedValues" .= allowedValues,
         "cardinality" .= cardinality,
-        "format" .= format
+        "format" .= format,
+        "when" .= condition
       ]
 
 instance ToJSON Cardinality where
@@ -307,6 +328,77 @@ data LegacyTypeRule = LegacyTypeRule
   deriving stock (Generic, Eq, Show)
 
 instance FromDhall LegacyTypeRule where
+  autoWith _normalizer =
+    genericAutoWith
+      (Dhall.defaultInterpretOptions {Dhall.fieldModifier = stripTrailingUnderscore})
+    where
+      stripTrailingUnderscore fieldName =
+        fromMaybe fieldName (Text.stripSuffix "_" fieldName)
+
+-- | The complete bounded-nested descriptor generation, frozen before
+-- same-scope field conditions were added. This is the immediately preceding
+-- public descriptor generation.
+data NestedProfileFieldRule = NestedProfileFieldRule
+  { field :: !Text,
+    description :: !(Maybe Text),
+    allowedValues :: ![Text],
+    cardinality :: !Cardinality,
+    format :: !(Maybe FieldFormat),
+    elementFields :: !(Maybe NestedProfileRules)
+  }
+  deriving stock (Generic, Eq, Show)
+  deriving anyclass (FromDhall)
+
+data NestedProfileRules = NestedProfileRules
+  { required :: ![NestedProfileNestedFieldRule],
+    recommended :: ![NestedProfileNestedFieldRule]
+  }
+  deriving stock (Generic, Eq, Show)
+  deriving anyclass (FromDhall)
+
+data NestedProfileNestedFieldRule = NestedProfileNestedFieldRule
+  { field :: !Text,
+    description :: !(Maybe Text),
+    allowedValues :: ![Text],
+    cardinality :: !Cardinality,
+    format :: !(Maybe FieldFormat)
+  }
+  deriving stock (Generic, Eq, Show)
+  deriving anyclass (FromDhall)
+
+data NestedProfileFrontmatterRules = NestedProfileFrontmatterRules
+  { required :: ![NestedProfileFieldRule],
+    recommended :: ![NestedProfileFieldRule]
+  }
+  deriving stock (Generic, Eq, Show)
+  deriving anyclass (FromDhall)
+
+data NestedProfileSpec = NestedProfileSpec
+  { name :: !Text,
+    description :: !(Maybe Text),
+    okfVersion :: !Text,
+    frontmatter :: !NestedProfileFrontmatterRules,
+    allowUnknownTypes :: !Bool,
+    allowUnknownFields :: !Bool,
+    idField :: !(Maybe Text),
+    types :: ![NestedProfileTypeRule]
+  }
+  deriving stock (Generic, Eq, Show)
+  deriving anyclass (FromDhall)
+
+data NestedProfileTypeRule = NestedProfileTypeRule
+  { type_ :: !Text,
+    description :: !(Maybe Text),
+    frontmatter :: !NestedProfileFrontmatterRules,
+    pathPattern :: !(Maybe Text),
+    resourceScheme :: !(Maybe Text),
+    requireSchemaSection :: !Bool,
+    schemaColumns :: ![Text],
+    idPrefix :: !(Maybe Text)
+  }
+  deriving stock (Generic, Eq, Show)
+
+instance FromDhall NestedProfileTypeRule where
   autoWith _normalizer =
     genericAutoWith
       (Dhall.defaultInterpretOptions {Dhall.fieldModifier = stripTrailingUnderscore})
@@ -568,7 +660,40 @@ upgradePreviousFrontmatter previous =
           allowedValues = [],
           cardinality = Any,
           format = Nothing,
-          elementFields = Nothing
+          elementFields = Nothing,
+          when = Nothing
+        }
+
+upgradeNestedProfileFrontmatter :: NestedProfileFrontmatterRules -> FrontmatterRules
+upgradeNestedProfileFrontmatter previous =
+  FrontmatterRules
+    { required = map upgradeField (previous ^. #required),
+      recommended = map upgradeField (previous ^. #recommended)
+    }
+  where
+    upgradeField rule =
+      FieldRule
+        { field = rule ^. #field,
+          description = rule ^. #description,
+          allowedValues = rule ^. #allowedValues,
+          cardinality = rule ^. #cardinality,
+          format = rule ^. #format,
+          elementFields = upgradeNestedProfileRules <$> rule ^. #elementFields,
+          when = Nothing
+        }
+    upgradeNestedProfileRules rules =
+      NestedRules
+        { required = map upgradeNestedField (rules ^. #required),
+          recommended = map upgradeNestedField (rules ^. #recommended)
+        }
+    upgradeNestedField rule =
+      NestedFieldRule
+        { field = rule ^. #field,
+          description = rule ^. #description,
+          allowedValues = rule ^. #allowedValues,
+          cardinality = rule ^. #cardinality,
+          format = rule ^. #format,
+          when = Nothing
         }
 
 upgradeFormatFrontmatter :: FormatFrontmatterRules -> FrontmatterRules
@@ -585,7 +710,8 @@ upgradeFormatFrontmatter previous =
           allowedValues = rule ^. #allowedValues,
           cardinality = rule ^. #cardinality,
           format = rule ^. #format,
-          elementFields = Nothing
+          elementFields = Nothing,
+          when = Nothing
         }
 
 upgradeCardinalityFrontmatter :: CardinalityFrontmatterRules -> FrontmatterRules
@@ -602,7 +728,8 @@ upgradeCardinalityFrontmatter previous =
           allowedValues = rule ^. #allowedValues,
           cardinality = rule ^. #cardinality,
           format = Nothing,
-          elementFields = Nothing
+          elementFields = Nothing,
+          when = Nothing
         }
 
 upgradeVocabularyFrontmatter :: VocabularyFrontmatterRules -> FrontmatterRules
@@ -619,7 +746,33 @@ upgradeVocabularyFrontmatter previous =
           allowedValues = rule ^. #allowedValues,
           cardinality = Any,
           format = Nothing,
-          elementFields = Nothing
+          elementFields = Nothing,
+          when = Nothing
+        }
+
+upgradeNestedProfile :: NestedProfileSpec -> ProfileSpec
+upgradeNestedProfile previous =
+  ProfileSpec
+    { name = previous ^. #name,
+      description = previous ^. #description,
+      okfVersion = previous ^. #okfVersion,
+      frontmatter = upgradeNestedProfileFrontmatter (previous ^. #frontmatter),
+      allowUnknownTypes = previous ^. #allowUnknownTypes,
+      allowUnknownFields = previous ^. #allowUnknownFields,
+      idField = previous ^. #idField,
+      types = map upgradeRule (previous ^. #types)
+    }
+  where
+    upgradeRule rule =
+      TypeRule
+        { type_ = rule ^. #type_,
+          description = rule ^. #description,
+          frontmatter = upgradeNestedProfileFrontmatter (rule ^. #frontmatter),
+          pathPattern = rule ^. #pathPattern,
+          resourceScheme = rule ^. #resourceScheme,
+          requireSchemaSection = rule ^. #requireSchemaSection,
+          schemaColumns = rule ^. #schemaColumns,
+          idPrefix = rule ^. #idPrefix
         }
 
 upgradeFormatProfile :: FormatProfileSpec -> ProfileSpec
@@ -766,7 +919,7 @@ upgradeLegacyProfile legacy =
       types = map upgradeRule (legacy ^. #types)
     }
   where
-    undocumented key = FieldRule {field = key, description = Nothing, allowedValues = [], cardinality = Any, format = Nothing, elementFields = Nothing}
+    undocumented key = FieldRule {field = key, description = Nothing, allowedValues = [], cardinality = Any, format = Nothing, elementFields = Nothing, when = Nothing}
     upgradeRule rule =
       TypeRule
         { type_ = rule ^. #type_,
@@ -782,8 +935,9 @@ upgradeLegacyProfile legacy =
 -- | Load and decode a Dhall profile descriptor from a file path. Any evaluation
 -- or decoding failure is captured as a human-readable 'Left'.
 --
--- The EP-4 format shape, EP-3 cardinality shape, EP-2 vocabulary shape, type-aware EP-1 shape,
--- self-documenting shape, and okf 0.2.x shape are accepted by frozen fallback decoders and upgraded
+-- The bounded-nested shape, EP-4 format shape, EP-3 cardinality shape, EP-2
+-- vocabulary shape, type-aware EP-1 shape, self-documenting shape, and okf
+-- 0.2.x shape are accepted by frozen fallback decoders and upgraded
 -- with their no-op defaults. When every decoder fails, the /current/ decoder's
 -- error is reported.
 loadProfileFile :: FilePath -> IO (Either Text ProfileSpec)
@@ -792,32 +946,36 @@ loadProfileFile path = do
   case current of
     Right spec -> pure (Right spec)
     Left currentError -> do
-      formatted <- tryDecode (Dhall.inputFile auto path)
-      case formatted of
-        Right formatSpec -> pure (Right (upgradeFormatProfile formatSpec))
-        Left _formatError -> do
-          cardinality <- tryDecode (Dhall.inputFile auto path)
-          case cardinality of
-            Right cardinalitySpec -> pure (Right (upgradeCardinalityProfile cardinalitySpec))
-            Left _cardinalityError -> do
-              vocabulary <- tryDecode (Dhall.inputFile auto path)
-              case vocabulary of
-                Right vocabularySpec -> pure (Right (upgradeVocabularyProfile vocabularySpec))
-                Left _vocabularyError -> do
-                  typeAware <- tryDecode (Dhall.inputFile auto path)
-                  case typeAware of
-                    Right typeAwareSpec -> pure (Right (upgradeTypeAwareProfile typeAwareSpec))
-                    Left _typeAwareError -> do
-                      described <- tryDecode (Dhall.inputFile auto path)
-                      case described of
-                        Right describedSpec -> pure (Right (upgradeDescribedProfile describedSpec))
-                        Left _describedError -> do
-                          legacy <- tryDecode (Dhall.inputFile auto path)
-                          pure $ case legacy of
-                            Right legacySpec -> Right (upgradeLegacyProfile legacySpec)
-                            Left _legacyError -> Left currentError
+      nested <- tryDecode (Dhall.inputFile auto path)
+      case nested of
+        Right nestedSpec -> pure (Right (upgradeNestedProfile nestedSpec))
+        Left _nestedError -> do
+          formatted <- tryDecode (Dhall.inputFile auto path)
+          case formatted of
+            Right formatSpec -> pure (Right (upgradeFormatProfile formatSpec))
+            Left _formatError -> do
+              cardinality <- tryDecode (Dhall.inputFile auto path)
+              case cardinality of
+                Right cardinalitySpec -> pure (Right (upgradeCardinalityProfile cardinalitySpec))
+                Left _cardinalityError -> do
+                  vocabulary <- tryDecode (Dhall.inputFile auto path)
+                  case vocabulary of
+                    Right vocabularySpec -> pure (Right (upgradeVocabularyProfile vocabularySpec))
+                    Left _vocabularyError -> do
+                      typeAware <- tryDecode (Dhall.inputFile auto path)
+                      case typeAware of
+                        Right typeAwareSpec -> pure (Right (upgradeTypeAwareProfile typeAwareSpec))
+                        Left _typeAwareError -> do
+                          described <- tryDecode (Dhall.inputFile auto path)
+                          case described of
+                            Right describedSpec -> pure (Right (upgradeDescribedProfile describedSpec))
+                            Left _describedError -> do
+                              legacy <- tryDecode (Dhall.inputFile auto path)
+                              pure $ case legacy of
+                                Right legacySpec -> Right (upgradeLegacyProfile legacySpec)
+                                Left _legacyError -> Left currentError
   where
-    -- The seven calls look identical but are inferred at distinct result types;
+    -- The eight calls look identical but are inferred at distinct result types;
     -- @auto@ picks the corresponding current or frozen decoder.
     tryDecode :: IO a -> IO (Either Text a)
     tryDecode action =
@@ -825,13 +983,15 @@ loadProfileFile path = do
         `catch` \(exception :: SomeException) -> pure (Left (Text.pack (show exception)))
 
 -- | Does an already-evaluated Dhall expression decode as a profile? Tries the
--- current schema, then the EP-4, EP-3, EP-2, EP-1, self-documenting, and okf 0.2.x schemas,
+-- current schema, then the bounded-nested, EP-4, EP-3, EP-2, EP-1,
+-- self-documenting, and okf 0.2.x schemas,
 -- so the published @okf-profiles@ package still enumerates. Uses
 -- 'Dhall.rawInput', which normalizes and runs the decoder's extractor without
 -- throwing, which is what lets registry enumeration be pure.
 decodeProfileExpr :: Expr Src Void -> Maybe ProfileSpec
 decodeProfileExpr expression =
   Dhall.rawInput Dhall.auto expression
+    <|> fmap upgradeNestedProfile (Dhall.rawInput Dhall.auto expression)
     <|> fmap upgradeFormatProfile (Dhall.rawInput Dhall.auto expression)
     <|> fmap upgradeCardinalityProfile (Dhall.rawInput Dhall.auto expression)
     <|> fmap upgradeVocabularyProfile (Dhall.rawInput Dhall.auto expression)
@@ -862,13 +1022,31 @@ data ProfileDefinitionError
   | ElementFieldsRequireList (Maybe Text) FieldPath Cardinality
   | InvalidFormatParameter FieldPath FieldFormat Text
   | ConflictingFieldFormat FieldPath FieldFormat FieldFormat
+  | EmptyConditionValues (Maybe Text) FieldPath FieldPath
+  | ConditionFieldNotDeclared (Maybe Text) FieldPath FieldPath
+  | ConditionFieldNotScalar (Maybe Text) FieldPath FieldPath Cardinality
+  | ConditionFieldOpenVocabulary (Maybe Text) FieldPath FieldPath
+  | ConditionFieldHasUnreachableValues (Maybe Text) FieldPath FieldPath [Text] [Text]
+  | SelfConditionalField (Maybe Text) FieldPath
   deriving stock (Generic, Eq, Ord, Show)
 
 data FieldRequirement = RecommendedField | RequiredField
   deriving stock (Eq, Ord, Show)
 
-data EffectiveFieldRule = EffectiveFieldRule
+data CompiledCondition = CompiledCondition
+  { field :: !Text,
+    hasValue :: ![Text]
+  }
+  deriving stock (Generic, Eq, Show)
+
+data PresenceClause = PresenceClause
   { requirement :: !FieldRequirement,
+    condition :: !(Maybe CompiledCondition)
+  }
+  deriving stock (Generic, Eq, Show)
+
+data EffectiveFieldRule = EffectiveFieldRule
+  { presenceClauses :: ![PresenceClause],
     description :: !(Maybe Text),
     allowedValues :: ![Text],
     cardinality :: !Cardinality,
@@ -920,6 +1098,7 @@ compileProfile rawSpec =
           <> nestedCardinalityErrors
           <> formatParameterErrors
           <> conflictingFormatErrors
+          <> conditionDefinitionErrors
 
     definitionErrorKey = \case
       DuplicateTypeRule ctype -> (1 :: Int, ctype, 0 :: Int, "", 0 :: Int)
@@ -942,11 +1121,24 @@ compileProfile rawSpec =
         (2, renderFieldPathKey path, 5, Text.pack (show fieldFormat), Text.length parameter)
       ConflictingFieldFormat path profileFormat typeFormat ->
         (2, renderFieldPathKey path, 6, Text.pack (show profileFormat), fromEnum (profileFormat == typeFormat))
+      EmptyConditionValues scope target source -> conditionErrorKey scope target source 7
+      ConditionFieldNotDeclared scope target source -> conditionErrorKey scope target source 8
+      ConditionFieldNotScalar scope target source cardinality ->
+        let (scopeRank, typeName) = scopeKey scope
+         in (scopeRank, typeName, 9, renderFieldPathKey target <> ":" <> renderFieldPathKey source, fromEnum (cardinality == Scalar))
+      ConditionFieldOpenVocabulary scope target source -> conditionErrorKey scope target source 10
+      ConditionFieldHasUnreachableValues scope target source _ _ -> conditionErrorKey scope target source 11
+      SelfConditionalField scope target ->
+        let (scopeRank, typeName) = scopeKey scope
+         in (scopeRank, typeName, 12, renderFieldPathKey target, 0)
 
     scopeKey Nothing = (0, "")
     scopeKey (Just ctype) = (1, ctype)
     listKey "required" = 0
     listKey _ = 1
+    conditionErrorKey scope target source rank =
+      let (scopeRank, typeName) = scopeKey scope
+       in (scopeRank, typeName, rank, renderFieldPathKey target <> ":" <> renderFieldPathKey source, 0)
 
     scopeErrors scope FrontmatterRules {required, recommended} =
       [DuplicateFieldRule scope "required" key | key <- duplicates (map (^. #field) required)]
@@ -1064,6 +1256,54 @@ compileProfile rawSpec =
              mergeFieldFormat (Just profileFormat) (Just typeFormat) == Nothing
            ]
 
+    conditionDefinitionErrors =
+      conditionErrors Nothing Nothing (rawSpec ^. #frontmatter) baseRules
+        <> concat
+          [ let typeRules = compileRules (rule ^. #frontmatter)
+                mergedRules = mergeRules baseRules typeRules
+             in conditionErrors (Just (rule ^. #type_)) Nothing (rule ^. #frontmatter) mergedRules
+          | rule <- rawSpec ^. #types
+          ]
+
+    conditionErrors scope parent rules effectiveRules =
+      concatMap (fieldConditionErrors scope parent effectiveRules) (rules ^. #required <> rules ^. #recommended)
+        <> concat
+          [ case (rawRule ^. #elementFields, Map.lookup (rawRule ^. #field) effectiveRules >>= (^. #elementFields)) of
+              (Just nestedRules, Just effectiveNestedRules) ->
+                concatMap
+                  (fieldConditionErrors scope (Just (rawRule ^. #field)) effectiveNestedRules)
+                  (nestedRules ^. #required <> nestedRules ^. #recommended)
+              _ -> []
+          | rawRule <- rules ^. #required <> rules ^. #recommended
+          ]
+
+    fieldConditionErrors scope parent effectiveRules rawRule =
+      case rawRule ^. #when of
+        Nothing -> []
+        Just FieldCondition {field = sourceKey, hasValue = conditionValues} ->
+          let targetKey = rawRule ^. #field
+              targetPath = maybe (topLevelFieldPath targetKey) (\parentKey -> nestedDefinitionPath parentKey targetKey) parent
+              sourcePath = maybe (topLevelFieldPath sourceKey) (\parentKey -> nestedDefinitionPath parentKey sourceKey) parent
+              normalizedValues = deduplicate conditionValues
+              sourceErrors =
+                case Map.lookup sourceKey effectiveRules of
+                  Nothing -> [ConditionFieldNotDeclared scope targetPath sourcePath]
+                  Just sourceRule ->
+                    [ ConditionFieldNotScalar scope targetPath sourcePath (sourceRule ^. #cardinality)
+                    | sourceRule ^. #cardinality /= Scalar
+                    ]
+                      <> [ ConditionFieldOpenVocabulary scope targetPath sourcePath
+                         | null (sourceRule ^. #allowedValues)
+                         ]
+                      <> let unreachable = filter (`notElem` sourceRule ^. #allowedValues) normalizedValues
+                          in [ ConditionFieldHasUnreachableValues scope targetPath sourcePath unreachable (sourceRule ^. #allowedValues)
+                             | not (null (sourceRule ^. #allowedValues)),
+                               not (null unreachable)
+                             ]
+           in [EmptyConditionValues scope targetPath sourcePath | null normalizedValues]
+                <> [SelfConditionalField scope targetPath | targetKey == sourceKey]
+                <> sourceErrors
+
     renderFieldPathKey (FieldPath (firstSegment :| remainingSegments)) =
       Text.intercalate "." (map renderSegment (firstSegment : remainingSegments))
     renderSegment (FieldName name) = name
@@ -1083,7 +1323,7 @@ compileRules FrontmatterRules {required, recommended} =
 compileFieldRule :: FieldRequirement -> FieldRule -> EffectiveFieldRule
 compileFieldRule requirement rule =
   EffectiveFieldRule
-    { requirement,
+    { presenceClauses = [PresenceClause requirement (compileCondition <$> rule ^. #when)],
       description = rule ^. #description,
       allowedValues = deduplicate (rule ^. #allowedValues),
       cardinality =
@@ -1108,7 +1348,7 @@ compileNestedRules NestedRules {required, recommended} =
 compileNestedFieldRule :: FieldRequirement -> NestedFieldRule -> EffectiveFieldRule
 compileNestedFieldRule requirement rule =
   EffectiveFieldRule
-    { requirement,
+    { presenceClauses = [PresenceClause requirement (compileCondition <$> rule ^. #when)],
       description = rule ^. #description,
       allowedValues = deduplicate (rule ^. #allowedValues),
       cardinality = rule ^. #cardinality,
@@ -1122,12 +1362,19 @@ mergeRules = Map.unionWith mergeEffectiveFieldRule
 mergeEffectiveFieldRule :: EffectiveFieldRule -> EffectiveFieldRule -> EffectiveFieldRule
 mergeEffectiveFieldRule profileRule typeRule =
   EffectiveFieldRule
-    { requirement = max (profileRule ^. #requirement) (typeRule ^. #requirement),
+    { presenceClauses = profileRule ^. #presenceClauses <> typeRule ^. #presenceClauses,
       description = typeRule ^. #description <|> profileRule ^. #description,
       allowedValues = mergeVocabulary (profileRule ^. #allowedValues) (typeRule ^. #allowedValues),
       cardinality = mergeCardinality (profileRule ^. #cardinality) (typeRule ^. #cardinality),
       format = fromMaybe (profileRule ^. #format) (mergeFieldFormat (profileRule ^. #format) (typeRule ^. #format)),
       elementFields = mergeElementFields (profileRule ^. #elementFields) (typeRule ^. #elementFields)
+    }
+
+compileCondition :: FieldCondition -> CompiledCondition
+compileCondition rawCondition =
+  CompiledCondition
+    { field = rawCondition ^. #field,
+      hasValue = deduplicate (rawCondition ^. #hasValue)
     }
 
 mergeElementFields :: Maybe (Map Text EffectiveFieldRule) -> Maybe (Map Text EffectiveFieldRule) -> Maybe (Map Text EffectiveFieldRule)
@@ -1318,14 +1565,14 @@ nestedElementPath parent elementIndex =
 data ProfileViolation
   = -- | concept's @type@ is not listed in the profile and unknown types are disallowed
     TypeNotInProfile ConceptId Text
-  | -- | a required frontmatter key is missing or empty (concept, key)
-    MissingProfileField ConceptId Text
-  | -- | a recommended frontmatter key is missing under strict authoring (concept, key)
-    MissingRecommendedProfileField ConceptId Text
+  | -- | a required frontmatter key is missing or empty (concept, key, activating condition)
+    MissingProfileField ConceptId Text (Maybe FieldCondition)
+  | -- | a recommended frontmatter key is missing under strict authoring
+    MissingRecommendedProfileField ConceptId Text (Maybe FieldCondition)
   | -- | a required field is missing inside one list element record
-    MissingNestedProfileField ConceptId FieldPath
+    MissingNestedProfileField ConceptId FieldPath (Maybe FieldCondition)
   | -- | a recommended nested field is missing under strict authoring
-    MissingRecommendedNestedProfileField ConceptId FieldPath
+    MissingRecommendedNestedProfileField ConceptId FieldPath (Maybe FieldCondition)
   | -- | a present value is outside the effective textual vocabulary
     ValueNotInVocabulary ConceptId FieldPath [Text] Value
   | -- | a present value has the wrong scalar/list shape
@@ -1395,7 +1642,13 @@ validateProfile validationProfile compiled concepts =
             FieldWrongShape actual -> [CardinalityMismatch cid (topLevelFieldPath key) (rule ^. #cardinality) actual]
 
         presenceViolations key rule =
-          [missingViolation rule cid key | shouldCheckPresence rule]
+          case applicablePresenceClause validationProfile (\sourceKey -> frontmatterLookup sourceKey (conceptFrontmatter concept)) rule of
+            Nothing -> []
+            Just clause ->
+              [ case clause ^. #requirement of
+                  RequiredField -> MissingProfileField cid key (conditionForViolation <$> clause ^. #condition)
+                  RecommendedField -> MissingRecommendedProfileField cid key (conditionForViolation <$> clause ^. #condition)
+              ]
         vocabularyViolations key rule actual =
           [ ValueNotInVocabulary cid (topLevelFieldPath key) (rule ^. #allowedValues) actual
           | not (null (rule ^. #allowedValues)),
@@ -1426,7 +1679,7 @@ validateProfile validationProfile compiled concepts =
               actualValue = Aeson.KeyMap.lookup (Aeson.Key.fromText key) objectFields
            in case evaluateFieldValue (rule ^. #cardinality) actualValue of
                 FieldAbsent actual ->
-                  nestedPresenceViolations path rule
+                  nestedPresenceViolations objectFields path rule
                     <> maybe [] (nestedVocabularyViolations path rule) actual
                     <> maybe [] (nestedFormatViolations path rule) actual
                 FieldPresent actual ->
@@ -1434,12 +1687,16 @@ validateProfile validationProfile compiled concepts =
                     <> nestedFormatViolations path rule actual
                 FieldWrongShape actual -> [CardinalityMismatch cid path (rule ^. #cardinality) actual]
 
-        nestedPresenceViolations path rule =
-          [ case rule ^. #requirement of
-              RequiredField -> MissingNestedProfileField cid path
-              RecommendedField -> MissingRecommendedNestedProfileField cid path
-          | shouldCheckPresence rule
-          ]
+        nestedPresenceViolations objectFields path rule =
+          case applicablePresenceClause validationProfile lookupSibling rule of
+            Nothing -> []
+            Just clause ->
+              [ case clause ^. #requirement of
+                  RequiredField -> MissingNestedProfileField cid path (conditionForViolation <$> clause ^. #condition)
+                  RecommendedField -> MissingRecommendedNestedProfileField cid path (conditionForViolation <$> clause ^. #condition)
+              ]
+          where
+            lookupSibling sourceKey = Aeson.KeyMap.lookup (Aeson.Key.fromText sourceKey) objectFields
         nestedVocabularyViolations path rule actual =
           [ ValueNotInVocabulary cid path (rule ^. #allowedValues) actual
           | not (null (rule ^. #allowedValues)),
@@ -1450,13 +1707,6 @@ validateProfile validationProfile compiled concepts =
           | Just fieldFormat <- [rule ^. #format],
             not (valueMatchesFormat fieldFormat actual)
           ]
-
-        shouldCheckPresence rule =
-          rule ^. #requirement == RequiredField || validationProfile == StrictAuthoring
-        missingViolation rule =
-          case rule ^. #requirement of
-            RequiredField -> MissingProfileField
-            RecommendedField -> MissingRecommendedProfileField
 
     checkUnknownFields cid ctype concept
       | spec ^. #allowUnknownFields = []
@@ -1470,6 +1720,26 @@ validateProfile validationProfile compiled concepts =
       coreFrontmatterFields
         <> Map.keysSet (effectiveRulesForType compiled ctype)
         <> maybe Set.empty Set.singleton (spec ^. #idField)
+
+applicablePresenceClause :: ValidationProfile -> (Text -> Maybe Value) -> EffectiveFieldRule -> Maybe PresenceClause
+applicablePresenceClause validationProfile lookupValue rule =
+  List.find applies requiredClauses
+    <|> if validationProfile == StrictAuthoring then List.find applies recommendedClauses else Nothing
+  where
+    requiredClauses = filter ((== RequiredField) . (^. #requirement)) (rule ^. #presenceClauses)
+    recommendedClauses = filter ((== RecommendedField) . (^. #requirement)) (rule ^. #presenceClauses)
+    applies clause = maybe True conditionApplies (clause ^. #condition)
+    conditionApplies condition =
+      case lookupValue (condition ^. #field) of
+        Just (String actual) -> actual `elem` condition ^. #hasValue
+        _ -> False
+
+conditionForViolation :: CompiledCondition -> FieldCondition
+conditionForViolation condition =
+  FieldCondition
+    { field = condition ^. #field,
+      hasValue = condition ^. #hasValue
+    }
 
 valueMatchesVocabulary :: [Text] -> Value -> Bool
 valueMatchesVocabulary allowed = \case

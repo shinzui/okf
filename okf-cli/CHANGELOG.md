@@ -9,6 +9,10 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- `okf profile show` renders top-level and nested `when` predicates, while
+  `okf validate` explains the activating condition on missing-field diagnostics.
+  The profiles help topic documents same-scope resolution, compiler checks,
+  strict recommendations, and no-cascade runtime behavior.
 - `okf profile show` renders bounded nested field rules, and `okf validate`
   reports missing nested fields, non-record list elements, and nested value
   violations with indexed paths such as `reviews[2].outcome`.
@@ -37,6 +41,10 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
+- Profile-definition output now reports every invalid condition category. Mori
+  and other exhaustive consumers must handle the new definition errors and the
+  condition payload added to missing-field violations before updating their
+  `okf-core` pin.
 - Profile-definition output now reports invalid format parameters and
   contradictory profile/type formats. Mori and other exhaustive `okf-core`
   consumers must add cases for `InvalidFormatParameter`,

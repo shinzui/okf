@@ -5,11 +5,14 @@ let Cardinality = ../Cardinality.dhall
 
 let FieldFormat = ../FieldFormat.dhall
 
+let FieldCondition = ../FieldCondition.dhall
+
 in  { Type = NestedFieldRuleType
     , default =
       { description = None Text
       , allowedValues = [] : List Text
       , cardinality = Cardinality.Any
       , format = None FieldFormat
+      , when = None FieldCondition
       }
     }

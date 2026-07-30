@@ -5,6 +5,8 @@ let Cardinality = ../Cardinality.dhall
 
 let FieldFormat = ../FieldFormat.dhall
 
+let FieldCondition = ../FieldCondition.dhall
+
 in  { plain = \(field : Text) -> NestedFieldRule::{ field }
     , documented =
         \(field : Text) ->
@@ -32,4 +34,8 @@ in  { plain = \(field : Text) -> NestedFieldRule::{ field }
         \(field : Text) ->
         \(prefix : Text) ->
           NestedFieldRule::{ field, format = Some (FieldFormat.DocumentHandle prefix) }
+    , conditional =
+        \(rule : NestedFieldRule.Type) ->
+        \(condition : FieldCondition) ->
+          rule with when = Some condition
     }

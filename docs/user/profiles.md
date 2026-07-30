@@ -144,6 +144,7 @@ Each `FieldRule` — one frontmatter key, and optionally what it is for:
 | `cardinality` | `Cardinality` | `Any` preserves legacy presence behavior; `Scalar` accepts non-blank text, numbers, and booleans; `List` accepts arrays. Objects and null do not satisfy explicit cardinality. |
 | `format` | `Optional FieldFormat` | A parser-backed textual contract: UTC RFC3339 timestamp, calendar date, absolute URI, URI with a required scheme, or document handle. `None` means unconstrained. |
 | `elementFields` | `Optional NestedRules` | When present, the field must be a list whose elements are flat records checked with nested required and recommended rules. `None` means no element schema. |
+| `when` | `Optional FieldCondition` | Gates only this rule's required or recommended presence check on a same-scope scalar sibling having one of `hasValue`. Present values are still constrained when the condition is false. |
 
 A description is attached to the key it documents rather than kept in a parallel
 list, so it cannot drift away from the rule or outlive it. See
@@ -155,7 +156,7 @@ Each `TypeRule`:
 |-------|------|---------|
 | `type` | `Text` | The exact `type` frontmatter string this rule applies to. |
 | `description` | `Optional Text` | Prose explaining what this concept type is for. Documentary only. |
-| `frontmatter` | `FrontmatterRules` | Required and recommended keys added for this type. Profile and type scopes merge by key: required wins, type-level prose wins when present, and two non-empty value vocabularies intersect. `defaults.TypeRule` supplies empty lists. |
+| `frontmatter` | `FrontmatterRules` | Required and recommended keys added for this type. Profile and type scopes merge value constraints by key, retain separate presence clauses, prefer applicable required clauses over strict recommendations, prefer type-level prose, and intersect two non-empty vocabularies. `defaults.TypeRule` supplies empty lists. |
 | `pathPattern` | `Optional Text` | A segment-glob the concept ID must match. `*` matches exactly one segment; a single trailing `**` matches one or more remaining segments; any other segment matches literally. For example `schemas/*/tables/*` matches `schemas/sales/tables/orders`. A mismatch is reported as `must match path pattern`. |
 | `resourceScheme` | `Optional Text` | When set, the concept's `resource:` value must begin with `<scheme>://`. A missing resource is reported as `requires a resource with scheme`; a wrong scheme as `resource must use scheme`. |
 | `requireSchemaSection` | `Bool` | When `True`, the body must contain a `# Schema` heading followed by a GitHub-flavored Markdown table. A missing section is reported as `requires a # Schema section`. |
@@ -197,6 +198,53 @@ Diagnostics carry the complete path, including the list index, for example
 `reviews[2].outcome`. Extra keys inside each record remain allowed. The profile
 does not compare records, capture top-level fields, or validate a second nested
 level.
+
+### Same-scope conditional presence
+
+Set `when = Some { field, hasValue }` on a required or recommended rule when its
+presence depends on a sibling state. A top-level condition reads another
+top-level key. A nested condition reads only the same list element record; it
+cannot capture a top-level key.
+
+```dhall
+let FieldRule = ../../okf-core/dhall/defaults/FieldRule.dhall
+
+let Cardinality = ../../okf-core/dhall/Cardinality.dhall
+
+in  { required =
+      [ FieldRule::{
+        , field = "status"
+        , allowedValues = [ "active", "superseded" ]
+        , cardinality = Cardinality.Scalar
+        }
+      , FieldRule::{
+        , field = "supersededBy"
+        , cardinality = Cardinality.Scalar
+        , when = Some { field = "status", hasValue = [ "superseded" ] }
+        }
+      ]
+    , recommended = [] : List FieldRule.Type
+    }
+```
+
+The source field must be declared in that object scope, explicitly `Scalar`, and
+constrained by a non-empty `allowedValues` vocabulary. `hasValue` must be
+non-empty and contain only reachable values from that vocabulary. A condition
+cannot name its own target. Violations of these rules are profile-definition
+errors reported once before bundle validation begins.
+
+At runtime, a missing, wrong-shape, or out-of-vocabulary source makes the
+condition false, so okf reports the source defect without cascading into a
+target-field error. If the target is present, its vocabulary, cardinality, and
+format checks always run. Conditions gate presence only; there is no
+conjunction, negation, cross-scope path, or conditional value constraint.
+
+Required conditions run in both modes. Recommended conditions run only under
+`--strict`. Missing diagnostics include the activating predicate:
+
+```text
+profile: decisions/old: missing profile-required field: supersededBy (when status is superseded)
+```
 
 ## Profile registries
 
@@ -528,6 +576,9 @@ in  [ -- 1. constructors — the form to reach for
     , field.uri "source"
     , field.uriWithScheme "originPlan" "mori"
     , field.documentHandle "decision" "ADR"
+    , field.conditional
+        (field.scalar "supersededBy")
+        { field = "status", hasValue = [ "superseded" ] }
 
       -- 2. record completion
     , okf.defaults.FieldRule::{
@@ -541,11 +592,13 @@ in  [ -- 1. constructors — the form to reach for
       , allowedValues = [] : List Text
       , cardinality = okf.Cardinality.Any
       , format = None okf.FieldFormat
+      , elementFields = None okf.NestedRules
+      , when = None okf.FieldCondition
       }
     ]
 ```
 
-`okf.mk.FieldRule` exports ten functions:
+`okf.mk.FieldRule` exports twelve functions:
 
 | Constructor | Type | Use |
 |-------------|------|-----|
@@ -559,6 +612,8 @@ in  [ -- 1. constructors — the form to reach for
 | `uri` | `Text -> FieldRule` | A key constrained to an absolute URI. |
 | `uriWithScheme` | `Text -> Text -> FieldRule` | A key constrained to an absolute URI with the given scheme. |
 | `documentHandle` | `Text -> Text -> FieldRule` | A key constrained to a canonical document handle with the given prefix. |
+| `recordList` | `Text -> NestedRules -> FieldRule` | A list field whose flat record elements follow the given nested rules. |
+| `conditional` | `FieldRule -> FieldCondition -> FieldRule` | Attach a same-scope presence condition to an existing rule. |
 
 **What this does and does not protect against.** Record completion and the
 constructors both shield you from *additive, defaulted* schema fields: if another

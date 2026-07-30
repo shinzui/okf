@@ -7,6 +7,8 @@ let FieldFormat = ../FieldFormat.dhall
 
 let NestedRules = ../NestedRules.dhall
 
+let FieldCondition = ../FieldCondition.dhall
+
 in  { Type = FieldRuleType
     , default =
       { description = None Text
@@ -14,5 +16,6 @@ in  { Type = FieldRuleType
       , cardinality = Cardinality.Any
       , format = None FieldFormat
       , elementFields = None NestedRules
+      , when = None FieldCondition
       }
     }

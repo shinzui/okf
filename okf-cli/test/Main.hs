@@ -13,7 +13,7 @@ import Okf.Cli.Fzf.Selector (conceptCandidates, conceptPreviewCommand, parseBund
 import Okf.Cli.Help (HelpTopic (..), helpTopics)
 import Okf.ConceptId (parseConceptId)
 import Okf.Document (parseDocument)
-import Okf.Profile (Cardinality (..), FieldFormat (..), FieldRule (..), FrontmatterRules (..), NestedFieldRule (..), NestedRules (..), ProfileSpec (..), TypeRule (..))
+import Okf.Profile (Cardinality (..), FieldCondition (..), FieldFormat (..), FieldRule (..), FrontmatterRules (..), NestedFieldRule (..), NestedRules (..), ProfileSpec (..), TypeRule (..))
 import Okf.Profile.Registry (RegistryEntry (..))
 import Options.Applicative
 import System.Directory (createDirectoryIfMissing, getCurrentDirectory, getTemporaryDirectory, removeDirectoryRecursive, withCurrentDirectory)
@@ -303,7 +303,8 @@ sampleDecisionsProfile =
                     allowedValues = [],
                     cardinality = Any,
                     format = Nothing,
-                    elementFields = Nothing
+                    elementFields = Nothing,
+                    when = Nothing
                   },
                 undocumentedField "title"
               ],
@@ -318,8 +319,8 @@ sampleDecisionsProfile =
               description = Just "One accepted decision, never edited after acceptance.",
               frontmatter =
                 FrontmatterRules
-                  { required = [FieldRule "owner" (Just "Person responsible for the decision.") [] Scalar (Just (DocumentHandle "USR")) Nothing],
-                    recommended = [FieldRule "reviewer" Nothing ["Ari", "Bo"] List (Just Uri) Nothing]
+                  { required = [FieldRule "owner" (Just "Person responsible for the decision.") [] Scalar (Just (DocumentHandle "USR")) Nothing Nothing],
+                    recommended = [FieldRule "reviewer" Nothing ["Ari", "Bo"] List (Just Uri) Nothing Nothing]
                   },
               pathPattern = Just "decisions/*",
               resourceScheme = Nothing,
@@ -331,7 +332,7 @@ sampleDecisionsProfile =
     }
 
 undocumentedField :: Text.Text -> FieldRule
-undocumentedField key = FieldRule {field = key, description = Nothing, allowedValues = [], cardinality = Any, format = Nothing, elementFields = Nothing}
+undocumentedField key = FieldRule {field = key, description = Nothing, allowedValues = [], cardinality = Any, format = Nothing, elementFields = Nothing, when = Nothing}
 
 sampleNestedProfile :: ProfileSpec
 sampleNestedProfile =
@@ -350,10 +351,11 @@ sampleNestedProfile =
                   Nothing
                   ( Just
                       NestedRules
-                        { required = [NestedFieldRule "outcome" Nothing ["approved", "rejected"] Any Nothing],
-                          recommended = [NestedFieldRule "notes" Nothing [] Scalar Nothing]
+                        { required = [NestedFieldRule "outcome" Nothing ["approved", "rejected"] Any Nothing (Just (FieldCondition "kind" ["model"]))],
+                          recommended = [NestedFieldRule "notes" Nothing [] Scalar Nothing Nothing]
                         }
                   )
+                  Nothing
               ],
             recommended = []
           },
@@ -377,17 +379,20 @@ sampleNestedProfileDetail =
     "    allowedValues: (any)",
     "    cardinality: any",
     "    format: (none)",
+    "    when: (none)",
     "    elementFields:",
     "      required:",
     "        - outcome: (none)",
     "          allowedValues: approved, rejected",
     "          cardinality: any",
     "          format: (none)",
+    "          when: kind in [model]",
     "      recommended:",
     "        - notes: (none)",
     "          allowedValues: (any)",
     "          cardinality: scalar",
     "          format: (none)",
+    "          when: (none)",
     "frontmatter.recommended: (none)"
   ]
 
@@ -408,11 +413,13 @@ sampleProfileDetail =
     "    allowedValues: (any)",
     "    cardinality: any",
     "    format: (none)",
+    "    when: (none)",
     "    elementFields: (none)",
     "  - title: (none)",
     "    allowedValues: (any)",
     "    cardinality: any",
     "    format: (none)",
+    "    when: (none)",
     "    elementFields: (none)",
     "frontmatter.recommended: (none)",
     "",
@@ -423,12 +430,14 @@ sampleProfileDetail =
     "      allowedValues: (any)",
     "      cardinality: scalar",
     "      format: document-handle(USR)",
+    "      when: (none)",
     "      elementFields: (none)",
     "  frontmatter.recommended:",
     "    - reviewer: (none)",
     "      allowedValues: Ari, Bo",
     "      cardinality: list",
     "      format: uri",
+    "      when: (none)",
     "      elementFields: (none)",
     "  pathPattern: decisions/*",
     "  resourceScheme: (none)",
@@ -454,11 +463,13 @@ sampleUndocumentedProfileDetail =
     "    allowedValues: (any)",
     "    cardinality: any",
     "    format: (none)",
+    "    when: (none)",
     "    elementFields: (none)",
     "  - title: (none)",
     "    allowedValues: (any)",
     "    cardinality: any",
     "    format: (none)",
+    "    when: (none)",
     "    elementFields: (none)",
     "frontmatter.recommended: (none)",
     "",

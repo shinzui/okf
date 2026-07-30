@@ -6,9 +6,12 @@ let Cardinality = ./Cardinality.dhall
 
 let FieldFormat = ./FieldFormat.dhall
 
+let FieldCondition = ./FieldCondition.dhall
+
 in  { field : Text
     , description : Optional Text
     , allowedValues : List Text
     , cardinality : Cardinality
     , format : Optional FieldFormat
+    , when : Optional FieldCondition
     }

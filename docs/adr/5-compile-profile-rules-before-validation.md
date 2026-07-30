@@ -28,10 +28,11 @@ compiled profile, so an invalid definition cannot produce per-concept results.
 
 Compilation rejects duplicate type names, duplicate field names within one
 required or recommended list, and a field appearing in both lists at the same
-scope. Profile and matching type rules then merge by field name. Required wins
-over recommended across scopes. Type-level prose wins when present; otherwise
-profile-level prose is retained. Unknown concept types receive profile-scope
-rules only.
+scope. Profile and matching type rules then merge value constraints by field
+name. Presence declarations remain ordered clauses; an applicable required
+clause wins over a strict-mode recommended clause. Type-level prose wins when
+present; otherwise profile-level prose is retained. Unknown concept types
+receive profile-scope rules only.
 
 Profile-wide rules apply to every concept, including an allowed unknown type.
 Required rules are always checked. Recommended rules are checked only under
@@ -99,6 +100,31 @@ whenever a nested field is present. Undeclared keys inside a record remain allow
 The complete EP-4 format-aware descriptor generation is frozen before this schema
 addition and upgrades with `elementFields = Nothing`.
 
+Conditional presence extends the compiled rule as an ordered list of presence
+clauses rather than one collapsed required/recommended flag. Each raw declaration
+keeps its own severity and optional `FieldCondition`, including when profile and
+type scopes both name the same target. Required clauses are evaluated first in
+declaration order; recommended clauses are considered only under
+`StrictAuthoring`. At most one missing-field violation is emitted, carrying the
+first applicable condition for human rendering.
+
+A condition resolves only within its current object: top-level siblings for a
+top-level rule and siblings in the same list element for a nested rule. Its
+source must be explicitly `Scalar` and have a non-empty effective
+`allowedValues` vocabulary; `hasValue` must be non-empty and a subset of that
+vocabulary. Compilation rejects undeclared sources, self-reference, wrong
+cardinality, open vocabularies, and unreachable values before any concept is
+read. A missing, wrong-shape, or out-of-vocabulary source makes the predicate
+false at runtime, preventing cascading target diagnostics. Conditions gate only
+presence: every constraint on a present target still runs.
+
+The public schema uses `when : Optional FieldCondition` on both `FieldRule` and
+`NestedFieldRule`, where `FieldCondition = { field : Text, hasValue : List Text }`.
+The complete bounded-nested generation is frozen before this addition and
+upgrades both rule kinds with `when = Nothing`. Conjunction, negation,
+cross-scope paths, and conditional value constraints remain deliberately out of
+scope pending concrete evidence.
+
 
 ## Consequences
 
@@ -116,6 +142,11 @@ Nested-record support adds `MissingNestedProfileField`,
 `MissingRecommendedNestedProfileField`, and `NestedElementNotRecord` to
 `ProfileViolation`. Exhaustive consumers must render their `FieldPath` values and
 continue treating them as advisory profile deviations.
+
+Conditional presence adds structured definition errors for every invalid
+predicate category and adds the activating `Maybe FieldCondition` to the four
+top-level and nested missing-field violation constructors. Exhaustive consumers,
+including Mori, must update those patterns before moving their okf pin.
 
 Later profile constraints extend the compiled field rule rather than scanning
 raw declarations again. Human and JSON profile display continue to preserve the

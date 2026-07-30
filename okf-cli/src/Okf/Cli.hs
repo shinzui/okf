@@ -60,6 +60,7 @@ import Okf.Prelude hiding (List)
 import Okf.Profile
   ( Cardinality (..),
     CompiledProfile,
+    FieldCondition (..),
     FieldFormat (..),
     FieldPath (..),
     FieldPathSegment (..),
@@ -698,7 +699,8 @@ renderProfileDetail
         [ indent <> "  - " <> rule ^. #field <> ": " <> renderOptional (rule ^. #description),
           indent <> "    allowedValues: " <> renderVocabulary (rule ^. #allowedValues),
           indent <> "    cardinality: " <> renderCardinality (rule ^. #cardinality),
-          indent <> "    format: " <> maybe "(none)" renderFieldFormat (rule ^. #format)
+          indent <> "    format: " <> maybe "(none)" renderFieldFormat (rule ^. #format),
+          indent <> "    when: " <> maybe "(none)" renderCondition (rule ^. #when)
         ]
           <> case rule ^. #elementFields of
             Nothing -> [indent <> "    elementFields: (none)"]
@@ -715,7 +717,8 @@ renderProfileDetail
         [ indent <> "  - " <> rule ^. #field <> ": " <> renderOptional (rule ^. #description),
           indent <> "    allowedValues: " <> renderVocabulary (rule ^. #allowedValues),
           indent <> "    cardinality: " <> renderCardinality (rule ^. #cardinality),
-          indent <> "    format: " <> maybe "(none)" renderFieldFormat (rule ^. #format)
+          indent <> "    format: " <> maybe "(none)" renderFieldFormat (rule ^. #format),
+          indent <> "    when: " <> maybe "(none)" renderCondition (rule ^. #when)
         ]
 
       renderTypeRule
@@ -749,6 +752,8 @@ renderProfileDetail
       renderList values = Text.intercalate ", " values
       renderVocabulary [] = "(any)"
       renderVocabulary values = Text.intercalate ", " values
+      renderCondition FieldCondition {field = sourceField, hasValue} =
+        sourceField <> " in [" <> Text.intercalate ", " hasValue <> "]"
 
 -- | The two-line descriptor a user writes to consume the profile with
 -- @okf validate --profile@. The reference is quoted in Dhall import syntax, not
@@ -1148,24 +1153,28 @@ renderProfileViolation :: CompiledProfile -> [Concept] -> ProfileViolation -> Te
 renderProfileViolation compiled concepts = \case
   TypeNotInProfile cid ctype ->
     renderConceptId cid <> ": type not in profile vocabulary: " <> ctype
-  MissingProfileField cid key ->
+  MissingProfileField cid key condition ->
     renderConceptId cid
       <> ": missing profile-required field: "
       <> key
+      <> renderConditionContext condition
       <> renderDescription cid key
-  MissingRecommendedProfileField cid key ->
+  MissingRecommendedProfileField cid key condition ->
     renderConceptId cid
       <> ": missing profile-recommended field: "
       <> key
+      <> renderConditionContext condition
       <> renderDescription cid key
-  MissingNestedProfileField cid fieldPath ->
+  MissingNestedProfileField cid fieldPath condition ->
     renderConceptId cid
       <> ": missing profile-required field: "
       <> renderFieldPath fieldPath
-  MissingRecommendedNestedProfileField cid fieldPath ->
+      <> renderConditionContext condition
+  MissingRecommendedNestedProfileField cid fieldPath condition ->
     renderConceptId cid
       <> ": missing profile-recommended field: "
       <> renderFieldPath fieldPath
+      <> renderConditionContext condition
   ValueNotInVocabulary cid fieldPath allowed actual ->
     renderConceptId cid
       <> ": frontmatter value at "
@@ -1227,6 +1236,11 @@ renderProfileViolation compiled concepts = \case
       maybe "" (\prose -> " (" <> prose <> ")") $ do
         ctype <- lookup cid [(conceptIdOf concept, conceptType concept) | concept <- concepts]
         profileFieldDescriptionForType compiled ctype key
+    renderConditionContext = maybe "" renderCondition
+    renderCondition FieldCondition {field = sourceField, hasValue = [expected]} =
+      " (when " <> sourceField <> " is " <> expected <> ")"
+    renderCondition FieldCondition {field = sourceField, hasValue} =
+      " (when " <> sourceField <> " is one of [" <> Text.intercalate ", " hasValue <> "])"
     renderList xs = "[" <> Text.intercalate ", " xs <> "]"
 
 renderProfileDefinitionError :: ProfileDefinitionError -> Text
@@ -1275,9 +1289,34 @@ renderProfileDefinitionError = \case
       <> ", type: "
       <> renderFieldFormat typeFormat
       <> ")"
+  EmptyConditionValues scope target source ->
+    renderConditionDefinition scope target source <> " has an empty hasValue list"
+  ConditionFieldNotDeclared scope target source ->
+    renderConditionDefinition scope target source <> " names an undeclared source field"
+  ConditionFieldNotScalar scope target source actualCardinality ->
+    renderConditionDefinition scope target source
+      <> " requires scalar cardinality, found: "
+      <> renderCardinality actualCardinality
+  ConditionFieldOpenVocabulary scope target source ->
+    renderConditionDefinition scope target source <> " requires a non-empty allowedValues vocabulary"
+  ConditionFieldHasUnreachableValues scope target source unreachable allowed ->
+    renderConditionDefinition scope target source
+      <> " contains unreachable values ["
+      <> Text.intercalate ", " unreachable
+      <> "]; source allows ["
+      <> Text.intercalate ", " allowed
+      <> "]"
+  SelfConditionalField scope target ->
+    renderScope scope <> ": field cannot condition its own presence: " <> renderFieldPath target
   where
     renderScope Nothing = "profile frontmatter"
     renderScope (Just ctype) = "type " <> ctype <> " frontmatter"
+    renderConditionDefinition scope target source =
+      renderScope scope
+        <> ": condition for "
+        <> renderFieldPath target
+        <> " on "
+        <> renderFieldPath source
 
 renderCardinality :: Cardinality -> Text
 renderCardinality = \case

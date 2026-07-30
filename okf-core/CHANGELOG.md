@@ -9,6 +9,12 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- Same-scope conditional presence through `FieldCondition` and the defaulted
+  `when` field on top-level and nested field rules. Compilation rejects empty,
+  undeclared, non-scalar, open-vocabulary, self-referential, and unreachable
+  predicates; validation evaluates required and strict-recommended clauses
+  without cascading from invalid sources. The complete bounded-nested descriptor
+  shape is frozen as a compatibility decoder and upgrades with no condition.
 - Bounded one-level nested record rules through `FieldRule.elementFields`,
   non-recursive `NestedRules`/`NestedFieldRule` Dhall and Haskell types,
   profile/type compilation, indexed `FieldPath` diagnostics, JSON, constructors,
@@ -63,6 +69,11 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
+- **Breaking.** `FieldRule` and `NestedFieldRule` gain
+  `when :: Maybe FieldCondition`; missing-field `ProfileViolation` constructors
+  carry the activating condition; and `ProfileDefinitionError` gains structured
+  condition errors. Exhaustive consumers, including Mori, must update before
+  moving their `okf-core` pin.
 - **Breaking.** `FieldRule` gains `elementFields :: Maybe NestedRules` and
   `ProfileViolation` gains `MissingNestedProfileField`,
   `MissingRecommendedNestedProfileField`, and `NestedElementNotRecord`.
@@ -87,8 +98,9 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   direct record literals must add the field. A frozen decoder continues to load
   the previous self-documenting shape, and the 0.2.x fallback remains intact.
 - Profile-wide frontmatter rules now apply to allowed and disallowed unknown
-  types. Required wins over recommended across profile and type scopes, while
-  type-level prose wins when present.
+  types. Value constraints merge across profile and type scopes, presence
+  declarations remain ordered clauses, applicable required clauses precede
+  strict recommendations, and type-level prose wins when present.
 - **Breaking.** `FrontmatterRules`'s `required` and `recommended` are now
   `[FieldRule]` rather than `[Text]`, and `ProfileSpec` and `TypeRule` each
   gained `description :: Maybe Text`. The published Dhall schema changed to

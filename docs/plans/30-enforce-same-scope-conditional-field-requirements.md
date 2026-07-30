@@ -4,6 +4,7 @@ slug: enforce-same-scope-conditional-field-requirements
 title: "Enforce same-scope conditional field requirements"
 kind: exec-plan
 created_at: 2026-07-29T17:17:00Z
+intention: intention_01kyqwbdgjen0reqtmzqv8mwb7
 master_plan: "docs/masterplans/5-validate-structured-metadata-and-document-relationships-in-okf-profiles.md"
 ---
 
@@ -34,13 +35,13 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] Verify predecessor MasterPlan and nested-record plan completion.
-- [ ] Add the shared `FieldCondition` and optional `when` field to top-level and nested rules.
-- [ ] Compile same-scope conditions and reject empty, undeclared, open, non-scalar, self, and unreachable predicates.
-- [ ] Evaluate required and strict-recommended presence clauses without cascading diagnostics.
-- [ ] Add ADR, PostgreSQL, and review conditional fixtures with permissive/strict coverage.
-- [ ] Update compatibility, JSON, profile show, diagnostics, help, changelogs, and ADRs.
-- [ ] Run the complete acceptance matrix.
+- [x] (2026-07-29 23:44Z) Verify predecessor MasterPlan and nested-record plan completion.
+- [x] (2026-07-30 00:01Z) Add the shared `FieldCondition` and optional `when` field to top-level and nested rules.
+- [x] (2026-07-30 00:01Z) Compile same-scope conditions and reject empty, undeclared, open, non-scalar, self, and unreachable predicates.
+- [x] (2026-07-30 00:01Z) Evaluate required and strict-recommended presence clauses without cascading diagnostics.
+- [x] (2026-07-30 00:01Z) Add ADR, PostgreSQL, and review conditional fixtures with permissive/strict coverage.
+- [x] (2026-07-30 00:01Z) Update compatibility, JSON, profile show, diagnostics, help, changelogs, and ADRs.
+- [x] (2026-07-30 00:01Z) Run the complete acceptance matrix: `cabal test all`, Dhall typechecks, CLI permissive/strict/invalid-definition transcripts, `git diff --check`, and `nix flake check` pass.
 
 
 ## Surprises & Discoveries
@@ -48,7 +49,22 @@ This section must always reflect the actual current state of the work.
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+- Discovery: adding `when : Optional FieldCondition` still changes Dhall's closed
+  record type, so the complete bounded-nested generation needed its own frozen
+  decoder before the current schema changed. Evidence: the new
+  `nested-reviews-ep1.dhall` fixture preserves `elementFields` while upgrading
+  both rule kinds with `when = Nothing`.
+
+- Discovery: the former single `requirement` field on `EffectiveFieldRule` could
+  not represent a profile recommendation and type requirement with different
+  predicates. Replacing it with ordered presence clauses preserves both
+  declarations and lets the evaluator prefer the first applicable required
+  clause without inventing boolean merge semantics.
+
+- Discovery: `--strict` also enables core OKF recommendations, so end-to-end CLI
+  output includes missing core `title`, `description`, and `timestamp` lines for
+  deliberately minimal fixtures. Core tests compare the profile-violation list
+  directly, while the CLI transcript confirms the conditional profile line.
 
 
 ## Decision Log
@@ -78,6 +94,20 @@ Record every decision made while working on the plan.
   second without ambiguity.
   Date: 2026-07-29
 
+- Decision: carry the activating `Maybe FieldCondition` on all four top-level
+  and nested missing-field violation constructors.
+  Rationale: the CLI can render the exact predicate chosen by compilation,
+  including an indexed nested target, without rescanning raw declarations or
+  re-evaluating a sibling after validation.
+  Date: 2026-07-29
+
+- Decision: validate profile-scope conditions against the profile-scope
+  effective map and type-scope conditions against the merged map for that type;
+  nested conditions receive only their parent's effective nested map.
+  Rationale: a type rule may legitimately depend on a profile-declared sibling,
+  while a nested rule cannot capture a top-level key. Tests cover both cases.
+  Date: 2026-07-29
+
 
 ## Outcomes & Retrospective
 
@@ -86,7 +116,38 @@ Compare the result against the original purpose. Before marking the plan complet
 distill durable project context from the Decision Log, Surprises & Discoveries, and
 this section into docs/adr/. Keep task-local execution details here.
 
-(To be filled during and after implementation.)
+Completed all three milestones. Profiles now publish `FieldCondition`, default
+`when` to `None` on both field-rule kinds, preserve the prior bounded-nested
+schema generation, and retain independent compiled presence clauses. Definition
+compilation reports each invalid predicate category once with structural target
+and source paths. Runtime validation handles top-level and nested siblings,
+required and strict-recommended clauses, no-cascade source failures, and present
+target constraints.
+
+The acceptance bundle demonstrates active and superseded ADRs, projection and
+operational PostgreSQL derivations, and human/model reviews. Human output, JSON,
+help, changelogs, and ADR 5 describe the same contract. `cabal test all`, the
+current and compatibility Dhall fixtures, permissive and strict CLI runs,
+invalid-definition CLI output, `git diff --check`, and `nix flake check` all pass.
+No conjunction, negation, cross-scope lookup, or conditional value constraint
+was added.
+
+The focused CLI evidence was:
+
+```text
+profile: decisions/superseded: missing profile-required field: supersededBy (when status is superseded)
+profile: postgresql/operational: missing profile-recommended field: runbook (when derivationKind is operational)
+profile: reviews/mixed: missing profile-required field: reviews[0].provider (when kind is model)
+```
+
+The final test summaries were:
+
+```text
+Test suite okf-core-test: PASS
+Test suite okf-cli-test: PASS
+checks.aarch64-darwin.treefmt: PASS
+checks.aarch64-darwin.pre-commit: PASS
+```
 
 
 ## Context and Orientation

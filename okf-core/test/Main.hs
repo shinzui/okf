@@ -89,9 +89,12 @@ main = do
         testIO "loadProfileFile accepts the frozen EP-3 cardinality schema" testLoadCardinalityCompatibilityFixture,
         testIO "loadProfileFile accepts the frozen EP-4 format schema" testLoadFormatCompatibilityFixture,
         testIO "loadProfileFile decodes bounded nested review rules" testLoadNestedReviewsProfileFixture,
+        testIO "loadProfileFile preserves the frozen bounded-nested schema" testLoadNestedCompatibilityFixture,
+        testIO "loadProfileFile decodes same-scope conditions" testLoadConditionalFieldsProfileFixture,
         testIO "loadProfileFile still accepts an okf 0.2.x descriptor" testLoadLegacyProfileFixture,
         testIO "profileFieldDescription finds required and recommended prose" testProfileFieldDescription,
         testIO "profile JSON encoding emits type, not type_" testProfileJsonShape,
+        test "field condition JSON encoding is stable" testFieldConditionJsonShape,
         test "field format JSON encoding is stable" testFieldFormatJsonShape,
         testIO "loadRegistry enumerates nested profiles and skips non-profiles" testRegistryEnumeratesProfiles,
         testIO "loadRegistry reports a bare profile as a root entry" testRegistryRootProfile,
@@ -114,6 +117,9 @@ main = do
         test "named formats validate parser boundaries, lists, and shapes" testNamedFormatValidation,
         test "compiled nested rules merge and reject impossible outer cardinality" testCompiledNestedRules,
         test "nested record validation reports indexed paths and strict recommendations" testNestedRecordValidation,
+        test "compileProfile rejects invalid same-scope field conditions" testConditionDefinitionErrors,
+        test "top-level conditions gate presence without gating value checks" testTopLevelConditionalPresence,
+        test "nested conditions use siblings and avoid cascading diagnostics" testNestedConditionalPresence,
         test "closed profiles reject unknown fields and isolate type fields" testClosedFieldValidation,
         test "profile rules apply to unknown concept types" testProfileRulesApplyToUnknownTypes,
         test "strict profile validation checks recommendations" testStrictProfileRecommendations,
@@ -136,7 +142,8 @@ main = do
         testIO "closed-field fixture reports missing and misspelled fields" testClosedFieldsFixture,
         testIO "cardinality fixture reports scalar and list mismatches" testCardinalityFixture,
         testIO "format fixture reports parser-backed mismatches" testFormatsFixture,
-        testIO "nested review fixture validates records with indexed diagnostics" testNestedReviewsFixture
+        testIO "nested review fixture validates records with indexed diagnostics" testNestedReviewsFixture,
+        testIO "conditional fixture covers ADR, PostgreSQL, and review scopes" testConditionalFieldsFixture
       ]
   unless (and results) exitFailure
 
@@ -906,6 +913,34 @@ testLoadNestedReviewsProfileFixture = do
           assertEqual ["notes"] (map (^. #field) recommended)
         _ -> Left "expected exactly one reviews rule with elementFields"
 
+testLoadNestedCompatibilityFixture :: IO (Either Text ())
+testLoadNestedCompatibilityFixture = do
+  path <- fixtureFilePath "profiles/nested-reviews-ep1.dhall"
+  result <- loadProfileFile path
+  pure $ case result of
+    Left err -> Left ("failed to load frozen nested profile: " <> err)
+    Right spec ->
+      case spec ^. #frontmatter . #required of
+        [rule] -> do
+          assertEqual Nothing (rule ^. #when)
+          case rule ^. #elementFields of
+            Just NestedRules {required = [nestedRule]} -> do
+              assertEqual "kind" (nestedRule ^. #field)
+              assertEqual Nothing (nestedRule ^. #when)
+            _ -> Left "expected the frozen nested rule to survive the compatibility upgrade"
+        _ -> Left "expected one frozen top-level rule"
+
+testLoadConditionalFieldsProfileFixture :: IO (Either Text ())
+testLoadConditionalFieldsProfileFixture = do
+  path <- fixtureFilePath "profiles/conditional-fields.dhall"
+  result <- loadProfileFile path
+  pure $ case result of
+    Left err -> Left ("failed to load conditional profile: " <> err)
+    Right spec -> do
+      assertEqual "conditional-fields" (spec ^. #name)
+      compiled <- firstShow (compileProfile spec)
+      assertEqual spec (compiledProfileSpec compiled)
+
 -- | The backwards-compatibility guarantee: a descriptor frozen in the okf 0.2.x
 -- shape — bare-string frontmatter keys, no descriptions anywhere — still loads,
 -- via the legacy fallback decoder, with every description absent.
@@ -970,7 +1005,8 @@ testProfileJsonShape = do
                                "allowedValues" .= ([] :: [Text]),
                                "cardinality" .= ("any" :: Text),
                                "format" .= (Nothing :: Maybe Text),
-                               "elementFields" .= (Nothing :: Maybe Value)
+                               "elementFields" .= (Nothing :: Maybe Value),
+                               "when" .= (Nothing :: Maybe FieldCondition)
                              ],
                            object
                              [ "field" .= ("title" :: Text),
@@ -978,7 +1014,8 @@ testProfileJsonShape = do
                                "allowedValues" .= ([] :: [Text]),
                                "cardinality" .= ("any" :: Text),
                                "format" .= (Nothing :: Maybe Text),
-                               "elementFields" .= (Nothing :: Maybe Value)
+                               "elementFields" .= (Nothing :: Maybe Value),
+                               "when" .= (Nothing :: Maybe FieldCondition)
                              ]
                          ],
                     "recommended"
@@ -989,7 +1026,8 @@ testProfileJsonShape = do
                                "allowedValues" .= ([] :: [Text]),
                                "cardinality" .= ("any" :: Text),
                                "format" .= (Nothing :: Maybe Text),
-                               "elementFields" .= (Nothing :: Maybe Value)
+                               "elementFields" .= (Nothing :: Maybe Value),
+                               "when" .= (Nothing :: Maybe FieldCondition)
                              ]
                          ]
                   ],
@@ -1024,6 +1062,12 @@ testFieldFormatJsonShape =
       object ["documentHandle" .= ("ADR" :: Text)]
     ]
     (map toJSON [Rfc3339Utc, Date, Uri, UriWithScheme "mori", DocumentHandle "ADR"])
+
+testFieldConditionJsonShape :: Either Text ()
+testFieldConditionJsonShape =
+  assertEqual
+    (object ["field" .= ("status" :: Text), "hasValue" .= (["superseded"] :: [Text])])
+    (toJSON (FieldCondition "status" ["superseded"]))
 
 -- | A registry record enumerates every field that decodes as a profile, one
 -- level down as well as at the top, sorted by export path. The @Profile@ schema
@@ -1150,7 +1194,7 @@ testFindConceptsByDocumentId = do
 -- | An undocumented frontmatter key: the validation tests care about names, not
 -- prose, and descriptions never affect validation.
 requiredField :: Text -> FieldRule
-requiredField key = FieldRule {field = key, description = Nothing, allowedValues = [], cardinality = Any, format = Nothing, elementFields = Nothing}
+requiredField key = FieldRule {field = key, description = Nothing, allowedValues = [], cardinality = Any, format = Nothing, elementFields = Nothing, when = Nothing}
 
 -- | A standalone profile literal so the validation tests do not depend on the
 -- Dhall fixture. One rule: PostgreSQL Table, fully constrained.
@@ -1221,8 +1265,8 @@ typeAwareProfileSpec =
       okfVersion = "0.1",
       frontmatter =
         FrontmatterRules
-          { required = [FieldRule "type" Nothing [] Any Nothing Nothing, FieldRule "title" (Just "Global title.") [] Any Nothing Nothing],
-            recommended = [FieldRule "owner" (Just "Profile-level owner.") [] Any Nothing Nothing]
+          { required = [FieldRule "type" Nothing [] Any Nothing Nothing Nothing, FieldRule "title" (Just "Global title.") [] Any Nothing Nothing Nothing],
+            recommended = [FieldRule "owner" (Just "Profile-level owner.") [] Any Nothing Nothing Nothing]
           },
       allowUnknownTypes = True,
       allowUnknownFields = True,
@@ -1233,8 +1277,8 @@ typeAwareProfileSpec =
               description = Nothing,
               frontmatter =
                 FrontmatterRules
-                  { required = [FieldRule "owner" (Just "Responsible person.") [] Any Nothing Nothing],
-                    recommended = [FieldRule "reviewer" (Just "Second pair of eyes.") [] Any Nothing Nothing, FieldRule "title" (Just "Type title.") [] Any Nothing Nothing]
+                  { required = [FieldRule "owner" (Just "Responsible person.") [] Any Nothing Nothing Nothing],
+                    recommended = [FieldRule "reviewer" (Just "Second pair of eyes.") [] Any Nothing Nothing Nothing, FieldRule "title" (Just "Type title.") [] Any Nothing Nothing Nothing]
                   },
               pathPattern = Nothing,
               resourceScheme = Nothing,
@@ -1247,7 +1291,7 @@ typeAwareProfileSpec =
 
 testCompileProfileDefinitionErrors :: Either Text ()
 testCompileProfileDefinitionErrors = do
-  let duplicateField = FieldRule "title" Nothing [] Any Nothing Nothing
+  let duplicateField = FieldRule "title" Nothing [] Any Nothing Nothing Nothing
       invalid =
         typeAwareProfileSpec
           { frontmatter =
@@ -1276,7 +1320,7 @@ testCompiledProfileMerge = do
   concept <- profileConcept "owned/one" [("type", String "Owned Concept")] "# One\n"
   cid <- parseTestConceptId "owned/one"
   assertEqual
-    [MissingProfileField cid "owner", MissingProfileField cid "title"]
+    [MissingProfileField cid "owner" Nothing, MissingProfileField cid "title" Nothing]
     (validateProfile PermissiveConformance compiled [concept])
 
 vocabularyProfileSpec :: ProfileSpec
@@ -1284,13 +1328,13 @@ vocabularyProfileSpec =
   typeAwareProfileSpec
     { frontmatter =
         FrontmatterRules
-          { required = [FieldRule "type" Nothing [] Any Nothing Nothing],
-            recommended = [FieldRule "status" Nothing ["draft", "approved", "approved"] Any Nothing Nothing]
+          { required = [FieldRule "type" Nothing [] Any Nothing Nothing Nothing],
+            recommended = [FieldRule "status" Nothing ["draft", "approved", "approved"] Any Nothing Nothing Nothing]
           },
       types =
         [ withTypeFrontmatter
             FrontmatterRules
-              { required = [FieldRule "status" Nothing ["approved", "archived"] Any Nothing Nothing],
+              { required = [FieldRule "status" Nothing ["approved", "archived"] Any Nothing Nothing Nothing],
                 recommended = []
               }
             (firstTypeRule typeAwareProfileSpec)
@@ -1316,7 +1360,7 @@ testUnsatisfiableVocabulary = do
           { types =
               [ withTypeFrontmatter
                   FrontmatterRules
-                    { required = [FieldRule "status" Nothing ["closed"] Any Nothing Nothing],
+                    { required = [FieldRule "status" Nothing ["closed"] Any Nothing Nothing Nothing],
                       recommended = []
                     }
                   (firstTypeRule vocabularyProfileSpec)
@@ -1330,12 +1374,12 @@ testCompiledCardinality :: Either Text ()
 testCompiledCardinality = do
   let profileRules =
         FrontmatterRules
-          { required = [FieldRule "type" Nothing [] Any Nothing Nothing],
-            recommended = [FieldRule "status" Nothing [] Scalar Nothing Nothing]
+          { required = [FieldRule "type" Nothing [] Any Nothing Nothing Nothing],
+            recommended = [FieldRule "status" Nothing [] Scalar Nothing Nothing Nothing]
           }
       typeRules cardinality =
         FrontmatterRules
-          { required = [FieldRule "status" Nothing [] cardinality Nothing Nothing],
+          { required = [FieldRule "status" Nothing [] cardinality Nothing Nothing Nothing],
             recommended = []
           }
       baseType = firstTypeRule typeAwareProfileSpec
@@ -1363,8 +1407,8 @@ testVocabularyValidation = do
         vocabularyProfileSpec
           { frontmatter =
               FrontmatterRules
-                { required = [FieldRule "type" Nothing [] Any Nothing Nothing],
-                  recommended = [FieldRule "status" Nothing ["draft", "approved"] Any Nothing Nothing]
+                { required = [FieldRule "type" Nothing [] Any Nothing Nothing Nothing],
+                  recommended = [FieldRule "status" Nothing ["draft", "approved"] Any Nothing Nothing Nothing]
                 },
             types = []
           }
@@ -1409,9 +1453,9 @@ testCardinalityValidation = do
     check List actual >>= assertEqual (mismatch List actual)
   check Any (String "one") >>= assertEqual []
   check Any textList >>= assertEqual []
-  check Any (Bool False) >>= assertEqual [MissingProfileField cid "value"]
-  check Scalar (String "   ") >>= assertEqual [MissingProfileField cid "value"]
-  check List emptyList >>= assertEqual [MissingProfileField cid "value"]
+  check Any (Bool False) >>= assertEqual [MissingProfileField cid "value" Nothing]
+  check Scalar (String "   ") >>= assertEqual [MissingProfileField cid "value" Nothing]
+  check List emptyList >>= assertEqual [MissingProfileField cid "value" Nothing]
   optionalCompiled <- firstShow (compileProfile (singleCardinalityProfile False Scalar []))
   optionalConcept <- profileConcept "cardinality" [("type", String "Extension"), ("value", textList)] "# Optional\n"
   assertEqual
@@ -1441,13 +1485,13 @@ testCompiledFieldFormats = do
         typeAwareProfileSpec
           { frontmatter =
               FrontmatterRules
-                { required = [FieldRule "type" Nothing [] Any Nothing Nothing, FieldRule "homepage" Nothing [] Any (Just profileFormat) Nothing],
+                { required = [FieldRule "type" Nothing [] Any Nothing Nothing Nothing, FieldRule "homepage" Nothing [] Any (Just profileFormat) Nothing Nothing],
                   recommended = []
                 },
             types =
               [ withTypeFrontmatter
                   FrontmatterRules
-                    { required = [FieldRule "homepage" Nothing [] Any (Just typeFormat) Nothing],
+                    { required = [FieldRule "homepage" Nothing [] Any (Just typeFormat) Nothing Nothing],
                       recommended = []
                     }
                   baseType
@@ -1472,9 +1516,9 @@ testInvalidFormatParameters = do
           { frontmatter =
               FrontmatterRules
                 { required =
-                    [ FieldRule "type" Nothing [] Any Nothing Nothing,
-                      FieldRule "handle" Nothing [] Any (Just (DocumentHandle "1ADR")) Nothing,
-                      FieldRule "source" Nothing [] Any (Just (UriWithScheme "https_")) Nothing
+                    [ FieldRule "type" Nothing [] Any Nothing Nothing Nothing,
+                      FieldRule "handle" Nothing [] Any (Just (DocumentHandle "1ADR")) Nothing Nothing,
+                      FieldRule "source" Nothing [] Any (Just (UriWithScheme "https_")) Nothing Nothing
                     ],
                   recommended = []
                 },
@@ -1532,8 +1576,8 @@ singleFormatProfile cardinality fieldFormat =
   typeAwareProfileSpec
     { frontmatter =
         FrontmatterRules
-          { required = [FieldRule "type" Nothing [] Any Nothing Nothing],
-            recommended = [FieldRule "value" Nothing [] cardinality (Just fieldFormat) Nothing]
+          { required = [FieldRule "type" Nothing [] Any Nothing Nothing Nothing],
+            recommended = [FieldRule "value" Nothing [] cardinality (Just fieldFormat) Nothing Nothing]
           },
       allowUnknownTypes = True,
       types = []
@@ -1544,27 +1588,27 @@ singleCardinalityProfile isRequired cardinality allowed =
   typeAwareProfileSpec
     { frontmatter =
         FrontmatterRules
-          { required = [FieldRule "type" Nothing [] Any Nothing Nothing] <> [rule | isRequired],
+          { required = [FieldRule "type" Nothing [] Any Nothing Nothing Nothing] <> [rule | isRequired],
             recommended = [rule | not isRequired]
           },
       allowUnknownTypes = True,
       types = []
     }
   where
-    rule = FieldRule "value" Nothing allowed cardinality Nothing Nothing
+    rule = FieldRule "value" Nothing allowed cardinality Nothing Nothing Nothing
 
 testCompiledNestedRules :: Either Text ()
 testCompiledNestedRules = do
   let profileRules =
         NestedRules
-          { required = [NestedFieldRule "kind" Nothing ["decision", "implementation"] Any Nothing],
-            recommended = [NestedFieldRule "notes" Nothing [] Scalar Nothing]
+          { required = [NestedFieldRule "kind" Nothing ["decision", "implementation"] Any Nothing Nothing],
+            recommended = [NestedFieldRule "notes" Nothing [] Scalar Nothing Nothing]
           }
       typeRules =
         NestedRules
           { required =
-              [ NestedFieldRule "kind" Nothing ["implementation", "operations"] Any Nothing,
-                NestedFieldRule "outcome" Nothing ["approved", "rejected"] Any Nothing
+              [ NestedFieldRule "kind" Nothing ["implementation", "operations"] Any Nothing Nothing,
+                NestedFieldRule "outcome" Nothing ["approved", "rejected"] Any Nothing Nothing
               ],
             recommended = []
           }
@@ -1632,7 +1676,7 @@ testNestedRecordValidation = do
   let permissiveExpected =
         [ NestedElementNotRecord cid (FieldPath (FieldName "reviews" :| [ArrayIndex 1])) (String "not-a-record"),
           CardinalityMismatch cid (nestedTestPath 2 "context") Scalar (toJSON (["wrong"] :: [Text])),
-          MissingNestedProfileField cid (nestedTestPath 2 "outcome"),
+          MissingNestedProfileField cid (nestedTestPath 2 "outcome") Nothing,
           ValueFormatMismatch cid (nestedTestPath 2 "reviewed_at") Rfc3339Utc (String "2026-13-45T99:99:99Z"),
           ValueNotInVocabulary cid (nestedTestPath 2 "scope") reviewScopes (String "invalid")
         ]
@@ -1640,8 +1684,8 @@ testNestedRecordValidation = do
   assertEqual
     [ NestedElementNotRecord cid (FieldPath (FieldName "reviews" :| [ArrayIndex 1])) (String "not-a-record"),
       CardinalityMismatch cid (nestedTestPath 2 "context") Scalar (toJSON (["wrong"] :: [Text])),
-      MissingRecommendedNestedProfileField cid (nestedTestPath 2 "notes"),
-      MissingNestedProfileField cid (nestedTestPath 2 "outcome"),
+      MissingRecommendedNestedProfileField cid (nestedTestPath 2 "notes") Nothing,
+      MissingNestedProfileField cid (nestedTestPath 2 "outcome") Nothing,
       ValueFormatMismatch cid (nestedTestPath 2 "reviewed_at") Rfc3339Utc (String "2026-13-45T99:99:99Z"),
       ValueNotInVocabulary cid (nestedTestPath 2 "scope") reviewScopes (String "invalid")
     ]
@@ -1657,7 +1701,7 @@ nestedProfileWithRules outerCardinality profileNested typeNested =
         FrontmatterRules
           { required =
               [ requiredField "type",
-                FieldRule "reviews" Nothing [] outerCardinality Nothing (Just profileNested)
+                FieldRule "reviews" Nothing [] outerCardinality Nothing (Just profileNested) Nothing
               ],
             recommended = []
           },
@@ -1670,7 +1714,7 @@ nestedProfileWithRules outerCardinality profileNested typeNested =
               description = Nothing,
               frontmatter =
                 FrontmatterRules
-                  { required = maybe [] (\rules -> [FieldRule "reviews" Nothing [] Any Nothing (Just rules)]) typeNested,
+                  { required = maybe [] (\rules -> [FieldRule "reviews" Nothing [] Any Nothing (Just rules) Nothing]) typeNested,
                     recommended = []
                   },
               pathPattern = Nothing,
@@ -1689,15 +1733,15 @@ nestedReviewProfileSpec =
     nestedRules =
       NestedRules
         { required =
-            [ NestedFieldRule "kind" Nothing ["human", "model"] Any Nothing,
-              NestedFieldRule "reviewer" Nothing [] Scalar Nothing,
-              NestedFieldRule "reviewed_at" Nothing [] Any (Just Rfc3339Utc),
-              NestedFieldRule "document_timestamp" Nothing [] Any (Just Rfc3339Utc),
-              NestedFieldRule "scope" Nothing reviewScopes Any Nothing,
-              NestedFieldRule "outcome" Nothing ["approved", "changes-requested", "commented"] Any Nothing,
-              NestedFieldRule "context" Nothing [] Scalar Nothing
+            [ NestedFieldRule "kind" Nothing ["human", "model"] Any Nothing Nothing,
+              NestedFieldRule "reviewer" Nothing [] Scalar Nothing Nothing,
+              NestedFieldRule "reviewed_at" Nothing [] Any (Just Rfc3339Utc) Nothing,
+              NestedFieldRule "document_timestamp" Nothing [] Any (Just Rfc3339Utc) Nothing,
+              NestedFieldRule "scope" Nothing reviewScopes Any Nothing Nothing,
+              NestedFieldRule "outcome" Nothing ["approved", "changes-requested", "commented"] Any Nothing Nothing,
+              NestedFieldRule "context" Nothing [] Scalar Nothing Nothing
             ],
-          recommended = [NestedFieldRule "notes" Nothing [] Scalar Nothing]
+          recommended = [NestedFieldRule "notes" Nothing [] Scalar Nothing Nothing]
         }
 
 nestedTestPath :: Int -> Text -> FieldPath
@@ -1706,6 +1750,147 @@ nestedTestPath elementIndex key =
 
 reviewScopes :: [Text]
 reviewScopes = ["content", "technical-accuracy", "editorial", "catalog-metadata", "content-and-metadata"]
+
+testConditionDefinitionErrors :: Either Text ()
+testConditionDefinitionErrors = do
+  let source key values sourceCardinality =
+        FieldRule key Nothing values sourceCardinality Nothing Nothing Nothing
+      target key sourceKey values =
+        FieldRule key Nothing [] Any Nothing Nothing (Just (FieldCondition sourceKey values))
+      compileWith rules =
+        compileProfile
+          typeAwareProfileSpec
+            { frontmatter = FrontmatterRules {required = rules, recommended = []},
+              allowUnknownTypes = True,
+              types = []
+            }
+      targetPath key = fieldPath key
+  assertEqual
+    (Left (EmptyConditionValues Nothing (targetPath "target") (targetPath "status") :| []))
+    (compileWith [source "status" ["active"] Scalar, target "target" "status" []])
+  assertEqual
+    (Left (ConditionFieldNotDeclared Nothing (targetPath "target") (targetPath "missing") :| []))
+    (compileWith [target "target" "missing" ["active"]])
+  assertEqual
+    (Left (ConditionFieldNotScalar Nothing (targetPath "target") (targetPath "status") List :| []))
+    (compileWith [source "status" ["active"] List, target "target" "status" ["active"]])
+  assertEqual
+    (Left (ConditionFieldOpenVocabulary Nothing (targetPath "target") (targetPath "status") :| []))
+    (compileWith [source "status" [] Scalar, target "target" "status" ["active"]])
+  assertEqual
+    (Left (ConditionFieldHasUnreachableValues Nothing (targetPath "target") (targetPath "status") ["superseded"] ["active"] :| []))
+    (compileWith [source "status" ["active"] Scalar, target "target" "status" ["superseded"]])
+  assertEqual
+    (Left (SelfConditionalField Nothing (targetPath "status") :| []))
+    (compileWith [FieldRule "status" Nothing ["active"] Scalar Nothing Nothing (Just (FieldCondition "status" ["active"]))])
+  let nestedCrossScope =
+        NestedRules
+          { required =
+              [ NestedFieldRule "kind" Nothing ["human", "model"] Scalar Nothing Nothing,
+                NestedFieldRule "provider" Nothing [] Scalar Nothing (Just (FieldCondition "status" ["active"]))
+              ],
+            recommended = []
+          }
+      crossScopeProfile =
+        typeAwareProfileSpec
+          { frontmatter =
+              FrontmatterRules
+                { required =
+                    [ source "status" ["active"] Scalar,
+                      FieldRule "reviews" Nothing [] List Nothing (Just nestedCrossScope) Nothing
+                    ],
+                  recommended = []
+                },
+            allowUnknownTypes = True,
+            types = []
+          }
+  assertEqual
+    (Left (ConditionFieldNotDeclared Nothing (nestedDefinitionTestPath "reviews" "provider") (nestedDefinitionTestPath "reviews" "status") :| []))
+    (compileProfile crossScopeProfile)
+  where
+    nestedDefinitionTestPath parent child =
+      FieldPath (FieldName parent :| [FieldName child])
+
+testTopLevelConditionalPresence :: Either Text ()
+testTopLevelConditionalPresence = do
+  let statusRule = FieldRule "status" Nothing ["active", "superseded"] Scalar Nothing Nothing Nothing
+      recommendedTarget =
+        FieldRule "supersededBy" Nothing ["ADR-1"] Scalar Nothing Nothing (Just (FieldCondition "status" ["active"]))
+      requiredTarget =
+        FieldRule "supersededBy" Nothing ["ADR-1"] Scalar Nothing Nothing (Just (FieldCondition "status" ["superseded"]))
+      base =
+        typeAwareProfileSpec
+          { frontmatter = FrontmatterRules {required = [requiredField "type", statusRule], recommended = [recommendedTarget]},
+            allowUnknownTypes = True,
+            types =
+              [ withTypeFrontmatter
+                  FrontmatterRules {required = [requiredTarget], recommended = []}
+                  (firstTypeRule typeAwareProfileSpec)
+              ]
+          }
+  compiled <- firstShow (compileProfile base)
+  active <- profileConcept "active" [("type", String "Owned Concept"), ("status", String "active")] "# Active\n"
+  superseded <- profileConcept "superseded" [("type", String "Owned Concept"), ("status", String "superseded")] "# Superseded\n"
+  invalidPresent <- profileConcept "invalid-present" [("type", String "Owned Concept"), ("status", String "active"), ("supersededBy", String "ADR-2")] "# Invalid\n"
+  missingSource <- profileConcept "missing-source" [("type", String "Owned Concept")] "# Missing source\n"
+  invalidSource <- profileConcept "invalid-source" [("type", String "Owned Concept"), ("status", String "unknown")] "# Invalid source\n"
+  wrongShapeSource <- profileConcept "wrong-shape-source" [("type", String "Owned Concept"), ("status", toJSON (["active"] :: [Text]))] "# Wrong shape\n"
+  activeId <- parseTestConceptId "active"
+  supersededId <- parseTestConceptId "superseded"
+  invalidId <- parseTestConceptId "invalid-present"
+  missingSourceId <- parseTestConceptId "missing-source"
+  invalidSourceId <- parseTestConceptId "invalid-source"
+  wrongShapeSourceId <- parseTestConceptId "wrong-shape-source"
+  assertEqual [] (validateProfile PermissiveConformance compiled [active])
+  assertEqual
+    [MissingRecommendedProfileField activeId "supersededBy" (Just (FieldCondition "status" ["active"]))]
+    (validateProfile StrictAuthoring compiled [active])
+  assertEqual
+    [MissingProfileField supersededId "supersededBy" (Just (FieldCondition "status" ["superseded"]))]
+    (validateProfile PermissiveConformance compiled [superseded])
+  assertEqual
+    [ValueNotInVocabulary invalidId (fieldPath "supersededBy") ["ADR-1"] (String "ADR-2")]
+    (validateProfile PermissiveConformance compiled [invalidPresent])
+  assertEqual
+    [MissingProfileField missingSourceId "status" Nothing]
+    (validateProfile PermissiveConformance compiled [missingSource])
+  assertEqual
+    [ValueNotInVocabulary invalidSourceId (fieldPath "status") ["active", "superseded"] (String "unknown")]
+    (validateProfile PermissiveConformance compiled [invalidSource])
+  assertEqual
+    [CardinalityMismatch wrongShapeSourceId (fieldPath "status") Scalar (toJSON (["active"] :: [Text]))]
+    (validateProfile PermissiveConformance compiled [wrongShapeSource])
+
+testNestedConditionalPresence :: Either Text ()
+testNestedConditionalPresence = do
+  let nestedRules =
+        NestedRules
+          { required =
+              [ NestedFieldRule "kind" Nothing ["human", "model"] Scalar Nothing Nothing,
+                NestedFieldRule "provider" Nothing [] Scalar Nothing (Just (FieldCondition "kind" ["model"]))
+              ],
+            recommended =
+              [NestedFieldRule "notes" Nothing [] Scalar Nothing (Just (FieldCondition "kind" ["human"]))]
+          }
+      spec = nestedProfileWithRules List nestedRules Nothing
+  compiled <- firstShow (compileProfile spec)
+  concept <-
+    profileConcept
+      "conditional-reviews"
+      [ ("type", String "Reviewed Concept"),
+        ("reviews", toJSON [object ["kind" .= ("model" :: Text)], object ["kind" .= ("human" :: Text)], object []])
+      ]
+      "# Conditional reviews\n"
+  cid <- parseTestConceptId "conditional-reviews"
+  assertEqual
+    [MissingNestedProfileField cid (nestedTestPath 0 "provider") (Just (FieldCondition "kind" ["model"])), MissingNestedProfileField cid (nestedTestPath 2 "kind") Nothing]
+    (validateProfile PermissiveConformance compiled [concept])
+  assertEqual
+    [ MissingNestedProfileField cid (nestedTestPath 0 "provider") (Just (FieldCondition "kind" ["model"])),
+      MissingRecommendedNestedProfileField cid (nestedTestPath 1 "notes") (Just (FieldCondition "kind" ["human"])),
+      MissingNestedProfileField cid (nestedTestPath 2 "kind") Nothing
+    ]
+    (validateProfile StrictAuthoring compiled [concept])
 
 testClosedFieldValidation :: Either Text ()
 testClosedFieldValidation = do
@@ -1743,7 +1928,7 @@ testClosedFieldValidation = do
       "# Typo\n"
   cid <- parseTestConceptId "owned/typo"
   assertEqual
-    [ MissingProfileField cid "status",
+    [ MissingProfileField cid "status" Nothing,
       FieldNotInProfile cid "reviewer",
       FieldNotInProfile cid "stauts"
     ]
@@ -1751,7 +1936,7 @@ testClosedFieldValidation = do
   let reopened = closed {allowUnknownFields = True}
   reopenedCompiled <- firstShow (compileProfile reopened)
   assertEqual
-    [MissingProfileField cid "status"]
+    [MissingProfileField cid "status" Nothing]
     (validateProfile PermissiveConformance reopenedCompiled [typo])
 
 firstTypeRule :: ProfileSpec -> TypeRule
@@ -1812,7 +1997,7 @@ testProfileRulesApplyToUnknownTypes = do
   concept <- profileConcept "extensions/one" [("type", String "Extension Concept")] "# One\n"
   cid <- parseTestConceptId "extensions/one"
   assertEqual
-    [MissingProfileField cid "title"]
+    [MissingProfileField cid "title" Nothing]
     (validateProfile PermissiveConformance compiled [concept])
 
 testStrictProfileRecommendations :: Either Text ()
@@ -1826,7 +2011,7 @@ testStrictProfileRecommendations = do
   cid <- parseTestConceptId "owned/one"
   assertEqual [] (validateProfile PermissiveConformance compiled [concept])
   assertEqual
-    [MissingRecommendedProfileField cid "reviewer"]
+    [MissingRecommendedProfileField cid "reviewer" Nothing]
     (validateProfile StrictAuthoring compiled [concept])
 
 -- | Build an in-memory concept from a raw ID, frontmatter pairs, and a body.
@@ -1867,7 +2052,7 @@ testProfileUnknownType = do
       schemaSectionBody
   cid <- parseTestConceptId "schemas/sales/tables/bad"
   assertEqual
-    [TypeNotInProfile cid "pg table", MissingProfileField cid "title"]
+    [TypeNotInProfile cid "pg table", MissingProfileField cid "title" Nothing]
     (validateTestProfile testProfileSpec [concept])
 
 testProfileMissingField :: Either Text ()
@@ -1878,7 +2063,7 @@ testProfileMissingField = do
       [("type", String "PostgreSQL Table"), ("resource", String "postgresql://x")]
       schemaSectionBody
   cid <- parseTestConceptId "schemas/sales/tables/orders"
-  assertEqual [MissingProfileField cid "title"] (validateTestProfile testProfileSpec [concept])
+  assertEqual [MissingProfileField cid "title" Nothing] (validateTestProfile testProfileSpec [concept])
 
 testProfileResourceMismatch :: Either Text ()
 testProfileResourceMismatch = do
@@ -2023,7 +2208,7 @@ testProfileDeviationsFixture = do
       badId <- parseTestConceptId "schemas/sales/tables/bad"
       ordersId <- parseTestConceptId "schemas/sales/tables/orders"
       assertEqual
-        [TypeNotInProfile badId "pg table", MissingProfileField ordersId "title"]
+        [TypeNotInProfile badId "pg table", MissingProfileField ordersId "title" Nothing]
         (validateTestProfile spec concepts)
 
 testDocumentIdDeviationsFixture :: IO (Either Text ())
@@ -2059,7 +2244,7 @@ testTypeAwareProfileFixture = do
       ownedId <- parseTestConceptId "owned"
       assertEqual [] (validateProfile PermissiveConformance compiled concepts)
       assertEqual
-        [MissingRecommendedProfileField ownedId "reviewer"]
+        [MissingRecommendedProfileField ownedId "reviewer" Nothing]
         (validateProfile StrictAuthoring compiled concepts)
 
 testClosedFieldsFixture :: IO (Either Text ())
@@ -2074,7 +2259,7 @@ testClosedFieldsFixture = do
       compiled <- firstShow (compileProfile spec)
       typoId <- parseTestConceptId "requests/typo"
       assertEqual
-        [MissingProfileField typoId "status", FieldNotInProfile typoId "stauts"]
+        [MissingProfileField typoId "status" Nothing, FieldNotInProfile typoId "stauts"]
         (validateProfile PermissiveConformance compiled concepts)
 
 testCardinalityFixture :: IO (Either Text ())
@@ -2128,7 +2313,7 @@ testNestedReviewsFixture = do
       let permissiveExpected =
             [ NestedElementNotRecord badId (FieldPath (FieldName "reviews" :| [ArrayIndex 1])) (String "not-a-record"),
               CardinalityMismatch badId (nestedTestPath 2 "context") Scalar (toJSON (["wrong"] :: [Text])),
-              MissingNestedProfileField badId (nestedTestPath 2 "outcome"),
+              MissingNestedProfileField badId (nestedTestPath 2 "outcome") Nothing,
               ValueFormatMismatch badId (nestedTestPath 2 "reviewed_at") Rfc3339Utc (String "2026-13-45T99:99:99Z"),
               ValueNotInVocabulary badId (nestedTestPath 2 "scope") reviewScopes (String "invalid")
             ]
@@ -2136,12 +2321,64 @@ testNestedReviewsFixture = do
       assertEqual
         [ NestedElementNotRecord badId (FieldPath (FieldName "reviews" :| [ArrayIndex 1])) (String "not-a-record"),
           CardinalityMismatch badId (nestedTestPath 2 "context") Scalar (toJSON (["wrong"] :: [Text])),
-          MissingRecommendedNestedProfileField badId (nestedTestPath 2 "notes"),
-          MissingNestedProfileField badId (nestedTestPath 2 "outcome"),
+          MissingRecommendedNestedProfileField badId (nestedTestPath 2 "notes") Nothing,
+          MissingNestedProfileField badId (nestedTestPath 2 "outcome") Nothing,
           ValueFormatMismatch badId (nestedTestPath 2 "reviewed_at") Rfc3339Utc (String "2026-13-45T99:99:99Z"),
           ValueNotInVocabulary badId (nestedTestPath 2 "scope") reviewScopes (String "invalid")
         ]
         (validateProfile StrictAuthoring compiled concepts)
+
+testConditionalFieldsFixture :: IO (Either Text ())
+testConditionalFieldsFixture = do
+  descriptorPath <- fixtureFilePath "profiles/conditional-fields.dhall"
+  invalidDescriptorPath <- fixtureFilePath "profiles/conditional-fields-invalid.dhall"
+  loaded <- loadProfileFile descriptorPath
+  invalidLoaded <- loadProfileFile invalidDescriptorPath
+  root <- fixturePath "profile-conditions"
+  concepts <- readBundle root
+  pure $ do
+    spec <- first ("failed to load conditional profile: " <>) loaded
+    compiled <- firstShow (compileProfile spec)
+    invalidSpec <- first ("failed to load invalid conditional profile: " <>) invalidLoaded
+    decisionsMissingStatus <- parseTestConceptId "decisions/missing-status"
+    decisionsSuperseded <- parseTestConceptId "decisions/superseded"
+    postgresqlOperational <- parseTestConceptId "postgresql/operational"
+    postgresqlProjection <- parseTestConceptId "postgresql/projection"
+    reviewsMixed <- parseTestConceptId "reviews/mixed"
+    assertEqual
+      ( Left
+          ( ConditionFieldHasUnreachableValues
+              Nothing
+              (fieldPath "supersededBy")
+              (fieldPath "status")
+              ["superseded"]
+              ["active"]
+              :| []
+          )
+      )
+      (compileProfile invalidSpec)
+    assertEqual
+      [ MissingProfileField decisionsMissingStatus "status" Nothing,
+        MissingProfileField decisionsSuperseded "supersededBy" (Just (FieldCondition "status" ["superseded"])),
+        MissingProfileField postgresqlProjection "sourceQuery" (Just (FieldCondition "derivationKind" ["projection"])),
+        MissingNestedProfileField reviewsMixed (nestedReviewPath 0 "effort") (Just (FieldCondition "kind" ["model"])),
+        MissingNestedProfileField reviewsMixed (nestedReviewPath 0 "model") (Just (FieldCondition "kind" ["model"])),
+        MissingNestedProfileField reviewsMixed (nestedReviewPath 0 "provider") (Just (FieldCondition "kind" ["model"]))
+      ]
+      (validateProfile PermissiveConformance compiled concepts)
+    assertEqual
+      [ MissingProfileField decisionsMissingStatus "status" Nothing,
+        MissingProfileField decisionsSuperseded "supersededBy" (Just (FieldCondition "status" ["superseded"])),
+        MissingRecommendedProfileField postgresqlOperational "runbook" (Just (FieldCondition "derivationKind" ["operational"])),
+        MissingProfileField postgresqlProjection "sourceQuery" (Just (FieldCondition "derivationKind" ["projection"])),
+        MissingNestedProfileField reviewsMixed (nestedReviewPath 0 "effort") (Just (FieldCondition "kind" ["model"])),
+        MissingNestedProfileField reviewsMixed (nestedReviewPath 0 "model") (Just (FieldCondition "kind" ["model"])),
+        MissingNestedProfileField reviewsMixed (nestedReviewPath 0 "provider") (Just (FieldCondition "kind" ["model"]))
+      ]
+      (validateProfile StrictAuthoring compiled concepts)
+  where
+    nestedReviewPath elementIndex key =
+      FieldPath (FieldName "reviews" :| [ArrayIndex elementIndex, FieldName key])
 
 validateTestProfile :: ProfileSpec -> [Concept] -> [ProfileViolation]
 validateTestProfile spec concepts =

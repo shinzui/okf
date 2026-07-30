@@ -85,8 +85,9 @@ TYPE-AWARE FRONTMATTER
 
   Each type rule may add its own required and recommended frontmatter fields.
   Profile-wide rules apply to every concept; a matching type rule adds to them.
-  Required wins over recommended when both scopes mention a key. Unknown types
-  still receive profile-wide rules.
+  Value constraints merge by key, while presence declarations remain separate;
+  an applicable required clause wins over a strict recommendation. Unknown
+  types still receive profile-wide rules.
 
   `okf profile show` prints `frontmatter.required` and
   `frontmatter.recommended` beneath each type. New descriptors should use
@@ -180,6 +181,31 @@ NESTED RECORD FIELDS
 
   Extra keys inside a record remain allowed. Nested field-name closure and a
   second nested level are not part of this schema.
+
+CONDITIONAL FIELD PRESENCE
+
+  FieldRule and NestedFieldRule may set `when = Some { field, hasValue }` so a
+  required or recommended field applies only when a sibling scalar text field
+  has one of the listed values. Top-level rules see top-level siblings; nested
+  rules see only siblings in the same list element. There is no cross-scope
+  capture.
+
+  The source must be explicitly Scalar and have a non-empty allowedValues
+  vocabulary. hasValue must be non-empty and a subset of that vocabulary. Empty,
+  self-referential, undeclared, open, non-scalar, and unreachable conditions are
+  hard profile-definition errors before any bundle is read.
+
+    FieldRule::{
+    , field = "supersededBy"
+    , when = Some { field = "status", hasValue = [ "superseded" ] }
+    }
+
+  A missing, wrong-shape, or out-of-vocabulary source makes the condition false,
+  avoiding a second target-field diagnostic. When the target is present, its
+  vocabulary, cardinality, and format are checked regardless of the condition.
+  Recommended conditions are evaluated only under --strict.
+
+    profile: decisions/old: missing profile-required field: supersededBy (when status is superseded)
 
   A registry reference may be a path to a Dhall file, a directory holding
   package.dhall, or a Dhall expression such as a hash-pinned URL. Without

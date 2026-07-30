@@ -62,7 +62,7 @@ ADR for local-reference versus external-resolution ownership.
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
 | EP-1 | Validate one-level nested profile records | `docs/plans/29-validate-one-level-nested-profile-records.md` | None | None | Complete |
-| EP-2 | Enforce same-scope conditional field requirements | `docs/plans/30-enforce-same-scope-conditional-field-requirements.md` | EP-1 | None | Not Started |
+| EP-2 | Enforce same-scope conditional field requirements | `docs/plans/30-enforce-same-scope-conditional-field-requirements.md` | EP-1 | None | In Progress |
 | EP-3 | Validate profile-declared document references | `docs/plans/31-validate-profile-declared-document-references.md` | None | EP-1 | Not Started |
 
 Status values: Not Started, In Progress, Complete, Cancelled.

@@ -17,6 +17,7 @@
 , TypeRule = ./TypeRule.dhall
 , FrontmatterRules = ./FrontmatterRules.dhall
 , FieldRule = ./FieldRule.dhall
+, FieldCondition = ./FieldCondition.dhall
 , NestedRules = ./NestedRules.dhall
 , NestedFieldRule = ./NestedFieldRule.dhall
 , Cardinality = ./Cardinality.dhall

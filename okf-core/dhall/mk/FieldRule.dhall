@@ -20,6 +20,8 @@ let FieldFormat = ../FieldFormat.dhall
 
 let NestedRules = ../NestedRules.dhall
 
+let FieldCondition = ../FieldCondition.dhall
+
 in  { plain = \(field : Text) -> FieldRule::{ field }
     , documented =
         \(field : Text) ->
@@ -55,4 +57,8 @@ in  { plain = \(field : Text) -> FieldRule::{ field }
           , cardinality = Cardinality.List
           , elementFields = Some elementFields
           }
+    , conditional =
+        \(rule : FieldRule.Type) ->
+        \(condition : FieldCondition) ->
+          rule with when = Some condition
     }

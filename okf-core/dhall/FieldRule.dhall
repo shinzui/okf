@@ -14,10 +14,13 @@ let FieldFormat = ./FieldFormat.dhall
 
 let NestedRules = ./NestedRules.dhall
 
+let FieldCondition = ./FieldCondition.dhall
+
 in  { field : Text
     , description : Optional Text
     , allowedValues : List Text
     , cardinality : Cardinality
     , format : Optional FieldFormat
     , elementFields : Optional NestedRules
+    , when : Optional FieldCondition
     }
