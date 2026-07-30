@@ -62,7 +62,7 @@ ADR for local-reference versus external-resolution ownership.
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
 | EP-1 | Validate one-level nested profile records | `docs/plans/29-validate-one-level-nested-profile-records.md` | None | None | Complete |
-| EP-2 | Enforce same-scope conditional field requirements | `docs/plans/30-enforce-same-scope-conditional-field-requirements.md` | EP-1 | None | In Progress |
+| EP-2 | Enforce same-scope conditional field requirements | `docs/plans/30-enforce-same-scope-conditional-field-requirements.md` | EP-1 | None | Complete |
 | EP-3 | Validate profile-declared document references | `docs/plans/31-validate-profile-declared-document-references.md` | None | EP-1 | Not Started |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
@@ -115,8 +115,8 @@ and the milestone. This section provides an at-a-glance view of the entire initi
 - [x] Initiative gate: complete every child of MasterPlan 4.
 - [x] EP-1: publish a non-recursive one-level nested-rule schema and authoring helpers.
 - [x] EP-1: validate nested record presence, shape, cardinality, vocabulary, and format.
-- [ ] EP-2: compile and reject dead or cross-scope conditions.
-- [ ] EP-2: enforce top-level and nested sibling conditions in permissive and strict modes.
+- [x] EP-2: compile and reject dead or cross-scope conditions.
+- [x] EP-2: enforce top-level and nested sibling conditions in permissive and strict modes.
 - [ ] EP-3: compile explicit local-handle/external-URI reference policies.
 - [ ] EP-3: report dangling, wrong-prefix, malformed, and disallowed self references once.
 - [ ] Initiative acceptance: validate the review convention and ADR reference fixtures.
@@ -157,6 +157,22 @@ interactions between child plans. Provide concise evidence.
   Evidence: EP-1 renders `reviews[2].outcome` and `reviews[1]` without changing
   the public path representation.
 
+- Discovery: EP-2 replaced each compiled field's single effective requirement
+  with ordered presence clauses so profile-level and type-level declarations can
+  remain independently conditional. EP-3 must extend that condition-aware current
+  generation without collapsing clauses, and its compatibility decoder must retain
+  both nested rules and conditions.
+  Evidence: the conditional fixture reports a profile clause when its predicate
+  matches and a type clause when that separate predicate matches.
+
+- Discovery: the four public missing-field violations now carry
+  `Maybe FieldCondition`, and profile-definition validation has six new condition
+  error categories. External exhaustive consumers, including Mori, must update
+  their pattern matches when adopting this release; EP-3 release notes should
+  preserve this accumulated compatibility requirement.
+  Evidence: core and CLI render the triggering predicate for both top-level and
+  indexed nested paths.
+
 
 ## Decision Log
 
@@ -180,6 +196,13 @@ plan.
   Rationale: gating the whole field rule would allow invalid optional values through.
   Date: 2026-07-29
 
+- Decision: Preserve profile-level and type-level presence declarations as ordered
+  compiled clauses; an applicable required clause wins, while recommended clauses
+  are considered only in strict authoring mode.
+  Rationale: merging declarations into one requirement loses the predicate attached
+  to each scope and can either require a field too broadly or suppress a valid rule.
+  Date: 2026-07-29
+
 - Decision: Replace IR-6's `referencesHandle : Optional Text` with an explicit reference
   rule containing a local prefix, allowed external URI schemes, and an `allowSelf` policy.
   Rationale: local handles and external URIs are alternatives, not independent conjunctive
@@ -195,4 +218,9 @@ Compare the result against the original vision. Before marking the MasterPlan co
 distill durable project context from this MasterPlan and its child ExecPlans into
 docs/adr/. Keep task-local execution and coordination details here.
 
-(To be filled during and after implementation.)
+- EP-2 complete: profiles can now make top-level and one-level nested fields required
+  or recommended from closed scalar sibling values. Definition compilation rejects
+  empty, unreachable, self-referential, non-scalar, open-vocabulary, and cross-scope
+  predicates before document traversal. Runtime validation preserves ordered
+  profile/type clauses, avoids cascades when the condition source is absent or invalid,
+  and includes the triggering predicate in JSON and CLI diagnostics.
