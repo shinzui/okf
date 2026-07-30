@@ -101,6 +101,11 @@ in  { name = "shinzui-postgresql"
             "resource"
             "postgresql:// URI locating the live object."
         ]
+      , optional =
+        [ field.documented
+            "owner"
+            "Team accountable for the object, when one is named."
+        ]
       }
     , allowUnknownTypes = False
     , allowUnknownFields = True
@@ -129,6 +134,7 @@ The fields:
 | `okfVersion` | `Text` | The OKF version the conventions target. |
 | `frontmatter.required` | `List FieldRule` | Frontmatter keys every concept must have as a non-empty value. A missing or empty key is reported as `missing profile-required field`. |
 | `frontmatter.recommended` | `List FieldRule` | Keys checked only by `okf validate --strict`; a missing value is reported as `missing profile-recommended field`. |
+| `frontmatter.optional` | `List FieldRule` | Keys the profile knows about but never demands. Absence is never reported, in any mode. Every constraint the rule declares still applies whenever the key is present, and the key counts as declared under `allowUnknownFields = False`. See [Optional fields](#optional-fields). |
 | `allowUnknownTypes` | `Bool` | When `False`, a concept whose `type` is not listed in `types` is reported as `type not in profile vocabulary`. Profile-wide frontmatter rules still apply whether this is `True` or `False`. |
 | `allowUnknownFields` | `Bool` | When `False`, top-level keys must be declared by the effective profile/type rules. Core OKF keys and `idField` are always permitted. The default is `True`, preserving producer extensions. |
 | `idField` | `Optional Text` | Names the frontmatter key that stores document IDs. `None Text` disables all document-ID checks. |
@@ -143,9 +149,9 @@ Each `FieldRule` — one frontmatter key, and optionally what it is for:
 | `allowedValues` | `List Text` | Legal textual values. `[]` means unconstrained. Strings and lists of strings are checked whenever present, including recommended fields outside strict mode. |
 | `cardinality` | `Cardinality` | `Any` preserves legacy presence behavior; `Scalar` accepts non-blank text, numbers, and booleans; `List` accepts arrays. Objects and null do not satisfy explicit cardinality. |
 | `format` | `Optional FieldFormat` | A parser-backed textual contract: UTC RFC3339 timestamp, calendar date, absolute URI, URI with a required scheme, or document handle. `None` means unconstrained. |
-| `elementFields` | `Optional NestedRules` | When present, the field must be a list whose elements are flat records checked with nested required and recommended rules. `None` means no element schema. |
+| `elementFields` | `Optional NestedRules` | When present, the field must be a list whose elements are flat records checked with nested required, recommended, and optional rules. `None` means no element schema. |
 | `reference` | `Optional HandleReferenceRule` | Declares that present top-level values are local handles with one prefix or absolute external URIs using an explicitly allowed scheme. Local handles must resolve inside the bundle. |
-| `when` | `Optional FieldCondition` | Gates only this rule's required or recommended presence check on a same-scope scalar sibling having one of `hasValue`. Present values are still constrained when the condition is false. |
+| `when` | `Optional FieldCondition` | Gates only this rule's required or recommended presence check on a same-scope scalar sibling having one of `hasValue`. Present values are still constrained when the condition is false. Rejected on an `optional` rule, which has no presence check to gate. |
 
 A description is attached to the key it documents rather than kept in a parallel
 list, so it cannot drift away from the rule or outlive it. See
@@ -157,7 +163,7 @@ Each `TypeRule`:
 |-------|------|---------|
 | `type` | `Text` | The exact `type` frontmatter string this rule applies to. |
 | `description` | `Optional Text` | Prose explaining what this concept type is for. Documentary only. |
-| `frontmatter` | `FrontmatterRules` | Required and recommended keys added for this type. Profile and type scopes merge value constraints by key, retain separate presence clauses, prefer applicable required clauses over strict recommendations, prefer type-level prose, and intersect two non-empty vocabularies. `defaults.TypeRule` supplies empty lists. |
+| `frontmatter` | `FrontmatterRules` | Required, recommended, and optional keys added for this type. Profile and type scopes merge value constraints by key, retain separate presence clauses, prefer applicable required clauses over strict recommendations, prefer type-level prose, and intersect two non-empty vocabularies. `defaults.TypeRule` supplies empty lists. |
 | `pathPattern` | `Optional Text` | A segment-glob the concept ID must match. `*` matches exactly one segment; a single trailing `**` matches one or more remaining segments; any other segment matches literally. For example `schemas/*/tables/*` matches `schemas/sales/tables/orders`. A mismatch is reported as `must match path pattern`. |
 | `resourceScheme` | `Optional Text` | When set, the concept's `resource:` value must begin with `<scheme>://`. A missing resource is reported as `requires a resource with scheme`; a wrong scheme as `resource must use scheme`. |
 | `requireSchemaSection` | `Bool` | When `True`, the body must contain a `# Schema` heading followed by a GitHub-flavored Markdown table. A missing section is reported as `requires a # Schema section`. |
@@ -167,9 +173,11 @@ Each `TypeRule`:
 ### One-level nested record rules
 
 Use `elementFields` when one frontmatter key contains a list of flat records,
-such as reviews. `NestedFieldRule` has the same description, vocabulary,
-cardinality, and named-format fields as `FieldRule`, but deliberately has no
-`elementFields`; the schema cannot recurse beyond one list-of-records level.
+such as reviews. `NestedRules` has the same three presence lists as
+`FrontmatterRules` — `required`, `recommended`, and `optional` — and
+`NestedFieldRule` has the same description, vocabulary, cardinality, and
+named-format fields as `FieldRule`, but deliberately has no `elementFields`; the
+schema cannot recurse beyond one list-of-records level.
 
 ```dhall
 let field = ../../okf-core/dhall/mk/FieldRule.dhall
@@ -185,6 +193,8 @@ in  field.recordList
         , NestedFieldRule::{ field = "reviewed_at", format = Some FieldFormat.Rfc3339Utc }
         ]
       , recommended = [] : List NestedFieldRule.Type
+      , optional =
+        [ NestedFieldRule::{ field = "model", allowedValues = [ "opus", "sonnet" ] } ]
       }
 ```
 
@@ -192,8 +202,8 @@ Declaring `elementFields` refines the outer field's `Any` cardinality to `List`;
 an explicit `Scalar` is a profile-definition error. Profile and type scopes
 merge nested rules by sibling key with the same semantics as top-level rules.
 Every array element must be an object. Required nested fields are checked in all
-modes, recommended nested fields under `--strict`, and present values always
-receive vocabulary, cardinality, and format checks.
+modes, recommended nested fields under `--strict`, optional nested fields never,
+and present values always receive vocabulary, cardinality, and format checks.
 
 Diagnostics carry the complete path, including the list index, for example
 `reviews[2].outcome`. Extra keys inside each record remain allowed. The profile
@@ -225,6 +235,7 @@ in  { required =
         }
       ]
     , recommended = [] : List FieldRule.Type
+    , optional = [] : List FieldRule.Type
     }
 ```
 
@@ -246,6 +257,80 @@ Required conditions run in both modes. Recommended conditions run only under
 ```text
 profile: decisions/old: missing profile-required field: supersededBy (when status is superseded)
 ```
+
+### Optional fields
+
+`required` and `recommended` both answer "should absence be reported?" with
+*yes* — unconditionally, or under `--strict`. `optional` answers it with *never*,
+while leaving every other question about the key untouched. An optional key is
+documented, validated when present, and part of the closed vocabulary; its
+absence is simply not a defect.
+
+Reach for it when a key describes something that is genuinely not true of every
+concept, rather than something authors keep forgetting. Architecture decisions
+are the usual example: `supersedes` belongs only on a decision that replaces an
+older one, `originatingPlan` only where a plan produced the decision, and
+`supersededBy` cannot exist on a live decision at all.
+
+```dhall
+let FieldRule = ../../okf-core/dhall/defaults/FieldRule.dhall
+
+let HandleReferenceRule = ../../okf-core/dhall/defaults/HandleReferenceRule.dhall
+
+let Cardinality = ../../okf-core/dhall/Cardinality.dhall
+
+let field = ../../okf-core/dhall/mk/FieldRule.dhall
+
+in  { required =
+      [ FieldRule::{
+        , field = "status"
+        , allowedValues = [ "accepted", "superseded" ]
+        , cardinality = Cardinality.Scalar
+        }
+      , FieldRule::{
+        , field = "supersededBy"
+        , cardinality = Cardinality.Scalar
+        , when = Some { field = "status", hasValue = [ "superseded" ] }
+        }
+      ]
+    , recommended =
+      [ field.documented "reviewedBy" "Who signed off on the decision." ]
+    , optional =
+      [ FieldRule::{
+        , field = "supersedes"
+        , description = Some "The decision this one replaces, if any."
+        , cardinality = Cardinality.Scalar
+        , reference = Some HandleReferenceRule::{ localPrefix = "ADR" }
+        }
+      ]
+    }
+```
+
+Under `okf validate --strict --profile-enforce`, a decision that supersedes
+nothing reports nothing about `supersedes`, while an absent `reviewedBy` still
+fails and a `supersedes` pointing at a handle no concept owns is still reported:
+
+```text
+profile: decisions/accepted: missing profile-recommended field: reviewedBy (Who signed off on the decision.)
+profile: decisions/bad-supersedes: supersedes references ADR-99, which does not exist in this bundle
+```
+
+Two rules the compiler enforces before any concept is read:
+
+- A key may appear in at most one of the three lists **at one scope**. Declaring
+  it twice is a profile-definition error rather than a precedence rule, because a
+  profile cannot coherently say both "check for this" and "never check for this".
+- An `optional` rule may not carry `when`. A condition gates a presence clause,
+  and an optional rule has none, so the pairing would be silently dead. A field
+  that becomes required under a condition belongs in `required` with
+  `when = Some …`; its value constraints already apply when the condition is
+  false, which is exactly the coexistence shown above.
+
+Scopes are independent. Declaring a key `recommended` profile-wide and `optional`
+inside one type rule does **not** switch the recommendation off for that type:
+merged presence clauses accumulate, so a type rule can narrow what the profile
+demands but never silently weaken it. To make a key optional profile-wide, move
+it in the scope that declared it.
 
 ## Profile registries
 
@@ -335,39 +420,81 @@ frontmatter.required:
   - type: (none)
     allowedValues: (any)
     cardinality: any
+    format: (none)
+    reference: (none)
+    when: (none)
+    elementFields: (none)
   - title: (none)
     allowedValues: (any)
     cardinality: any
+    format: (none)
+    reference: (none)
+    when: (none)
+    elementFields: (none)
   - docId: (none)
     allowedValues: (any)
     cardinality: any
+    format: (none)
+    reference: (none)
+    when: (none)
+    elementFields: (none)
   - status: (none)
     allowedValues: (any)
     cardinality: any
+    format: (none)
+    reference: (none)
+    when: (none)
+    elementFields: (none)
   - date: (none)
     allowedValues: (any)
     cardinality: any
+    format: (none)
+    reference: (none)
+    when: (none)
+    elementFields: (none)
 frontmatter.recommended:
   - description: (none)
     allowedValues: (any)
     cardinality: any
+    format: (none)
+    reference: (none)
+    when: (none)
+    elementFields: (none)
   - timestamp: (none)
     allowedValues: (any)
     cardinality: any
+    format: (none)
+    reference: (none)
+    when: (none)
+    elementFields: (none)
   - supersedes: (none)
     allowedValues: (any)
     cardinality: any
+    format: (none)
+    reference: (none)
+    when: (none)
+    elementFields: (none)
   - supersededBy: (none)
     allowedValues: (any)
     cardinality: any
+    format: (none)
+    reference: (none)
+    when: (none)
+    elementFields: (none)
   - originatingPlan: (none)
     allowedValues: (any)
     cardinality: any
+    format: (none)
+    reference: (none)
+    when: (none)
+    elementFields: (none)
+frontmatter.optional: (none)
 
 type: Architecture Decision Record
   description: (none)
   frontmatter.required: (none)
   frontmatter.recommended: (none)
+  frontmatter.optional: (none)
   pathPattern: *
   resourceScheme: (none)
   requireSchemaSection: false
@@ -380,11 +507,13 @@ Use it with:
 ```
 
 Every optional field prints, as `(none)` when absent, so the output shape does
-not shift between profiles and stays reliable to grep. Type rules print in the
-order the profile declares them.
+not shift between profiles and stays reliable to grep. All three presence lists
+print at profile scope, under every type rule, and inside `elementFields`, always
+in the order required, recommended, optional. Type rules print in the order the
+profile declares them.
 
-Each frontmatter list is a headed block with one key, its value vocabulary, and
-its cardinality, because those details cannot share a comma-joined line with
+Each frontmatter list is a headed block with one key per rule and one line per
+constraint, because those details cannot share a comma-joined line with
 neighbouring rules.
 An **empty** list keeps the one-line form,
 `frontmatter.recommended: (none)`. `(any)` means the field has no value
@@ -395,13 +524,26 @@ frontmatter.required:
   - type: The OKF concept type; must be one of the type rules below.
     allowedValues: (any)
     cardinality: scalar
-  - title: Human-readable name of the object, as a reader would say it.
-    allowedValues: (any)
-    cardinality: scalar
+    format: (none)
+    reference: (none)
+    when: (none)
+    elementFields: (none)
 frontmatter.recommended:
   - status: Lifecycle state.
     allowedValues: proposed, accepted, closed
     cardinality: scalar
+    format: (none)
+    reference: (none)
+    when: (none)
+    elementFields: (none)
+frontmatter.optional:
+  - supersedes: The decision this one replaces, if any.
+    allowedValues: (any)
+    cardinality: scalar
+    format: (none)
+    reference: local-prefix(ADR), external-uri-schemes([]), allow-self(false)
+    when: (none)
+    elementFields: (none)
 ```
 
 `field.enum "status" [ "proposed", "accepted" ]` constructs a rule with a
@@ -491,6 +633,11 @@ in  { name = "decisions"
         ]
       , recommended =
         [ field.documented "status" "One of: proposed, accepted, superseded." ]
+      , optional =
+        [ field.documented
+            "supersedes"
+            "The decision this one replaces, when it replaces one."
+        ]
       }
     , allowUnknownTypes = False
     , idField = Some "docId"

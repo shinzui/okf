@@ -7,6 +7,34 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- An `optional` presence list on `FrontmatterRules` and `NestedRules`, defaulted
+  to empty. Optional rules compile to an `EffectiveFieldRule` with no presence
+  clauses, so `applicablePresenceClause` can never report their absence in either
+  `ValidationProfile`, while every vocabulary, cardinality, format, reference,
+  and nested-shape check still runs on a present value. Optional keys are part of
+  the compiled rule map, so they count as declared for `allowUnknownFields =
+  False` and carry their prose into `profileFieldDescriptionForType`.
+  `profileFieldDescription` searches the third list after the first two.
+- `ProfileDefinitionError` gains `OptionalFieldWithCondition`, raised when an
+  optional rule carries `when` at either top level or nested level.
+  `ConflictingFieldRequirement` now also covers a key declared in `optional` plus
+  either other list at the same scope. An optional declaration at one scope does
+  not cancel a presence clause declared at the other.
+- The complete reference-aware descriptor generation is frozen as a private
+  compatibility decoder and upgrades with `optional = []` at both levels, so
+  descriptors written against the previous published schema keep loading.
+
+### Changed
+
+- **Breaking for exhaustive consumers.** Matches on `ProfileDefinitionError`
+  must handle `OptionalFieldWithCondition`, and code constructing
+  `FrontmatterRules` or `NestedRules` must supply the `optional` field. A
+  descriptor that annotates itself against okf's current `Profile.dhall` by
+  relative path must add `optional`; one pinned to an older schema URL, or with
+  no annotation at all, is unaffected.
+
 ## [0.3.0.0] - 2026-07-29
 
 ### Added

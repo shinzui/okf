@@ -7,6 +7,17 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- `okf profile show` prints `frontmatter.optional` at profile scope, under each
+  type rule, and inside `elementFields`, using `(none)` when empty, so all three
+  presence lists always print in the same order. Profile JSON emits the matching
+  `optional` key in both rule records.
+- `okf validate` renders the new `OptionalFieldWithCondition` profile-definition
+  error, and the `ConflictingFieldRequirement` message now names all three
+  presence lists. The profiles help topic gains an OPTIONAL FIELDS section and
+  documents when to prefer `optional` over `recommended`.
+
 ## [0.3.0.0] - 2026-07-29
 
 ### Added

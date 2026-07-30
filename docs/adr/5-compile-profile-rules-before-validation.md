@@ -140,6 +140,29 @@ existing duplicate-ID check remains authoritative. Non-handles may pass only as
 valid absolute URIs with an explicitly allowed scheme. Validation is entirely
 offline and performs no registry, filesystem, DNS, or network resolution.
 
+Presence has three classifications, not two. Beside `required` and
+`recommended`, both rule records carry an `optional` list: a key the profile
+documents and constrains but never demands. An optional rule compiles to the
+same `EffectiveFieldRule` with an empty presence-clause list rather than a third
+`FieldRequirement` constructor, so `applicablePresenceClause` can never find a
+clause to report in either `ValidationProfile`, while every value check — which
+already runs independently of presence — is unchanged. Optional keys are part of
+the compiled rule map, so they count as declared for `allowUnknownFields = False`
+and supply prose to diagnostics without any additional derivation.
+
+Two descriptor shapes are definition errors. Declaring one key in more than one
+presence list at a single scope reuses `ConflictingFieldRequirement`, because a
+profile cannot coherently both demand and never check the same key. Combining
+`when` with an optional rule is rejected outright: a condition gates a presence
+clause, and an optional rule has none, so the pairing would be silently dead. A
+field required under a condition belongs in `required` with `when = Some …`,
+whose value constraints already apply when the condition is false.
+
+Scopes remain independent. An optional declaration at one scope does not cancel a
+presence clause declared at the other, because merged clauses accumulate
+precisely so a type rule can narrow but never silently weaken a profile-wide
+expectation. An author makes a key optional in the scope that declared it.
+
 
 ## Consequences
 
@@ -171,6 +194,17 @@ prefixes, missing ID ownership, invalid external schemes, conflicting prefixes,
 and reference-plus-format declarations. Adding `reference` to public
 `FieldRule` is a closed-record Dhall and positional-constructor migration;
 external exhaustive consumers must update in the same release adoption.
+
+Optional presence adds `OptionalFieldWithCondition` to `ProfileDefinitionError`
+and widens `ConflictingFieldRequirement` to cover optional collisions; exhaustive
+consumers, including Mori's advisory renderer, must handle the new constructor
+before moving their okf pin. It adds no `ProfileViolation` constructor, because
+an optional rule produces no new diagnostic. Adding `optional` to
+`FrontmatterRules` and `NestedRules` is a closed-record Dhall migration: the
+complete reference-aware generation is frozen before this addition and upgrades
+with `optional = []` at both levels, but a descriptor that annotates itself
+against okf's current schema by relative path must add the field, since Dhall
+rejects the annotation before any fallback decoder runs.
 
 Later profile constraints extend the compiled field rule rather than scanning
 raw declarations again. Human and JSON profile display continue to preserve the

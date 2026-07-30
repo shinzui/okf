@@ -67,11 +67,12 @@ This section must always reflect the actual current state of the work.
 - [x] Milestone 1: compile optional rules into `EffectiveFieldRule` with no presence clauses; extend every `required <> recommended` enumeration in `compileProfile`. (2026-07-30)
 - [x] Milestone 1: reject `when` on an optional rule and same-scope presence-list collisions during compilation. (2026-07-30)
 - [x] Milestone 1 (added): update every in-repo current-schema Dhall fixture with `optional`, since a `: Profile` annotation against the local schema cannot be rescued by a fallback decoder. (2026-07-30)
-- [ ] Milestone 2: prove absence is silent in permissive and strict modes while present values are fully checked, including nested and closed-vocabulary behavior.
-- [ ] Milestone 2: render optional rules in `okf profile show`, profile JSON, and the new definition-error message.
-- [ ] Milestone 3: add positive and negative fixtures (top-level, type-level, closed vocabulary, conditional coexistence, nested) plus the frozen-generation compatibility fixture.
-- [ ] Milestone 3: update `docs/user/profiles.md`, `okf-cli/help/profiles.md`, the three changelogs, and amend `docs/adr/5-compile-profile-rules-before-validation.md`.
-- [ ] Milestone 3: run the full validation suite and record the downstream migration note for `shinzui/okf-profiles` and `shinzui/mori`.
+- [x] Milestone 2: prove absence is silent in permissive and strict modes while present values are fully checked, including nested and closed-vocabulary behavior. (2026-07-30)
+- [x] Milestone 2: render optional rules in `okf profile show`, profile JSON, and the new definition-error message. (2026-07-30, landed with Milestone 1 so descriptors never decode without their rendering)
+- [x] Milestone 3: add positive and negative fixtures (top-level, type-level, closed vocabulary, conditional coexistence, nested) plus the frozen-generation compatibility fixture. (2026-07-30)
+- [x] Milestone 3: update `docs/user/profiles.md`, `okf-cli/help/profiles.md`, the three changelogs, and amend `docs/adr/5-compile-profile-rules-before-validation.md`. (2026-07-30)
+- [x] Milestone 3 (added): add `optional` to the shipped sample `docs/profiles/postgresql.dhall`, which annotates against the local schema. (2026-07-30)
+- [x] Milestone 3: run the full validation suite and record the downstream migration note for `shinzui/okf-profiles` and `shinzui/mori`. (2026-07-30)
 
 
 ## Surprises & Discoveries
@@ -218,7 +219,56 @@ Compare the result against the original purpose. Before marking the plan complet
 distill durable project context from the Decision Log, Surprises & Discoveries, and
 this section into docs/adr/. Keep task-local execution details here.
 
-(To be filled during and after implementation.)
+The stated purpose is met. A profile can write `optional` at profile scope,
+inside a type rule, and inside `elementFields`; absence is silent in both
+validation modes; every value constraint still applies to a present value; and an
+optional key counts as declared under `allowUnknownFields = False`. The
+end-to-end command in Purpose now prints, from the repository root:
+
+```text
+profile: decisions/accepted: missing profile-recommended field: reviewedBy (Who signed off on the decision.)
+profile: decisions/bad-supersedes: frontmatter value at decidedAt must match format rfc3339-utc, found: "not a timestamp"
+profile: decisions/bad-supersedes: frontmatter value at reviews[0].model must be one of [opus, sonnet], found: "gpt"
+profile: decisions/bad-supersedes: supersedes references ADR-99, which does not exist in this bundle
+profile: decisions/superseded: missing profile-required field: supersededBy (when status is superseded) (The decision that replaced this one.)
+```
+
+Three concepts omit `supersedes`, `decidedAt`, `originatingPlan`, and `reviews`
+entirely and are reported for none of them. Dropping `--strict` removes exactly
+the first line and nothing else, which is the guarantee the improvement request
+asked for: absence stopped being an error without value checking being switched
+off. The fixture also proves the IR-5 coexistence — `supersededBy` is a
+conditional *requirement* in the same type rule that carries three optional
+declarations, and it still fires.
+
+The empty-presence-clause model held: no validation code was written for this
+feature. `compileOptionalFieldRule` and `compileOptionalNestedFieldRule` are the
+only new compilation functions, and `applicablePresenceClause`,
+`EffectiveFieldRule`, `PresenceClause`, `FieldRequirement`, and every
+`ProfileViolation` constructor are untouched.
+
+Two costs the plan under-estimated, both recorded in Surprises & Discoveries:
+eleven in-repo fixtures plus the shipped sample `docs/profiles/postgresql.dhall`
+needed an `optional` entry, because a `: Profile` annotation against the local
+schema is checked by Dhall before any fallback decoder runs; and the field name
+collides with `Options.Applicative.optional` in the CLI. Neither changed the
+design, but together they were most of the mechanical work.
+
+Verification run at completion: `cabal test all` passes both suites, `dhall type`
+accepts all 48 Dhall files in the tree, `git diff --check` is clean, and
+`nix flake check` passes including the treefmt and pre-commit checks.
+
+Downstream migration, which cannot be executed here:
+
+- `shinzui/okf-profiles` moves `supersedes` and `originatingPlan` from
+  `recommended` to `optional` in `profiles/documentation/architecture-decisions.dhall`,
+  and makes `supersededBy` a conditional requirement keyed on
+  `status = superseded`. Its descriptors that annotate against a pinned okf
+  schema URL keep loading until they move the pin.
+- `shinzui/mori` adds an `OptionalFieldWithCondition` case to
+  `mori-cli/src/Mori/Okf/Advisory.hs` before moving the okf commit in both
+  `cabal.project` and `flake.nix`. Once the catalog above is migrated and pinned,
+  Mori can restore `--strict` to its ADR check.
 
 
 ## Context and Orientation

@@ -21,7 +21,9 @@ ADVISORY VS ENFORCED
                          exit).
 
   --strict               Also check profile `recommended` fields. Required
-                         profile fields are checked in both modes.
+                         profile fields are checked in both modes. Profile
+                         `optional` fields are never reported when absent, in
+                         either mode.
 
 EXIT CODES
 
@@ -64,7 +66,8 @@ REGISTRIES
 DESCRIPTIONS
 
   A profile may document itself: one description for the profile as a whole,
-  one per required or recommended frontmatter key, and one per type rule.
+  one per required, recommended, or optional frontmatter key, and one per type
+  rule.
   Descriptions are prose for humans -- okf never checks one against a bundle
   and none can produce a deviation.
 
@@ -83,20 +86,22 @@ DESCRIPTIONS
 
 TYPE-AWARE FRONTMATTER
 
-  Each type rule may add its own required and recommended frontmatter fields.
-  Profile-wide rules apply to every concept; a matching type rule adds to them.
-  Value constraints merge by key, while presence declarations remain separate;
-  an applicable required clause wins over a strict recommendation. Unknown
-  types still receive profile-wide rules.
+  Each type rule may add its own required, recommended, and optional
+  frontmatter fields. Profile-wide rules apply to every concept; a matching type
+  rule adds to them. Value constraints merge by key, while presence declarations
+  remain separate; an applicable required clause wins over a strict
+  recommendation. Declaring a key optional at one scope does not cancel a
+  presence clause the other scope declared. Unknown types still receive
+  profile-wide rules.
 
-  `okf profile show` prints `frontmatter.required` and
-  `frontmatter.recommended` beneath each type. New descriptors should use
+  `okf profile show` prints `frontmatter.required`, `frontmatter.recommended`,
+  and `frontmatter.optional` beneath each type. New descriptors should use
   `okf.defaults.TypeRule::{ ... }`, whose default supplies empty lists.
 
   Before validating a bundle, okf rejects duplicate type rules, repeated keys
-  in one list, and keys placed in both required and recommended at the same
-  scope. These are hard profile-definition errors regardless of
-  `--profile-enforce`.
+  in one list, and keys placed in more than one of required, recommended, and
+  optional at the same scope. These are hard profile-definition errors
+  regardless of `--profile-enforce`.
 
 VALUE VOCABULARIES AND CLOSED FIELDS
 
@@ -162,9 +167,9 @@ NAMED FIELD FORMATS
 
 NESTED RECORD FIELDS
 
-  A top-level FieldRule may set elementFields to required and recommended rules
-  for every record in a list. The public schema is intentionally bounded to one
-  level: NestedFieldRule has vocabulary, cardinality, and format constraints but
+  A top-level FieldRule may set elementFields to required, recommended, and
+  optional rules for every record in a list. The public schema is intentionally
+  bounded to one level: NestedFieldRule has vocabulary, cardinality, and format constraints but
   cannot contain another elementFields value.
 
   Use field.recordList with NestedFieldRule constructors or record completion.
@@ -173,8 +178,9 @@ NESTED RECORD FIELDS
   merge by sibling key just like top-level rules.
 
   Each list element must be a record. Required nested keys are always checked;
-  recommended nested keys only under --strict. Present nested values are checked
-  in both modes, and diagnostics identify the exact index:
+  recommended nested keys only under --strict; optional nested keys never.
+  Present nested values are checked in both modes, and diagnostics identify the
+  exact index:
 
     profile: requests/example: missing profile-required field: reviews[2].outcome
     profile: requests/example: frontmatter element at reviews[1] must be a record, found: "not-a-record"
@@ -206,6 +212,30 @@ CONDITIONAL FIELD PRESENCE
   Recommended conditions are evaluated only under --strict.
 
     profile: decisions/old: missing profile-required field: supersededBy (when status is superseded)
+
+  `when` is rejected on an optional rule: a condition gates a presence clause,
+  and an optional rule has none, so the pairing would be silently dead.
+
+OPTIONAL FIELDS
+
+  FrontmatterRules and NestedRules carry a third presence list beside required
+  and recommended. An optional field is known to the profile, validated whenever
+  present, and never reported when absent -- in permissive and strict modes
+  alike. Use it for lifecycle or provenance metadata whose absence is ordinary
+  rather than deficient, such as an architecture decision's supersedes.
+
+    , optional = [ field.documented "supersedes" "The decision this replaces." ]
+
+  Optional keys count as declared under allowUnknownFields = False, appear in
+  `okf profile show`, and carry their prose into value diagnostics. Every
+  vocabulary, cardinality, format, reference, and nested-shape check still runs
+  on a present value.
+
+  A field that becomes required under a condition belongs in required with
+  `when = Some ...`, not in optional; the two coexist in one scope.
+
+    profile: decisions/accepted: missing profile-recommended field: reviewedBy
+    profile: decisions/bad: supersedes references ADR-99, which does not exist in this bundle
 
 DOCUMENT REFERENCES
 

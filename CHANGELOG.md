@@ -7,6 +7,22 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- Profiles can classify a frontmatter key as `optional`: known to the profile,
+  fully validated whenever present, and never reported when absent -- including
+  under `--strict --profile-enforce`. The third list sits beside `required` and
+  `recommended` at profile scope, inside any type rule, and inside the nested
+  rules of a list-of-records field. `okf profile show`, profile JSON, the
+  profiles help topic, and the published Dhall schema all expose it.
+
+### Changed
+
+- Profile compilation rejects a key declared in more than one presence list at
+  one scope, and rejects `when` on an `optional` rule, since a condition gates
+  only presence. Both are hard profile-definition errors reported before any
+  concept is read.
+
 ## [0.3.0.0] - 2026-07-29
 
 ### Added
