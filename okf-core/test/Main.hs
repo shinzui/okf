@@ -92,6 +92,7 @@ main = do
         testIO "loadProfileFile preserves the frozen bounded-nested schema" testLoadNestedCompatibilityFixture,
         testIO "loadProfileFile decodes same-scope conditions" testLoadConditionalFieldsProfileFixture,
         testIO "loadProfileFile preserves the frozen condition-aware schema" testLoadConditionalCompatibilityFixture,
+        testIO "loadProfileFile preserves the frozen reference-aware schema" testLoadReferenceCompatibilityFixture,
         testIO "loadProfileFile still accepts an okf 0.2.x descriptor" testLoadLegacyProfileFixture,
         testIO "profileFieldDescription finds required and recommended prose" testProfileFieldDescription,
         testIO "profileFieldDescription finds optional prose" testOptionalFieldDescription,
@@ -125,6 +126,12 @@ main = do
         test "nested conditions use siblings and avoid cascading diagnostics" testNestedConditionalPresence,
         test "compileProfile rejects invalid document reference policies" testReferenceDefinitionErrors,
         test "document references resolve local handles and explicit external URIs" testDocumentReferenceValidation,
+        test "optional fields are never missing but are fully value-checked" testOptionalFieldPresence,
+        test "optional reference fields resolve handles when present" testOptionalReferenceValidation,
+        test "optional nested fields are never missing inside records" testOptionalNestedFieldPresence,
+        test "optional fields count as declared under closed field names" testOptionalFieldClosure,
+        test "optional at one scope does not cancel the other scope's clause" testOptionalDoesNotCancelOtherScope,
+        test "compileProfile rejects optional collisions and dead conditions" testOptionalDefinitionErrors,
         test "closed profiles reject unknown fields and isolate type fields" testClosedFieldValidation,
         test "profile rules apply to unknown concept types" testProfileRulesApplyToUnknownTypes,
         test "strict profile validation checks recommendations" testStrictProfileRecommendations,
@@ -149,7 +156,8 @@ main = do
         testIO "format fixture reports parser-backed mismatches" testFormatsFixture,
         testIO "nested review fixture validates records with indexed diagnostics" testNestedReviewsFixture,
         testIO "conditional fixture covers ADR, PostgreSQL, and review scopes" testConditionalFieldsFixture,
-        testIO "document reference fixture covers local, external, self, and duplicate targets" testDocumentReferencesFixture
+        testIO "document reference fixture covers local, external, self, and duplicate targets" testDocumentReferencesFixture,
+        testIO "optional-field fixture reports only the recommendation and bad values" testOptionalFieldsFixture
       ]
   unless (and results) exitFailure
 
@@ -964,6 +972,33 @@ testLoadConditionalCompatibilityFixture = do
               assertEqual (Just (FieldCondition "kind" ["model"])) (providerRule ^. #when)
             _ -> Left "expected frozen nested conditions to survive the compatibility upgrade"
         _ -> Left "expected three frozen condition-aware top-level rules"
+
+-- | The immediately preceding generation: a descriptor that spells out the
+-- reference-aware record types with no @optional@ list anywhere still loads,
+-- keeps every field it did declare, and behaves as though each optional list
+-- were empty.
+testLoadReferenceCompatibilityFixture :: IO (Either Text ())
+testLoadReferenceCompatibilityFixture = do
+  path <- fixtureFilePath "profiles/document-references-ep3.dhall"
+  result <- loadProfileFile path
+  pure $ case result of
+    Left err -> Left ("failed to load frozen reference-aware profile: " <> err)
+    Right spec -> do
+      assertEqual [] (spec ^. #frontmatter . #optional)
+      assertEqual [[]] (map (^. #frontmatter . #optional) (spec ^. #types))
+      case spec ^. #frontmatter . #recommended of
+        [referenceRule, conditionRule, reviewsRule] -> do
+          assertEqual
+            (Just (HandleReferenceRule "ADR" ["mori"] False))
+            (referenceRule ^. #reference)
+          assertEqual (Just (FieldCondition "status" ["superseded"])) (conditionRule ^. #when)
+          case reviewsRule ^. #elementFields of
+            Just NestedRules {required = [kindRule], recommended = [notesRule], optional = nestedOptional} -> do
+              assertEqual "kind" (kindRule ^. #field)
+              assertEqual "notes" (notesRule ^. #field)
+              assertEqual [] (map (^. #field) nestedOptional)
+            _ -> Left "expected the frozen nested rules to survive with an empty optional list"
+        _ -> Left "expected three frozen reference-aware recommended rules"
 
 -- | The backwards-compatibility guarantee: a descriptor frozen in the okf 0.2.x
 -- shape — bare-string frontmatter keys, no descriptions anywhere — still loads,
@@ -2093,6 +2128,284 @@ testDocumentReferenceValidation = do
         ([("type", String "Decision Record"), ("title", String title), ("docId", String documentId)] <> extraFields)
         ("# " <> title <> "\n")
     indexedPath key elementIndex = FieldPath (FieldName key :| [ArrayIndex elementIndex])
+
+-- | The whole point of the third presence list: absence is silent in both
+-- validation modes, while a present value is checked exactly as hard as it would
+-- be under @required@.
+testOptionalFieldPresence :: Either Text ()
+testOptionalFieldPresence = do
+  let optionalRules =
+        [ FieldRule "supersedes" Nothing ["ADR-1", "ADR-2"] Scalar Nothing Nothing Nothing Nothing,
+          FieldRule "reviewedAt" Nothing [] Any (Just Rfc3339Utc) Nothing Nothing Nothing,
+          FieldRule "tags" Nothing [] List Nothing Nothing Nothing Nothing
+        ]
+      spec =
+        typeAwareProfileSpec
+          { frontmatter =
+              FrontmatterRules
+                { required = [requiredField "type"],
+                  recommended = [requiredField "owner"],
+                  optional = optionalRules
+                },
+            allowUnknownTypes = True,
+            types = []
+          }
+  compiled <- firstShow (compileProfile spec)
+  absent <- profileConcept "optional/absent" [("type", String "Extension"), ("owner", String "Ari")] "# Absent\n"
+  -- A correctly shaped empty value counts as absent, so it is as silent as a key
+  -- that was never written. (A blank value on a field that also declares a
+  -- vocabulary or format still fails that check; presence and value are
+  -- independent, which is exactly what this feature relies on.)
+  emptied <-
+    profileConcept
+      "optional/emptied"
+      [ ("type", String "Extension"),
+        ("owner", String "Ari"),
+        ("tags", toJSON ([] :: [Text]))
+      ]
+      "# Emptied\n"
+  valid <-
+    profileConcept
+      "optional/valid"
+      [ ("type", String "Extension"),
+        ("owner", String "Ari"),
+        ("supersedes", String "ADR-1"),
+        ("reviewedAt", String "2026-07-30T00:00:00Z"),
+        ("tags", toJSON (["profiles"] :: [Text]))
+      ]
+      "# Valid\n"
+  invalid <-
+    profileConcept
+      "optional/invalid"
+      [ ("type", String "Extension"),
+        ("owner", String "Ari"),
+        ("supersedes", String "ADR-9"),
+        ("reviewedAt", String "2026-13-45T99:99:99Z"),
+        ("tags", String "profiles")
+      ]
+      "# Invalid\n"
+  invalidId <- parseTestConceptId "optional/invalid"
+  for_ [PermissiveConformance, StrictAuthoring] $ \validationProfile -> do
+    assertEqual [] (validateProfile validationProfile compiled [absent])
+    assertEqual [] (validateProfile validationProfile compiled [emptied])
+    assertEqual [] (validateProfile validationProfile compiled [valid])
+    assertEqual
+      [ ValueFormatMismatch invalidId (fieldPath "reviewedAt") Rfc3339Utc (String "2026-13-45T99:99:99Z"),
+        ValueNotInVocabulary invalidId (fieldPath "supersedes") ["ADR-1", "ADR-2"] (String "ADR-9"),
+        CardinalityMismatch invalidId (fieldPath "tags") List (String "profiles")
+      ]
+      (validateProfile validationProfile compiled [invalid])
+
+-- | An optional field carrying a document-reference policy resolves handles the
+-- same way a required one does; only the absence check differs.
+testOptionalReferenceValidation :: Either Text ()
+testOptionalReferenceValidation = do
+  let spec :: ProfileSpec
+      spec =
+        testDocumentIdProfileSpec
+          & #frontmatter
+          .~ FrontmatterRules
+            { required = [requiredField "type", requiredField "title"],
+              recommended = [],
+              optional = [FieldRule "supersedes" Nothing [] Scalar Nothing Nothing (Just (HandleReferenceRule "ADR" [] False)) Nothing]
+            }
+  compiled <- firstShow (compileProfile spec)
+  target <- decisionTestConcept "decisions/target" "Target" "ADR-1" []
+  silent <- decisionTestConcept "decisions/silent" "Silent" "ADR-2" []
+  dangling <- decisionTestConcept "decisions/dangling" "Dangling" "ADR-3" [("supersedes", String "ADR-99")]
+  danglingId <- parseTestConceptId "decisions/dangling"
+  for_ [PermissiveConformance, StrictAuthoring] $ \validationProfile -> do
+    assertEqual [] (validateProfile validationProfile compiled [target, silent])
+    assertEqual
+      [DanglingHandleReference danglingId (fieldPath "supersedes") "ADR-99"]
+      (validateProfile validationProfile compiled [target, dangling])
+
+-- | Optional members of a list-element record behave the same way inside every
+-- record: never missing, always checked when present.
+testOptionalNestedFieldPresence :: Either Text ()
+testOptionalNestedFieldPresence = do
+  let nestedRules =
+        NestedRules
+          { required = [NestedFieldRule "kind" Nothing ["human", "model"] Scalar Nothing Nothing],
+            recommended = [NestedFieldRule "notes" Nothing [] Scalar Nothing Nothing],
+            optional = [NestedFieldRule "model" Nothing ["opus", "sonnet"] Scalar Nothing Nothing]
+          }
+  compiled <- firstShow (compileProfile (nestedProfileWithRules Any nestedRules Nothing))
+  concept <-
+    profileConcept
+      "reviewed/optional"
+      [ ("type", String "Reviewed Concept"),
+        ( "reviews",
+          toJSON
+            [ object ["kind" .= ("human" :: Text), "notes" .= ("looks good" :: Text)],
+              object ["kind" .= ("model" :: Text), "notes" .= ("ran it" :: Text), "model" .= ("opus" :: Text)],
+              object ["kind" .= ("model" :: Text), "notes" .= ("ran it" :: Text), "model" .= ("gpt" :: Text)]
+            ]
+        )
+      ]
+      "# Optional\n"
+  cid <- parseTestConceptId "reviewed/optional"
+  for_ [PermissiveConformance, StrictAuthoring] $ \validationProfile ->
+    assertEqual
+      [ValueNotInVocabulary cid (nestedTestPath 2 "model") ["opus", "sonnet"] (String "gpt")]
+      (validateProfile validationProfile compiled [concept])
+
+-- | An optional key is declared for the purposes of field-name closure, so a
+-- closed profile accepts it and still catches a misspelling of it.
+testOptionalFieldClosure :: Either Text ()
+testOptionalFieldClosure = do
+  let closed =
+        typeAwareProfileSpec
+          { frontmatter =
+              FrontmatterRules
+                { required = [requiredField "type"],
+                  recommended = [],
+                  optional = [requiredField "supersedes"]
+                },
+            allowUnknownTypes = True,
+            allowUnknownFields = False,
+            types = []
+          }
+  compiled <- firstShow (compileProfile closed)
+  declared <- profileConcept "closed/declared" [("type", String "Extension"), ("supersedes", String "ADR-1")] "# Declared\n"
+  typo <- profileConcept "closed/typo" [("type", String "Extension"), ("supersedse", String "ADR-1")] "# Typo\n"
+  typoId <- parseTestConceptId "closed/typo"
+  assertEqual [] (validateProfile PermissiveConformance compiled [declared])
+  assertEqual
+    [FieldNotInProfile typoId "supersedse"]
+    (validateProfile PermissiveConformance compiled [typo])
+
+-- | Declaring a key optional at one scope does not cancel the other scope's
+-- presence clause. Merging accumulates clauses precisely so a type rule can
+-- narrow but never silently weaken a profile-wide expectation.
+testOptionalDoesNotCancelOtherScope :: Either Text ()
+testOptionalDoesNotCancelOtherScope = do
+  let ownerRule = requiredField "owner"
+      specWith profileRules typeRules =
+        typeAwareProfileSpec
+          { frontmatter = profileRules,
+            allowUnknownTypes = True,
+            types = [withTypeFrontmatter typeRules (firstTypeRule typeAwareProfileSpec)]
+          }
+      recommendedThenOptional =
+        specWith
+          FrontmatterRules {required = [requiredField "type"], recommended = [ownerRule], optional = []}
+          FrontmatterRules {required = [], recommended = [], optional = [ownerRule]}
+      optionalThenRecommended =
+        specWith
+          FrontmatterRules {required = [requiredField "type"], recommended = [], optional = [ownerRule]}
+          FrontmatterRules {required = [], recommended = [ownerRule], optional = []}
+  concept <- profileConcept "owned/one" [("type", String "Owned Concept")] "# One\n"
+  cid <- parseTestConceptId "owned/one"
+  for_ [recommendedThenOptional, optionalThenRecommended] $ \spec -> do
+    compiled <- firstShow (compileProfile spec)
+    assertEqual [] (validateProfile PermissiveConformance compiled [concept])
+    assertEqual
+      [MissingRecommendedProfileField cid "owner" Nothing]
+      (validateProfile StrictAuthoring compiled [concept])
+
+-- | Compilation rejects the two contradictions the third list makes possible: a
+-- key classified twice at one scope, and a condition on a rule that has no
+-- presence check for it to gate.
+testOptionalDefinitionErrors :: Either Text ()
+testOptionalDefinitionErrors = do
+  let key name = requiredField name
+      specWith rules =
+        typeAwareProfileSpec {frontmatter = rules, allowUnknownTypes = True, types = []}
+      conditioned name sourceKey =
+        FieldRule name Nothing [] Any Nothing Nothing Nothing (Just (FieldCondition sourceKey ["active"]))
+      statusRule = FieldRule "status" Nothing ["active"] Scalar Nothing Nothing Nothing Nothing
+  assertEqual
+    (Left (ConflictingFieldRequirement Nothing "owner" :| []))
+    (compileProfile (specWith FrontmatterRules {required = [key "type", key "owner"], recommended = [], optional = [key "owner"]}))
+  assertEqual
+    (Left (ConflictingFieldRequirement Nothing "owner" :| []))
+    (compileProfile (specWith FrontmatterRules {required = [key "type"], recommended = [key "owner"], optional = [key "owner"]}))
+  assertEqual
+    (Left (DuplicateFieldRule Nothing "optional" "owner" :| []))
+    (compileProfile (specWith FrontmatterRules {required = [key "type"], recommended = [], optional = [key "owner", key "owner"]}))
+  assertEqual
+    (Left (OptionalFieldWithCondition Nothing (fieldPath "supersededBy") :| []))
+    ( compileProfile
+        (specWith FrontmatterRules {required = [key "type", statusRule], recommended = [], optional = [conditioned "supersededBy" "status"]})
+    )
+  let nestedRules =
+        NestedRules
+          { required = [NestedFieldRule "kind" Nothing ["model"] Scalar Nothing Nothing],
+            recommended = [],
+            optional = [NestedFieldRule "model" Nothing [] Scalar Nothing (Just (FieldCondition "kind" ["model"]))]
+          }
+  assertEqual
+    (Left (OptionalFieldWithCondition Nothing (FieldPath (FieldName "reviews" :| [FieldName "model"])) :| []))
+    (compileProfile (nestedProfileWithRules Any nestedRules Nothing))
+  let optionalParent =
+        specWith
+          FrontmatterRules
+            { required = [key "type"],
+              recommended = [],
+              optional = [FieldRule "reviews" Nothing [] List Nothing (Just nestedRules) Nothing Nothing]
+            }
+  assertEqual
+    (Left (OptionalFieldWithCondition Nothing (FieldPath (FieldName "reviews" :| [FieldName "model"])) :| []))
+    (compileProfile optionalParent)
+
+decisionTestConcept :: Text -> Text -> Text -> [(Text, Value)] -> Either Text Concept
+decisionTestConcept cid title documentId extraFields =
+  profileConcept
+    cid
+    ([("type", String "Decision Record"), ("title", String title), ("docId", String documentId)] <> extraFields)
+    ("# " <> title <> "\n")
+
+-- | The end-to-end proof, run against the fixture bundle a reader can also run
+-- from the command line. Absence of the three optional keys is silent in both
+-- modes; the one genuine recommendation still fails under strict authoring; the
+-- conditional requirement in the same type still fires; and every optional key
+-- that /is/ present is checked as hard as a required one.
+testOptionalFieldsFixture :: IO (Either Text ())
+testOptionalFieldsFixture = do
+  descriptorPath <- fixtureFilePath "profiles/optional-fields.dhall"
+  conditionPath <- fixtureFilePath "profiles/optional-conditional-invalid.dhall"
+  collisionPath <- fixtureFilePath "profiles/optional-collision-invalid.dhall"
+  loaded <- loadProfileFile descriptorPath
+  conditionLoaded <- loadProfileFile conditionPath
+  collisionLoaded <- loadProfileFile collisionPath
+  root <- fixturePath "profile-optional-fields"
+  concepts <- readBundle root
+  pure $ do
+    spec <- first ("failed to load optional-fields profile: " <>) loaded
+    compiled <- firstShow (compileProfile spec)
+    conditionSpec <- first ("failed to load invalid optional-condition profile: " <>) conditionLoaded
+    collisionSpec <- first ("failed to load invalid optional-collision profile: " <>) collisionLoaded
+    assertEqual
+      ( Left
+          ( OptionalFieldWithCondition (Just "Decision Record") (FieldPath (FieldName "reviews" :| [FieldName "model"]))
+              :| [OptionalFieldWithCondition (Just "Decision Record") (fieldPath "supersededBy")]
+          )
+      )
+      (compileProfile conditionSpec)
+    assertEqual
+      ( Left
+          ( ConflictingFieldRequirement Nothing "reviewedBy"
+              :| [ConflictingFieldRequirement (Just "Decision Record") "owner"]
+          )
+      )
+      (compileProfile collisionSpec)
+    accepted <- parseTestConceptId "decisions/accepted"
+    badSupersedes <- parseTestConceptId "decisions/bad-supersedes"
+    superseded <- parseTestConceptId "decisions/superseded"
+    let valueViolations =
+          [ ValueFormatMismatch badSupersedes (fieldPath "decidedAt") Rfc3339Utc (String "not a timestamp"),
+            ValueNotInVocabulary badSupersedes (nestedReviewPath 0 "model") ["opus", "sonnet"] (String "gpt"),
+            DanglingHandleReference badSupersedes (fieldPath "supersedes") "ADR-99",
+            MissingProfileField superseded "supersededBy" (Just (FieldCondition "status" ["superseded"]))
+          ]
+    assertEqual valueViolations (validateProfile PermissiveConformance compiled concepts)
+    assertEqual
+      (MissingRecommendedProfileField accepted "reviewedBy" Nothing : valueViolations)
+      (validateProfile StrictAuthoring compiled concepts)
+  where
+    nestedReviewPath elementIndex key =
+      FieldPath (FieldName "reviews" :| [ArrayIndex elementIndex, FieldName key])
 
 testClosedFieldValidation :: Either Text ()
 testClosedFieldValidation = do
