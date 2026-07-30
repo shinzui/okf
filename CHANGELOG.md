@@ -7,8 +7,26 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.3.0.0] - 2026-07-29
+
 ### Added
 
+- Profile-declared document-reference policies with required local handle
+  prefixes, allowed external URI schemes, and configurable self-reference.
+  Compilation validates and merges policies; bundle validation reports
+  dangling, wrong-prefix, malformed, disallowed-external, and self references
+  with indexed field paths. `okf profile show`, JSON output, validation output,
+  the profiles help topic, and the published Dhall schema expose the policies.
+- Same-scope conditional presence rules for top-level and nested fields.
+  Compilation rejects invalid predicates, and validation applies conditional
+  required and strict-recommended rules without cascading from invalid source
+  fields. CLI detail and diagnostics explain each activating condition.
+- Bounded one-level nested record rules, including nested presence,
+  vocabulary, cardinality, and named-format validation with indexed paths such
+  as `reviews[2].outcome`.
+- Type-aware frontmatter rules, compiled once before validation, with
+  deterministic profile/type merging and strict-authoring checks for
+  recommended fields.
 - Profiles can constrain textual fields with named UTC timestamp, calendar
   date, absolute URI, required URI scheme, and document-handle formats. Checks
   use real parsers, apply element-wise to lists, and appear in profile show,
@@ -48,6 +66,16 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
+- **Breaking library API.** Profile rule records, definition errors, and
+  violations gained type-aware, vocabulary, cardinality, format, nested,
+  conditional, and document-reference fields and constructors.
+  `validateProfile` now accepts a validation mode and an opaque
+  `CompiledProfile` produced by `compileProfile`; exhaustive consumers must
+  update before moving their `okf-core` pin.
+- **Breaking published schema.** `TypeRule` gained frontmatter rules and
+  `FieldRule` gained constraints for values, cardinality, formats, nested
+  fields, conditions, and references. Frozen compatibility decoders continue
+  to load 0.2.x descriptors with open or absent defaults.
 - **Breaking library API.** `FieldRule`, `ProfileDefinitionError`, and
   `ProfileViolation` gain format-related fields and constructors. Mori must
   update its exhaustive advisory renderer before moving its `okf-core` commit

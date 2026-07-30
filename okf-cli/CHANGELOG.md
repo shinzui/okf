@@ -7,6 +7,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.3.0.0] - 2026-07-29
+
 ### Added
 
 - `okf profile show` and profile JSON expose local-prefix, external-scheme, and
@@ -45,6 +47,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
+- Requires `okf-core ^>=0.3.0.0`. This major bound reflects the breaking
+  compiled-profile API and the expanded profile-rule and diagnostic types.
 - Profile-definition output now reports invalid reference prefixes and schemes,
   undeclared target prefixes, missing `idField`, profile/type prefix conflicts,
   and reference-plus-format combinations. Mori and other exhaustive consumers
