@@ -6,20 +6,59 @@ description: Add an explicit optional rule class so profiles can validate a
   authoring requirement.
 timestamp: "2026-07-30T20:41:48Z"
 requestId: IR-7
-status: proposed
+status: accepted
 origin: mori://shinzui/mori
+targetPlan: docs/plans/32-add-optional-profile-field-rules.md
 ---
 
 # Improvement Request: Distinguish optional profile fields from authoring recommendations
 
 ## Status
 
-- **Status:** proposed on 2026-07-30
+- **Status:** accepted with design decisions on 2026-07-30
 - **Origin:** `shinzui/mori`, whose ADR bundle exposed the ambiguity
 - **Owner of the build:** `shinzui/okf`
 - **Size:** moderate — extend the profile schema and compatibility decoders,
   compile a third presence mode, render it in the CLI, and cover top-level,
   type-level, and nested rules.
+
+## Review disposition
+
+Accepted as
+[ExecPlan 32](../plans/32-add-optional-profile-field-rules.md), which builds on
+the compiled-rule architecture in
+[ADR 5](../adr/5-compile-profile-rules-before-validation.md).
+
+Every technical claim in this request was verified against
+`okf-core/src/Okf/Profile.hs`. The empty-presence-clause encoding is confirmed
+correct: `applicablePresenceClause` already returns nothing when no clause
+applies, and every value check runs from the present-value branch without
+consulting `presenceClauses`, so an optional rule needs no new validation path
+and no third `FieldRequirement` constructor. Closed-vocabulary closure also
+follows automatically, because `allowedFields` is derived from the compiled
+rule map. Rejecting `when` on an optional rule is likewise correct: conditions
+gate only presence clauses, so the combination is dead in the descriptor.
+
+Three points the request left open are resolved in the plan:
+
+- **Optional does not cancel another scope's presence clause.** Profile-scope
+  `recommended` combined with type-scope `optional` still reports the
+  recommendation under `--strict`, because merged presence clauses accumulate so
+  that a type rule can narrow but never silently weaken a profile-wide
+  expectation. An author makes a key optional in the scope that declared it.
+- **Same-scope collisions reuse the existing definition error.** Declaring one
+  key in two presence lists at one scope remains `ConflictingFieldRequirement`
+  with a widened message, rather than a new constructor, so downstream
+  exhaustive matchers do not change for that case. The only new error is
+  the dead-condition rejection.
+- **A frozen compatibility decoder is required, not merely desirable.**
+  `FrontmatterRules` and `NestedRules` are closed Dhall record types, so
+  descriptors that write those records as literals — which every shipped fixture
+  and the external catalog do — would stop decoding without freezing the current
+  reference-aware generation and upgrading it with `optional = []`.
+
+The catalog migration named below remains out of scope for the build and stays
+a separate `shinzui/okf-profiles` release.
 
 ## Problem
 
