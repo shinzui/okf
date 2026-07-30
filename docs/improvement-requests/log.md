@@ -1,5 +1,9 @@
 # Bundle Update Log
 
+## 2026-07-30
+
+* **Addition**: IR-7: distinguish optional profile fields from authoring recommendations.
+
 ## 2026-07-29
 
 * **Acceptance**: IR-1 through IR-6 after critical design review, with corrected scope and semantics recorded in each request.
