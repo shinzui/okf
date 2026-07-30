@@ -9,6 +9,14 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- Top-level document-reference policies through `HandleReferenceRule`, with a
+  required local handle prefix, explicit external URI schemes, and configurable
+  self-reference. Compilation validates and merges policies; bundle validation
+  builds one valid-owner index and reports dangling, wrong-prefix, malformed,
+  disallowed-external, and self references with indexed `FieldPath` values.
+  Duplicate owners count as present and retain the existing duplicate-ID
+  diagnostic. The complete condition-aware descriptor generation is frozen and
+  upgrades with `reference = Nothing`.
 - Same-scope conditional presence through `FieldCondition` and the defaulted
   `when` field on top-level and nested field rules. Compilation rejects empty,
   undeclared, non-scalar, open-vocabulary, self-referential, and unreachable
@@ -69,6 +77,14 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
+- **Breaking.** `FieldRule` gains
+  `reference :: Maybe HandleReferenceRule`; `ProfileViolation` gains
+  `DanglingHandleReference`, `ReferenceHandlePrefixMismatch`,
+  `MalformedDocumentReference`, `ExternalReferenceSchemeNotAllowed`, and
+  `SelfDocumentReference`; and `ProfileDefinitionError` gains structured
+  reference-policy errors. Exhaustive consumers, including Mori, must update
+  these cases as well as the earlier conditional missing-field patterns before
+  moving both their `cabal.project` and `flake.nix` okf pins.
 - **Breaking.** `FieldRule` and `NestedFieldRule` gain
   `when :: Maybe FieldCondition`; missing-field `ProfileViolation` constructors
   carry the activating condition; and `ProfileDefinitionError` gains structured

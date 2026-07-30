@@ -9,6 +9,10 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- `okf profile show` and profile JSON expose local-prefix, external-scheme, and
+  self-reference policies. `okf validate` renders path-precise dangling,
+  wrong-prefix, malformed, disallowed-external, and self-reference deviations;
+  the profiles help topic documents the offline local/external boundary.
 - `okf profile show` renders top-level and nested `when` predicates, while
   `okf validate` explains the activating condition on missing-field diagnostics.
   The profiles help topic documents same-scope resolution, compiler checks,
@@ -41,6 +45,12 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
+- Profile-definition output now reports invalid reference prefixes and schemes,
+  undeclared target prefixes, missing `idField`, profile/type prefix conflicts,
+  and reference-plus-format combinations. Mori and other exhaustive consumers
+  must handle the five new reference violations and six definition errors, plus
+  all previously accumulated profile API changes, before moving the matching
+  `cabal.project` and `flake.nix` pins together.
 - Profile-definition output now reports every invalid condition category. Mori
   and other exhaustive consumers must handle the new definition errors and the
   condition payload added to missing-field violations before updating their

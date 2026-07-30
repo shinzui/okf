@@ -16,11 +16,14 @@ let NestedRules = ./NestedRules.dhall
 
 let FieldCondition = ./FieldCondition.dhall
 
+let HandleReferenceRule = ./HandleReferenceRule.dhall
+
 in  { field : Text
     , description : Optional Text
     , allowedValues : List Text
     , cardinality : Cardinality
     , format : Optional FieldFormat
     , elementFields : Optional NestedRules
+    , reference : Optional HandleReferenceRule
     , when : Optional FieldCondition
     }

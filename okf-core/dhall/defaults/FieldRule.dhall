@@ -9,6 +9,8 @@ let NestedRules = ../NestedRules.dhall
 
 let FieldCondition = ../FieldCondition.dhall
 
+let HandleReferenceRule = ../HandleReferenceRule.dhall
+
 in  { Type = FieldRuleType
     , default =
       { description = None Text
@@ -16,6 +18,7 @@ in  { Type = FieldRuleType
       , cardinality = Cardinality.Any
       , format = None FieldFormat
       , elementFields = None NestedRules
+      , reference = None HandleReferenceRule
       , when = None FieldCondition
       }
     }

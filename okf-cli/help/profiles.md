@@ -207,6 +207,38 @@ CONDITIONAL FIELD PRESENCE
 
     profile: decisions/old: missing profile-required field: supersededBy (when status is superseded)
 
+DOCUMENT REFERENCES
+
+  A top-level FieldRule may set reference to a local handle prefix, a list of
+  allowed external URI schemes, and an allowSelf policy. The constructors cover
+  local-only and explicit external alternatives:
+
+    field.localReference "supersedes" "ADR"
+    field.localOrExternalReference "supersededBy" "ADR" [ "mori" ]
+
+  The helpers default allowSelf to False. Use
+  okf.defaults.HandleReferenceRule record completion to override it.
+
+  A canonical handle is checked first. A handle with another prefix is a
+  category error; one with the declared prefix must belong to a valid,
+  profile-governed concept in this bundle. Duplicate owners still produce the
+  existing duplicate-ID deviation but count as present, avoiding a false
+  dangling-reference message. Lists are checked element-wise with indexed paths.
+
+    profile: decisions/current: supersedes[1] references ADR-99, which does not exist in this bundle
+
+  Text that is not a handle must be an absolute URI whose scheme is listed by
+  the policy. Scheme comparison is case-insensitive. okf checks syntax and the
+  scheme offline; it never resolves an external URI or consults Mori, a registry,
+  DNS, or the network.
+
+  The local prefix must use document-handle grammar, be declared by at least one
+  type idPrefix, and have a profile idField. URI schemes must use RFC 3986 scheme
+  grammar. A reference field cannot also declare format. Matching profile/type
+  policies must use the same local prefix; their external schemes intersect and
+  self-reference is allowed only when both permit it. Invalid combinations are
+  hard profile-definition errors before any bundle is read.
+
   A registry reference may be a path to a Dhall file, a directory holding
   package.dhall, or a Dhall expression such as a hash-pinned URL. Without
   --registry, okf uses OKF_PROFILE_REGISTRY, then profiles.registry from

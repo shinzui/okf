@@ -125,6 +125,21 @@ upgrades both rule kinds with `when = Nothing`. Conjunction, negation,
 cross-scope paths, and conditional value constraints remain deliberately out of
 scope pending concrete evidence.
 
+Document references are another compiled field component. A
+`HandleReferenceRule` contains `localPrefix`, `externalUriSchemes`, and
+`allowSelf`. Compilation rejects invalid or undeclared prefixes, missing
+profile `idField` ownership, invalid URI schemes, a conflicting type-level
+prefix, and any reference rule combined with a named format. Matching
+profile/type declarations require the same prefix, intersect external schemes
+case-insensitively, and combine `allowSelf` with logical AND.
+
+Bundle validation builds one index of valid profile-governed document-ID owners
+and uses it for every reference field. Local handles must have the compiled
+prefix and appear in that index; a duplicate owner counts as present while the
+existing duplicate-ID check remains authoritative. Non-handles may pass only as
+valid absolute URIs with an explicitly allowed scheme. Validation is entirely
+offline and performs no registry, filesystem, DNS, or network resolution.
+
 
 ## Consequences
 
@@ -147,6 +162,15 @@ Conditional presence adds structured definition errors for every invalid
 predicate category and adds the activating `Maybe FieldCondition` to the four
 top-level and nested missing-field violation constructors. Exhaustive consumers,
 including Mori, must update those patterns before moving their okf pin.
+
+Document-reference support adds `DanglingHandleReference`,
+`ReferenceHandlePrefixMismatch`, `MalformedDocumentReference`,
+`ExternalReferenceSchemeNotAllowed`, and `SelfDocumentReference` to
+`ProfileViolation`. It adds definition errors for invalid or undeclared local
+prefixes, missing ID ownership, invalid external schemes, conflicting prefixes,
+and reference-plus-format declarations. Adding `reference` to public
+`FieldRule` is a closed-record Dhall and positional-constructor migration;
+external exhaustive consumers must update in the same release adoption.
 
 Later profile constraints extend the compiled field rule rather than scanning
 raw declarations again. Human and JSON profile display continue to preserve the

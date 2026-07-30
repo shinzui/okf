@@ -29,6 +29,20 @@ and otherwise contains ASCII letters or digits. The number is positive decimal
 with no leading zeros. Handles are unique across the whole bundle under the
 configured field.
 
+A top-level profile field may declare a `HandleReferenceRule`. The rule names
+one local handle prefix, an explicit list of permitted external URI schemes,
+and whether the source document may reference itself. Local references resolve
+only against valid, profile-governed owners in the current bundle: the owner
+must match a declared type, carry the configured `idField`, parse as a document
+ID, and use that type's exact `idPrefix`. Duplicate owners still make a handle
+present while retaining the separate duplicate-ID diagnostic.
+
+Reference rules own the alternative value shape “local handle or allowed
+absolute URI” and therefore cannot be combined with an independent named
+format. When profile and type scopes both declare a reference rule, their local
+prefixes must agree, allowed external schemes are intersected
+case-insensitively, and `allowSelf` is combined with logical AND.
+
 The canonical concept path remains authoritative. `okf show` tries path lookup
 first and only then falls back to handle lookup. Without a profile, handle
 lookup searches all string-valued frontmatter fields; `--profile` narrows it to
@@ -55,5 +69,15 @@ Renaming a document can preserve its short handle, but links written with
 canonical paths still need updating. Duplicate and malformed handles are
 profile deviations, advisory unless `--profile-enforce` is used.
 
+Reference validation reports malformed values, wrong local prefixes, dangling
+local targets, disallowed external schemes, and disallowed self references at
+their structural field paths. okf never resolves an external URI: it validates
+only absolute-URI syntax and the declared scheme. Mori owns any later
+cross-repository lookup. Inverse references, graph cycles, and external target
+existence remain outside this decision.
+
 The Dhall schema addition is breaking for descriptors that construct closed
 records directly. The changelogs call out the required migration.
+
+This ADR was amended on 2026-07-29 to cover profile-declared document-reference
+policies and the offline local/external resolution boundary.

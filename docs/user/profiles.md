@@ -144,6 +144,7 @@ Each `FieldRule` — one frontmatter key, and optionally what it is for:
 | `cardinality` | `Cardinality` | `Any` preserves legacy presence behavior; `Scalar` accepts non-blank text, numbers, and booleans; `List` accepts arrays. Objects and null do not satisfy explicit cardinality. |
 | `format` | `Optional FieldFormat` | A parser-backed textual contract: UTC RFC3339 timestamp, calendar date, absolute URI, URI with a required scheme, or document handle. `None` means unconstrained. |
 | `elementFields` | `Optional NestedRules` | When present, the field must be a list whose elements are flat records checked with nested required and recommended rules. `None` means no element schema. |
+| `reference` | `Optional HandleReferenceRule` | Declares that present top-level values are local handles with one prefix or absolute external URIs using an explicitly allowed scheme. Local handles must resolve inside the bundle. |
 | `when` | `Optional FieldCondition` | Gates only this rule's required or recommended presence check on a same-scope scalar sibling having one of `hasValue`. Present values are still constrained when the condition is false. |
 
 A description is attached to the key it documents rather than kept in a parallel
@@ -511,6 +512,64 @@ missing, malformed, and duplicate handles as profile deviations. `okf id next`
 prints one more than the highest allocated number and never fills gaps, so a
 retired ID is not silently reused.
 
+## Document references
+
+A top-level `FieldRule.reference` gives a frontmatter relationship an explicit
+target policy. `localPrefix` selects the only local handle category the field may
+name, `externalUriSchemes` lists absolute-URI alternatives, and `allowSelf`
+controls whether a local handle may resolve to the concept carrying it. An empty
+scheme list means local handles only.
+
+```dhall
+let okf = ./okf-core/dhall/package.dhall
+
+let field = okf.mk.FieldRule
+
+in  [ field.localReference "supersedes" "ADR"
+    , field.localOrExternalReference
+        "supersededBy"
+        "ADR"
+        [ "mori" ]
+    ]
+```
+
+The helpers default `allowSelf` to `False`. Use the exported
+`okf.defaults.HandleReferenceRule` when self-reference is intentional:
+
+```dhall
+okf.defaults.FieldRule::{
+, field = "relatedDecision"
+, reference =
+    Some okf.defaults.HandleReferenceRule::{
+    , localPrefix = "ADR"
+    , allowSelf = True
+    }
+}
+```
+
+Reference policies apply to present strings and lists of strings. List failures
+carry the exact index, such as `supersedes[1]`. A parsed handle with another
+prefix is a category error; one with the declared prefix must resolve to a valid
+profile-governed ID in the current bundle. A duplicate target counts as present
+and continues to produce the existing duplicate-ID diagnostic rather than a
+false dangling error. Non-text values and text that is neither a canonical
+handle nor an absolute URI are malformed references.
+
+External schemes are compared case-insensitively and must be listed explicitly.
+okf validates only URI syntax and the allowed scheme: it performs no DNS,
+network, registry, cross-bundle, or cross-repository resolution. Mori owns that
+external graph boundary.
+
+Compilation rejects malformed or undeclared local prefixes, invalid external
+scheme names, policies without an `idField`, different profile/type local
+prefixes, and a field that combines `reference` with `format`. Matching
+profile/type policies intersect their external schemes and permit self-reference
+only when both declarations allow it.
+
+```text
+profile: decisions/current: supersedes[1] references ADR-99, which does not exist in this bundle
+```
+
 ## The canonical schema
 
 The descriptor shape above is published as Dhall under
@@ -576,6 +635,8 @@ in  [ -- 1. constructors — the form to reach for
     , field.uri "source"
     , field.uriWithScheme "originPlan" "mori"
     , field.documentHandle "decision" "ADR"
+    , field.localReference "supersedes" "ADR"
+    , field.localOrExternalReference "supersededBy" "ADR" [ "mori" ]
     , field.conditional
         (field.scalar "supersededBy")
         { field = "status", hasValue = [ "superseded" ] }
@@ -593,12 +654,13 @@ in  [ -- 1. constructors — the form to reach for
       , cardinality = okf.Cardinality.Any
       , format = None okf.FieldFormat
       , elementFields = None okf.NestedRules
+      , reference = None okf.HandleReferenceRule
       , when = None okf.FieldCondition
       }
     ]
 ```
 
-`okf.mk.FieldRule` exports twelve functions:
+`okf.mk.FieldRule` exports fourteen functions:
 
 | Constructor | Type | Use |
 |-------------|------|-----|
@@ -614,6 +676,8 @@ in  [ -- 1. constructors — the form to reach for
 | `documentHandle` | `Text -> Text -> FieldRule` | A key constrained to a canonical document handle with the given prefix. |
 | `recordList` | `Text -> NestedRules -> FieldRule` | A list field whose flat record elements follow the given nested rules. |
 | `conditional` | `FieldRule -> FieldCondition -> FieldRule` | Attach a same-scope presence condition to an existing rule. |
+| `localReference` | `Text -> Text -> FieldRule` | A local-only reference field with the given handle prefix. |
+| `localOrExternalReference` | `Text -> Text -> List Text -> FieldRule` | A local reference field with explicit external URI-scheme alternatives. |
 
 **What this does and does not protect against.** Record completion and the
 constructors both shield you from *additive, defaulted* schema fields: if another

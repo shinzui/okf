@@ -65,6 +65,7 @@ import Okf.Profile
     FieldPath (..),
     FieldPathSegment (..),
     FrontmatterRules (..),
+    HandleReferenceRule (..),
     NestedRules (..),
     ProfileDefinitionError (..),
     ProfileSpec (..),
@@ -700,6 +701,7 @@ renderProfileDetail
           indent <> "    allowedValues: " <> renderVocabulary (rule ^. #allowedValues),
           indent <> "    cardinality: " <> renderCardinality (rule ^. #cardinality),
           indent <> "    format: " <> maybe "(none)" renderFieldFormat (rule ^. #format),
+          indent <> "    reference: " <> maybe "(none)" renderHandleReferenceRule (rule ^. #reference),
           indent <> "    when: " <> maybe "(none)" renderCondition (rule ^. #when)
         ]
           <> case rule ^. #elementFields of
@@ -1201,6 +1203,41 @@ renderProfileViolation compiled concepts = \case
       <> renderFieldFormat expected
       <> ", found: "
       <> Text.pack (LazyByteString.unpack (Aeson.encode actual))
+  DanglingHandleReference cid fieldPath handle ->
+    renderConceptId cid
+      <> ": "
+      <> renderFieldPath fieldPath
+      <> " references "
+      <> handle
+      <> ", which does not exist in this bundle"
+  ReferenceHandlePrefixMismatch cid fieldPath actual expectedPrefix ->
+    renderConceptId cid
+      <> ": "
+      <> renderFieldPath fieldPath
+      <> " references "
+      <> actual
+      <> ", which must use prefix "
+      <> expectedPrefix
+  MalformedDocumentReference cid fieldPath actual ->
+    renderConceptId cid
+      <> ": malformed document reference at "
+      <> renderFieldPath fieldPath
+      <> ": "
+      <> Text.pack (LazyByteString.unpack (Aeson.encode actual))
+  ExternalReferenceSchemeNotAllowed cid fieldPath actualScheme allowedSchemes ->
+    renderConceptId cid
+      <> ": external reference at "
+      <> renderFieldPath fieldPath
+      <> " uses scheme "
+      <> actualScheme
+      <> ", allowed schemes: "
+      <> renderList allowedSchemes
+  SelfDocumentReference cid fieldPath handle ->
+    renderConceptId cid
+      <> ": self reference at "
+      <> renderFieldPath fieldPath
+      <> " is not allowed: "
+      <> handle
   FieldNotInProfile cid key ->
     renderConceptId cid <> ": frontmatter field not declared by profile: " <> key
   NestedElementNotRecord cid fieldPath actual ->
@@ -1308,6 +1345,34 @@ renderProfileDefinitionError = \case
       <> "]"
   SelfConditionalField scope target ->
     renderScope scope <> ": field cannot condition its own presence: " <> renderFieldPath target
+  InvalidReferencePrefix scope target prefix ->
+    renderScope scope <> ": invalid local reference prefix at " <> renderFieldPath target <> ": " <> prefix
+  ReferencePrefixNotDeclared scope target prefix ->
+    renderScope scope
+      <> ": local reference prefix at "
+      <> renderFieldPath target
+      <> " is not declared by any type: "
+      <> prefix
+  ReferenceRequiresIdField scope target ->
+    renderScope scope <> ": reference at " <> renderFieldPath target <> " requires profile idField"
+  InvalidExternalReferenceScheme scope target scheme ->
+    renderScope scope <> ": invalid external reference scheme at " <> renderFieldPath target <> ": " <> scheme
+  ConflictingReferencePrefix ctype target profilePrefix typePrefix ->
+    "type "
+      <> ctype
+      <> " frontmatter: conflicting local reference prefixes for "
+      <> renderFieldPath target
+      <> " (profile: "
+      <> profilePrefix
+      <> ", type: "
+      <> typePrefix
+      <> ")"
+  ReferenceWithFormat scope target fieldFormat ->
+    renderScope scope
+      <> ": reference at "
+      <> renderFieldPath target
+      <> " cannot also declare format "
+      <> renderFieldFormat fieldFormat
   where
     renderScope Nothing = "profile frontmatter"
     renderScope (Just ctype) = "type " <> ctype <> " frontmatter"
@@ -1331,6 +1396,18 @@ renderFieldFormat = \case
   Uri -> "uri"
   UriWithScheme scheme -> "uri-with-scheme(" <> scheme <> ")"
   DocumentHandle prefix -> "document-handle(" <> prefix <> ")"
+
+renderHandleReferenceRule :: HandleReferenceRule -> Text
+renderHandleReferenceRule HandleReferenceRule {localPrefix, externalUriSchemes, allowSelf} =
+  "local-prefix("
+    <> localPrefix
+    <> "), external-uri-schemes("
+    <> renderList externalUriSchemes
+    <> "), allow-self("
+    <> (if allowSelf then "true" else "false")
+    <> ")"
+  where
+    renderList xs = "[" <> Text.intercalate ", " xs <> "]"
 
 valueCardinalityName :: Aeson.Value -> Text
 valueCardinalityName = \case

@@ -22,6 +22,8 @@ let NestedRules = ../NestedRules.dhall
 
 let FieldCondition = ../FieldCondition.dhall
 
+let HandleReferenceRule = ../defaults/HandleReferenceRule.dhall
+
 in  { plain = \(field : Text) -> FieldRule::{ field }
     , documented =
         \(field : Text) ->
@@ -61,4 +63,20 @@ in  { plain = \(field : Text) -> FieldRule::{ field }
         \(rule : FieldRule.Type) ->
         \(condition : FieldCondition) ->
           rule with when = Some condition
+    , localReference =
+        \(field : Text) ->
+        \(localPrefix : Text) ->
+          FieldRule::{
+          , field
+          , reference = Some HandleReferenceRule::{ localPrefix }
+          }
+    , localOrExternalReference =
+        \(field : Text) ->
+        \(localPrefix : Text) ->
+        \(externalUriSchemes : List Text) ->
+          FieldRule::{
+          , field
+          , reference =
+              Some HandleReferenceRule::{ localPrefix, externalUriSchemes }
+          }
     }
