@@ -7,6 +7,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.4.0.0] - 2026-07-30
+
 ### Added
 
 - `okf profile show` prints `frontmatter.optional` at profile scope, under each
@@ -17,6 +19,12 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   error, and the `ConflictingFieldRequirement` message now names all three
   presence lists. The profiles help topic gains an OPTIONAL FIELDS section and
   documents when to prefer `optional` over `recommended`.
+
+### Changed
+
+- Requires `okf-core ^>=0.4.0.0`. That release adds the `optional` field to
+  `FrontmatterRules` and `NestedRules`, so a descriptor annotated against okf's
+  current `Profile.dhall` by relative path must declare the third list.
 
 ## [0.3.0.0] - 2026-07-29
 
