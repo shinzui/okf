@@ -63,7 +63,7 @@ ADR for local-reference versus external-resolution ownership.
 |---|-------|------|-----------|-----------|--------|
 | EP-1 | Validate one-level nested profile records | `docs/plans/29-validate-one-level-nested-profile-records.md` | None | None | Complete |
 | EP-2 | Enforce same-scope conditional field requirements | `docs/plans/30-enforce-same-scope-conditional-field-requirements.md` | EP-1 | None | Complete |
-| EP-3 | Validate profile-declared document references | `docs/plans/31-validate-profile-declared-document-references.md` | None | EP-1 | Not Started |
+| EP-3 | Validate profile-declared document references | `docs/plans/31-validate-profile-declared-document-references.md` | None | EP-1 | Complete |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
 Hard Deps and Soft Deps reference other rows by their # prefix (e.g., EP-1, EP-3).
@@ -117,9 +117,9 @@ and the milestone. This section provides an at-a-glance view of the entire initi
 - [x] EP-1: validate nested record presence, shape, cardinality, vocabulary, and format.
 - [x] EP-2: compile and reject dead or cross-scope conditions.
 - [x] EP-2: enforce top-level and nested sibling conditions in permissive and strict modes.
-- [ ] EP-3: compile explicit local-handle/external-URI reference policies.
-- [ ] EP-3: report dangling, wrong-prefix, malformed, and disallowed self references once.
-- [ ] Initiative acceptance: validate the review convention and ADR reference fixtures.
+- [x] EP-3: compile explicit local-handle/external-URI reference policies.
+- [x] EP-3: report dangling, wrong-prefix, malformed, and disallowed self references once.
+- [x] Initiative acceptance: validate the review convention and ADR reference fixtures.
 
 
 ## Surprises & Discoveries
@@ -173,6 +173,20 @@ interactions between child plans. Provide concise evidence.
   Evidence: core and CLI render the triggering predicate for both top-level and
   indexed nested paths.
 
+- Discovery: reference existence needs a stricter owner index than the public
+  document-ID allocation/lookup helpers. A valid reference target must have a
+  matching declared type and exact `idPrefix`, while duplicate valid owners must
+  still count as present and retain the existing duplicate diagnostic.
+  Evidence: EP-3's bundle accepts a reference to duplicate `ADR-3` without a
+  dangling error and reports the duplicate separately.
+
+- Discovery: Mori's current advisory source predates the compiled profile API
+  and exhaustively renders the old violation set, even though reverse-dependency
+  metadata alone did not expose the complete migration. Its `cabal.project` and
+  `flake.nix` pin the same old okf commit and must move together.
+  Evidence: `mori-cli/src/Mori/Okf/Advisory.hs` and commit
+  `c66a51cc337ce2b08662f5809668fa4585609e13` in both source pins.
+
 
 ## Decision Log
 
@@ -210,6 +224,13 @@ plan.
   global semantics.
   Date: 2026-07-29
 
+- Decision: Matching reference policies narrow by equal local prefix,
+  case-insensitive external-scheme intersection, and logical AND for
+  `allowSelf`; profiles without `idField` cannot declare local references.
+  Rationale: this follows the compiler's safe-narrowing model and prevents a
+  policy that can never resolve a valid local owner.
+  Date: 2026-07-29
+
 
 ## Outcomes & Retrospective
 
@@ -224,3 +245,20 @@ docs/adr/. Keep task-local execution and coordination details here.
   predicates before document traversal. Runtime validation preserves ordered
   profile/type clauses, avoids cascades when the condition source is absent or invalid,
   and includes the triggering predicate in JSON and CLI diagnostics.
+
+- EP-3 complete: top-level fields can now declare local document-handle targets,
+  explicitly permitted external URI schemes, and self-reference policy.
+  Compilation rejects invalid, dead, conflicting, or format-overlapping rules;
+  runtime validation resolves valid local owners once per bundle and remains
+  offline for external URIs. Diagnostics distinguish dangling, wrong-prefix,
+  malformed, disallowed-scheme, and self-reference failures with indexed paths.
+
+- Initiative complete: profiles now govern one level of structured record
+  metadata, same-scope conditional presence, and explicit document
+  relationships without becoming a recursive schema or online graph resolver.
+  All child plans are complete; core/CLI tests, compatibility fixtures, Dhall
+  typechecks, end-to-end acceptance commands, and Nix checks pass. ADRs 1 and 5
+  now carry the durable reference and compiled-validation decisions. The only
+  coordinated follow-up is external consumer adoption, especially Mori's
+  compiled API and exhaustive renderer migration; no external repository was
+  changed by this initiative.

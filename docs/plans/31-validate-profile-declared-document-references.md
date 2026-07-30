@@ -4,6 +4,7 @@ slug: validate-profile-declared-document-references
 title: "Validate profile-declared document references"
 kind: exec-plan
 created_at: 2026-07-29T17:17:04Z
+intention: intention_01kyqwbdgjen0reqtmzqv8mwb7
 master_plan: "docs/masterplans/5-validate-structured-metadata-and-document-relationships-in-okf-profiles.md"
 ---
 
@@ -32,13 +33,13 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] Verify MasterPlan 4 completion and read the handle/format compiled interfaces.
-- [ ] Add `HandleReferenceRule` and optional top-level field reference policy to schema and authoring helpers.
-- [ ] Compile prefix, external-scheme, self-reference, and format-interaction rules.
-- [ ] Build one valid-handle index and validate scalar/list references with indexed paths.
-- [ ] Add dangling, wrong-prefix, malformed, external, self, duplicate-target, and compatibility fixtures.
-- [ ] Update JSON, profile show, diagnostics, help, changelogs, and the local/external boundary ADR.
-- [ ] Run full tests and external-consumer migration checks.
+- [x] (2026-07-30 00:13Z) Verify MasterPlan 4 completion and read the handle/format compiled interfaces.
+- [x] (2026-07-30 00:27Z) Add `HandleReferenceRule` and optional top-level field reference policy to schema and authoring helpers.
+- [x] (2026-07-30 00:27Z) Compile prefix, external-scheme, self-reference, and format-interaction rules.
+- [x] (2026-07-30 00:27Z) Build one valid-handle index and validate scalar/list references with indexed paths.
+- [x] (2026-07-30 00:27Z) Add dangling, wrong-prefix, malformed, external, self, duplicate-target, and compatibility fixtures.
+- [x] (2026-07-30 00:33Z) Update JSON, profile show, diagnostics, help, changelogs, and the local/external boundary ADR.
+- [x] (2026-07-30 00:33Z) Run full tests and external-consumer migration checks.
 
 
 ## Surprises & Discoveries
@@ -46,7 +47,26 @@ This section must always reflect the actual current state of the work.
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+- Discovery: the public `documentIdsInBundle` index intentionally accepts every
+  parseable value under `idField` because allocation and lookup have looser use
+  cases than reference integrity. Reference validation therefore needs a
+  separate owner index that also requires a matching type and exact declared
+  `idPrefix`.
+  Evidence: the reference fixture resolves `ADR-2` and duplicate `ADR-3`, while
+  invalid owners cannot satisfy a target.
+
+- Discovery: Mori's registered dependency metadata did not expose the full
+  migration surface, but its source does. Its advisory module still calls the
+  pre-compiler `validateProfile spec concepts` API and exhaustively matches the
+  older violation set; `cabal.project` and `flake.nix` both pin okf commit
+  `c66a51cc337ce2b08662f5809668fa4585609e13`.
+  Evidence: `mori-cli/src/Mori/Okf/Advisory.hs` plus the two matching source pins.
+
+- Discovery: reusing the new owner index for the existing duplicate-ID scan
+  would narrow established duplicate diagnostics because the older scan also
+  reports malformed ownership contexts. Keeping that scan unchanged preserves
+  its ordering and behavior, while duplicate valid owners remain present in the
+  reference index.
 
 
 ## Decision Log
@@ -77,6 +97,25 @@ Record every decision made while working on the plan.
   actual producer contract.
   Date: 2026-07-29
 
+- Decision: matching profile-level and type-level reference policies require
+  the same local prefix, intersect external schemes case-insensitively, and
+  combine `allowSelf` with logical AND.
+  Rationale: type rules may safely narrow profile policy but cannot silently
+  broaden the set of reachable targets or self-reference permission.
+  Date: 2026-07-29
+
+- Decision: reject a reference policy when the profile has no `idField`.
+  Rationale: without one configured ownership field, every local target policy
+  is dead and could only produce misleading dangling diagnostics.
+  Date: 2026-07-29
+
+- Decision: retain the existing duplicate-ID scan alongside the stricter
+  reference-owner index.
+  Rationale: this preserves established diagnostics and ordering; a valid
+  duplicate target counts as present and still receives the dedicated
+  duplicate-ID violation.
+  Date: 2026-07-29
+
 
 ## Outcomes & Retrospective
 
@@ -85,7 +124,26 @@ Compare the result against the original purpose. Before marking the plan complet
 distill durable project context from the Decision Log, Surprises & Discoveries, and
 this section into docs/adr/. Keep task-local execution details here.
 
-(To be filled during and after implementation.)
+Profiles can now declare local-only or explicit local-or-external document
+relationships with an overridable self-reference policy. Compilation rejects
+dead, malformed, conflicting, and reference-plus-format declarations before a
+bundle is traversed. Runtime validation builds one valid-owner index and emits
+distinct indexed diagnostics for dangling handles, wrong prefixes, malformed
+values, disallowed URI schemes, and self references; duplicate owners remain a
+separate diagnostic without becoming falsely dangling.
+
+The Dhall schema, defaults, constructors, compatibility chain, Haskell/JSON
+surface, profile display, CLI diagnostics, help, changelogs, and ADRs now agree.
+The frozen condition-aware fixture proves old nested conditions survive with
+`reference = None`. The acceptance fixture proves positive local, uppercase
+allowed external, allowed self, and duplicate-target behavior alongside every
+negative category.
+
+`cabal test all`, all four relevant Dhall typechecks, both human and JSON
+`profile show`, the valid and invalid end-to-end CLI cases, `git diff --check`,
+and `nix flake check` pass. Mori was inspected but deliberately not edited: it
+must adopt the compiled API, accumulated violation changes, and both matching
+source pins in its own coordinated rollout.
 
 
 ## Context and Orientation
