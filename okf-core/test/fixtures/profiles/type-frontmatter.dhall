@@ -15,6 +15,7 @@ in    { name = "type-frontmatter"
           , field.documented "title" "Human-readable concept title."
           ]
         , recommended = [] : List FieldRule
+        , optional = [] : List FieldRule
         }
       , allowUnknownTypes = False
       , allowUnknownFields = True
@@ -27,6 +28,7 @@ in    { name = "type-frontmatter"
               [ field.documented "owner" "Person responsible for the concept." ]
             , recommended =
               [ field.documented "reviewer" "Person who independently reviewed it." ]
+            , optional = [] : List FieldRule
             }
           }
         , TypeRule::{ type = "Open Concept" }

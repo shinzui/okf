@@ -27,6 +27,7 @@ in    { name = "formats"
             }
           ]
         , recommended = [] : List FieldRule.Type
+        , optional = [] : List FieldRule.Type
         }
       , allowUnknownTypes = False
       , allowUnknownFields = True
@@ -37,6 +38,7 @@ in    { name = "formats"
           , frontmatter =
             { required = [ field.uriWithScheme "homepage" "https" ]
             , recommended = [] : List FieldRule.Type
+            , optional = [] : List FieldRule.Type
             }
           }
         ]

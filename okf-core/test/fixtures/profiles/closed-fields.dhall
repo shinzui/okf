@@ -15,6 +15,7 @@ in    { name = "closed-fields"
           , field.enum "status" [ "proposed", "accepted", "closed" ]
           ]
         , recommended = [] : List FieldRule
+        , optional = [] : List FieldRule
         }
       , allowUnknownTypes = False
       , allowUnknownFields = False
@@ -28,6 +29,7 @@ in    { name = "closed-fields"
               , field.plain "owner"
               ]
             , recommended = [] : List FieldRule
+            , optional = [] : List FieldRule
             }
           }
         , TypeRule::{
@@ -35,6 +37,7 @@ in    { name = "closed-fields"
           , frontmatter =
             { required = [ field.plain "reviewer" ]
             , recommended = [] : List FieldRule
+            , optional = [] : List FieldRule
             }
           }
         ]

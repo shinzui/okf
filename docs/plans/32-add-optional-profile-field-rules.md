@@ -62,10 +62,11 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] Milestone 1: add `optional` to `FrontmatterRules` and `NestedRules` in Haskell and Dhall, with empty defaults.
-- [ ] Milestone 1: freeze the current reference-aware descriptor generation as a compatibility decoder that upgrades with `optional = []`.
-- [ ] Milestone 1: compile optional rules into `EffectiveFieldRule` with no presence clauses; extend every `required <> recommended` enumeration in `compileProfile`.
-- [ ] Milestone 1: reject `when` on an optional rule and same-scope presence-list collisions during compilation.
+- [x] Milestone 1: add `optional` to `FrontmatterRules` and `NestedRules` in Haskell and Dhall, with empty defaults. (2026-07-30)
+- [x] Milestone 1: freeze the current reference-aware descriptor generation as a compatibility decoder that upgrades with `optional = []`. (2026-07-30)
+- [x] Milestone 1: compile optional rules into `EffectiveFieldRule` with no presence clauses; extend every `required <> recommended` enumeration in `compileProfile`. (2026-07-30)
+- [x] Milestone 1: reject `when` on an optional rule and same-scope presence-list collisions during compilation. (2026-07-30)
+- [x] Milestone 1 (added): update every in-repo current-schema Dhall fixture with `optional`, since a `: Profile` annotation against the local schema cannot be rescued by a fallback decoder. (2026-07-30)
 - [ ] Milestone 2: prove absence is silent in permissive and strict modes while present values are fully checked, including nested and closed-vocabulary behavior.
 - [ ] Milestone 2: render optional rules in `okf profile show`, profile JSON, and the new definition-error message.
 - [ ] Milestone 3: add positive and negative fixtures (top-level, type-level, closed vocabulary, conditional coexistence, nested) plus the frozen-generation compatibility fixture.
@@ -78,7 +79,33 @@ This section must always reflect the actual current state of the work.
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+- The plan expected only the frozen decoder to be needed for compatibility, but
+  every in-repo fixture that writes `: Profile` against `../../../dhall/Profile.dhall`
+  broke immediately, because Dhall rejects the annotation before any Haskell
+  decoder runs. ADR 5 already records this ("the fallback decoders cannot bypass
+  an annotation that Dhall itself rejects"); the practical consequence is that
+  eleven fixtures needed an `optional` entry:
+
+  ```text
+  Failed to load profile registry ./okf-core/test/fixtures/profiles/postgresql.dhall:
+  Error: Expression doesn't match annotation
+  { frontmatter : { - optional : … , … } , types : … }
+  ```
+
+  The frozen decoder still does its job for descriptors that pin okf by URL and
+  hash — `conditional-fields-ep2.dhall` and the other `-ep*` fixtures, which spell
+  their record types out literally, kept loading untouched.
+  Date: 2026-07-30
+
+- `optional` collides with `Options.Applicative.optional` in
+  `okf-cli/src/Okf/Cli.hs`, which imports that module unqualified and calls
+  `optional` nine times for parser options. Importing `FrontmatterRules (..)`
+  put the new field selector in scope and made all nine ambiguous. The fix was to
+  stop importing those two records' field selectors entirely and read all three
+  presence lists through generic-lens labels (`rules ^. #optional`), which need no
+  selector in scope. Record *patterns* were not an option: GHC rejects a field
+  label whose selector is not imported (`GHC-53822`).
+  Date: 2026-07-30
 
 
 ## Decision Log
@@ -139,6 +166,41 @@ Record every decision made while working on the plan.
   lines that `renderFieldRule` already emits, so adding an optional block to them would
   document output that no version of okf has ever produced. The drift is small, adjacent, and
   found while planning this change.
+  Date: 2026-07-30
+
+- Decision: read the three presence lists in `okf-cli/src/Okf/Cli.hs` through
+  generic-lens labels instead of record patterns, and drop `FrontmatterRules` and
+  `NestedRules` from that module's import list.
+  Rationale: importing their field selectors makes `optional` ambiguous against
+  `Options.Applicative.optional`, which the module calls nine times. Qualifying
+  those nine call sites would spread the cost across unrelated parser code;
+  labels keep it local to the three rendering sites and leave the option parser
+  untouched.
+  Date: 2026-07-30
+
+- Decision: give `compileFieldRule` and `compileNestedFieldRule` their value
+  constraints by record-updating `compileOptionalFieldRule` /
+  `compileOptionalNestedFieldRule`, rather than duplicating the constraint block.
+  Rationale: it makes the model the code states — a required or recommended rule
+  *is* an optional rule plus one presence clause — and means a future value
+  constraint cannot be added to one path and forgotten on the other.
+  Date: 2026-07-30
+
+- Decision: leave `listKey` in `definitionErrorKey` mapping every non-`required`
+  list name to 1, so `optional` and `nested optional` duplicates sort beside
+  `recommended` ones.
+  Rationale: the plan required existing error ordering to be untouched. Giving
+  the new list names their own rank would have moved `nested required` and
+  `nested recommended` relative to `recommended`, changing output for descriptors
+  that have nothing to do with this feature.
+  Date: 2026-07-30
+
+- Decision: an optional rule carrying `when` produces only
+  `OptionalFieldWithCondition`, not the source-validity errors
+  (`ConditionFieldNotDeclared` and friends) that a required or recommended rule's
+  condition would produce.
+  Rationale: the condition is dead, so validating what it points at would add
+  noise to a diagnostic whose whole message is "this condition does nothing".
   Date: 2026-07-30
 
 - Decision: do not migrate `shinzui/okf-profiles` in this plan.

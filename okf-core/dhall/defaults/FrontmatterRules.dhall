@@ -5,5 +5,8 @@ let FieldRule = ../FieldRule.dhall
 
 in  { Type = FrontmatterRulesType
     , default =
-      { required = [] : List FieldRule, recommended = [] : List FieldRule }
+      { required = [] : List FieldRule
+      , recommended = [] : List FieldRule
+      , optional = [] : List FieldRule
+      }
     }

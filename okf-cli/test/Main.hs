@@ -269,7 +269,8 @@ samplePostgresqlProfile =
       frontmatter =
         FrontmatterRules
           { required = [undocumentedField "type", undocumentedField "title"],
-            recommended = []
+            recommended = [],
+            optional = []
           },
       allowUnknownTypes = False,
       allowUnknownFields = True,
@@ -278,7 +279,7 @@ samplePostgresqlProfile =
         [ TypeRule
             { type_ = "PostgreSQL Table",
               description = Nothing,
-              frontmatter = FrontmatterRules {required = [], recommended = []},
+              frontmatter = FrontmatterRules {required = [], recommended = [], optional = []},
               pathPattern = Just "schemas/*/tables/*",
               resourceScheme = Just "postgresql",
               requireSchemaSection = True,
@@ -309,7 +310,19 @@ sampleDecisionsProfile =
                   },
                 undocumentedField "title"
               ],
-            recommended = []
+            recommended = [],
+            optional =
+              [ FieldRule
+                  { field = "originatingPlan",
+                    description = Just "The plan that produced this decision, when one did.",
+                    allowedValues = [],
+                    cardinality = Scalar,
+                    format = Nothing,
+                    elementFields = Nothing,
+                    reference = Nothing,
+                    when = Nothing
+                  }
+              ]
           },
       allowUnknownTypes = False,
       allowUnknownFields = True,
@@ -321,7 +334,8 @@ sampleDecisionsProfile =
               frontmatter =
                 FrontmatterRules
                   { required = [FieldRule "owner" (Just "Person responsible for the decision.") [] Scalar (Just (DocumentHandle "USR")) Nothing Nothing Nothing],
-                    recommended = [FieldRule "reviewer" Nothing ["Ari", "Bo"] List Nothing Nothing (Just (HandleReferenceRule "ADR" ["mori"] False)) Nothing]
+                    recommended = [FieldRule "reviewer" Nothing ["Ari", "Bo"] List Nothing Nothing (Just (HandleReferenceRule "ADR" ["mori"] False)) Nothing],
+                    optional = [FieldRule "supersedes" Nothing [] Scalar Nothing Nothing (Just (HandleReferenceRule "ADR" [] False)) Nothing]
                   },
               pathPattern = Just "decisions/*",
               resourceScheme = Nothing,
@@ -353,13 +367,15 @@ sampleNestedProfile =
                   ( Just
                       NestedRules
                         { required = [NestedFieldRule "outcome" Nothing ["approved", "rejected"] Any Nothing (Just (FieldCondition "kind" ["model"]))],
-                          recommended = [NestedFieldRule "notes" Nothing [] Scalar Nothing Nothing]
+                          recommended = [NestedFieldRule "notes" Nothing [] Scalar Nothing Nothing],
+                          optional = [NestedFieldRule "model" Nothing [] Scalar Nothing Nothing]
                         }
                   )
                   Nothing
                   Nothing
               ],
-            recommended = []
+            recommended = [],
+            optional = []
           },
       allowUnknownTypes = True,
       allowUnknownFields = True,
@@ -396,7 +412,14 @@ sampleNestedProfileDetail =
     "          cardinality: scalar",
     "          format: (none)",
     "          when: (none)",
-    "frontmatter.recommended: (none)"
+    "      optional:",
+    "        - model: (none)",
+    "          allowedValues: (any)",
+    "          cardinality: scalar",
+    "          format: (none)",
+    "          when: (none)",
+    "frontmatter.recommended: (none)",
+    "frontmatter.optional: (none)"
   ]
 
 -- | Every optional field prints, as @(none)@ when absent, so the shape does not
@@ -427,6 +450,14 @@ sampleProfileDetail =
     "    when: (none)",
     "    elementFields: (none)",
     "frontmatter.recommended: (none)",
+    "frontmatter.optional:",
+    "  - originatingPlan: The plan that produced this decision, when one did.",
+    "    allowedValues: (any)",
+    "    cardinality: scalar",
+    "    format: (none)",
+    "    reference: (none)",
+    "    when: (none)",
+    "    elementFields: (none)",
     "",
     "type: Decision Record",
     "  description: One accepted decision, never edited after acceptance.",
@@ -444,6 +475,14 @@ sampleProfileDetail =
     "      cardinality: list",
     "      format: (none)",
     "      reference: local-prefix(ADR), external-uri-schemes([mori]), allow-self(false)",
+    "      when: (none)",
+    "      elementFields: (none)",
+    "  frontmatter.optional:",
+    "    - supersedes: (none)",
+    "      allowedValues: (any)",
+    "      cardinality: scalar",
+    "      format: (none)",
+    "      reference: local-prefix(ADR), external-uri-schemes([]), allow-self(false)",
     "      when: (none)",
     "      elementFields: (none)",
     "  pathPattern: decisions/*",
@@ -481,11 +520,13 @@ sampleUndocumentedProfileDetail =
     "    when: (none)",
     "    elementFields: (none)",
     "frontmatter.recommended: (none)",
+    "frontmatter.optional: (none)",
     "",
     "type: PostgreSQL Table",
     "  description: (none)",
     "  frontmatter.required: (none)",
     "  frontmatter.recommended: (none)",
+    "  frontmatter.optional: (none)",
     "  pathPattern: schemas/*/tables/*",
     "  resourceScheme: postgresql",
     "  requireSchemaSection: true",

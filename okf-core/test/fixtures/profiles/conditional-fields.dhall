@@ -29,6 +29,7 @@ let decision =
             }
           ]
         , recommended = [] : List FieldRule.Type
+        , optional = [] : List FieldRule.Type
         }
       }
 
@@ -55,6 +56,7 @@ let postgresql =
             , when = Some (condition "derivationKind" [ "operational" ])
             }
           ]
+        , optional = [] : List FieldRule.Type
         }
       }
 
@@ -93,9 +95,11 @@ let reviewed =
                   }
                 ]
               , recommended = [] : List NestedFieldRule.Type
+              , optional = [] : List NestedFieldRule.Type
               }
           ]
         , recommended = [] : List FieldRule.Type
+        , optional = [] : List FieldRule.Type
         }
       }
 
@@ -105,6 +109,7 @@ in  Profile::{
     , frontmatter =
       { required = [ okf.mk.FieldRule.plain "type" ]
       , recommended = [] : List FieldRule.Type
+      , optional = [] : List FieldRule.Type
       }
     , types = [ decision, postgresql, reviewed ]
     }

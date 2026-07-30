@@ -64,9 +64,11 @@ import Okf.Profile
     FieldFormat (..),
     FieldPath (..),
     FieldPathSegment (..),
-    FrontmatterRules (..),
+    -- 'FrontmatterRules' and 'NestedRules' are deliberately absent: importing
+    -- their field selectors would make @optional@ ambiguous against
+    -- @optparse-applicative@'s, so this module reads all three presence lists
+    -- through generic-lens labels instead.
     HandleReferenceRule (..),
-    NestedRules (..),
     ProfileDefinitionError (..),
     ProfileSpec (..),
     ProfileViolation (..),
@@ -670,7 +672,7 @@ renderProfileDetail
     { name,
       description,
       okfVersion,
-      frontmatter = FrontmatterRules {required, recommended},
+      frontmatter,
       allowUnknownTypes,
       allowUnknownFields,
       idField,
@@ -684,10 +686,17 @@ renderProfileDetail
       "allowUnknownFields: " <> renderFlag allowUnknownFields,
       "idField: " <> renderOptional idField
     ]
-      <> renderFieldRules "" "frontmatter.required" required
-      <> renderFieldRules "" "frontmatter.recommended" recommended
+      <> renderPresenceLists "" frontmatter
       <> concatMap renderTypeRule typeRules
     where
+      -- The three presence lists always print together and in the same order, at
+      -- profile scope and under every type rule, so the effective policy for one
+      -- key is readable in one place.
+      renderPresenceLists indent rules =
+        renderFieldRules indent "frontmatter.required" (rules ^. #required)
+          <> renderFieldRules indent "frontmatter.recommended" (rules ^. #recommended)
+          <> renderFieldRules indent "frontmatter.optional" (rules ^. #optional)
+
       -- A field's prose cannot share a comma-joined line with its neighbours, so
       -- a non-empty list becomes a headed block. An empty list keeps the
       -- single-line @(none)@ form the other optional fields use.
@@ -706,10 +715,11 @@ renderProfileDetail
         ]
           <> case rule ^. #elementFields of
             Nothing -> [indent <> "    elementFields: (none)"]
-            Just NestedRules {required = nestedRequired, recommended = nestedRecommended} ->
+            Just nestedRules ->
               [indent <> "    elementFields:"]
-                <> renderNestedFieldRules (indent <> "      ") "required" nestedRequired
-                <> renderNestedFieldRules (indent <> "      ") "recommended" nestedRecommended
+                <> renderNestedFieldRules (indent <> "      ") "required" (nestedRules ^. #required)
+                <> renderNestedFieldRules (indent <> "      ") "recommended" (nestedRules ^. #recommended)
+                <> renderNestedFieldRules (indent <> "      ") "optional" (nestedRules ^. #optional)
 
       renderNestedFieldRules indent label [] = [indent <> label <> ": " <> renderList []]
       renderNestedFieldRules indent label rules =
@@ -727,7 +737,7 @@ renderProfileDetail
         TypeRule
           { type_ = ruleType,
             description = ruleDescription,
-            frontmatter = FrontmatterRules {required = typeRequired, recommended = typeRecommended},
+            frontmatter = typeFrontmatter,
             pathPattern,
             resourceScheme,
             requireSchemaSection,
@@ -738,8 +748,7 @@ renderProfileDetail
             "type: " <> ruleType,
             "  description: " <> renderOptional ruleDescription
           ]
-            <> renderFieldRules "  " "frontmatter.required" typeRequired
-            <> renderFieldRules "  " "frontmatter.recommended" typeRecommended
+            <> renderPresenceLists "  " typeFrontmatter
             <> [ "  pathPattern: " <> renderOptional pathPattern,
                  "  resourceScheme: " <> renderOptional resourceScheme,
                  "  requireSchemaSection: " <> renderFlag requireSchemaSection,
@@ -1286,7 +1295,7 @@ renderProfileDefinitionError = \case
   DuplicateFieldRule scope listName key ->
     renderScope scope <> ": duplicate " <> listName <> " field: " <> key
   ConflictingFieldRequirement scope key ->
-    renderScope scope <> ": field appears in required and recommended: " <> key
+    renderScope scope <> ": field appears in more than one of required, recommended, and optional: " <> key
   UnsatisfiableVocabulary scope key profileValues typeValues ->
     renderScope scope
       <> ": disjoint allowed values for "
@@ -1373,6 +1382,10 @@ renderProfileDefinitionError = \case
       <> renderFieldPath target
       <> " cannot also declare format "
       <> renderFieldFormat fieldFormat
+  OptionalFieldWithCondition scope target ->
+    renderScope scope
+      <> ": optional field cannot carry a when condition: "
+      <> renderFieldPath target
   where
     renderScope Nothing = "profile frontmatter"
     renderScope (Just ctype) = "type " <> ctype <> " frontmatter"

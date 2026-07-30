@@ -17,6 +17,7 @@ in    { name = "cardinality"
           , field.scalar "domain"
           ]
         , recommended = [] : List FieldRule
+        , optional = [] : List FieldRule
         }
       , allowUnknownTypes = False
       , allowUnknownFields = True
@@ -27,6 +28,7 @@ in    { name = "cardinality"
           , frontmatter =
             { required = [ field.scalar "score" ]
             , recommended = [] : List FieldRule
+            , optional = [] : List FieldRule
             }
           }
         ]

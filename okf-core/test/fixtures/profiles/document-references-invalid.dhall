@@ -37,6 +37,7 @@ in    { name = "invalid-document-references"
           , rule "conflict" "ADR" ([] : List Text)
           ]
         , recommended = [] : List FieldRule.Type
+        , optional = [] : List FieldRule.Type
         }
       , allowUnknownTypes = True
       , allowUnknownFields = True
@@ -47,6 +48,7 @@ in    { name = "invalid-document-references"
           , frontmatter =
             { required = [ rule "conflict" "RFC" ([] : List Text) ]
             , recommended = [] : List FieldRule.Type
+            , optional = [] : List FieldRule.Type
             }
           , idPrefix = Some "ADR"
           }

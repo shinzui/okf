@@ -21,5 +21,6 @@ in  Profile::{
           }
         ]
       , recommended = [] : List FieldRule.Type
+      , optional = [] : List FieldRule.Type
       }
     }

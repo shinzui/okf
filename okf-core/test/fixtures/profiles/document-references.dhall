@@ -30,6 +30,7 @@ in    { name = "document-references"
       , frontmatter =
         { required = [ field.plain "type", field.plain "title" ]
         , recommended = [ references, selfReference ]
+        , optional = [] : List FieldRule.Type
         }
       , allowUnknownTypes = False
       , allowUnknownFields = True

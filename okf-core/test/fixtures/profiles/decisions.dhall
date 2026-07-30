@@ -21,6 +21,11 @@ in    { name = "decisions"
           ]
         , recommended =
           [ field.documented "status" "One of: proposed, accepted, superseded." ]
+        , optional =
+          [ field.documented
+              "supersedes"
+              "The decision this one replaces, when it replaces one."
+          ]
         }
       , allowUnknownTypes = False
       , allowUnknownFields = True

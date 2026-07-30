@@ -52,9 +52,11 @@ in    { name = "nested-reviews"
                 ]
               , recommended =
                 [ NestedFieldRule::{ field = "notes", cardinality = Cardinality.Scalar } ]
+              , optional = [] : List NestedFieldRule.Type
               }
           ]
         , recommended = [] : List FieldRule.Type
+        , optional = [] : List FieldRule.Type
         }
       , allowUnknownTypes = False
       , allowUnknownFields = True
