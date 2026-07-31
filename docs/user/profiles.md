@@ -597,6 +597,250 @@ Both commands also accept `--json`, so scripts and agents consume the same data.
 a type rule's name is `type`, matching the Dhall field.
 
 
+## Generating profile documentation
+
+A profile tells you what a bundle must look like, but reading it means reading
+Dhall, or reading the flat listing `okf profile show` prints. Neither is
+something you can link a teammate to in a pull request. `okf profile document`
+turns a profile into a small OKF bundle that documents it: one page for the
+profile and one page for each concept type it declares.
+
+Preview it first. Without `--write` the command prints every file it would
+generate and touches nothing:
+
+```bash
+okf profile document --profile docs/profiles/postgresql.dhall
+```
+
+```text
+--- profile.md
+---
+type: OKF Profile
+title: shinzui-postgresql
+description: Conventions for documenting a PostgreSQL database as an OKF bundle.
+---
+
+# shinzui-postgresql
+
+Conventions for documenting a PostgreSQL database as an OKF bundle.
+
+## Settings
+
+- OKF version: `0.1`
+- Unknown concept types: rejected
+- Unknown frontmatter keys: allowed
+- Document ID field: none
+...
+(preview only; pass --out DIR --write to write these 4 files)
+```
+
+Writing needs both a destination and an explicit `--write`:
+
+```bash
+okf profile document --profile docs/profiles/postgresql.dhall \
+  --out /tmp/pg-profile --write
+find /tmp/pg-profile -type f | sort
+```
+
+```text
+Wrote 4 concepts and 2 index.md files to /tmp/pg-profile
+/tmp/pg-profile/index.md
+/tmp/pg-profile/profile.md
+/tmp/pg-profile/types/index.md
+/tmp/pg-profile/types/postgresql-schema.md
+/tmp/pg-profile/types/postgresql-table.md
+/tmp/pg-profile/types/postgresql-view.md
+```
+
+`--write` without `--out` is an error, as is combining `--profile` with an
+`EXPORT` argument or `--registry` — a profile comes from one place or the other,
+never both. Without `--profile` the profile comes from a registry export, using
+the same `--registry` precedence as `okf profile list` and `okf profile show`.
+
+The root page, `profile.md`, carries the profile's settings, its profile-wide
+frontmatter rules, and a link to each type page. Each type page carries that
+type's own settings — path pattern, resource scheme, schema columns, document ID
+prefix — and its frontmatter rules grouped into Required, Recommended, and
+Optional. The concept ID of a type page is the type string lowercased with
+non-alphanumeric characters replaced by hyphens, so `PostgreSQL Table` becomes
+`types/postgresql-table`.
+
+### Type pages show the rules that actually apply
+
+This is the difference between `okf profile document` and `okf profile show`,
+and the reason to use it. A profile can declare the same frontmatter key twice —
+once profile-wide and once inside a type rule — and okf merges the two before
+checking anything. A type page renders the *merged* result.
+
+`docs/profiles/postgresql.dhall` declares `type` and `title` as profile-wide
+required keys and does not mention either inside its `PostgreSQL Table` type
+rule. The generated `types/postgresql-table.md` lists them anyway, because they
+apply:
+
+```markdown
+### Required
+
+#### `title` — required
+
+Human-readable name of the object, as a reader would say it.
+
+- Allowed values: any
+- Cardinality: any
+- Format: none
+- Reference: none
+- Condition: none
+- Element fields: none
+```
+
+A reader of the descriptor would have had to compose two declaration sites in
+their head. A reader of the generated page does not.
+
+Recommended keys carry an extra bullet reading "Checked only under `--strict`",
+which answers the question a reader of a profile most often has: will this stop
+my build?
+
+### Descriptions are what make the pages worth reading
+
+The `description` prose you write on the profile, on each type rule, and on each
+frontmatter key — see [Descriptor schema](#descriptor-schema) — is exactly what
+fills the generated pages. A profile with no descriptions still generates, with
+a synthesized one-line summary standing in for the missing prose, but a
+documented profile generates something a new team member can actually learn from.
+
+Descriptions remain purely documentary. Writing one never causes a bundle to
+pass or fail anything.
+
+### The output is an ordinary OKF bundle
+
+Everything okf does to a bundle it does to this one:
+
+```bash
+okf validate /tmp/pg-profile
+```
+
+```text
+OK: 4 concepts
+```
+
+```bash
+okf show /tmp/pg-profile types/postgresql-table
+okf graph /tmp/pg-profile
+```
+
+`okf graph` shows an edge from the profile page to each type page and one back
+from each, because the cross-links are real bundle-absolute links rather than
+inert text.
+
+### Regenerating never produces a spurious diff
+
+The command never reads the clock, the environment, or anything on disk beyond
+the descriptor. The same profile and the same flags produce the same bytes every
+time, so generated documentation is safe to commit and check in CI:
+
+```bash
+okf profile document --profile docs/profiles/postgresql.dhall \
+  --out docs/my-profile --write
+git diff --exit-code docs/my-profile
+```
+
+A non-empty diff means the descriptor changed, or okf did — never that time
+passed.
+
+Note that the command overwrites exactly the files it generates and never
+deletes. If you remove a type rule from the descriptor, its page stays behind;
+the command tells you it found a page it did not generate, but you delete it
+yourself. `rm -rf` the destination first if you want it pristine.
+
+### Two things that will otherwise look like bugs
+
+**Generated concepts carry no `timestamp` unless you ask for one, and
+`okf validate --strict` requires one.** Straight out of the generator:
+
+```bash
+okf validate /tmp/pg-profile --strict
+```
+
+```text
+profile: missing recommended field: timestamp
+types/postgresql-schema: missing recommended field: timestamp
+types/postgresql-table: missing recommended field: timestamp
+types/postgresql-view: missing recommended field: timestamp
+```
+
+exit code `1`. That is deliberate: a generator that stamped the current time
+would produce a diff on every run and destroy the drift check above. Supply the
+timestamp yourself and strict validation passes:
+
+```bash
+okf profile document --profile docs/profiles/postgresql.dhall \
+  --out /tmp/pg-profile --write --timestamp 2026-07-31T00:00:00Z
+okf validate /tmp/pg-profile --strict
+```
+
+```text
+log: profile: timestamp date 2026-07-31 has no enclosing log.md
+log: types/postgresql-schema: timestamp date 2026-07-31 has no enclosing log.md
+log: types/postgresql-table: timestamp date 2026-07-31 has no enclosing log.md
+log: types/postgresql-view: timestamp date 2026-07-31 has no enclosing log.md
+OK: 4 concepts
+log: 4 stale concept advisory/advisories (use --log-enforce to fail)
+```
+
+exit code `0`. Those `log:` lines are the other side of supplying a timestamp: a
+concept with a timestamp and no enclosing `log.md` is reported as stale. They are
+advisories, so the command still succeeds — but `okf validate --log-enforce`
+would fail. Generated documentation is not a hand-maintained bundle; do not check
+it with `--log-enforce`.
+
+**`--write` regenerates `index.md` for every directory under `--out`, including
+directories it did not write into.** Point `--out` at a directory dedicated to
+the generated documentation. Pointing it at a bundle you maintain by hand will
+rewrite that bundle's index files.
+
+### The meta-profile, and a worked example
+
+okf ships a profile describing what a generated documentation bundle looks like:
+`docs/profiles/profile-documentation.dhall`. It declares the two concept types
+`OKF Profile` and `OKF Profile Type`, the frontmatter keys their pages must
+carry, and where the files must live. Being a single-profile file, it is itself a
+registry with one root export:
+
+```bash
+okf profile show --registry docs/profiles/profile-documentation.dhall
+```
+
+`examples/postgresql-profile/` is a committed bundle generated from
+`docs/profiles/postgresql.dhall`, kept honest by a test that regenerates it and
+compares every byte. Together they close the loop — a profile documents itself,
+and the documentation is then checked by a profile:
+
+```bash
+okf validate examples/postgresql-profile \
+  --profile docs/profiles/profile-documentation.dhall --profile-enforce
+```
+
+```text
+OK: 4 concepts
+```
+
+If you edit `docs/profiles/postgresql.dhall`, regenerate the committed example in
+the same change, or the drift test will fail:
+
+```bash
+rm -rf examples/postgresql-profile
+okf profile document --profile docs/profiles/postgresql.dhall \
+  --out examples/postgresql-profile --write
+```
+
+The committed example is generated without `--timestamp` on purpose, so it has no
+varying input at all. It therefore does not satisfy `okf validate --strict`. That
+is expected; do not "fix" it by adding a timestamp constant.
+
+Generating documentation for a profile does not make that profile normative. A
+bundle that deviates from a profile is still fully OKF-conformant, exactly as
+before.
+
+
 ## Document IDs
 
 A document ID is a short, stable handle such as `ADR-7`. The canonical OKF

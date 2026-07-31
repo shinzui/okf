@@ -46,14 +46,14 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] Milestone 1: new "Generating profile documentation" section in `docs/user/profiles.md`
-- [ ] Milestone 1: `profile document` documented in the `## profile` section of `docs/user/cli.md`
-- [ ] Milestone 1: every command in both files run verbatim and its output confirmed
-- [ ] Milestone 2: new `GENERATING DOCUMENTATION` topic section in `okf-cli/help/profiles.md`
-- [ ] Milestone 2: `okf help profiles` renders the new section correctly
-- [ ] Milestone 3: `CHANGELOG.md` Unreleased entry
-- [ ] Milestone 3: `README.md` and `docs/user/README.md` mention the capability
-- [ ] Milestone 3: `cabal build all && cabal test all` passes
+- [x] Milestone 1: new "Generating profile documentation" section in `docs/user/profiles.md` — 2026-07-31
+- [x] Milestone 1: `profile document` documented in the `## profile` section of `docs/user/cli.md` — 2026-07-31
+- [x] Milestone 1: every command in both files run verbatim and its output confirmed — 2026-07-31
+- [x] Milestone 2: new `GENERATING DOCUMENTATION` topic section in `okf-cli/help/profiles.md` — 2026-07-31
+- [x] Milestone 2: `okf help profiles` renders the new section correctly — 2026-07-31
+- [x] Milestone 3: `CHANGELOG.md` Unreleased entry — 2026-07-31
+- [x] Milestone 3: `README.md` and `docs/user/README.md` mention the capability — 2026-07-31
+- [x] Milestone 3: `cabal build all && cabal test all` passes — 2026-07-31
 
 
 ## Surprises & Discoveries
@@ -61,7 +61,52 @@ This section must always reflect the actual current state of the work.
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+**A drafted transcript was wrong, and running it caught it.** The plan's Acceptance 1 rule —
+run every command and paste its real output — earned its keep immediately. The section
+showing that `--timestamp` makes `--strict` pass was first written as:
+
+```text
+OK: 4 concepts
+```
+
+The real output has five more lines:
+
+```text
+log: profile: timestamp date 2026-07-31 has no enclosing log.md
+log: types/postgresql-schema: timestamp date 2026-07-31 has no enclosing log.md
+log: types/postgresql-table: timestamp date 2026-07-31 has no enclosing log.md
+log: types/postgresql-view: timestamp date 2026-07-31 has no enclosing log.md
+OK: 4 concepts
+log: 4 stale concept advisory/advisories (use --log-enforce to fail)
+```
+
+Supplying a timestamp is exactly what makes a concept eligible for the log-staleness check,
+and a generated bundle has no `log.md`. Exit code is still `0`, so the claim held, but a
+reader running the command and seeing four unexplained warnings would reasonably conclude
+the documentation was stale. The transcript now shows the full output and a paragraph
+explains it, which also delivers the `--log-enforce` warning
+[docs/plans/35-add-the-okf-profile-document-command.md](./35-add-the-okf-profile-document-command.md)
+asked this plan to carry.
+
+**The `--strict` failure diagnostic is easy to misread as a message prefix.** Running
+`okf validate <generated> --strict` prints `profile: missing recommended field: timestamp`.
+The leading `profile` is the *concept ID* of the root page, not a `profile:` prefix like the
+one `okf validate --profile` uses for deviations. The documentation shows all four lines
+together so the pattern is obvious from context.
+
+**The `read-only` sentence in `docs/user/cli.md` had to be replaced, not qualified.** The
+existing text was "Both subcommands are read-only and behave identically whether or not a
+terminal is attached." With three subcommands, one of which writes, no small edit keeps that
+sentence true. It became "All three subcommands behave identically whether or not a terminal
+is attached, and only `profile document --write` touches the filesystem", which preserves
+the property [ADR 2](../adr/2-interactive-bundle-and-concept-selection.md) actually cares
+about — terminal independence — while dropping the "read-only" claim that no longer holds.
+`grep -n "read-only" docs/user/cli.md` now returns nothing.
+
+**The `Applies to` column needed rewording throughout, not just new rows.** Two existing
+rows read `both`, which silently became ambiguous the moment a third subcommand existed.
+They now name the subcommands explicitly (`list`, `show`, `document` / `list`, `show`), as
+the plan anticipated.
 
 
 ## Decision Log
@@ -84,6 +129,36 @@ implementation. Provide concise evidence.
   omits a foot-gun is worse than no documentation, because it implies there is none.
   Date: 2026-07-31
 
+- Decision: the meta-profile paragraphs are included, because
+  [docs/plans/36-validate-generated-profile-documentation-against-a-meta-profile.md](./36-validate-generated-profile-documentation-against-a-meta-profile.md)
+  landed before this plan started.
+  Rationale: the plan required this choice to be recorded either way.
+  `docs/profiles/profile-documentation.dhall` and `examples/postgresql-profile/` both exist
+  and are guarded by tests, so documenting them is documenting shipped artifacts rather than
+  intentions. The profiles guide covers them in a "The meta-profile, and a worked example"
+  subsection, and the embedded help topic names both in one closing paragraph.
+  Date: 2026-07-31
+
+- Decision: a third caveat was added beyond the two the Decision Log anticipated — that
+  `okf validate --log-enforce` fails on generated documentation.
+  Rationale: discovered while verifying transcripts (see Surprises & Discoveries) and flagged
+  by EP-35's Outcomes as something this plan should carry. It has the same character as the
+  other two: it looks like a bug, it is not, and a reader who meets it without warning will
+  waste time. Documenting two of three foot-guns would have undercut the reason for
+  documenting any.
+  Date: 2026-07-31
+
+- Decision: the profiles guide states the regeneration command for
+  `examples/postgresql-profile/`, including the `rm -rf` that must precede it when a type
+  rule was removed.
+  Rationale: EP-36's drift test fails for any contributor who edits
+  `docs/profiles/postgresql.dhall` without regenerating. The failure message names the
+  command, but a reader who finds the guide first should not have to trigger a test failure
+  to learn the workflow. The `rm -rf` matters because the command never deletes, so a removed
+  type rule otherwise leaves a stale page that the drift test then reports as an unexpected
+  extra file.
+  Date: 2026-07-31
+
 
 ## Outcomes & Retrospective
 
@@ -92,7 +167,69 @@ Compare the result against the original purpose. Before marking the plan complet
 distill durable project context from the Decision Log, Surprises & Discoveries, and
 this section into docs/adr/. Keep task-local execution details here.
 
-(To be filled during and after implementation.)
+**Result against the original purpose.** The purpose was that a user who has never heard of
+the feature finds it four ways. All four now exist:
+
+- `docs/user/profiles.md` gained a `## Generating profile documentation` section between
+  `## Profile registries` and `## Document IDs`, with subsections on why type pages show
+  merged rules, how descriptions fill the pages, that the output is an ordinary bundle,
+  determinism and the CI drift check, the caveats, and the meta-profile.
+- `docs/user/cli.md`'s `## profile` section now covers all three subcommands, with a worked
+  `bash` block, seven flag rows, and four exit-code rows.
+- `okf-cli/help/profiles.md` gained a `GENERATING DOCUMENTATION` section between
+  `REGISTRIES` and `DESCRIPTIONS`, and `SEE ALSO` points at the new guide section by name.
+- `CHANGELOG.md` has three `### Added` bullets under `## [Unreleased]`, and both `README.md`
+  and `docs/user/README.md` mention the capability.
+
+**Acceptance results, all seven confirmed on 2026-07-31.**
+
+Acceptance 1 — every transcript is real. Every `bash` block in both files was run verbatim
+from the repository root against the built binary. One mismatch was found and fixed; see
+Surprises & Discoveries. Confirmed outputs include the preview's closing line, the write
+summary and file listing, `OK: 4 concepts`, the four-line `--strict` failure with exit 1,
+the stamped `--strict` success, the meta-profile enforcement run, and
+`git diff --exit-code examples/postgresql-profile` printing nothing after regeneration.
+
+Acceptance 2 — the offline topic works. `okf help profiles` prints the new section; its
+longest line is 77 characters, so it reads cleanly at 80 columns, and it contains no
+Markdown syntax that would appear literally.
+
+Acceptance 3 — the CLI reference is complete and accurate. Every flag
+`okf profile document --help` prints — `--registry`, `EXPORT`, `--profile`, `--out`,
+`--write`, `--timestamp` — has a table row, and the only extra row, `--json`, is a real flag
+of `list` and `show`. The exit-code table now covers a descriptor that fails to compile and
+the two argument-conflict errors.
+
+Acceptance 4 — the read-only claim is corrected. `grep -n "read-only" docs/user/cli.md`
+returns nothing; the replacement sentence is quoted in Surprises & Discoveries.
+
+Acceptance 5 — the caveats are findable. `grep -c timestamp` returns 21 in
+`docs/user/profiles.md` and 6 in `okf-cli/help/profiles.md`; `grep -c "index.md"` returns 4
+and 2. Both caveats, and the third one discovered here, appear in both files.
+
+Acceptance 6 — the changelog reads as a user-facing change. The entries say what someone can
+now do and lead with the command, not the modules; the library bullet comes last and exists
+because previous releases' entries do mention library surface.
+
+Acceptance 7 — nothing broke. `cabal build all && cabal test all` passes both suites, which
+is also the check that `okf-cli/help/profiles.md` is still embeddable by the Template Haskell
+splice.
+
+**Gaps.** None known. One judgment call worth naming: the profiles guide is now the single
+long-form treatment, and the other three places deliberately restate only a summary. If the
+command's flags change, `docs/user/cli.md` and `okf-cli/help/profiles.md` must both be
+checked, since each names flags independently.
+
+**Durable-context distillation.** Reviewed the Decision Log, Surprises & Discoveries, and
+this section against `docs/adr/`. No ADR is created or amended by this plan, and that is the
+right outcome: this plan writes prose about behaviour that
+[ADR 6](../adr/6-generated-profile-documentation.md) already records in full — the bundle
+output shape, the generator's location, compiled rules, determinism, the overwrite and
+idempotence rules, the published `type` vocabulary, the meta-profile, and the committed
+example. Nothing here is a new project-level decision; the documentation-in-four-places
+structure is the repository's existing convention rather than something this plan chose, and
+the three caveats are consequences ADR 6 already states. The transcript-verification
+discovery is task-local craft, not durable architecture.
 
 
 ## Context and Orientation

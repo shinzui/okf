@@ -153,8 +153,24 @@ cabal run okf -- profile list
 cabal run okf -- profile show postgresql
 ```
 
+A profile can also document itself. `okf profile document` generates an OKF
+bundle describing a profile — one page for the profile, one page per concept type
+it declares — so a team's house conventions become something you browse, link to,
+and review in a pull request rather than read as Dhall. Each type page shows the
+rules that actually apply to that type, with the profile-wide rules and the
+type's own already merged. The output is an ordinary OKF bundle, and generation
+never reads the clock, so regenerating it in CI and running `git diff
+--exit-code` is a complete drift check.
+
+```bash
+cabal run okf -- profile document --profile docs/profiles/postgresql.dhall --out /tmp/pg-profile --write
+```
+
+[examples/postgresql-profile](./examples/postgresql-profile) is a committed
+bundle generated exactly that way.
+
 See [docs/user/profiles.md](./docs/user/profiles.md) for the descriptor schema,
-profile registries, and worked examples.
+profile registries, generating documentation, and worked examples.
 
 
 ## Agent Skills And Assist

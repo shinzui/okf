@@ -331,11 +331,11 @@ no `idField` is a hard error.
 
 ## profile
 
-List and inspect the profiles a *registry* publishes. A registry is any Dhall
-expression that evaluates to a record of profile values; the
-[okf-profiles](https://github.com/shinzui/okf-profiles) repository is one. Both
-subcommands are read-only and behave identically whether or not a terminal is
-attached.
+List and inspect the profiles a *registry* publishes, and generate documentation
+for one. A registry is any Dhall expression that evaluates to a record of profile
+values; the [okf-profiles](https://github.com/shinzui/okf-profiles) repository is
+one. All three subcommands behave identically whether or not a terminal is
+attached, and only `profile document --write` touches the filesystem.
 
 ```bash
 cabal run okf -- profile list --registry /path/to/okf-profiles
@@ -352,11 +352,37 @@ cabal run okf -- profile list --json --registry /path/to/okf-profiles
 
 A bare `okf profile` means `okf profile list`.
 
+`profile document` turns a profile into an OKF bundle documenting it — one page
+for the profile, one page per concept type it declares. Without `--write` it
+prints what it would generate and creates nothing.
+
+```bash
+cabal run okf -- profile document --profile docs/profiles/postgresql.dhall
+# --- profile.md
+# ---
+# type: OKF Profile
+# title: shinzui-postgresql
+# ...
+# (preview only; pass --out DIR --write to write these 4 files)
+
+cabal run okf -- profile document --profile docs/profiles/postgresql.dhall \
+  --out /tmp/pg-profile --write
+# Wrote 4 concepts and 2 index.md files to /tmp/pg-profile
+
+cabal run okf -- profile document postgresql --registry /path/to/okf-profiles \
+  --out /tmp/pg-profile --write --timestamp 2026-07-31T00:00:00Z
+# Wrote 4 concepts and 2 index.md files to /tmp/pg-profile
+```
+
 | Flag | Applies to | Meaning |
 |------|------------|---------|
-| `--registry REGISTRY` | both | A Dhall file, a directory holding `package.dhall`, or a Dhall expression such as a hash-pinned URL. |
-| `--json` | both | Emit JSON instead of text. |
-| `EXPORT` | `show` | The dotted export path printed in the `EXPORT` column. Optional when the registry publishes exactly one profile. |
+| `--registry REGISTRY` | `list`, `show`, `document` | A Dhall file, a directory holding `package.dhall`, or a Dhall expression such as a hash-pinned URL. |
+| `--json` | `list`, `show` | Emit JSON instead of text. |
+| `EXPORT` | `show`, `document` | The dotted export path printed in the `EXPORT` column. Optional when the registry publishes exactly one profile. |
+| `--profile PROFILE` | `document` | Document a Dhall descriptor file directly instead of a registry export. Cannot be combined with `EXPORT` or `--registry`. |
+| `--out DIR` | `document` | Directory to write the generated bundle into. Required by `--write`; without `--write` it only changes the preview's closing line. |
+| `--write` | `document` | Write the bundle to `--out` instead of previewing it on standard output. |
+| `--timestamp RFC3339` | `document` | Value for the `timestamp` frontmatter key. Omitted entirely when not given, which is what makes regeneration byte-identical — supply it if you intend to run `okf validate --strict` on the result. |
 
 Without `--registry`, the reference comes from `OKF_PROFILE_REGISTRY`, then
 `profiles.registry` in configuration, then the built-in default — the
@@ -374,11 +400,22 @@ which is all `okf validate --profile` needs — there is no separate install ste
 
 | Exit code | Meaning |
 |-----------|---------|
-| `0` | the listing or profile was printed |
+| `0` | the listing or profile was printed, or the documentation was previewed or written |
 | `1` | the registry failed to load, published no profiles, or does not have the requested export |
+| `1` | the descriptor named by `--profile` failed to load, or failed to compile because it contradicts itself |
+| `1` | `--write` was passed without `--out`, or `--profile` was combined with `EXPORT` or `--registry` |
 
 Every failure prints to stderr. A load failure also explains what a registry
 reference may be and how to work offline; an unknown or omitted `EXPORT` lists
-the exports that are available.
+the exports that are available; a descriptor that fails to compile lists every
+contradiction it contains, one per line.
 
-See [profiles.md](./profiles.md) for what a registry is in more detail.
+`profile document --write` overwrites exactly the files it generates, never
+deletes, and regenerates `index.md` for every directory under `--out` — so point
+it at a directory dedicated to the generated documentation. Running it twice with
+the same inputs produces byte-identical output, which makes
+`git diff --exit-code` after regenerating a complete CI drift check.
+
+See [profiles.md](./profiles.md) for what a registry is in more detail, and its
+[Generating profile documentation](./profiles.md#generating-profile-documentation)
+section for what the generated pages contain.

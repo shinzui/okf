@@ -63,6 +63,55 @@ REGISTRIES
   profile rather than a record of profiles; the ID FIELD column reads "-" when
   the profile declares no idField.
 
+GENERATING DOCUMENTATION
+
+  A profile can generate an OKF bundle documenting itself: one page for the
+  profile, one page per concept type it declares.
+
+    okf profile document --profile PROFILE.dhall
+    okf profile document --profile PROFILE.dhall --out DIR --write
+
+  Without --write the command prints what it would generate and touches
+  nothing. With --out DIR --write it writes the pages and the index.md files
+  and prints a one-line summary. --write without --out is an error, and so is
+  combining --profile with an EXPORT argument or --registry.
+
+  Without --profile the profile comes from a registry export, using the same
+  --registry precedence as list and show.
+
+  Each type page shows the EFFECTIVE rules for that type: the profile-wide
+  rules and the type's own, already merged. That is the difference from
+  `okf profile show`, which shows the two declaration sites separately and
+  leaves you to compose them. Recommended keys carry a bullet saying they are
+  checked only under --strict.
+
+  The `description` prose you write on the profile, on a type rule, and on
+  each key is what fills the generated pages. A profile with no descriptions
+  still generates, with synthesized summaries.
+
+  The output is an ordinary OKF bundle, so okf validate, okf graph, and
+  okf show all work on it. Generation never reads the clock, so regenerating
+  produces the same bytes; committing the result and running
+
+    git diff --exit-code DIR
+
+  after regenerating is a complete CI drift check.
+
+  Two things that will otherwise look like bugs:
+
+  Generated pages carry no timestamp unless you pass --timestamp, and
+  `okf validate --strict` requires one. Pass --timestamp RFC3339 to get
+  strict-clean output. A stamped bundle has timestamps but no log.md, so do
+  not check generated documentation with --log-enforce.
+
+  --write regenerates index.md for EVERY directory under --out, including
+  ones it did not write into, and never deletes a file it did not generate.
+  Point --out at a directory dedicated to the generated documentation.
+
+  okf ships docs/profiles/profile-documentation.dhall, a profile describing
+  what a generated documentation bundle looks like, and
+  examples/postgresql-profile/ as a committed worked example.
+
 DESCRIPTIONS
 
   A profile may document itself: one description for the profile as a whole,
@@ -301,4 +350,5 @@ SEE ALSO
   okf help validation   Structural validation and referential integrity.
 
   The full descriptor schema, and the upgrade steps above in detail, are
-  documented in docs/user/profiles.md.
+  documented in docs/user/profiles.md, whose "Generating profile
+  documentation" section covers `okf profile document` at length.

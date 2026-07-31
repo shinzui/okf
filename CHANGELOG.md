@@ -7,6 +7,35 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- `okf profile document` generates an OKF bundle documenting a profile: one page
+  for the profile and one page per concept type it declares, cross-linked and
+  ready for `okf validate`, `okf graph`, `okf show`, and `okf index`. Each type
+  page shows the effective rules for that type -- the profile-wide rules merged
+  with the type's own -- rather than leaving the reader to compose two
+  declaration sites, which is what distinguishes it from `okf profile show`. The
+  profile comes from a registry export or from `--profile PATH`. Without
+  `--write` the command previews and touches nothing; `--out DIR --write` writes
+  the pages and the `index.md` files, overwriting exactly what it generates and
+  never deleting. Generation never reads the clock, so regenerating and running
+  `git diff --exit-code` is a complete CI drift check.
+- okf ships `docs/profiles/profile-documentation.dhall`, a profile describing
+  what a generated documentation bundle looks like, and
+  `examples/postgresql-profile/`, a committed bundle generated from the shipped
+  PostgreSQL profile. A test regenerates the example and compares every byte, and
+  another validates it against the meta-profile with deviations enforced, so the
+  claim that a profile documents itself is checked rather than asserted.
+- Library: a new `Okf.Profile.Documentation` module renders a compiled profile
+  into `Concept` values with no IO, so a consumer such as Mori reuses the library
+  rather than shelling out to the binary. `Okf.Profile` gained a read-only
+  inspection API for compiled rules -- `compiledProfileTypeNames`,
+  `compiledProfileBaseRules`, `compiledProfileRulesForType`, and accessors on the
+  abstract `EffectiveFieldRule` and `PresenceClause` -- plus the stable value
+  display names `renderCardinalityName` and `renderFieldFormatName`. All
+  additive: no constructor was added to `ProfileViolation` or
+  `ProfileDefinitionError`, so exhaustive consumers need no change.
+
 ## [0.4.0.0] - 2026-07-30
 
 ### Added

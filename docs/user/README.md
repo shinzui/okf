@@ -51,6 +51,8 @@ needed. See the [CLI Reference](cli.md#help) for details.
 4. Run `okf index <bundle> --write` to update indexes.
 5. Run `okf graph <bundle> --json` to produce graph data for tools.
 6. Run `okf show <bundle> <concept-id>` to inspect one concept.
+7. Run `okf profile document --profile <profile.dhall> --out <dir> --write` to
+   generate browsable documentation for the profile you validate against.
 
 ## Shell Completion
 
