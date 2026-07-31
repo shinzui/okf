@@ -130,3 +130,13 @@ unchanged.
 
 This is a breaking library and schema change — `FrontmatterRules` changed shape —
 so the next release is a major one, even though no descriptor is forced to move.
+
+*(Amended 2026-07-31: the prose now has a second destination.
+[ADR 6](./6-generated-profile-documentation.md) adds `okf profile document`,
+which renders profile, field, and type-rule descriptions into a generated OKF
+bundle. Its status is unchanged: descriptions remain purely documentary, adding
+no check, no `ProfileViolation` constructor, and no way for a bundle to fail. A
+profile that declares no prose still documents — the generator synthesizes a
+`description` for the frontmatter so generated output passes strict validation,
+and leaves the document body's prose paragraph out entirely rather than inventing
+one.)*

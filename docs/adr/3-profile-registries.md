@@ -103,6 +103,13 @@ with or without a terminal, per [ADR 2](./2-interactive-bundle-and-concept-selec
 The only filesystem side effect anywhere in the feature is Dhall's own import
 cache under `~/.cache/dhall`, which is additive and safe to delete.
 
+*(Amended 2026-07-31: no longer true of the profile feature as a whole.
+[ADR 6](./6-generated-profile-documentation.md) adds `okf profile document`,
+which writes into a directory the user names when given both `--out DIR` and
+`--write`. Every other profile command is still read-only, and `okf profile
+document` without `--write` — its default — still touches nothing, so ADR 2's
+terminal-independence property is preserved.)*
+
 Any Dhall record of profiles is a registry, so a team can publish its own with no
 coordination and no tooling — a `package.dhall` re-exporting its descriptors is
 enough.
@@ -112,6 +119,16 @@ profile show` closes with the two-line Dhall snippet that consumes the profile,
 and `okf validate --profile` already accepts any Dhall file, so the manual path
 is short. A writing command would need its own overwrite and idempotence rules
 and is deferred.
+
+*(Amended 2026-07-31: the deferral is lifted for generated documentation only.
+[ADR 6](./6-generated-profile-documentation.md) adds `okf profile document`,
+which writes a bundle documenting a profile, and states the overwrite and
+idempotence rules this paragraph asked for: writing needs both `--out DIR` and
+an explicit `--write`; the command overwrites exactly the files it generates;
+it never deletes; it reports concepts already in the destination that it did not
+generate; and running it twice produces no diff. The rest of this paragraph
+stands — there is still no command that installs or vendors a profile
+*descriptor* into a project, and a registry is still only ever read.)*
 
 Because detection is "decodes successfully", a value that happens to have the
 shape of a profile is reported as one. This is the intended trade for supporting
