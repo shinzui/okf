@@ -11,6 +11,7 @@ module Okf.Cli
     LogSub (..),
     Options (..),
     ProfileCommand (..),
+    ProfileDocumentOptions (..),
     ProfileListOptions (..),
     ProfileShowOptions (..),
     ShowOptions (..),
@@ -81,6 +82,12 @@ import Okf.Profile
     profileFieldDescriptionForType,
     renderDocumentId,
     validateProfile,
+  )
+import Okf.Profile.Documentation
+  ( DocumentationError (..),
+    DocumentationOptions (..),
+    defaultDocumentationOptions,
+    renderProfileDocumentation,
   )
 import Okf.Profile.Registry
   ( RegistryEntry (..),
@@ -186,6 +193,7 @@ data ConfigCommand
 data ProfileCommand
   = ProfileList ProfileListOptions
   | ProfileShow ProfileShowOptions
+  | ProfileDocument ProfileDocumentOptions
   deriving stock (Show, Eq)
 
 data ProfileListOptions = ProfileListOptions
@@ -198,6 +206,16 @@ data ProfileShowOptions = ProfileShowOptions
   { registryRef :: !(Maybe Text),
     export :: !(Maybe Text),
     json :: !Bool
+  }
+  deriving stock (Show, Eq)
+
+data ProfileDocumentOptions = ProfileDocumentOptions
+  { registryRef :: !(Maybe Text),
+    export :: !(Maybe Text),
+    profilePath :: !(Maybe FilePath),
+    outputPath :: !(Maybe FilePath),
+    write :: !Bool,
+    timestamp :: !(Maybe Text)
   }
   deriving stock (Show, Eq)
 
@@ -427,6 +445,12 @@ profileCommandParser =
               (ProfileShow <$> profileShowOptionsParser <**> helper)
               (progDesc "Print one registry profile in full")
           )
+        <> command
+          "document"
+          ( info
+              (ProfileDocument <$> profileDocumentOptionsParser <**> helper)
+              (progDesc "Generate an OKF bundle documenting a profile")
+          )
     )
     <|> pure (ProfileList (ProfileListOptions Nothing False))
 
@@ -448,6 +472,44 @@ profileShowOptionsParser =
             )
       )
     <*> jsonSwitch
+
+profileDocumentOptionsParser :: Parser ProfileDocumentOptions
+profileDocumentOptionsParser =
+  ProfileDocumentOptions
+    <$> optional registryOption
+    <*> optional
+      ( Text.pack
+          <$> strArgument
+            ( metavar "EXPORT"
+                <> help "Dotted export path of the profile, as printed by `okf profile list`"
+            )
+      )
+    <*> optional
+      ( strOption
+          ( long "profile"
+              <> metavar "PROFILE"
+              <> help "Document a Dhall descriptor file directly instead of a registry export"
+          )
+      )
+    <*> optional
+      ( strOption
+          ( long "out"
+              <> metavar "DIR"
+              <> help "Directory to write the generated bundle into"
+          )
+      )
+    <*> switch
+      ( long "write"
+          <> help "Write the bundle to --out instead of previewing it on standard output"
+      )
+    <*> optional
+      ( Text.pack
+          <$> strOption
+            ( long "timestamp"
+                <> metavar "RFC3339"
+                <> help "Value for the timestamp frontmatter key; omitted entirely when not given. Required if you intend to run `okf validate --strict` on the result."
+            )
+      )
 
 registryOption :: Parser Text
 registryOption =
@@ -521,6 +583,7 @@ runProfile :: ProfileCommand -> IO ()
 runProfile = \case
   ProfileList options -> runProfileList options
   ProfileShow options -> runProfileShow options
+  ProfileDocument options -> runProfileDocument options
 
 -- | Registry reference precedence: @--registry@, then 'profileRegistryEnvVar',
 -- then configuration (which falls back to the built-in default). Configuration
@@ -660,6 +723,145 @@ selectEntry reference entries = \case
     availableExports found =
       "Available exports: "
         <> Text.intercalate ", " [displayExport exportPath | RegistryEntry {export = exportPath} <- found]
+
+-- | Generate an OKF bundle documenting a profile.
+--
+-- Preview by default: nothing is written unless both @--out DIR@ and @--write@
+-- are given. The write rules are recorded in
+-- @docs\/adr\/6-generated-profile-documentation.md@: the command overwrites
+-- exactly the files it generates, never deletes, and reports concepts already
+-- in the destination that this run did not generate.
+runProfileDocument :: ProfileDocumentOptions -> IO ()
+runProfileDocument
+  ProfileDocumentOptions
+    { registryRef,
+      export = requestedExport,
+      profilePath,
+      outputPath,
+      write,
+      timestamp
+    } = do
+    when (isJust profilePath && (isJust requestedExport || isJust registryRef)) $
+      dieText "Pass either --profile PATH or an EXPORT argument, not both."
+    when (write && isNothing outputPath) $
+      dieText "--write needs a destination; pass --out DIR."
+    compiled <- resolveCompiledProfile
+    concepts <- case renderProfileDocumentation documentationOptions compiled of
+      Left documentationError -> dieText (renderDocumentationError documentationError)
+      Right rendered -> pure rendered
+    case (write, outputPath) of
+      (True, Just destination) -> writeProfileDocumentation destination concepts
+      _ -> previewProfileDocumentation outputPath concepts
+    where
+      documentationOptions =
+        DocumentationOptions
+          { rootConceptId = rootConceptId defaultDocumentationOptions,
+            typeDirectory = typeDirectory defaultDocumentationOptions,
+            timestamp = timestamp
+          }
+
+      resolveCompiledProfile = do
+        (label, spec) <- case profilePath of
+          Just path -> do
+            loadedSpec <- loadProfileOrExit path
+            pure (Text.pack path, loadedSpec)
+          Nothing -> do
+            (reference, _ref, entries) <- loadRegistryOrDie registryRef
+            RegistryEntry {export = foundExport, spec} <-
+              selectEntry reference entries requestedExport
+            pure (displayExport foundExport, spec)
+        case compileProfile spec of
+          Left definitionErrors ->
+            dieText
+              ( "Failed to load profile "
+                  <> label
+                  <> ": invalid profile definition:\n"
+                  <> Text.intercalate
+                    "\n"
+                    (map (("  - " <>) . renderProfileDefinitionError) (toList definitionErrors))
+              )
+          Right compiled -> pure compiled
+
+-- | Print every file the command would generate, in the same shape
+-- @okf index@ previews its own output, then say what would happen on
+-- @--write@. Touches nothing.
+previewProfileDocumentation :: Maybe FilePath -> [Concept] -> IO ()
+previewProfileDocumentation destination concepts = do
+  mapM_
+    (\concept -> renderIndexPreview (conceptSourcePath concept, serializeConcept concept))
+    concepts
+  Text.IO.putStrLn summary
+  where
+    summary =
+      case destination of
+        Just directory ->
+          "(preview only; pass --write to write these "
+            <> countPhrase (length concepts) "file"
+            <> " to "
+            <> Text.pack directory
+            <> ")"
+        Nothing ->
+          "(preview only; pass --out DIR --write to write these "
+            <> countPhrase (length concepts) "file"
+            <> ")"
+
+-- | Write the generated bundle and regenerate the destination's index files.
+--
+-- Overwrites exactly the concepts it generated and never deletes, so a
+-- destination holding pages from an earlier profile keeps them. Those are
+-- reported rather than silently left to rot.
+writeProfileDocumentation :: FilePath -> [Concept] -> IO ()
+writeProfileDocumentation destination concepts = do
+  -- A destination that does not exist yet walks as an IO error, which here
+  -- means "no pre-existing concepts" rather than a failure: writeBundle
+  -- creates the directory.
+  existing <- walkBundle destination
+  let generated = Set.fromList (map conceptIdOf concepts)
+      stale =
+        [ conceptId
+        | concept <- either (const []) Prelude.id existing,
+          let conceptId = conceptIdOf concept,
+          not (Set.member conceptId generated)
+        ]
+  writeBundle destination concepts
+  indexes <- renderBundleIndexes destination
+  indexCount <- case indexes of
+    Left bundleError -> dieText (renderBundleError bundleError)
+    -- Count distinct paths: 'renderBundleIndexes' yields the bundle root twice,
+    -- once as "" and once as ".", which write the same file.
+    Right rendered -> pure (length (List.nub (map (FilePath.normalise . fst) rendered)))
+  written <- writeBundleIndexes destination
+  case written of
+    Left bundleError -> dieText (renderBundleError bundleError)
+    Right () -> pure ()
+  Text.IO.putStrLn
+    ( "Wrote "
+        <> countPhrase (length concepts) "concept"
+        <> " and "
+        <> countPhrase indexCount "index.md file"
+        <> " to "
+        <> Text.pack destination
+    )
+  unless (null stale) $
+    Text.IO.putStrLn
+      ( "Note: "
+          <> Text.pack destination
+          <> " also contains "
+          <> countPhrase (length stale) "concept"
+          <> " this profile did not generate ("
+          <> Text.intercalate ", " (map renderConceptId stale)
+          <> "). Left untouched; delete them if their type rules were removed."
+      )
+
+-- | @1 concept@ but @2 concepts@, so summary lines read as English.
+countPhrase :: Int -> Text -> Text
+countPhrase count noun =
+  Text.pack (show count) <> " " <> noun <> (if count == 1 then "" else "s")
+
+renderDocumentationError :: DocumentationError -> Text
+renderDocumentationError = \case
+  InvalidRootConceptId raw err -> renderConceptIdError raw err
+  InvalidTypeDirectory raw err -> renderConceptIdError raw err
 
 -- | One profile's complete rule set. Every optional field prints as @(none)@
 -- rather than being omitted, so the output shape does not change between

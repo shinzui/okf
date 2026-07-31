@@ -4,19 +4,19 @@ import Control.Exception (bracket)
 import Control.Monad (unless)
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text.IO
-import Okf.Bundle (conceptFromDocument)
+import Okf.Bundle (conceptFromDocument, conceptIdOf, walkBundle)
 import Okf.Cli
 import Okf.Cli.Assist (AssistOptions (..), buildClaudeCommand)
 import Okf.Cli.Config (AssistSettings (..), ConfigSource (..), KitSettings (..), OkfConfig (..), OkfProvider (..), defaultOkfConfig, exampleConfigText, findConfigSource, loadOkfConfig, okfConfigEnvVar, projectConfigPath)
 import Okf.Cli.Fzf (Candidate (..), FzfOpts (..), optsToArgs, parseSelectionIndex, renderCandidateLines, shellQuote, withAnsi, withHeight, withNoSort, withPrompt)
 import Okf.Cli.Fzf.Selector (conceptCandidates, conceptPreviewCommand, parseBundleSearchRoots)
 import Okf.Cli.Help (HelpTopic (..), helpTopics)
-import Okf.ConceptId (parseConceptId)
+import Okf.ConceptId (parseConceptId, renderConceptId)
 import Okf.Document (parseDocument)
 import Okf.Profile (Cardinality (..), FieldCondition (..), FieldFormat (..), FieldRule (..), FrontmatterRules (..), HandleReferenceRule (..), NestedFieldRule (..), NestedRules (..), ProfileSpec (..), TypeRule (..))
 import Okf.Profile.Registry (RegistryEntry (..))
 import Options.Applicative
-import System.Directory (createDirectoryIfMissing, getCurrentDirectory, getTemporaryDirectory, removeDirectoryRecursive, withCurrentDirectory)
+import System.Directory (createDirectoryIfMissing, doesFileExist, getCurrentDirectory, getTemporaryDirectory, removeDirectoryRecursive, withCurrentDirectory)
 import System.Environment (lookupEnv, setEnv, unsetEnv)
 import System.Exit (exitFailure)
 import System.FilePath ((</>))
@@ -32,6 +32,7 @@ main = do
   configInvalidDhall <- testConfigInvalidDhall
   assistCommandBuilder <- testAssistCommandBuilder
   assistModelOverride <- testAssistModelOverride
+  profileDocumentWrites <- testProfileDocumentWritesBundle
   let results =
         [ parseSucceeds ["validate", "bundle"],
           parseSucceeds ["validate", "bundle", "--strict"],
@@ -194,6 +195,48 @@ main = do
           parseProfileMatches
             ["profile", "show"]
             (ProfileShow (ProfileShowOptions Nothing Nothing False)),
+          parseSucceeds ["profile", "document"],
+          parseSucceeds ["profile", "document", "acme"],
+          parseSucceeds ["profile", "document", "--profile", "p.dhall"],
+          parseSucceeds ["profile", "document", "--out", "docs/p", "--write"],
+          parseSucceeds
+            ["profile", "document", "--registry", "./r.dhall", "acme", "--out", "d", "--write", "--timestamp", "2026-07-31T00:00:00Z"],
+          parseProfileMatches
+            ["profile", "document", "--registry", "./r.dhall", "acme", "--out", "d", "--write", "--timestamp", "2026-07-31T00:00:00Z"]
+            ( ProfileDocument
+                ProfileDocumentOptions
+                  { registryRef = Just "./r.dhall",
+                    export = Just "acme",
+                    profilePath = Nothing,
+                    outputPath = Just "d",
+                    write = True,
+                    timestamp = Just "2026-07-31T00:00:00Z"
+                  }
+            ),
+          parseProfileMatches
+            ["profile", "document"]
+            ( ProfileDocument
+                ProfileDocumentOptions
+                  { registryRef = Nothing,
+                    export = Nothing,
+                    profilePath = Nothing,
+                    outputPath = Nothing,
+                    write = False,
+                    timestamp = Nothing
+                  }
+            ),
+          parseProfileMatches
+            ["profile", "document", "--profile", "p.dhall"]
+            ( ProfileDocument
+                ProfileDocumentOptions
+                  { registryRef = Nothing,
+                    export = Nothing,
+                    profilePath = Just "p.dhall",
+                    outputPath = Nothing,
+                    write = False,
+                    timestamp = Nothing
+                  }
+            ),
           renderRegistryTable sampleRegistryEntries == sampleRegistryTable,
           renderProfileDetail "nested.decisions" sampleDecisionsProfile == sampleProfileDetail,
           renderProfileDetail "" samplePostgresqlProfile == sampleUndocumentedProfileDetail,
@@ -201,6 +244,7 @@ main = do
           parseShowsInfo ["--version"],
           parseFails ["hello"],
           logAddWrites,
+          profileDocumentWrites,
           configDefaults,
           configProjectPrecedence,
           configEnvPrecedence,
@@ -557,6 +601,59 @@ parseShowMatches args expected =
   case execParserPure defaultPrefs parserInfo args of
     Success (Options (ShowConcept opts)) -> opts == expected
     _ -> False
+
+-- | @cabal test@ runs with the package directory as the working directory, but
+-- a developer running the binary from the repository root should get the same
+-- answer, so try both.
+profileFixturePath :: IO FilePath
+profileFixturePath = findExisting candidates
+  where
+    candidates =
+      [ "okf-core" </> "test" </> "fixtures" </> "profiles" </> "optional-fields.dhall",
+        ".." </> "okf-core" </> "test" </> "fixtures" </> "profiles" </> "optional-fields.dhall"
+      ]
+    findExisting [] = fail "profile fixture not found: optional-fields.dhall"
+    findExisting (candidate : rest) = do
+      exists <- doesFileExist candidate
+      if exists then pure candidate else findExisting rest
+
+-- | @okf profile document --out DIR --write@ writes a real bundle, generates
+-- its index files, and is idempotent: the second run leaves every byte alone.
+testProfileDocumentWritesBundle :: IO Bool
+testProfileDocumentWritesBundle = do
+  descriptorPath <- profileFixturePath
+  temporaryDirectory <- getTemporaryDirectory
+  root <- createTempDirectory temporaryDirectory "okf-cli-profile-document"
+  bracket (pure root) removeDirectoryRecursive $ \scratch -> do
+    let destination = scratch </> "bundle"
+        options =
+          ProfileDocumentOptions
+            { registryRef = Nothing,
+              export = Nothing,
+              profilePath = Just descriptorPath,
+              outputPath = Just destination,
+              write = True,
+              timestamp = Nothing
+            }
+    runCommand (Profile (ProfileDocument options))
+    firstProfile <- Text.IO.readFile (destination </> "profile.md")
+    typeWritten <- doesFileExist (destination </> "types" </> "decision-record.md")
+    rootIndexWritten <- doesFileExist (destination </> "index.md")
+    typeIndexWritten <- doesFileExist (destination </> "types" </> "index.md")
+    -- Second run: same inputs, same destination, must change nothing.
+    runCommand (Profile (ProfileDocument options))
+    secondProfile <- Text.IO.readFile (destination </> "profile.md")
+    walked <- walkBundle destination
+    let walkedIds = case walked of
+          Left _ -> []
+          Right concepts -> map (renderConceptId . conceptIdOf) concepts
+    pure
+      ( typeWritten
+          && rootIndexWritten
+          && typeIndexWritten
+          && firstProfile == secondProfile
+          && walkedIds == ["profile", "types/decision-record"]
+      )
 
 testLogAddWritesFile :: IO Bool
 testLogAddWritesFile = do

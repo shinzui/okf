@@ -69,16 +69,18 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] Milestone 1: `ProfileDocument` command variant, options record, and parser
-- [ ] Milestone 1: profile source resolution — `--profile FILE` and registry `EXPORT`
-- [ ] Milestone 1: parser tests in `okf-cli/test/Main.hs`
-- [ ] Milestone 2: preview mode prints every generated file and writes nothing
-- [ ] Milestone 3: `--out DIR --write` writes concepts and index files
-- [ ] Milestone 3: idempotence test — running twice leaves the directory unchanged
-- [ ] Milestone 4: new ADR `docs/adr/6-generated-profile-documentation.md`
-- [ ] Milestone 4: `docs/adr/3-profile-registries.md` amended where it defers a writing command
-- [ ] Milestone 4: `docs/adr/4-self-documenting-profiles.md` amended to note the new destination for prose
-- [ ] Milestone 4: `cabal test all` passes
+- [x] Milestone 1: `ProfileDocument` command variant, options record, and parser — 2026-07-31
+- [x] Milestone 1: profile source resolution — `--profile FILE` and registry `EXPORT` — 2026-07-31
+- [x] Milestone 1: parser tests in `okf-cli/test/Main.hs` — 2026-07-31
+- [x] Milestone 2: preview mode prints every generated file and writes nothing — 2026-07-31
+- [x] Milestone 3: `--out DIR --write` writes concepts and index files — 2026-07-31
+- [x] Milestone 3: idempotence test — running twice leaves the directory unchanged — 2026-07-31
+- [x] Milestone 3: the stale-concept note, verified by writing two different profiles
+      into one destination — 2026-07-31
+- [x] Milestone 4: new ADR `docs/adr/6-generated-profile-documentation.md` — 2026-07-31
+- [x] Milestone 4: `docs/adr/3-profile-registries.md` amended where it defers a writing command — 2026-07-31
+- [x] Milestone 4: `docs/adr/4-self-documenting-profiles.md` amended to note the new destination for prose — 2026-07-31
+- [x] Milestone 4: `cabal test all` passes — 2026-07-31
 
 
 ## Surprises & Discoveries
@@ -86,7 +88,73 @@ This section must always reflect the actual current state of the work.
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+**`renderBundleIndexes` reports the bundle root twice, so the naive index count was wrong.**
+The plan's expected summary was `Wrote 4 concepts and 2 index.md files`. Counting
+`length rendered` printed `3` while only two `index.md` files existed on disk:
+
+```text
+Wrote 4 concepts and 3 index.md files to <tmp>/pg-profile
+$ find <tmp>/pg-profile -name index.md
+./index.md
+./types/index.md
+```
+
+The cause is in `okf-core/src/Okf/Index.hs`:
+
+```haskell
+indexDirectories root concepts = do
+  discovered <- discoverDirectories root ""
+  let conceptDirectories = List.nub (FilePath.takeDirectory . conceptSourcePath <$> concepts)
+  pure (List.sort (List.nub ("" : discovered <> conceptDirectories)))
+```
+
+`takeDirectory "profile.md"` is `"."`, and the root is also added as `""`. The two are
+distinct strings, survive `List.nub`, and both resolve to the same file, so
+`writeBundleIndexes` writes the bundle root's `index.md` twice with identical content. The
+effect is harmless — a duplicated write of the same bytes — but the count is not. The
+command now counts distinct `FilePath.normalise`d paths, which restores the plan's expected
+`2`. Fixing `indexDirectories` itself would be an okf-core change, which this plan's
+Interfaces and Dependencies section excludes; it is left as a small, safe cleanup for a
+later plan.
+
+**`--timestamp` makes generated output trip the log-staleness advisory.** Supplying a
+timestamp is what lets `okf validate --strict` pass, and it does:
+
+```text
+$ okf profile document --profile docs/profiles/postgresql.dhall --out <tmp> --write --timestamp 2026-07-31T00:00:00Z
+$ okf validate <tmp> --strict
+log: profile: timestamp date 2026-07-31 has no enclosing log.md
+log: types/postgresql-schema: timestamp date 2026-07-31 has no enclosing log.md
+...
+OK: 4 concepts
+log: 4 stale concept advisory/advisories (use --log-enforce to fail)
+```
+
+Exit code is `0`, so the acceptance holds. But a user who also passes `--log-enforce` will
+see the command fail, because a generated bundle has timestamps and no `log.md`. This is
+worth a sentence in the user documentation
+([docs/plans/37-document-profile-self-documentation-for-users.md](./37-document-profile-self-documentation-for-users.md)):
+generated documentation is not a hand-maintained bundle and should not be checked with
+`--log-enforce`.
+
+**The preview format is `renderIndexPreview`'s, not the plan's sketch.** The plan drew
+`== profile.md ==` headers but instructed, in the same paragraph, to "read that function and
+match it" so the two previews look like the same tool. `renderIndexPreview` uses
+`--- <path>` followed by the content, so the command reuses that function directly rather
+than reimplementing a near-copy:
+
+```text
+--- profile.md
+---
+type: OKF Profile
+title: shinzui-postgresql
+...
+```
+
+**`Prelude.id` is needed to disambiguate.** `Okf.Prelude` re-exports `Control.Lens`, whose
+`id` clashes with `Prelude`'s inside `okf-cli`. This is the same family of collisions
+[docs/plans/34-render-a-profile-as-an-okf-documentation-bundle.md](./34-render-a-profile-as-an-okf-documentation-bundle.md)
+hit with `index`, `position`, `assign`, and `strict`.
 
 
 ## Decision Log
@@ -119,6 +187,39 @@ implementation. Provide concise evidence.
   a timestamp; the command's help text and the user documentation must say so.
   Date: 2026-07-31
 
+- Decision: count index files by distinct normalized path rather than by the length of
+  `renderBundleIndexes`'s result, and do not fix `Okf.Index` in this plan.
+  Rationale: `renderBundleIndexes` yields the bundle root twice, as `""` and as `"."` (see
+  Surprises & Discoveries), so the raw length overstates the count by one on every bundle.
+  Counting distinct paths is a one-line fix at the call site and gives the honest number.
+  Fixing `indexDirectories` itself would modify okf-core, which this plan's Interfaces and
+  Dependencies section explicitly excludes, and would change behaviour for `okf index` too —
+  a wider blast radius than a summary line justifies.
+  Date: 2026-07-31
+
+- Decision: count index files with a second `renderBundleIndexes` walk rather than
+  reimplementing index writing.
+  Rationale: the plan offered the choice and asked for it to be recorded.
+  `writeBundleIndexes` returns `()`, so the count has to come from somewhere; writing the
+  rendered indexes by hand would duplicate the one thing okf-core owns. Two walks of a
+  directory that was just written is cheap and keeps the index logic in exactly one place.
+  Date: 2026-07-31
+
+- Decision: preview reuses `renderIndexPreview` verbatim instead of the `== path ==` header
+  the plan sketched.
+  Rationale: the plan's own instruction was to read that function and match it so the two
+  previews look like the same tool. Reusing the function rather than imitating its format
+  makes drift impossible.
+  Date: 2026-07-31
+
+- Decision: the filesystem test calls `runCommand (Profile (ProfileDocument …))` rather than
+  shelling out or exporting a new write helper.
+  Rationale: the plan allowed either. `runCommand` is already exported and already used to
+  drive `okf log add` in `okf-cli/test/Main.hs`, so the test exercises the real dispatch path
+  including the argument checks, and no new export exists solely for testing. The cost is a
+  summary line in the test output, which that suite already produces for `log add`.
+  Date: 2026-07-31
+
 
 ## Outcomes & Retrospective
 
@@ -127,7 +228,105 @@ Compare the result against the original purpose. Before marking the plan complet
 distill durable project context from the Decision Log, Surprises & Discoveries, and
 this section into docs/adr/. Keep task-local execution details here.
 
-(To be filled during and after implementation.)
+**Result against the original purpose.** `okf profile document` exists as the third
+subcommand beside `list` and `show`, with the surface the plan specified:
+
+```text
+Usage: okf profile document [--registry REGISTRY] [EXPORT] [--profile PROFILE]
+                            [--out DIR] [--write] [--timestamp RFC3339]
+
+  Generate an OKF bundle documenting a profile
+```
+
+Shell completion needed no work, as the plan predicted: `okf profile --help` lists
+`document` because optparse-applicative walks its own parser tree.
+
+**Acceptance results, all eight confirmed on 2026-07-31.**
+
+Acceptance 1 — a profile documents itself:
+
+```text
+$ okf profile document --profile docs/profiles/postgresql.dhall --out <tmp>/pg-profile --write
+Wrote 4 concepts and 2 index.md files to <tmp>/pg-profile
+$ find <tmp>/pg-profile -type f
+./index.md  ./profile.md  ./types/index.md
+./types/postgresql-schema.md  ./types/postgresql-table.md  ./types/postgresql-view.md
+```
+
+Acceptance 2 — the result is a valid OKF bundle. `okf validate` prints `OK: 4 concepts`;
+`okf graph` shows six edges, one from `profile` to each of the three type pages and one
+back from each; `okf show <tmp>/pg-profile types/postgresql-table` prints that type's page
+with `type: OKF Profile Type` and `title: PostgreSQL Table`.
+
+Acceptance 3 — regenerating produces no diff: `diff -r` between a copy of the first run and
+the second run printed nothing and the guard echoed `identical`. The suite's
+`testProfileDocumentWritesBundle` pins the same property by comparing `profile.md` byte for
+byte across two runs.
+
+Acceptance 4 — preview writes nothing. `okf profile document --profile …` printed every
+generated file followed by
+`(preview only; pass --out DIR --write to write these 4 files)`, and `git status --porcelain`
+showed no new files.
+
+Acceptance 5 — a broken profile is a hard error:
+
+```text
+$ okf profile document --profile okf-core/test/fixtures/profiles/optional-collision-invalid.dhall
+Failed to load profile …: invalid profile definition:
+  - profile frontmatter: field appears in more than one of required, recommended, and optional: reviewedBy
+  - type Decision Record frontmatter: field appears in more than one of required, recommended, and optional: owner
+exit=1
+```
+
+Acceptance 6 — a mistyped export is explained, proving the command routes through the
+existing `selectEntry`:
+
+```text
+$ okf profile document --registry okf-core/test/fixtures/registry nosuchprofile
+No profile named nosuchprofile in registry okf-core/test/fixtures/registry
+Available exports: legacy, nested.decisions, postgresql
+exit=1
+```
+
+The two argument-conflict checks were verified the same way and both exit 1:
+`Pass either --profile PATH or an EXPORT argument, not both.` and
+`--write needs a destination; pass --out DIR.`
+
+Acceptance 7 — the existing profile commands are unchanged. `okf profile` with no
+subcommand still parses as `ProfileList`, pinned by the pre-existing
+`parseProfileMatches ["profile"] (ProfileList …)` test, which still passes. `cabal test all`
+passes both suites.
+
+Acceptance 8 — the architectural record is consistent.
+`docs/adr/6-generated-profile-documentation.md` exists, and ADR 3's deferral paragraph now
+carries a dated amendment lifting it for documentation output only, alongside a second
+amendment qualifying the "only filesystem side effect" sentence. ADR 4 carries a dated note
+that `description` prose has a second destination with unchanged status.
+
+**Gaps and things the next plans should know.**
+
+1. **EP-36**: the meta-profile should encode the contract as stated in
+   `okf-core/src/Okf/Profile/Documentation.hs`'s Haddock header, and ADR 6 names
+   `docs/profiles/profile-documentation.dhall` as its location. Generating with
+   `--timestamp` is what makes the output pass `--strict`; without it, strict validation
+   fails on the missing timestamp.
+2. **EP-37**: three things deserve prose. That `--write` needs `--out`. That
+   `writeBundleIndexes` regenerates `index.md` for *every* directory in the destination, so
+   `--out` should be a dedicated directory and not a hand-maintained bundle. And that a
+   generated bundle has timestamps but no `log.md`, so `okf validate --log-enforce` on it
+   will fail even though plain `--strict` passes — evidence in Surprises & Discoveries.
+3. The `Okf.Index` double-counting of the bundle root is a real, if harmless, defect in
+   okf-core. It is worked around at the call site here and left for a later plan.
+
+**Durable-context distillation.** Reviewed the Decision Log, Surprises & Discoveries, and
+this section. The durable decisions — bundle output rather than a file or a site, generator
+in okf-core with a thin CLI wrapper, compiled rules rather than raw declarations,
+determinism and no clock reads, the overwrite and idempotence rules, and the published
+`type` vocabulary — are all recorded in the new
+[ADR 6](../adr/6-generated-profile-documentation.md), which also records the deliberate
+exclusions and the amendments to ADRs 3 and 4. Everything left in this plan is task-local:
+the index-count workaround, the preview-format choice, the test-harness choice, and the
+identifier-shadowing note.
 
 
 ## Context and Orientation
