@@ -180,7 +180,7 @@ preview mode must keep that property; only `--write` touches the filesystem.
 
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
-| 33 | Expose compiled profile rules for inspection | docs/plans/33-expose-compiled-profile-rules-for-inspection.md | None | None | Not Started |
+| 33 | Expose compiled profile rules for inspection | docs/plans/33-expose-compiled-profile-rules-for-inspection.md | None | None | Complete |
 | 34 | Render a profile as an OKF documentation bundle | docs/plans/34-render-a-profile-as-an-okf-documentation-bundle.md | EP-33 | None | Not Started |
 | 35 | Add the okf profile document command | docs/plans/35-add-the-okf-profile-document-command.md | EP-34 | None | Not Started |
 | 36 | Validate generated profile documentation against a meta-profile | docs/plans/36-validate-generated-profile-documentation-against-a-meta-profile.md | EP-35 | EP-34 | Not Started |
@@ -286,8 +286,8 @@ destination, while remaining documentary only.
 Track milestone-level progress across all child plans. Each entry names the child plan
 and the milestone. This section provides an at-a-glance view of the entire initiative.
 
-- [ ] EP-33: Public read-only view types and accessors for compiled field rules
-- [ ] EP-33: Compiled-profile enumeration (type names, profile-scope rules, per-type rules) exported and tested
+- [x] EP-33: Public read-only view types and accessors for compiled field rules — 2026-07-31
+- [x] EP-33: Compiled-profile enumeration (type names, profile-scope rules, per-type rules) exported and tested — 2026-07-31
 - [ ] EP-34: Concept identity and slugging for a profile and its type rules
 - [ ] EP-34: The profile root concept renders profile-scope settings and rules
 - [ ] EP-34: One concept per type rule, rendering effective merged field rules
@@ -309,7 +309,31 @@ and the milestone. This section provides an at-a-glance view of the entire initi
 Document cross-plan insights, dependency changes, scope adjustments, or unexpected
 interactions between child plans. Provide concise evidence.
 
-(None yet.)
+**Consuming the inspection API costs a `containers` dependency (from EP-33, affects EP-34 and
+EP-35).** `compiledProfileBaseRules`, `compiledProfileRulesForType`, and
+`fieldRuleElementFields` all return `Data.Map.Strict.Map`. `okf-core`'s *library* stanza already
+depends on `containers`, but its *test* stanza did not, and adding a helper whose signature
+named `Map` failed to build until `containers >=0.6 && <0.8` was added to
+`okf-core/okf-core.cabal`. EP-34 lives in the okf-core library and is therefore unaffected. EP-35
+is not: `okf-cli/okf-cli.cabal` depends on `containers` today, so it is fine as written, but if
+EP-34's `renderProfileDocumentation` signature exposes a `Map` to callers, every downstream
+consumer inherits the requirement. The cheaper alternative, should it matter, is for EP-34 to
+expose list-shaped accessors at its own boundary; noting the trade-off here rather than
+prejudging it.
+
+**`fieldRuleElementFields` is depth-bounded, and that is now test-pinned (from EP-33, affects
+EP-34).** A rule taken out of another rule's element-field map always has
+`fieldRuleElementFields == Nothing`. EP-33's `compiled optional rules carry no presence clause`
+test asserts it directly. EP-34's renderer can therefore render nested field rules with a single
+non-recursive pass and does not need a depth guard.
+
+**The `optional` presence encoding survives the merge unchanged (from EP-33, affects EP-34 and
+EP-36).** Confirmed against `okf-core/test/fixtures/profiles/optional-fields.dhall`: an optional
+key yields `fieldRulePresenceClauses == []` at both profile scope (`originatingPlan`) and type
+scope (`supersedes`, `decidedAt`, `reviews`), and nested (`model`). EP-34's renderer must
+classify presence by clause count, not by looking for a constructor that does not exist, and
+EP-36's meta-profile should expect generated documentation to distinguish three presence classes
+from that encoding.
 
 
 ## Decision Log

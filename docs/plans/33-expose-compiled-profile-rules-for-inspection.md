@@ -57,14 +57,16 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] Milestone 1: replace the private `CompiledCondition` record with the already-public `FieldCondition`
-- [ ] Milestone 1: add read-only accessors for `EffectiveFieldRule` and `PresenceClause`
-- [ ] Milestone 1: extend the `Okf.Profile` export list with the inspection surface
-- [ ] Milestone 1: `cabal build okf-core` succeeds with no new warnings
-- [ ] Milestone 2: add `compiledProfileTypeNames`, `compiledProfileBaseRules`, `compiledProfileRulesForType`
-- [ ] Milestone 2: add okf-core tests asserting the merged per-type rule set for `type-frontmatter.dhall`
-- [ ] Milestone 2: add okf-core tests asserting presence classification for `optional-fields.dhall`
-- [ ] Milestone 2: `cabal test okf-core` passes with the new tests reported
+- [x] Milestone 1: replace the private `CompiledCondition` record with the already-public `FieldCondition` — 2026-07-31
+- [x] Milestone 1: add read-only accessors for `EffectiveFieldRule` and `PresenceClause` — 2026-07-31
+- [x] Milestone 1: extend the `Okf.Profile` export list with the inspection surface — 2026-07-31
+- [x] Milestone 1: `cabal build okf-core` succeeds with no new warnings — 2026-07-31
+- [x] Milestone 2: add `compiledProfileTypeNames`, `compiledProfileBaseRules`, `compiledProfileRulesForType` — 2026-07-31
+- [x] Milestone 2: add okf-core tests asserting the merged per-type rule set for `type-frontmatter.dhall` — 2026-07-31
+- [x] Milestone 2: add okf-core tests asserting presence classification for `optional-fields.dhall` — 2026-07-31
+- [x] Milestone 2: `cabal test okf-core` passes with the new tests reported — 2026-07-31
+- [x] Added (not planned): `containers` to the `okf-core-test` stanza's `build-depends`, required to
+      name `Map` in a test helper's signature — 2026-07-31
 
 
 ## Surprises & Discoveries
@@ -72,7 +74,55 @@ This section must always reflect the actual current state of the work.
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+**`compileCondition` was not the identity; `conditionForViolation` was.** The plan predicted
+both functions would collapse to identities once `CompiledCondition` was replaced by
+`FieldCondition`, and said to delete both. Only one did. `compileCondition` deduplicates the
+accepted-value list:
+
+```haskell
+compileCondition rawCondition =
+  CompiledCondition
+    { field = rawCondition ^. #field,
+      hasValue = deduplicate (rawCondition ^. #hasValue)   -- <- not identity
+    }
+```
+
+so it survives as `FieldCondition -> FieldCondition` with a Haddock comment explaining that its
+job is normalization, not translation. `conditionForViolation` was a pure field-for-field copy
+and was deleted; its four call sites now read `clause ^. #condition` directly. The behavioural
+consequence is nil — a violation reported for a condition written with a duplicated value still
+carries the deduplicated list, exactly as before — and the new test
+`compiled optional rules carry no presence clause` pins it.
+
+**The okf-core test suite did not depend on `containers`.** `okf-core`'s library stanza has
+depended on `containers` since long before this plan, but the `okf-core-test` stanza did not,
+because no test had ever needed to name `Map` in a type signature. The new
+`lookupCompiledRule :: Text -> Map Text EffectiveFieldRule -> Either Text EffectiveFieldRule`
+helper does, and the build failed with:
+
+```text
+test/Main.hs:8:1: error: [GHC-87110]
+    Could not load module ‘Data.Map.Strict’.
+    It is a member of the hidden package ‘containers-0.7’.
+```
+
+Fixed by adding `containers >=0.6 && <0.8` to the test stanza in `okf-core/okf-core.cabal`,
+matching the bound the library stanza already uses. This is worth flagging for
+[docs/plans/34-render-a-profile-as-an-okf-documentation-bundle.md](./34-render-a-profile-as-an-okf-documentation-bundle.md):
+any consumer of the new API outside `okf-core`'s library — including `okf-cli` — must add
+`containers` to its own `build-depends` before it can name the `Map` these accessors return.
+
+**`cabal repl okf-core` runs with the working directory set to the package directory.** The
+plan's Acceptance 5 transcript passes `okf-core/test/fixtures/…` to `loadProfileFile`, which
+fails from inside the repl:
+
+```text
+ghci> getCurrentDirectory
+"/Users/shinzui/Keikaku/bokuno/okf/okf-core"
+```
+
+The correct path from the repl prompt is `test/fixtures/profiles/optional-fields.dhall`. The
+acceptance itself was reproduced verbatim once corrected — see Outcomes & Retrospective.
 
 
 ## Decision Log
@@ -97,6 +147,35 @@ implementation. Provide concise evidence.
   the module wondering what distinction the two types encode. There is none.
   Date: 2026-07-31
 
+- Decision: keep `compileCondition` rather than delete it, changing its signature to
+  `FieldCondition -> FieldCondition`; delete `conditionForViolation` outright.
+  Rationale: the plan expected both to become identities. Only `conditionForViolation` did.
+  `compileCondition` deduplicates the condition's accepted-value list, which is real
+  normalization the compile step owes its callers, so deleting it would silently change what a
+  `ProfileViolation` reports for a condition whose author repeated a value. Its Haddock now says
+  so explicitly, since a reader seeing a function from a type to itself will otherwise assume it
+  is vestigial.
+  Date: 2026-07-31
+
+- Decision: add `containers >=0.6 && <0.8` to the `okf-core-test` stanza rather than avoid
+  naming `Map` in test helper signatures.
+  Rationale: the alternative is to inline the helpers at every use site or give them wrappers
+  that hide the `Map`, both of which obscure what is being tested. The dependency is already in
+  the library stanza at the same bound and is a GHC boot package, so the cost is zero. The bound
+  deliberately matches the library's `<0.8` rather than being widened, so a future bump moves
+  both together.
+  Date: 2026-07-31
+
+- Decision: put the "empty presence-clause list means optional, empty allowed-value list means
+  unconstrained" warning in the export-list section header as well as on the individual
+  accessors' Haddock.
+  Rationale: the plan required these invariants be stated in the Haddock comments. A reader
+  skimming the module's export list to find out what is available is exactly the reader most
+  likely to guess wrong about both encodings, and they may never open the individual accessor
+  docs. Stating it twice is cheap; a consumer that reads an empty vocabulary as "nothing is
+  permitted" would be badly wrong.
+  Date: 2026-07-31
+
 
 ## Outcomes & Retrospective
 
@@ -105,7 +184,81 @@ Compare the result against the original purpose. Before marking the plan complet
 distill durable project context from the Decision Log, Surprises & Discoveries, and
 this section into docs/adr/. Keep task-local execution details here.
 
-(To be filled during and after implementation.)
+**Result against the original purpose.** The purpose was to let a caller ask a compiled profile
+three questions it could not ask before — which types it declares, what applies at profile
+scope, what applies to a named type — and to read every component of the answer. That is
+delivered. `Okf.Profile` now exports a `-- * Compiled rule inspection` section holding the three
+enumeration functions, the two abstract rule types, `FieldRequirement (..)`, and nine accessors.
+No constructor was added to `ProfileViolation` or `ProfileDefinitionError`, so no exhaustive
+consumer — Mori's `mori-cli/src/Mori/Okf/Advisory.hs` in particular — acquires any obligation
+from this change. It is purely additive to the export list.
+
+**Acceptance results, all five confirmed on 2026-07-31.**
+
+Acceptances 1–3 are the three new tests, run from the built binary:
+
+```text
+PASS compiledProfileTypeNames preserves declaration order
+PASS compiledProfileRulesForType merges profile and type scope
+PASS compiled optional rules carry no presence clause
+```
+
+Acceptance 4 — `cabal test all` reports both suites passing (`1 of 1 test suites … passed` for
+each of `okf-core-test` and `okf-cli-test`), and the constructor check finds nothing:
+
+```bash
+git diff okf-core/src/Okf/Profile.hs | grep -E '^\+' | grep -E 'ProfileViolation|ProfileDefinitionError'
+```
+
+The two lines this prints are both Haddock prose ("can never produce a 'ProfileViolation'"),
+not constructors; `ProfileViolation` and `ProfileDefinitionError` are untouched.
+
+Acceptance 5 — the REPL walkthrough, with the working-directory correction noted in Surprises &
+Discoveries:
+
+```text
+ghci> compiledProfileTypeNames compiled
+["Decision Record"]
+ghci> Data.Map.Strict.keys (compiledProfileRulesForType compiled "Decision Record")
+["decidedAt","originatingPlan","reviewedBy","reviews","status","supersededBy","supersedes","title","type"]
+ghci> fmap fieldRulePresenceClauses (Data.Map.Strict.lookup "supersedes" (…))
+Just []
+ghci> fmap fieldRulePresenceClauses (Data.Map.Strict.lookup "supersededBy" (…))
+Just [PresenceClause {requirement = RequiredField, condition = Just (FieldCondition {field = "status", hasValue = ["superseded"]})}]
+```
+
+The last line is the clearest evidence the `CompiledCondition` deletion landed: that value was
+not expressible in a public type before this change. Profile-scope keys (`type`, `title`,
+`originatingPlan`) appear in the same map as type-scope ones, which is the merge being visible.
+
+**Gaps and things the next plan should know.** Three, all recorded in Surprises & Discoveries
+and worth repeating here because
+[docs/plans/34-render-a-profile-as-an-okf-documentation-bundle.md](./34-render-a-profile-as-an-okf-documentation-bundle.md)
+consumes this surface directly:
+
+1. Any package outside `okf-core`'s library that consumes these accessors must add `containers`
+   to its own `build-depends` before it can name the returned `Map`. This bit the test suite in
+   this plan and will bite `okf-cli` in EP-35 if the renderer's signatures leak a `Map`.
+2. `compiledProfileRulesForType` on an undeclared type returns the profile-scope rules, not an
+   empty map and not an error. A renderer that iterates `compiledProfileTypeNames` never hits
+   this path, but one that takes a type name from user input will.
+3. `fieldRuleElementFields` is depth-bounded at one level by construction, and the new test
+   asserts it (`fieldRuleElementFields kindRule == Nothing`). A renderer may rely on this and
+   need not recurse.
+
+**Durable-context distillation.** Reviewed the Decision Log, Surprises & Discoveries, and this
+section against `docs/adr/`. No new ADR and no ADR amendment is warranted by this plan. The
+governing decision — that `CompiledProfile` is opaque so later constraints can extend the
+compiled field rule without breaking consumers — is already recorded in
+[docs/adr/5-compile-profile-rules-before-validation.md](../adr/5-compile-profile-rules-before-validation.md),
+and this plan *implements* that decision rather than changing it: exporting accessors instead of
+constructors is precisely what ADR 5's opacity requires of anyone who wants to read the compiled
+rules. The `compileCondition`/`containers` findings are task-local build and refactor details
+with no bearing on project-level architecture. The parent MasterPlan,
+[docs/masterplans/6-make-okf-profiles-self-documenting.md](../masterplans/6-make-okf-profiles-self-documenting.md),
+already schedules a new ADR for this initiative under EP-35, where the user-visible behaviour
+lands and where ADR 3 must be amended; the inspection API is better described there as one
+consequence of the whole than as an ADR of its own.
 
 
 ## Context and Orientation

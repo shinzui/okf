@@ -84,6 +84,7 @@ test-suite okf-core-test
   build-depends:
     , aeson
     , base          >=4.20 && <5
+    , containers    >=0.6  && <0.8
     , dhall         >=1.41 && <1.43
     , directory
     , filepath

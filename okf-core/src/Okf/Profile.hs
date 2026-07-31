@@ -32,6 +32,33 @@ module Okf.Profile
     compiledProfileSpec,
     profileFieldDescriptionForType,
 
+    -- * Compiled rule inspection
+
+    -- | A read-only window onto what a compiled profile actually demands. The
+    -- rule types are abstract on purpose: read them through the accessors below
+    -- so that later profile features can extend the compiled encoding without
+    -- breaking consumers.
+    --
+    -- Two encodings are easy to misread and are worth stating up front. An
+    -- __empty presence-clause list means the key is optional__, not that it is
+    -- unconstrained; and an __empty allowed-value list means unconstrained__,
+    -- not that no value is permitted.
+    EffectiveFieldRule,
+    PresenceClause,
+    FieldRequirement (..),
+    fieldRulePresenceClauses,
+    presenceClauseRequirement,
+    presenceClauseCondition,
+    fieldRuleDescription,
+    fieldRuleAllowedValues,
+    fieldRuleCardinality,
+    fieldRuleFormat,
+    fieldRuleReference,
+    fieldRuleElementFields,
+    compiledProfileTypeNames,
+    compiledProfileBaseRules,
+    compiledProfileRulesForType,
+
     -- * Validation
     DocumentId (..),
     parseDocumentId,
@@ -1363,21 +1390,26 @@ data ProfileDefinitionError
     OptionalFieldWithCondition (Maybe Text) FieldPath
   deriving stock (Generic, Eq, Ord, Show)
 
+-- | Whether a 'PresenceClause' demands a key or merely recommends it. There is
+-- deliberately no @OptionalField@ constructor: an optional key is encoded as an
+-- 'EffectiveFieldRule' with /no/ presence clauses at all.
 data FieldRequirement = RecommendedField | RequiredField
-  deriving stock (Eq, Ord, Show)
+  deriving stock (Generic, Eq, Ord, Show)
 
-data CompiledCondition = CompiledCondition
-  { field :: !Text,
-    hasValue :: ![Text]
-  }
-  deriving stock (Generic, Eq, Show)
-
+-- | One reason a key may have to be present, optionally gated by a condition on
+-- another same-scope key. Abstract: read it with 'presenceClauseRequirement' and
+-- 'presenceClauseCondition'.
 data PresenceClause = PresenceClause
   { requirement :: !FieldRequirement,
-    condition :: !(Maybe CompiledCondition)
+    condition :: !(Maybe FieldCondition)
   }
   deriving stock (Generic, Eq, Show)
 
+-- | Everything that actually applies to one frontmatter key for one concept
+-- type: the profile-scope declaration merged with the type-scope one per
+-- [ADR 5](docs/adr/5-compile-profile-rules-before-validation.md). Abstract: read
+-- it with the @fieldRule*@ accessors below, never by pattern matching, so that
+-- later profile features can extend it without breaking consumers.
 data EffectiveFieldRule = EffectiveFieldRule
   { presenceClauses :: ![PresenceClause],
     description :: !(Maybe Text),
@@ -1388,6 +1420,56 @@ data EffectiveFieldRule = EffectiveFieldRule
     reference :: !(Maybe HandleReferenceRule)
   }
   deriving stock (Generic, Eq, Show)
+
+-- | The presence clauses that govern whether this key must be present, in the
+-- order the profile declared them. An __empty list means the key is optional__:
+-- it is fully validated whenever it is present and never reported when absent,
+-- in any validation mode. A clause with 'RequiredField' is always checked; a
+-- clause with 'RecommendedField' is checked only under
+-- 'Okf.Validation.StrictAuthoring'. A clause carrying a 'FieldCondition' applies
+-- only when that condition holds for the document being checked.
+fieldRulePresenceClauses :: EffectiveFieldRule -> [PresenceClause]
+fieldRulePresenceClauses rule = rule ^. #presenceClauses
+
+-- | Prose documenting the key, merged across profile and type scope with
+-- type-level prose winning. Purely documentary: it is never checked against a
+-- document and can never produce a 'ProfileViolation'.
+fieldRuleDescription :: EffectiveFieldRule -> Maybe Text
+fieldRuleDescription rule = rule ^. #description
+
+-- | The closed vocabulary of permitted textual values. An __empty list means
+-- unconstrained__, not "no value is permitted".
+fieldRuleAllowedValues :: EffectiveFieldRule -> [Text]
+fieldRuleAllowedValues rule = rule ^. #allowedValues
+
+-- | Whether the key must be a single value, a non-empty list, or either.
+fieldRuleCardinality :: EffectiveFieldRule -> Cardinality
+fieldRuleCardinality rule = rule ^. #cardinality
+
+-- | The named textual format constraining present values, if any.
+fieldRuleFormat :: EffectiveFieldRule -> Maybe FieldFormat
+fieldRuleFormat rule = rule ^. #format
+
+-- | The document-reference policy for this key, if any.
+fieldRuleReference :: EffectiveFieldRule -> Maybe HandleReferenceRule
+fieldRuleReference rule = rule ^. #reference
+
+-- | Rules for the flat object stored in each element of a list-valued key,
+-- keyed by nested key name, or 'Nothing' when the key declares no nested shape.
+-- Nested rules are depth-bounded: a nested rule never itself has element fields,
+-- so 'fieldRuleElementFields' on a value taken from this map is always
+-- 'Nothing'.
+fieldRuleElementFields :: EffectiveFieldRule -> Maybe (Map Text EffectiveFieldRule)
+fieldRuleElementFields rule = rule ^. #elementFields
+
+-- | Whether this clause demands the key or merely recommends it.
+presenceClauseRequirement :: PresenceClause -> FieldRequirement
+presenceClauseRequirement clause = clause ^. #requirement
+
+-- | The same-scope predicate gating this clause, or 'Nothing' when it always
+-- applies.
+presenceClauseCondition :: PresenceClause -> Maybe FieldCondition
+presenceClauseCondition clause = clause ^. #condition
 
 -- | A raw profile whose authoring contradictions have been rejected and whose
 -- effective profile-plus-type frontmatter rules have been precomputed.
@@ -1400,6 +1482,27 @@ data CompiledProfile = CompiledProfile
 
 compiledProfileSpec :: CompiledProfile -> ProfileSpec
 compiledProfileSpec compiled = compiled ^. #spec
+
+-- | The concept @type@ strings the profile declares, in the order the descriptor
+-- declares them. Declaration order is the author's and is preserved because
+-- documentation and display should follow it rather than an alphabetical
+-- reordering.
+compiledProfileTypeNames :: CompiledProfile -> [Text]
+compiledProfileTypeNames compiled =
+  [rule ^. #type_ | rule <- compiledProfileSpec compiled ^. #types]
+
+-- | The rules that apply to every document, whatever its type, keyed by
+-- frontmatter key name.
+compiledProfileBaseRules :: CompiledProfile -> Map Text EffectiveFieldRule
+compiledProfileBaseRules compiled = compiled ^. #baseRules
+
+-- | The rules that apply to a document of the given @type@: the profile-scope
+-- rules merged with that type's own. A type the profile does not declare falls
+-- back to the profile-scope rules alone, because a profile with
+-- @allowUnknownTypes = True@ still applies its profile-wide expectations to a
+-- document whose type it does not recognize.
+compiledProfileRulesForType :: CompiledProfile -> Text -> Map Text EffectiveFieldRule
+compiledProfileRulesForType = effectiveRulesForType
 
 compileProfile :: ProfileSpec -> Either (NonEmpty ProfileDefinitionError) CompiledProfile
 compileProfile rawSpec =
@@ -1814,9 +1917,13 @@ mergeEffectiveFieldRule profileRule typeRule =
       reference = fromMaybe (profileRule ^. #reference) (mergeReferenceRule (profileRule ^. #reference) (typeRule ^. #reference))
     }
 
-compileCondition :: FieldCondition -> CompiledCondition
+-- | Normalize a declared condition for storage in a 'PresenceClause': the shape
+-- is unchanged, but the accepted-value list is deduplicated so that a clause
+-- reported in a 'ProfileViolation' does not repeat a value the author wrote
+-- twice.
+compileCondition :: FieldCondition -> FieldCondition
 compileCondition rawCondition =
-  CompiledCondition
+  FieldCondition
     { field = rawCondition ^. #field,
       hasValue = deduplicate (rawCondition ^. #hasValue)
     }
@@ -2137,8 +2244,8 @@ validateProfile validationProfile compiled concepts =
             Nothing -> []
             Just clause ->
               [ case clause ^. #requirement of
-                  RequiredField -> MissingProfileField cid key (conditionForViolation <$> clause ^. #condition)
-                  RecommendedField -> MissingRecommendedProfileField cid key (conditionForViolation <$> clause ^. #condition)
+                  RequiredField -> MissingProfileField cid key (clause ^. #condition)
+                  RecommendedField -> MissingRecommendedProfileField cid key (clause ^. #condition)
               ]
         vocabularyViolations key rule actual =
           [ ValueNotInVocabulary cid (topLevelFieldPath key) (rule ^. #allowedValues) actual
@@ -2187,8 +2294,8 @@ validateProfile validationProfile compiled concepts =
             Nothing -> []
             Just clause ->
               [ case clause ^. #requirement of
-                  RequiredField -> MissingNestedProfileField cid path (conditionForViolation <$> clause ^. #condition)
-                  RecommendedField -> MissingRecommendedNestedProfileField cid path (conditionForViolation <$> clause ^. #condition)
+                  RequiredField -> MissingNestedProfileField cid path (clause ^. #condition)
+                  RecommendedField -> MissingRecommendedNestedProfileField cid path (clause ^. #condition)
               ]
           where
             lookupSibling sourceKey = Aeson.KeyMap.lookup (Aeson.Key.fromText sourceKey) objectFields
@@ -2295,13 +2402,6 @@ applicablePresenceClause validationProfile lookupValue rule =
       case lookupValue (condition ^. #field) of
         Just (String actual) -> actual `elem` condition ^. #hasValue
         _ -> False
-
-conditionForViolation :: CompiledCondition -> FieldCondition
-conditionForViolation condition =
-  FieldCondition
-    { field = condition ^. #field,
-      hasValue = condition ^. #hasValue
-    }
 
 valueMatchesVocabulary :: [Text] -> Value -> Bool
 valueMatchesVocabulary allowed = \case

@@ -5,6 +5,8 @@ module Main (main) where
 import Data.Aeson (object, toJSON, (.=))
 import Data.Foldable (for_, toList)
 import Data.List qualified as List
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text.IO
 import Okf.Bundle
@@ -110,6 +112,9 @@ main = do
         testIO "findConceptsByDocumentId resolves and reports duplicate handles" testFindConceptsByDocumentId,
         test "compileProfile rejects ambiguous definitions deterministically" testCompileProfileDefinitionErrors,
         test "compiled rules merge profile and type requirements" testCompiledProfileMerge,
+        testIO "compiledProfileTypeNames preserves declaration order" testCompiledProfileTypeNames,
+        testIO "compiledProfileRulesForType merges profile and type scope" testCompiledProfileRulesMergeTypeScope,
+        testIO "compiled optional rules carry no presence clause" testCompiledProfileOptionalPresence,
         test "compiled vocabularies intersect in profile declaration order" testCompiledVocabularyIntersection,
         test "compileProfile rejects disjoint vocabularies" testUnsatisfiableVocabulary,
         test "compiled cardinality uses Any as identity and rejects contradictions" testCompiledCardinality,
@@ -2761,6 +2766,88 @@ testTypeAwareProfileFixture = do
       assertEqual
         [MissingRecommendedProfileField ownedId "reviewer" Nothing]
         (validateProfile StrictAuthoring compiled concepts)
+
+-- | Declaration order is the author's; 'compiledProfileTypeNames' must not
+-- reorder it, because generated documentation follows it.
+testCompiledProfileTypeNames :: IO (Either Text ())
+testCompiledProfileTypeNames = do
+  descriptorPath <- fixtureFilePath "profiles/type-frontmatter.dhall"
+  loaded <- loadProfileFile descriptorPath
+  pure $ case loaded of
+    Left err -> Left ("failed to load type-aware profile: " <> err)
+    Right spec -> do
+      compiled <- firstShow (compileProfile spec)
+      assertEqual ["Owned Concept", "Open Concept"] (compiledProfileTypeNames compiled)
+
+-- | The merged view is what a reader of the profile actually needs: the type
+-- rule names two keys, but four apply.
+testCompiledProfileRulesMergeTypeScope :: IO (Either Text ())
+testCompiledProfileRulesMergeTypeScope = do
+  descriptorPath <- fixtureFilePath "profiles/type-frontmatter.dhall"
+  loaded <- loadProfileFile descriptorPath
+  pure $ case loaded of
+    Left err -> Left ("failed to load type-aware profile: " <> err)
+    Right spec -> do
+      compiled <- firstShow (compileProfile spec)
+      let owned = compiledProfileRulesForType compiled "Owned Concept"
+      assertEqual ["owner", "reviewer", "title", "type"] (Map.keys owned)
+      ownerRule <- lookupCompiledRule "owner" owned
+      assertEqual [(RequiredField, Nothing)] (presenceSummary ownerRule)
+      reviewerRule <- lookupCompiledRule "reviewer" owned
+      assertEqual [(RecommendedField, Nothing)] (presenceSummary reviewerRule)
+      titleRule <- lookupCompiledRule "title" owned
+      assertEqual (Just "Human-readable concept title.") (fieldRuleDescription titleRule)
+      assertEqual ["title", "type"] (Map.keys (compiledProfileRulesForType compiled "Open Concept"))
+      assertEqual
+        (compiledProfileBaseRules compiled)
+        (compiledProfileRulesForType compiled "Not In Profile")
+
+-- | Pins the encoding an outside consumer is most likely to misread: @optional@
+-- is an empty presence-clause list, not a constructor.
+testCompiledProfileOptionalPresence :: IO (Either Text ())
+testCompiledProfileOptionalPresence = do
+  descriptorPath <- fixtureFilePath "profiles/optional-fields.dhall"
+  loaded <- loadProfileFile descriptorPath
+  pure $ case loaded of
+    Left err -> Left ("failed to load optional-field profile: " <> err)
+    Right spec -> do
+      compiled <- firstShow (compileProfile spec)
+      let rules = compiledProfileRulesForType compiled "Decision Record"
+      for_ ["supersedes", "decidedAt", "reviews", "originatingPlan"] $ \key -> do
+        rule <- lookupCompiledRule key rules
+        assertEqual [] (presenceSummary rule)
+      statusRule <- lookupCompiledRule "status" rules
+      assertEqual [(RequiredField, Nothing)] (presenceSummary statusRule)
+      assertEqual ["accepted", "superseded"] (fieldRuleAllowedValues statusRule)
+      assertEqual Scalar (fieldRuleCardinality statusRule)
+      supersededByRule <- lookupCompiledRule "supersededBy" rules
+      assertEqual
+        [(RequiredField, Just (FieldCondition "status" ["superseded"]))]
+        (presenceSummary supersededByRule)
+      supersedesRule <- lookupCompiledRule "supersedes" rules
+      assertEqual
+        (Just (HandleReferenceRule "ADR" [] False))
+        (fieldRuleReference supersedesRule)
+      reviewsRule <- lookupCompiledRule "reviews" rules
+      nested <- maybe (Left "reviews declares no element fields") Right (fieldRuleElementFields reviewsRule)
+      assertEqual ["kind", "model"] (Map.keys nested)
+      kindRule <- lookupCompiledRule "kind" nested
+      assertEqual [(RequiredField, Nothing)] (presenceSummary kindRule)
+      assertEqual Nothing (fieldRuleElementFields kindRule)
+      modelRule <- lookupCompiledRule "model" nested
+      assertEqual [] (presenceSummary modelRule)
+
+lookupCompiledRule :: Text -> Map Text EffectiveFieldRule -> Either Text EffectiveFieldRule
+lookupCompiledRule key rules =
+  maybe (Left ("no compiled rule for key " <> key)) Right (Map.lookup key rules)
+
+-- | An 'EffectiveFieldRule' is abstract, so summarize its presence clauses
+-- through the public accessors into something comparable.
+presenceSummary :: EffectiveFieldRule -> [(FieldRequirement, Maybe FieldCondition)]
+presenceSummary rule =
+  [ (presenceClauseRequirement clause, presenceClauseCondition clause)
+  | clause <- fieldRulePresenceClauses rule
+  ]
 
 testClosedFieldsFixture :: IO (Either Text ())
 testClosedFieldsFixture = do
