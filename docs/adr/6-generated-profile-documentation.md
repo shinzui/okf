@@ -87,6 +87,36 @@ written into the module's Haddock header, and
 `docs/profiles/profile-documentation.dhall` encodes the same facts in Dhall so the claim
 is checkable rather than merely asserted.
 
+**okf ships the meta-profile and a committed generated example, and a test compares them.**
+`docs/profiles/profile-documentation.dhall` is the machine-readable statement of the
+contract the generator's Haddock states in prose. The two must move together: changing a
+concept `type` string, a required frontmatter key, or a default concept ID means changing
+both in the same commit. `examples/postgresql-profile/` is a bundle generated from the
+shipped `docs/profiles/postgresql.dhall` and committed to the repository, and a test in
+`okf-cli/test/Main.hs` regenerates it into a temporary directory and compares every `.md`
+file byte for byte. Between them the claim "a profile documents itself, and the
+documentation is checkable by a profile" is a test rather than a sentence:
+
+```bash
+okf profile document --profile docs/profiles/postgresql.dhall --out /tmp/pg --write
+okf validate /tmp/pg --profile docs/profiles/profile-documentation.dhall --profile-enforce
+```
+
+The committed example is generated **without** `--timestamp`, so it has no varying input
+and regenerating it can never produce a spurious diff. The consequence is that the example
+does not satisfy `okf validate --strict`, which reports a missing `timestamp` on each
+concept and exits 1. That is intended and is covered separately by a test that generates
+with an explicit timestamp into a temporary directory and asserts both strict OKF authoring
+and strict meta-profile conformance are clean.
+
+**`timestamp` is `optional` in the meta-profile**, which is the first place in this
+repository where [ADR 5](./5-compile-profile-rules-before-validation.md)'s third presence
+classification describes okf's own output rather than a user's bundle. It is exactly right
+here: a generated bundle carries the key only when the caller asked for it, and neither
+case is a deficiency, so the key should be constrained when present and never demanded.
+`recommended` would make `--strict` report every timestamp-free bundle; `required` would
+make the default invocation non-conformant.
+
 
 ## Consequences
 
@@ -111,6 +141,18 @@ whether a bundle conforms to it, and [ADR 1](./1-profile-declared-document-ids.m
 that a bundle deviating from a profile is still OKF-conformant is untouched. A descriptor
 that fails to *compile*, however, is a hard error for this command rather than an advisory
 one, because there is nothing to document.
+
+The meta-profile's `allowUnknownFields = False` is a statement of intent more than a tight
+constraint, and the descriptor says so in a comment. Every key the generator emits —
+`type`, `title`, `description`, `timestamp` — is a core OKF key, and a closed field
+vocabulary always permits the core keys per
+[ADR 5](./5-compile-profile-rules-before-validation.md). So the closure would not catch a
+generator that started emitting a core key it does not emit today. The real guard against
+an unexpected key is the byte-comparison drift test against `examples/postgresql-profile/`,
+not the closed vocabulary. Both were confirmed to fail when the committed example was
+deliberately edited: removing its `description:` line failed the drift test naming
+`profile.md` *and* the conformance test with
+`MissingProfileField … "description"`.
 
 `writeBundleIndexes` regenerates `index.md` for every directory in the destination,
 including directories the command did not write into. Pointing `--out` at a directory that

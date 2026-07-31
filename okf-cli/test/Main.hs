@@ -2,6 +2,7 @@ module Main (main) where
 
 import Control.Exception (bracket)
 import Control.Monad (unless)
+import Data.List qualified as List
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text.IO
 import Okf.Bundle (conceptFromDocument, conceptIdOf, walkBundle)
@@ -13,10 +14,11 @@ import Okf.Cli.Fzf.Selector (conceptCandidates, conceptPreviewCommand, parseBund
 import Okf.Cli.Help (HelpTopic (..), helpTopics)
 import Okf.ConceptId (parseConceptId, renderConceptId)
 import Okf.Document (parseDocument)
-import Okf.Profile (Cardinality (..), FieldCondition (..), FieldFormat (..), FieldRule (..), FrontmatterRules (..), HandleReferenceRule (..), NestedFieldRule (..), NestedRules (..), ProfileSpec (..), TypeRule (..))
+import Okf.Profile (Cardinality (..), FieldCondition (..), FieldFormat (..), FieldRule (..), FrontmatterRules (..), HandleReferenceRule (..), NestedFieldRule (..), NestedRules (..), ProfileSpec (..), TypeRule (..), compileProfile, loadProfileFile, validateProfile)
 import Okf.Profile.Registry (RegistryEntry (..))
+import Okf.Validation (ValidationProfile (..), validateBundle)
 import Options.Applicative
-import System.Directory (createDirectoryIfMissing, doesFileExist, getCurrentDirectory, getTemporaryDirectory, removeDirectoryRecursive, withCurrentDirectory)
+import System.Directory (createDirectoryIfMissing, doesDirectoryExist, doesFileExist, getCurrentDirectory, getTemporaryDirectory, listDirectory, removeDirectoryRecursive, withCurrentDirectory)
 import System.Environment (lookupEnv, setEnv, unsetEnv)
 import System.Exit (exitFailure)
 import System.FilePath ((</>))
@@ -33,6 +35,9 @@ main = do
   assistCommandBuilder <- testAssistCommandBuilder
   assistModelOverride <- testAssistModelOverride
   profileDocumentWrites <- testProfileDocumentWritesBundle
+  profileDocMatchesExample <- testProfileDocumentationMatchesCommittedExample
+  profileDocConformsToMeta <- testProfileDocumentationConformsToMetaProfile
+  profileDocStrictWithTimestamp <- testProfileDocumentationStrictWithTimestamp
   let results =
         [ parseSucceeds ["validate", "bundle"],
           parseSucceeds ["validate", "bundle", "--strict"],
@@ -245,6 +250,9 @@ main = do
           parseFails ["hello"],
           logAddWrites,
           profileDocumentWrites,
+          profileDocMatchesExample,
+          profileDocConformsToMeta,
+          profileDocStrictWithTimestamp,
           configDefaults,
           configProjectPrecedence,
           configEnvPrecedence,
@@ -601,6 +609,138 @@ parseShowMatches args expected =
   case execParserPure defaultPrefs parserInfo args of
     Success (Options (ShowConcept opts)) -> opts == expected
     _ -> False
+
+-- | A repository-relative path, resolved whether the test runs from the package
+-- directory (what @cabal test@ does) or from the repository root.
+repositoryPath :: FilePath -> IO FilePath
+repositoryPath relative = findExisting [relative, ".." </> relative]
+  where
+    findExisting [] = fail ("repository path not found: " <> relative)
+    findExisting (candidate : rest) = do
+      isFile <- doesFileExist candidate
+      isDirectory <- doesDirectoryExist candidate
+      if isFile || isDirectory then pure candidate else findExisting rest
+
+-- | Every @.md@ file under a bundle, as (bundle-relative path, contents), sorted
+-- so two trees compare deterministically.
+readMarkdownTree :: FilePath -> IO [(FilePath, Text.Text)]
+readMarkdownTree root = List.sortOn fst <$> go ""
+  where
+    go relative = do
+      entries <- listDirectory (root </> relative)
+      fmap concat . mapM (visit relative) $ entries
+    visit relative entry = do
+      let relativeEntry = if null relative then entry else relative </> entry
+      isDirectory <- doesDirectoryExist (root </> relativeEntry)
+      if isDirectory
+        then go relativeEntry
+        else
+          if ".md" `List.isSuffixOf` entry
+            then do
+              contents <- Text.IO.readFile (root </> relativeEntry)
+              pure [(relativeEntry, contents)]
+            else pure []
+
+-- | Options that regenerate the committed example into @destination@. Kept in
+-- one place so the drift test and the strict test cannot disagree about them.
+exampleDocumentOptions :: FilePath -> FilePath -> Maybe Text.Text -> ProfileDocumentOptions
+exampleDocumentOptions descriptor destination stamp =
+  ProfileDocumentOptions
+    { registryRef = Nothing,
+      export = Nothing,
+      profilePath = Just descriptor,
+      outputPath = Just destination,
+      write = True,
+      timestamp = stamp
+    }
+
+-- | The committed @examples/postgresql-profile@ must be exactly what the
+-- generator produces today. A failure means either the generator changed or the
+-- example is stale; the message names the files so the reader knows which.
+testProfileDocumentationMatchesCommittedExample :: IO Bool
+testProfileDocumentationMatchesCommittedExample = do
+  descriptor <- repositoryPath ("docs" </> "profiles" </> "postgresql.dhall")
+  committedRoot <- repositoryPath ("examples" </> "postgresql-profile")
+  committed <- readMarkdownTree committedRoot
+  temporaryDirectory <- getTemporaryDirectory
+  scratch <- createTempDirectory temporaryDirectory "okf-cli-profile-doc-drift"
+  bracket (pure scratch) removeDirectoryRecursive $ \root -> do
+    let destination = root </> "regenerated"
+    runCommand (Profile (ProfileDocument (exampleDocumentOptions descriptor destination Nothing)))
+    regenerated <- readMarkdownTree destination
+    let changed = [path | (path, content) <- committed, lookup path regenerated /= Just content]
+        added = [path | (path, _) <- regenerated, path `notElem` map fst committed]
+        differing = changed <> added
+    unless (null differing) $
+      putStrLn
+        ( "examples/postgresql-profile is stale or the generator changed; differing files: "
+            <> unwords differing
+            <> "\nregenerate with: okf profile document --profile docs/profiles/postgresql.dhall --out examples/postgresql-profile --write"
+        )
+    pure (null differing)
+
+-- | The committed example must satisfy the meta-profile with deviations
+-- enforced. An empty violation list is exactly what @--profile-enforce@ turns
+-- into exit code 0, so asserting on the list is stronger than shelling out.
+testProfileDocumentationConformsToMetaProfile :: IO Bool
+testProfileDocumentationConformsToMetaProfile = do
+  metaProfilePath <- repositoryPath ("docs" </> "profiles" </> "profile-documentation.dhall")
+  committedRoot <- repositoryPath ("examples" </> "postgresql-profile")
+  loaded <- loadProfileFile metaProfilePath
+  walked <- walkBundle committedRoot
+  case (loaded, walked) of
+    (Left err, _) -> reportFailure ("failed to load the meta-profile: " <> Text.unpack err)
+    (_, Left bundleError) -> reportFailure ("failed to walk the committed example: " <> show bundleError)
+    (Right spec, Right concepts) ->
+      case compileProfile spec of
+        Left definitionErrors -> reportFailure ("meta-profile does not compile: " <> show definitionErrors)
+        Right compiled -> do
+          let profileViolations = validateProfile PermissiveConformance compiled concepts
+              structuralErrors = validateBundle PermissiveConformance concepts
+          unless (null profileViolations) $
+            putStrLn ("committed example deviates from the meta-profile: " <> show profileViolations)
+          unless (null structuralErrors) $
+            putStrLn ("committed example is not structurally valid: " <> show structuralErrors)
+          pure (null profileViolations && null structuralErrors)
+  where
+    reportFailure message = putStrLn message >> pure False
+
+-- | Generated output can satisfy strict OKF authoring once a timestamp is
+-- supplied, and the meta-profile's @optional@ classification for @timestamp@
+-- does not turn into a strict-mode complaint when the key is present.
+testProfileDocumentationStrictWithTimestamp :: IO Bool
+testProfileDocumentationStrictWithTimestamp = do
+  descriptor <- repositoryPath ("docs" </> "profiles" </> "postgresql.dhall")
+  metaProfilePath <- repositoryPath ("docs" </> "profiles" </> "profile-documentation.dhall")
+  loaded <- loadProfileFile metaProfilePath
+  temporaryDirectory <- getTemporaryDirectory
+  scratch <- createTempDirectory temporaryDirectory "okf-cli-profile-doc-strict"
+  bracket (pure scratch) removeDirectoryRecursive $ \root -> do
+    let destination = root </> "stamped"
+    runCommand
+      ( Profile
+          ( ProfileDocument
+              (exampleDocumentOptions descriptor destination (Just "2026-07-31T00:00:00Z"))
+          )
+      )
+    walked <- walkBundle destination
+    case (loaded, walked) of
+      (Right spec, Right concepts) ->
+        case compileProfile spec of
+          Left definitionErrors -> do
+            putStrLn ("meta-profile does not compile: " <> show definitionErrors)
+            pure False
+          Right compiled -> do
+            let structuralErrors = validateBundle StrictAuthoring concepts
+                profileViolations = validateProfile StrictAuthoring compiled concepts
+            unless (null structuralErrors) $
+              putStrLn ("stamped output is not strict-clean: " <> show structuralErrors)
+            unless (null profileViolations) $
+              putStrLn ("stamped output deviates from the meta-profile under --strict: " <> show profileViolations)
+            pure (null structuralErrors && null profileViolations)
+      _ -> do
+        putStrLn "failed to load the meta-profile or walk the stamped output"
+        pure False
 
 -- | @cabal test@ runs with the package directory as the working directory, but
 -- a developer running the binary from the repository root should get the same

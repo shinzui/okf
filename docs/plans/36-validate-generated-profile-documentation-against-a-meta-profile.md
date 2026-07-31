@@ -62,15 +62,16 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] Milestone 1: write `docs/profiles/profile-documentation.dhall`
-- [ ] Milestone 1: `okf profile show --registry docs/profiles/profile-documentation.dhall` prints it
-- [ ] Milestone 2: generate and commit `examples/postgresql-profile/`
-- [ ] Milestone 2: `okf validate examples/postgresql-profile --profile docs/profiles/profile-documentation.dhall --profile-enforce` exits 0
-- [ ] Milestone 3: regeneration-drift test comparing generated output to the committed example
-- [ ] Milestone 3: meta-profile conformance test with `--profile-enforce` semantics
-- [ ] Milestone 3: strict-mode test with an explicit timestamp
-- [ ] Milestone 4: extend `docs/adr/6-generated-profile-documentation.md` with what the meta-profile settled
-- [ ] Milestone 4: `cabal test all` passes
+- [x] Milestone 1: write `docs/profiles/profile-documentation.dhall` — 2026-07-31
+- [x] Milestone 1: `okf profile show --registry docs/profiles/profile-documentation.dhall` prints it — 2026-07-31
+- [x] Milestone 2: generate and commit `examples/postgresql-profile/` — 2026-07-31
+- [x] Milestone 2: `okf validate examples/postgresql-profile --profile docs/profiles/profile-documentation.dhall --profile-enforce` exits 0 — 2026-07-31
+- [x] Milestone 3: regeneration-drift test comparing generated output to the committed example — 2026-07-31
+- [x] Milestone 3: meta-profile conformance test with `--profile-enforce` semantics — 2026-07-31
+- [x] Milestone 3: strict-mode test with an explicit timestamp — 2026-07-31
+- [x] Milestone 3: both guards confirmed to actually fail on a deliberate edit, then restored — 2026-07-31
+- [x] Milestone 4: extend `docs/adr/6-generated-profile-documentation.md` with what the meta-profile settled — 2026-07-31
+- [x] Milestone 4: `cabal test all` passes — 2026-07-31
 
 
 ## Surprises & Discoveries
@@ -78,7 +79,66 @@ This section must always reflect the actual current state of the work.
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+**The meta-profile and the generator agreed on the first try.** The plan anticipated they
+might not — "If this reports deviations, the meta-profile and the generator disagree… Do not
+weaken the meta-profile just to make the command pass" — and prepared a tiebreaker. It was
+not needed:
+
+```text
+$ okf validate examples/postgresql-profile --profile docs/profiles/profile-documentation.dhall --profile-enforce
+OK: 4 concepts
+```
+
+That the contract written in prose in
+`okf-core/src/Okf/Profile/Documentation.hs`'s Haddock and the contract written in Dhall
+matched without adjustment is the clearest evidence that
+[docs/plans/34-render-a-profile-as-an-okf-documentation-bundle.md](./34-render-a-profile-as-an-okf-documentation-bundle.md)'s
+insistence on writing the contract down explicitly did its job.
+
+**Both guards were confirmed to bite, as the plan required.** A drift test that cannot fail
+is worse than none, so both were deliberately broken and restored.
+
+Changing one settings line in `examples/postgresql-profile/profile.md` (`0.1` → `9.9`):
+
+```text
+examples/postgresql-profile is stale or the generator changed; differing files: profile.md
+Test suite okf-cli-test: FAIL
+```
+
+Deleting the `description:` frontmatter line from the same file failed *both* tests, which
+is Acceptance 4:
+
+```text
+examples/postgresql-profile is stale or the generator changed; differing files: profile.md
+committed example deviates from the meta-profile: [MissingProfileField (ConceptId {segments = "profile" :| []}) "description" Nothing]
+Test suite okf-cli-test: FAIL
+```
+
+Restored by regenerating, after which `cabal test okf-cli` passes.
+
+**The committed example's `--strict` failure is a `recommended`-field advisory that still
+exits 1.** The plan predicted "reports a missing `timestamp` on each concept and exits
+non-zero", and that is exactly what happens, but the diagnostic wording is worth recording
+because it is easy to misread — the leading token is the *concept ID*, not the word
+"profile" as a message prefix:
+
+```text
+$ okf validate examples/postgresql-profile --strict
+profile: missing recommended field: timestamp
+types/postgresql-schema: missing recommended field: timestamp
+types/postgresql-table: missing recommended field: timestamp
+types/postgresql-view: missing recommended field: timestamp
+$ echo $?
+1
+```
+
+The first line is the concept whose ID is `profile`. This is expected and documented, not a
+bug: the committed example is generated without a timestamp on purpose.
+
+**`Text` is only in scope qualified in `okf-cli/test/Main.hs`.** Unlike `okf-core`'s test
+file, which imports `Okf.Prelude`, the CLI test file imports only `Data.Text qualified as
+Text`, so new helper signatures must say `Text.Text`. A small thing, but it cost a build
+cycle.
 
 
 ## Decision Log
@@ -131,7 +191,85 @@ Compare the result against the original purpose. Before marking the plan complet
 distill durable project context from the Decision Log, Surprises & Discoveries, and
 this section into docs/adr/. Keep task-local execution details here.
 
-(To be filled during and after implementation.)
+**Result against the original purpose.** The purpose was to turn "a profile documents
+itself" from a claim backed by unit tests into a closed loop a person can run. All four
+pieces the Purpose section listed exist: the meta-profile
+`docs/profiles/profile-documentation.dhall`, the committed bundle
+`examples/postgresql-profile/`, a regeneration-drift test, and a meta-profile conformance
+test. The three-command demonstration works verbatim, all exiting 0:
+
+```text
+$ okf profile document --profile docs/profiles/postgresql.dhall --out /tmp/pg --write
+Wrote 4 concepts and 2 index.md files to /tmp/pg
+$ okf validate /tmp/pg --profile docs/profiles/profile-documentation.dhall --profile-enforce
+OK: 4 concepts
+$ okf profile show --registry docs/profiles/profile-documentation.dhall
+export: (root)
+name: okf-profile-documentation
+…
+```
+
+**Acceptance results, all six confirmed on 2026-07-31.**
+
+Acceptance 1 — the loop closes, evidence above. `okf profile show --registry` on the
+meta-profile needs no export argument, confirming
+[ADR 3](../adr/3-profile-registries.md)'s single-entry-registry rule applies to it.
+
+Acceptance 2 — the committed example is real and browsable. Six files:
+`profile.md`, three under `types/`, and two `index.md`.
+`okf show examples/postgresql-profile types/postgresql-table` prints the page for that type
+with `type: OKF Profile Type` and `title: PostgreSQL Table`, listing the profile-wide keys
+`type` and `title` that the type rule in `docs/profiles/postgresql.dhall` does not itself
+mention — the merge being visible in a shipped artifact. `okf graph` shows six edges, one
+from `profile` to each of the three type pages and one back from each.
+
+Acceptances 3 and 4 — drift and contract violations are caught. Both were proven by
+deliberately breaking the committed example; transcripts in Surprises & Discoveries.
+
+Acceptance 5 — strict mode works with a timestamp. Generating with
+`--timestamp 2026-07-31T00:00:00Z` and validating with `--strict`
+`--profile docs/profiles/profile-documentation.dhall --profile-enforce` prints
+`OK: 4 concepts` and exits 0, proving the meta-profile's `optional` classification for
+`timestamp` does not become a strict-mode complaint when the key is present. The documented
+contrast holds: the committed example under `--strict` exits 1 with a missing-timestamp
+advisory per concept.
+
+Acceptance 6 — `cabal test all` passes both suites.
+
+**Reading the output as a finished artifact.** Milestone 2 asked for the generated files to
+be read as documentation rather than as a fixture, with the renderer to be fixed if a page
+read badly. They were read and no change was needed. The type pages carry the type rule's
+own prose, then a link back to the profile, then the type settings with `none` for each
+absent value, then the effective frontmatter rules grouped Required / Recommended /
+Optional. The `- Checked only under \`--strict\`` bullet on recommended keys turned out to
+be the most useful line on the page for someone adopting a profile, because it answers
+"will this stop my build?" without reading okf's documentation.
+
+**Gaps and things EP-37 should know.**
+
+1. `docs/profiles/profile-documentation.dhall` and `examples/postgresql-profile/` are the
+   two paths EP-37 references; neither may move without updating that plan.
+2. The regeneration command belongs in the user documentation verbatim, because a
+   contributor who edits `docs/profiles/postgresql.dhall` will fail the drift test and needs
+   to know the fix:
+   `okf profile document --profile docs/profiles/postgresql.dhall --out examples/postgresql-profile --write`.
+   Note the `rm -rf` that must precede it if a type rule was *removed*, since the command
+   never deletes.
+3. The committed example intentionally fails `okf validate --strict`. Documenting that as
+   expected, with the reason (no timestamp, so the example has no varying input), avoids a
+   future contributor "fixing" it by adding a magic timestamp constant.
+
+**Durable-context distillation.** Reviewed the Decision Log, Surprises & Discoveries, and
+this section. Everything durable was promoted into
+[ADR 6](../adr/6-generated-profile-documentation.md), which now records that okf ships the
+meta-profile as the machine-readable statement of the contract and that the two must move
+together; that the committed example is generated without `--timestamp` and why, with the
+strict-validation consequence stated; that `timestamp` is `optional` and why, this being the
+first use of the third presence classification to describe okf's own output; and the honest
+limitation that `allowUnknownFields = False` constrains little here because every emitted
+key is a core OKF key, so the drift test rather than the closed vocabulary is the real
+guard. What stays task-local: the `Text.Text` qualification detail, the concept-ID-versus-
+prefix reading of the strict diagnostic, and the transcripts proving the guards bite.
 
 
 ## Context and Orientation

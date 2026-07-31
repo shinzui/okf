@@ -182,8 +182,8 @@ preview mode must keep that property; only `--write` touches the filesystem.
 |---|-------|------|-----------|-----------|--------|
 | 33 | Expose compiled profile rules for inspection | docs/plans/33-expose-compiled-profile-rules-for-inspection.md | None | None | Complete |
 | 34 | Render a profile as an OKF documentation bundle | docs/plans/34-render-a-profile-as-an-okf-documentation-bundle.md | EP-33 | None | Complete |
-| 35 | Add the okf profile document command | docs/plans/35-add-the-okf-profile-document-command.md | EP-34 | None | Not Started |
-| 36 | Validate generated profile documentation against a meta-profile | docs/plans/36-validate-generated-profile-documentation-against-a-meta-profile.md | EP-35 | EP-34 | Not Started |
+| 35 | Add the okf profile document command | docs/plans/35-add-the-okf-profile-document-command.md | EP-34 | None | Complete |
+| 36 | Validate generated profile documentation against a meta-profile | docs/plans/36-validate-generated-profile-documentation-against-a-meta-profile.md | EP-35 | EP-34 | Complete |
 | 37 | Document profile self-documentation for users | docs/plans/37-document-profile-self-documentation-for-users.md | EP-35 | EP-36 | Not Started |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
@@ -292,13 +292,13 @@ and the milestone. This section provides an at-a-glance view of the entire initi
 - [x] EP-34: The profile root concept renders profile-scope settings and rules — 2026-07-31
 - [x] EP-34: One concept per type rule, rendering effective merged field rules — 2026-07-31
 - [x] EP-34: Bundle-level guarantees — links resolve, validation is clean, output is byte-stable — 2026-07-31
-- [ ] EP-35: Parser and profile-source resolution for `okf profile document`
-- [ ] EP-35: Preview mode writes nothing and prints every generated file
-- [ ] EP-35: `--out DIR --write` writes the bundle and its index files idempotently
-- [ ] EP-35: New ADR recorded and ADR 3's deferred writing-command exclusion amended
-- [ ] EP-36: The `docs/profiles/profile-documentation.dhall` meta-profile descriptor
-- [ ] EP-36: A committed worked example generated from the shipped PostgreSQL profile
-- [ ] EP-36: End-to-end test generating documentation and validating it under `--profile-enforce --strict`
+- [x] EP-35: Parser and profile-source resolution for `okf profile document` — 2026-07-31
+- [x] EP-35: Preview mode writes nothing and prints every generated file — 2026-07-31
+- [x] EP-35: `--out DIR --write` writes the bundle and its index files idempotently — 2026-07-31
+- [x] EP-35: New ADR recorded and ADR 3's deferred writing-command exclusion amended — 2026-07-31
+- [x] EP-36: The `docs/profiles/profile-documentation.dhall` meta-profile descriptor — 2026-07-31
+- [x] EP-36: A committed worked example generated from the shipped PostgreSQL profile — 2026-07-31
+- [x] EP-36: End-to-end test generating documentation and validating it under `--profile-enforce --strict` — 2026-07-31
 - [ ] EP-37: `docs/user/profiles.md` and `docs/user/cli.md` cover the command
 - [ ] EP-37: Embedded `okf help profiles` topic updated
 - [ ] EP-37: CHANGELOG and README updated
