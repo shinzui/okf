@@ -54,6 +54,7 @@ library
     Okf.Log
     Okf.Prelude
     Okf.Profile
+    Okf.Profile.Documentation
     Okf.Profile.Registry
     Okf.Validation
 

@@ -57,15 +57,17 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] Milestone 1: create `okf-core/src/Okf/Profile/Documentation.hs` and expose it in `okf-core.cabal`
-- [ ] Milestone 1: `DocumentationOptions`, `defaultDocumentationOptions`, `DocumentationError`
-- [ ] Milestone 1: `profileDocumentationSlug` plus collision disambiguation, with tests
-- [ ] Milestone 2: stable value renderers (`renderCardinalityName`, `renderFieldFormatName`) in `Okf.Profile`
-- [ ] Milestone 2: the root profile concept, with tests
-- [ ] Milestone 3: one concept per declared type, rendering effective merged field rules
-- [ ] Milestone 3: conditions, references, formats, cardinality, vocabularies, and nested element fields all rendered
-- [ ] Milestone 4: bundle-level guarantees — round trip, validation, no dangling links, byte stability
-- [ ] Milestone 4: `cabal test okf-core` passes with all new tests reported
+- [x] Milestone 1: create `okf-core/src/Okf/Profile/Documentation.hs` and expose it in `okf-core.cabal` — 2026-07-31
+- [x] Milestone 1: `DocumentationOptions`, `defaultDocumentationOptions`, `DocumentationError` — 2026-07-31
+- [x] Milestone 1: `profileDocumentationSlug` plus collision disambiguation, with tests — 2026-07-31
+- [x] Milestone 2: stable value renderers (`renderCardinalityName`, `renderFieldFormatName`) in `Okf.Profile` — 2026-07-31
+- [x] Milestone 2: the root profile concept, with tests — 2026-07-31
+- [x] Milestone 3: one concept per declared type, rendering effective merged field rules — 2026-07-31
+- [x] Milestone 3: conditions, references, formats, cardinality, vocabularies, and nested element fields all rendered — 2026-07-31
+- [x] Milestone 4: bundle-level guarantees — round trip, validation, no dangling links, byte stability — 2026-07-31
+- [x] Milestone 4: `cabal test okf-core` passes with all new tests reported — 2026-07-31
+- [x] Added (not planned): the optional filesystem round-trip test — `writeBundle`, `writeBundleIndexes`,
+      `walkBundle` — proving the output survives the path EP-35's `--write` mode will take — 2026-07-31
 
 
 ## Surprises & Discoveries
@@ -73,7 +75,44 @@ This section must always reflect the actual current state of the work.
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+**The synthesized description read as noise when repeated in the body.** The plan specified
+the body's opening paragraph as the document's description and, separately, that a missing
+`description` is synthesized so strict validation passes. Doing both produced a type page that
+opened:
+
+```markdown
+# Decision Record
+
+Concept type "Decision Record" as declared by the optional-fields profile.
+
+Declared by the [optional-fields](/profile.md) profile.
+```
+
+Two sentences saying the same thing, neither of which a reader adopting the profile needs. The
+plan's own instruction for this situation is explicit — "If a sentence in it would not help
+someone adopting the profile, fix the renderer rather than the test" — so the renderer changed:
+the body carries only the profile's or type rule's *declared* prose, and the synthesized
+fallback is frontmatter-only. Strict validation still passes (frontmatter is what
+`validateBundle` checks), and a profile that does declare prose reads exactly as the plan drew
+it. Recorded as a decision below.
+
+**`compileCondition` in `Okf.Profile` deduplicates, so the plan-33 refactor left a real
+function behind.** Not a surprise of this plan, but it is why `presenceClauseCondition` returns
+a `FieldCondition` whose `hasValue` list is already deduplicated. The condition phrase renderer
+therefore does not need to deduplicate before printing `` `status` is one of `a`, `b` ``.
+
+**`-Wname-shadowing` fires on `position`, `index`, `assign`, and `strict`.** `Okf.Prelude`
+re-exports all of `Control.Lens` and `Data.Generics.Product`, so those four ordinary-looking
+identifiers are all taken. The build is `-Wall` and treats them as warnings that this plan's
+acceptance forbids, so bindings were renamed (`declarationIndex`, `assignSlugs`, `offset`,
+`strictResult`). Worth knowing before writing more code in this package: prefer specific names
+over `index`/`position`/`assign`/`strict`/`deep`.
+
+**The plan's REPL transcript uses the wrong working directory.** As found in
+[docs/plans/33-expose-compiled-profile-rules-for-inspection.md](./33-expose-compiled-profile-rules-for-inspection.md),
+`cabal repl okf-core` runs from `okf-core/`, so the fixture path is
+`test/fixtures/profiles/optional-fields.dhall`, not `okf-core/test/…`. Every manual acceptance
+in this plan was reproduced with that correction.
 
 
 ## Decision Log
@@ -116,6 +155,40 @@ implementation. Provide concise evidence.
   ("Concept type X as declared by the acme profile.") and keeps the output strict-clean.
   Date: 2026-07-31
 
+- Decision: the synthesized description appears in frontmatter only; the document body opens
+  with the profile's or type rule's *declared* prose, or with nothing when it declared none.
+  Rationale: the plan called for both a synthesized description and a body paragraph carrying
+  the description, which together produced a page whose first two sentences said the same
+  thing in different words (see Surprises & Discoveries). `validateBundle StrictAuthoring`
+  checks frontmatter, so keeping the fallback there preserves the strict-clean guarantee while
+  removing a paragraph that told the reader nothing the heading had not.
+  Date: 2026-07-31
+
+- Decision: element-field bullets put the structured facts first and the prose description last,
+  after an em dash — `` - `kind` — required; allowed values: …; format: none — Kind of review. ``
+  Rationale: the plan said nested prose "follow[s] the key on the same bullet after an em dash",
+  which is ambiguous about where relative to the structured facts. Prose is free text that may
+  itself contain semicolons and dashes; putting it last keeps the semicolon-separated structured
+  segment unambiguous and scannable down the left edge.
+  Date: 2026-07-31
+
+- Decision: the `Element fields` bullet is always present, reading `none` when a rule has no
+  nested shape, and a `Checked only under \`--strict\`` bullet is appended for recommended keys.
+  Rationale: the plan asked for a fixed five-bullet constraint list "so the shape does not
+  shift", and separately asked for both of these. Making element fields the sixth always-present
+  bullet keeps that promise; the strict note is genuinely conditional information that only
+  applies to recommended keys, so it is appended last where its absence cannot be misread.
+  Date: 2026-07-31
+
+- Decision: `uniqueSlug` retries with an incrementing suffix rather than assuming
+  `<stem>-<index>` is free.
+  Rationale: the plan noted the hazard — a disambiguated `foo-2` can collide with a literal type
+  string that slugs to `foo-2` — and required the used-slug set be consulted before every
+  assignment including fallbacks. A single-shot `-N` append would satisfy the letter of that and
+  still collide. The loop terminates because the used set is finite, and it remains a
+  deterministic function of declaration order.
+  Date: 2026-07-31
+
 
 ## Outcomes & Retrospective
 
@@ -124,7 +197,101 @@ Compare the result against the original purpose. Before marking the plan complet
 distill durable project context from the Decision Log, Surprises & Discoveries, and
 this section into docs/adr/. Keep task-local execution details here.
 
-(To be filled during and after implementation.)
+**Result against the original purpose.** The purpose was a library function turning any profile
+into a small OKF bundle that documents it. Delivered as
+`okf-core/src/Okf/Profile/Documentation.hs`, exposed in `okf-core.cabal`, exporting
+`renderProfileDocumentation`, `DocumentationOptions`, `defaultDocumentationOptions`,
+`DocumentationError`, `profileConceptType`, `profileTypeConceptType`, and
+`profileDocumentationSlug`. `Okf.Profile` additionally gained `renderCardinalityName` and
+`renderFieldFormatName` so okf-core rather than the CLI owns the stable display vocabulary. No
+command was added and no file is written by this plan, as scoped.
+
+**Acceptance results, all five confirmed on 2026-07-31.**
+
+Acceptance 1 — rendering `okf-core/test/fixtures/profiles/optional-fields.dhall` yields exactly
+two concepts, `profile` and `types/decision-record`. The type page opens `# Decision Record`,
+states ``- Document ID prefix: `ADR` ``, and groups the nine effective keys exactly as the plan
+predicted: `status`, `supersededBy`, `title`, `type` under `### Required`; `reviewedBy` under
+`### Recommended`; `decidedAt`, `originatingPlan`, `reviews`, `supersedes` under `### Optional`.
+
+Acceptance 2 — the merge is visible. `types/decision-record.md` carries the profile-scope keys
+`type`, `title`, and `originatingPlan`, none of which the descriptor's type rule mentions. The
+test `profile documentation renders one concept per declared type` pins `originatingPlan`
+appearing *after* the `### Optional` heading, so a regression that emitted the key in the wrong
+group fails rather than passing on a substring match.
+
+Acceptance 3 — the output is a valid OKF bundle, checked with the real binary rather than only
+in-process:
+
+```text
+$ cabal run -v0 okf -- validate <tmp>/acme-profile
+OK: 2 concepts
+```
+
+```json
+{"edges":[{"source":"profile","target":"types/decision-record"},
+          {"source":"types/decision-record","target":"profile"}], "nodes":[…]}
+```
+
+Both directions of the cross-link are real graph edges. The suite reports
+`PASS generated profile documentation validates permissively and strictly` and
+`PASS generated profile documentation has no dangling references`.
+
+Acceptance 4 — regenerating produces no diff:
+
+```text
+ghci> map serializeConcept a == map serializeConcept b
+True
+```
+
+plus `PASS generated profile documentation is byte-stable across renders`, which compares the
+serialized text and not merely the `Concept` values.
+
+Acceptance 5 — `cabal test all` passes both suites, and
+
+```bash
+git diff okf-core/src/Okf/Profile.hs | grep -E '^\+' | grep -E 'ProfileViolation|ProfileDefinitionError'
+```
+
+prints nothing, so no exhaustive consumer — Mori's `mori-cli/src/Mori/Okf/Advisory.hs` in
+particular — acquires an obligation from this change.
+
+Eleven tests were added in total, the nine the plan predicted plus
+`profile documentation renders inherited rules for a bare type` (the second `type-frontmatter`
+test the plan asked for) and `generated profile documentation survives a filesystem round trip`
+(the plan's optional filesystem test, taken up because it exercises exactly the path EP-35's
+`--write` mode will follow).
+
+**Gaps and things the next plans should know.**
+
+1. The output contract is written into the module's Haddock header under a
+   `== The published output contract` section, as the plan required, including the note that
+   `docs/profiles/profile-documentation.dhall` encodes the same contract and must change in the
+   same commit. EP-36 should treat that header as the specification it is encoding.
+2. `renderProfileDocumentation` returns `Either DocumentationError [Concept]` and its two error
+   constructors both concern caller-supplied layout options, never the profile. EP-35's error
+   rendering therefore needs exactly two cases, and a profile that compiles can always be
+   documented.
+3. The renderer's signatures do not expose `Data.Map.Strict.Map`, so EP-35 does not inherit the
+   `containers` dependency requirement flagged by EP-33. `okf-cli` already depends on
+   `containers` regardless.
+4. `okf-cli/src/Okf/Cli.hs` still has its own private `renderCardinality` and
+   `renderFieldFormat`, byte-identical to the new `Okf.Profile` exports. Deduplicating them is
+   optional cleanup for EP-35, as this plan specified; leaving them alone kept CLI output
+   formatting out of this plan's blast radius.
+
+**Durable-context distillation.** Reviewed the Decision Log, Surprises & Discoveries, and this
+section against `docs/adr/`. No new ADR is created here, and none is amended. Everything durable
+that this plan settled — that profile documentation is generated as an OKF bundle rather than a
+single file or a rendered site, that the generator lives in okf-core rather than the CLI
+extending the [ADR 3](../adr/3-profile-registries.md) precedent, that generation reads compiled
+effective rules, that it is deterministic and never reads the clock, and that the generated
+`type` vocabulary is a published contract — belongs to the initiative as a whole, and the parent
+[MasterPlan](../masterplans/6-make-okf-profiles-self-documenting.md) assigns that ADR to EP-35,
+where the user-visible behaviour lands and where ADR 3's deferred writing-command exclusion must
+be amended anyway. Splitting it across two ADRs would fragment one decision. The remaining
+findings here — the description-duplication fix, the bullet ordering, the shadowing hazard — are
+task-local rendering and build details.
 
 
 ## Context and Orientation

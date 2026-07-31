@@ -181,7 +181,7 @@ preview mode must keep that property; only `--write` touches the filesystem.
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
 | 33 | Expose compiled profile rules for inspection | docs/plans/33-expose-compiled-profile-rules-for-inspection.md | None | None | Complete |
-| 34 | Render a profile as an OKF documentation bundle | docs/plans/34-render-a-profile-as-an-okf-documentation-bundle.md | EP-33 | None | Not Started |
+| 34 | Render a profile as an OKF documentation bundle | docs/plans/34-render-a-profile-as-an-okf-documentation-bundle.md | EP-33 | None | Complete |
 | 35 | Add the okf profile document command | docs/plans/35-add-the-okf-profile-document-command.md | EP-34 | None | Not Started |
 | 36 | Validate generated profile documentation against a meta-profile | docs/plans/36-validate-generated-profile-documentation-against-a-meta-profile.md | EP-35 | EP-34 | Not Started |
 | 37 | Document profile self-documentation for users | docs/plans/37-document-profile-self-documentation-for-users.md | EP-35 | EP-36 | Not Started |
@@ -288,10 +288,10 @@ and the milestone. This section provides an at-a-glance view of the entire initi
 
 - [x] EP-33: Public read-only view types and accessors for compiled field rules — 2026-07-31
 - [x] EP-33: Compiled-profile enumeration (type names, profile-scope rules, per-type rules) exported and tested — 2026-07-31
-- [ ] EP-34: Concept identity and slugging for a profile and its type rules
-- [ ] EP-34: The profile root concept renders profile-scope settings and rules
-- [ ] EP-34: One concept per type rule, rendering effective merged field rules
-- [ ] EP-34: Bundle-level guarantees — links resolve, validation is clean, output is byte-stable
+- [x] EP-34: Concept identity and slugging for a profile and its type rules — 2026-07-31
+- [x] EP-34: The profile root concept renders profile-scope settings and rules — 2026-07-31
+- [x] EP-34: One concept per type rule, rendering effective merged field rules — 2026-07-31
+- [x] EP-34: Bundle-level guarantees — links resolve, validation is clean, output is byte-stable — 2026-07-31
 - [ ] EP-35: Parser and profile-source resolution for `okf profile document`
 - [ ] EP-35: Preview mode writes nothing and prints every generated file
 - [ ] EP-35: `--out DIR --write` writes the bundle and its index files idempotently
@@ -326,6 +326,34 @@ EP-34).** A rule taken out of another rule's element-field map always has
 `fieldRuleElementFields == Nothing`. EP-33's `compiled optional rules carry no presence clause`
 test asserts it directly. EP-34's renderer can therefore render nested field rules with a single
 non-recursive pass and does not need a depth guard.
+
+**The output contract is now written down and verified end to end (from EP-34, affects EP-35 and
+EP-36).** The Integration Points section below demanded EP-34 write the generated-bundle contract
+into module documentation rather than leave it implied. It is now the
+`== The published output contract` section of `okf-core/src/Okf/Profile/Documentation.hs`'s
+Haddock header, and it names `docs/profiles/profile-documentation.dhall` explicitly as the Dhall
+encoding of the same facts that must change in the same commit. EP-36 should encode *that*
+header, not re-derive the contract from the code. Verified against the real binary rather than
+only in-process: `okf validate` reports `OK: 2 concepts` on generated output and `okf graph`
+shows edges in both directions between `profile` and `types/decision-record`.
+
+**`renderProfileDocumentation` cannot fail on a profile, only on options (from EP-34, affects
+EP-35).** Its two `DocumentationError` constructors — `InvalidRootConceptId` and
+`InvalidTypeDirectory` — both concern caller-supplied layout options. Slugging is total and
+collisions resolve positionally, so a profile that compiles always documents. EP-35's error
+rendering therefore needs exactly two cases, and the CLI can never fail at render time for a
+profile that passed `compileProfile`.
+
+**okf-core now owns the stable value display vocabulary (from EP-34, affects EP-35).**
+`Okf.Profile` exports `renderCardinalityName` and `renderFieldFormatName`. `okf-cli/src/Okf/Cli.hs`
+still has byte-identical private copies named `renderCardinality` and `renderFieldFormat`;
+EP-34 deliberately left them so that changing CLI output formatting stayed out of its blast
+radius. Deduplicating them is optional cleanup for EP-35. Until then the two must not drift.
+
+**`-Wname-shadowing` makes several ordinary identifiers unusable in this package (from EP-34,
+affects every later plan touching Haskell here).** `Okf.Prelude` re-exports all of
+`Control.Lens` and `Data.Generics.Product`, so `index`, `position`, `assign`, `strict`, and
+`deep` all shadow imported names and trip the `-Wall` build. Prefer specific names.
 
 **The `optional` presence encoding survives the merge unchanged (from EP-33, affects EP-34 and
 EP-36).** Confirmed against `okf-core/test/fixtures/profiles/optional-fields.dhall`: an optional

@@ -18,6 +18,7 @@ import Okf.Index
 import Okf.Log
 import Okf.Prelude hiding (List, setField, (.=))
 import Okf.Profile
+import Okf.Profile.Documentation
 import Okf.Profile.Registry
 import Okf.Validation
 import System.Directory
@@ -115,6 +116,17 @@ main = do
         testIO "compiledProfileTypeNames preserves declaration order" testCompiledProfileTypeNames,
         testIO "compiledProfileRulesForType merges profile and type scope" testCompiledProfileRulesMergeTypeScope,
         testIO "compiled optional rules carry no presence clause" testCompiledProfileOptionalPresence,
+        test "profileDocumentationSlug normalizes free-text type names" testProfileDocumentationSlug,
+        test "duplicate type slugs are disambiguated positionally" testProfileDocumentationSlugCollisions,
+        test "profile value display names match the documented vocabulary" testProfileValueDisplayNames,
+        testIO "profile documentation renders a root concept" testProfileDocumentationRootConcept,
+        testIO "profile documentation renders one concept per declared type" testProfileDocumentationTypeConcept,
+        testIO "profile documentation renders inherited rules for a bare type" testProfileDocumentationInheritedRules,
+        testIO "generated profile documentation round-trips through serialize and parse" testProfileDocumentationRoundTrip,
+        testIO "generated profile documentation validates permissively and strictly" testProfileDocumentationValidates,
+        testIO "generated profile documentation has no dangling references" testProfileDocumentationLinksResolve,
+        testIO "generated profile documentation is byte-stable across renders" testProfileDocumentationByteStable,
+        testIO "generated profile documentation survives a filesystem round trip" testProfileDocumentationFilesystemRoundTrip,
         test "compiled vocabularies intersect in profile declaration order" testCompiledVocabularyIntersection,
         test "compileProfile rejects disjoint vocabularies" testUnsatisfiableVocabulary,
         test "compiled cardinality uses Any as identity and rejects contradictions" testCompiledCardinality,
@@ -2848,6 +2860,277 @@ presenceSummary rule =
   [ (presenceClauseRequirement clause, presenceClauseCondition clause)
   | clause <- fieldRulePresenceClauses rule
   ]
+
+-- * Profile documentation rendering
+
+-- | Load a fixture profile, compile it, render documentation, and hand both the
+-- compiled profile and the concepts to an assertion.
+withRenderedProfileDocumentation ::
+  FilePath ->
+  DocumentationOptions ->
+  (CompiledProfile -> [Concept] -> Either Text ()) ->
+  IO (Either Text ())
+withRenderedProfileDocumentation fixture options assertion = do
+  descriptorPath <- fixtureFilePath fixture
+  loaded <- loadProfileFile descriptorPath
+  pure $ case loaded of
+    Left err -> Left ("failed to load profile " <> Text.pack fixture <> ": " <> err)
+    Right spec -> do
+      compiled <- firstShow (compileProfile spec)
+      concepts <- firstShow (renderProfileDocumentation options compiled)
+      assertion compiled concepts
+
+conceptBodyLines :: Concept -> [Text]
+conceptBodyLines concept = Text.lines (conceptDocument concept ^. #body)
+
+-- | Assert on whole lines rather than substrings, so a failure names the line
+-- that changed instead of pointing at an opaque haystack.
+assertHasLine :: Text -> [Text] -> Either Text ()
+assertHasLine expected bodyLines =
+  assertBool
+    ("expected body line " <> Text.pack (show expected))
+    (expected `elem` bodyLines)
+
+conceptAt :: Int -> [Concept] -> Either Text Concept
+conceptAt offset concepts =
+  case drop offset concepts of
+    concept : _ -> Right concept
+    [] -> Left ("no concept at position " <> Text.pack (show offset))
+
+testProfileDocumentationSlug :: Either Text ()
+testProfileDocumentationSlug = do
+  assertEqual "bigquery-table" (profileDocumentationSlug "BigQuery Table")
+  assertEqual "decision-record" (profileDocumentationSlug "Decision Record")
+  assertEqual "c-header" (profileDocumentationSlug "C++ Header")
+  assertEqual "spaced-out" (profileDocumentationSlug "  spaced  out  ")
+  assertEqual "adr-7" (profileDocumentationSlug "ADR-7")
+  assertEqual "" (profileDocumentationSlug "###")
+
+-- | A profile with no rules at all beyond a required @type@, used to exercise
+-- layout concerns without dragging in field rendering.
+plainDocumentationTypeRule :: Text -> TypeRule
+plainDocumentationTypeRule typeName =
+  TypeRule
+    { type_ = typeName,
+      description = Nothing,
+      frontmatter = FrontmatterRules {required = [], recommended = [], optional = []},
+      pathPattern = Nothing,
+      resourceScheme = Nothing,
+      requireSchemaSection = False,
+      schemaColumns = [],
+      idPrefix = Nothing
+    }
+
+-- | Two distinct @type@ strings that slug identically, plus one that slugs to
+-- nothing at all. No shipped descriptor has this shape, so the spec is built in
+-- Haskell rather than by editing a fixture.
+duplicateSlugProfileSpec :: ProfileSpec
+duplicateSlugProfileSpec =
+  ProfileSpec
+    { name = "duplicate-slugs",
+      description = Nothing,
+      okfVersion = "0.1",
+      frontmatter =
+        FrontmatterRules
+          { required = [FieldRule "type" Nothing [] Any Nothing Nothing Nothing Nothing],
+            recommended = [],
+            optional = []
+          },
+      allowUnknownTypes = False,
+      allowUnknownFields = True,
+      idField = Nothing,
+      types =
+        [ plainDocumentationTypeRule "Decision Record",
+          plainDocumentationTypeRule "decision record",
+          plainDocumentationTypeRule "###"
+        ]
+    }
+
+testProfileDocumentationSlugCollisions :: Either Text ()
+testProfileDocumentationSlugCollisions = do
+  compiled <- firstShow (compileProfile duplicateSlugProfileSpec)
+  concepts <- firstShow (renderProfileDocumentation defaultDocumentationOptions compiled)
+  assertEqual
+    ["profile", "types/decision-record", "types/decision-record-2", "types/type-3"]
+    (map (renderConceptId . conceptIdOf) concepts)
+
+testProfileValueDisplayNames :: Either Text ()
+testProfileValueDisplayNames = do
+  assertEqual "any" (renderCardinalityName Any)
+  assertEqual "scalar" (renderCardinalityName Scalar)
+  assertEqual "list" (renderCardinalityName List)
+  assertEqual "rfc3339-utc" (renderFieldFormatName Rfc3339Utc)
+  assertEqual "date" (renderFieldFormatName Date)
+  assertEqual "uri" (renderFieldFormatName Uri)
+  assertEqual "uri-with-scheme(mori)" (renderFieldFormatName (UriWithScheme "mori"))
+  assertEqual "document-handle(ADR)" (renderFieldFormatName (DocumentHandle "ADR"))
+
+testProfileDocumentationRootConcept :: IO (Either Text ())
+testProfileDocumentationRootConcept =
+  withRenderedProfileDocumentation
+    "profiles/optional-fields.dhall"
+    defaultDocumentationOptions
+    ( \compiled concepts -> do
+        assertEqual (1 + length (compiledProfileTypeNames compiled)) (length concepts)
+        root <- conceptAt 0 concepts
+        assertEqual "profile" (renderConceptId (conceptIdOf root))
+        assertEqual profileConceptType (conceptType root)
+        assertEqual (Just "optional-fields") (conceptTitle root)
+        let bodyLines = conceptBodyLines root
+        assertHasLine "# optional-fields" bodyLines
+        assertHasLine "- [Decision Record](/types/decision-record.md)" bodyLines
+        assertHasLine "- Document ID field: `docId`" bodyLines
+        assertHasLine "- Unknown concept types: rejected" bodyLines
+        assertHasLine "- Unknown frontmatter keys: rejected" bodyLines
+    )
+
+testProfileDocumentationTypeConcept :: IO (Either Text ())
+testProfileDocumentationTypeConcept =
+  withRenderedProfileDocumentation
+    "profiles/optional-fields.dhall"
+    defaultDocumentationOptions
+    ( \_compiled concepts -> do
+        typeConcept <- conceptAt 1 concepts
+        assertEqual "types/decision-record" (renderConceptId (conceptIdOf typeConcept))
+        assertEqual profileTypeConceptType (conceptType typeConcept)
+        assertEqual (Just "Decision Record") (conceptTitle typeConcept)
+        let bodyLines = conceptBodyLines typeConcept
+        assertHasLine "# Decision Record" bodyLines
+        assertHasLine "Declared by the [optional-fields](/profile.md) profile." bodyLines
+        assertHasLine "- Document ID prefix: `ADR`" bodyLines
+        assertHasLine "- Path pattern: `decisions/*`" bodyLines
+        assertHasLine "#### `status` — required" bodyLines
+        assertHasLine "#### `supersededBy` — required when `status` is `superseded`" bodyLines
+        assertHasLine "- Allowed values: `accepted`, `superseded`" bodyLines
+        assertHasLine "#### `reviewedBy` — recommended" bodyLines
+        assertHasLine "- Checked only under `--strict`" bodyLines
+        assertHasLine "- Format: rfc3339-utc" bodyLines
+        assertHasLine
+          "    - `kind` — required; allowed values: `human`, `model`; cardinality: scalar; format: none"
+          bodyLines
+        assertHasLine
+          "- Reference: local handles with prefix `ADR`; external URIs not allowed; self-reference not allowed"
+          bodyLines
+        -- The profile-scope optional key must appear on the type page, under
+        -- Optional: this is the merge being visible, which is the whole point.
+        optionalHeading <- lineIndex "### Optional" bodyLines
+        inheritedKey <- lineIndex "#### `originatingPlan` — optional" bodyLines
+        assertBool
+          "profile-scope optional key falls under the Optional heading"
+          (optionalHeading < inheritedKey)
+    )
+  where
+    lineIndex needle bodyLines =
+      case List.elemIndex needle bodyLines of
+        Just found -> Right found
+        Nothing -> Left ("expected body line " <> Text.pack (show needle))
+
+testProfileDocumentationInheritedRules :: IO (Either Text ())
+testProfileDocumentationInheritedRules =
+  withRenderedProfileDocumentation
+    "profiles/type-frontmatter.dhall"
+    defaultDocumentationOptions
+    ( \_compiled concepts -> do
+        assertEqual
+          ["profile", "types/owned-concept", "types/open-concept"]
+          (map (renderConceptId . conceptIdOf) concepts)
+        owned <- conceptAt 1 concepts
+        assertHasLine "#### `owner` — required" (conceptBodyLines owned)
+        assertHasLine "#### `reviewer` — recommended" (conceptBodyLines owned)
+        -- "Open Concept" declares no frontmatter of its own, so everything on
+        -- its page is inherited from profile scope.
+        open <- conceptAt 2 concepts
+        let openBody = conceptBodyLines open
+        assertEqual (Just "Open Concept") (conceptTitle open)
+        assertHasLine "#### `title` — required" openBody
+        assertHasLine "#### `type` — required" openBody
+        assertHasLine "### Recommended" openBody
+        assertHasLine "(none)" openBody
+    )
+
+testProfileDocumentationRoundTrip :: IO (Either Text ())
+testProfileDocumentationRoundTrip =
+  withRenderedProfileDocumentation
+    "profiles/optional-fields.dhall"
+    defaultDocumentationOptions
+    ( \_compiled concepts ->
+        for_ concepts $ \concept -> do
+          reparsed <- firstShow (parseDocument (serializeConcept concept))
+          assertEqual (conceptDocument concept) reparsed
+    )
+
+testProfileDocumentationValidates :: IO (Either Text ())
+testProfileDocumentationValidates = do
+  permissive <-
+    withRenderedProfileDocumentation
+      "profiles/optional-fields.dhall"
+      defaultDocumentationOptions
+      (\_compiled concepts -> assertEqual [] (validateBundle PermissiveConformance concepts))
+  strictResult <-
+    withRenderedProfileDocumentation
+      "profiles/optional-fields.dhall"
+      defaultDocumentationOptions {timestamp = Just "2026-07-31T00:00:00Z"}
+      (\_compiled concepts -> assertEqual [] (validateBundle StrictAuthoring concepts))
+  pure (permissive >> strictResult)
+
+testProfileDocumentationLinksResolve :: IO (Either Text ())
+testProfileDocumentationLinksResolve =
+  withRenderedProfileDocumentation
+    "profiles/optional-fields.dhall"
+    defaultDocumentationOptions
+    ( \_compiled concepts -> do
+        assertEqual [] (danglingReferences concepts)
+        rootId <- parseTestConceptId "profile"
+        typeId <- parseTestConceptId "types/decision-record"
+        let graphEdges = buildGraph concepts ^. #edges
+        assertBool
+          "profile links to the type document"
+          (Edge rootId typeId `elem` graphEdges)
+        assertBool
+          "the type document links back to the profile"
+          (Edge typeId rootId `elem` graphEdges)
+    )
+
+testProfileDocumentationByteStable :: IO (Either Text ())
+testProfileDocumentationByteStable = do
+  descriptorPath <- fixtureFilePath "profiles/optional-fields.dhall"
+  loaded <- loadProfileFile descriptorPath
+  pure $ case loaded of
+    Left err -> Left ("failed to load optional-field profile: " <> err)
+    Right spec -> do
+      compiled <- firstShow (compileProfile spec)
+      firstRender <- firstShow (renderProfileDocumentation defaultDocumentationOptions compiled)
+      secondRender <- firstShow (renderProfileDocumentation defaultDocumentationOptions compiled)
+      assertEqual firstRender secondRender
+      -- Compare the serialized text too: serializeDocument sorts frontmatter
+      -- keys, so a Concept-only comparison would miss a nondeterministic
+      -- serialization.
+      assertEqual (map serializeConcept firstRender) (map serializeConcept secondRender)
+
+-- | The generated bundle must survive the round trip the next plan's @--write@
+-- mode performs: write it out, generate indexes over it, walk it back.
+testProfileDocumentationFilesystemRoundTrip :: IO (Either Text ())
+testProfileDocumentationFilesystemRoundTrip = do
+  descriptorPath <- fixtureFilePath "profiles/optional-fields.dhall"
+  loaded <- loadProfileFile descriptorPath
+  case loaded >>= (firstShow . compileProfile) of
+    Left err -> pure (Left ("failed to prepare optional-field profile: " <> err))
+    Right compiled ->
+      case renderProfileDocumentation defaultDocumentationOptions compiled of
+        Left err -> pure (Left ("render failed: " <> Text.pack (show err)))
+        Right concepts -> do
+          temporaryDirectory <- getTemporaryDirectory
+          root <- createTempDirectory temporaryDirectory "okf-profile-documentation"
+          writeBundle root concepts
+          indexResult <- writeBundleIndexes root
+          walked <- walkBundle root
+          removeDirectoryRecursive root
+          pure $ do
+            _ <- firstShow indexResult
+            walkedConcepts <- firstShow walked
+            assertEqual
+              (List.sort (map (renderConceptId . conceptIdOf) concepts))
+              (List.sort (map (renderConceptId . conceptIdOf) walkedConcepts))
 
 testClosedFieldsFixture :: IO (Either Text ())
 testClosedFieldsFixture = do

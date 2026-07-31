@@ -58,6 +58,8 @@ module Okf.Profile
     compiledProfileTypeNames,
     compiledProfileBaseRules,
     compiledProfileRulesForType,
+    renderCardinalityName,
+    renderFieldFormatName,
 
     -- * Validation
     DocumentId (..),
@@ -1420,6 +1422,27 @@ data EffectiveFieldRule = EffectiveFieldRule
     reference :: !(Maybe HandleReferenceRule)
   }
   deriving stock (Generic, Eq, Show)
+
+-- | The stable lowercase display name for a cardinality: @any@, @scalar@, or
+-- @list@. These are the names the CLI prints and the names generated profile
+-- documentation uses, so a reader who has seen one recognizes the other.
+renderCardinalityName :: Cardinality -> Text
+renderCardinalityName = \case
+  Any -> "any"
+  Scalar -> "scalar"
+  List -> "list"
+
+-- | The stable display name for a named format: @rfc3339-utc@, @date@, @uri@,
+-- @uri-with-scheme(SCHEME)@, or @document-handle(PREFIX)@. As with
+-- 'renderCardinalityName', this vocabulary is shared between the CLI and
+-- generated documentation and must not drift between them.
+renderFieldFormatName :: FieldFormat -> Text
+renderFieldFormatName = \case
+  Rfc3339Utc -> "rfc3339-utc"
+  Date -> "date"
+  Uri -> "uri"
+  UriWithScheme scheme -> "uri-with-scheme(" <> scheme <> ")"
+  DocumentHandle prefix -> "document-handle(" <> prefix <> ")"
 
 -- | The presence clauses that govern whether this key must be present, in the
 -- order the profile declared them. An __empty list means the key is optional__:
