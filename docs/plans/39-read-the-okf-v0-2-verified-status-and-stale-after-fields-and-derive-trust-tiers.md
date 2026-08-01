@@ -69,7 +69,7 @@ the separate "profile" mechanism.
 - [x] Milestone 3: trust tiers derive from `verified` per specification §5.3 (2026-07-31)
 - [x] Milestone 4: staleness derives from `stale_after` against a caller-supplied date (2026-07-31)
 - [x] Milestone 5: `okf trust` command and `okf show` additions surface all four derivations (2026-07-31)
-- [ ] Milestone 6: ADR written on derived-not-stored trust and credibility
+- [x] Milestone 6: ADR written on derived-not-stored trust and credibility (2026-07-31) — `docs/adr/8-derived-not-stored-trust-and-credibility.md`
 
 
 ## Surprises & Discoveries
@@ -181,7 +181,64 @@ you to record.)
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+All six milestones are complete and every acceptance criterion in Validation and Acceptance
+holds. Both test suites pass with every pre-existing assertion still passing.
+
+The Purpose section's transcript reproduces against a scratch bundle, values and all:
+
+```text
+$ cabal run okf -- trust <bundle>
+metrics/revenue   unverified         draft   ok
+tables/customers  machine-confirmed  stable  ok
+tables/orders     human-reviewed     stable  stale since 2026-06-01
+```
+
+The load-bearing line is `tables/orders`. Its `verified` is written as a **bare mapping**
+rather than a list, and it reports `human-reviewed` — that is the §5.2 / §11 consumer MUST
+working. `tables/customers`, verified only by `process:finance-nightly`, is
+`machine-confirmed`; `metrics/revenue`, with no `verified` key, is `unverified`; and it
+reports `draft` while `tables/customers`, which declares no `status` at all, reports `stable`
+per §5.4's "Absent `status` ⇒ `stable`".
+
+`okf show` surfaces the same derivations for a single concept:
+
+```text
+generated: reference_agent/gemini-2.5-pro at 2026-06-20T22:53:05Z
+trust: human-reviewed
+verified: 2026-06-25T09:00:00Z
+status: stable
+stale_after: 2026-06-01 (stale)
+```
+
+The §5.5 boundary was checked against the real clock as well as in a unit test. Today being
+2026-07-31, a `stale_after` of exactly `2026-07-31` reports `stale since 2026-07-31`, one of
+`2027-01-01` reports `ok`, and `not-a-date` reports `unparseable stale_after not-a-date`
+rather than silently passing as fresh. And `okf validate okf-core/test/fixtures/valid-bundle
+--strict` still prints `OK: 4 concepts`: that fixture carries none of the three families, and
+under §11 nothing added here may fire on it.
+
+Two notes for whoever picks up EP-3.
+
+The plan's Idempotence section warned about two hazards; one was real and one was not. The
+completions hazard does not exist — `okf-cli/src/Okf/Cli/Completions.hs` generates from the
+`optparse-applicative` parser, so a new command needs no second registration. The naming
+hazard was real but not the one written down: importing `Okf.Trust.staleness` shadowed two
+pre-existing locals also called `staleness` that held `Okf.Validation.logStaleness` results —
+a completely different notion of stale. EP-3 should expect `sources` to collide similarly.
+
+The temptation the plan predicted did arise and was declined. Threading
+`trustTier (conceptVerified c)` through two CLI call sites is mildly repetitive next to a
+hypothetical `conceptTrustTier`, which is precisely why §5.1's derived-not-stored rule needed
+recording rather than remembering. It is now
+`docs/adr/8-derived-not-stored-trust-and-credibility.md`, which also fixes the clock boundary:
+`okf-core` never calls `getCurrentTime`, and the two CLI commands that need a day read it once
+each and pass it down.
+
+What EP-3 inherits: the `read*` / `set*` / `concept*` triple is now established three times
+over (`generated`, `verified`, and the `status` / `stale_after` pair), and `generated` and
+`verified` share one `actorMapping` writer and one `objectText` reader because §5.2 gives them
+the identical `{ by, at }` entry shape. `sources[].author` is an actor too, so EP-3 should
+import `Okf.Actor` and reuse `objectText` rather than writing a third reader.
 
 
 ## Context and Orientation

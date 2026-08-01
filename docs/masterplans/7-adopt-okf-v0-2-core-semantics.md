@@ -150,7 +150,7 @@ from the signals ... not stored") and a boundary later work will be tempted to c
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
 | 1 | Migrate the concept timestamp to the OKF v0.2 generated field | docs/plans/38-migrate-the-concept-timestamp-to-the-okf-v0-2-generated-field.md | None | None | Complete |
-| 2 | Read the OKF v0.2 verified status and stale after fields and derive trust tiers | docs/plans/39-read-the-okf-v0-2-verified-status-and-stale-after-fields-and-derive-trust-tiers.md | EP-1 | None | In Progress |
+| 2 | Read the OKF v0.2 verified status and stale after fields and derive trust tiers | docs/plans/39-read-the-okf-v0-2-verified-status-and-stale-after-fields-and-derive-trust-tiers.md | EP-1 | None | Complete |
 | 3 | Read the OKF v0.2 sources provenance family with credibility signals | docs/plans/40-read-the-okf-v0-2-sources-provenance-family-with-credibility-signals.md | EP-1 | EP-2 | Not Started |
 | 4 | Join per claim footnote attribution to OKF v0.2 source entries | docs/plans/41-join-per-claim-footnote-attribution-to-okf-v0-2-source-entries.md | EP-3 | None | Not Started |
 | 5 | Declare and honour okf version in the bundle root index | docs/plans/42-declare-and-honour-okf-version-in-the-bundle-root-index.md | EP-1 | EP-2, EP-3 | Not Started |
@@ -271,9 +271,9 @@ section carries the granular work; this list tracks the story.
 - [x] EP-1: `Okf.Actor` parses and classifies the three specification §7 actor shapes (2026-07-31)
 - [x] EP-1: `generated: { by, at }` is read, written, and ordered canonically, with all six concept-level 0.2 keys added to the key order in one edit (2026-07-31)
 - [x] EP-1: strict validation requires `generated` and falls back to legacy `timestamp`; log staleness reads `generated.at` (2026-07-31)
-- [ ] EP-2: `verified` is read as a list, with a bare mapping normalised to one element per §5.2
-- [ ] EP-2: `status` and `stale_after` are read, with absent `status` defaulting to `stable`
-- [ ] EP-2: trust tiers derive per §5.3 and staleness derives per §5.5, both surfaced through the CLI
+- [x] EP-2: `verified` is read as a list, with a bare mapping normalised to one element per §5.2 (2026-07-31)
+- [x] EP-2: `status` and `stale_after` are read, with absent `status` defaulting to `stable` (2026-07-31)
+- [x] EP-2: trust tiers derive per §5.3 and staleness derives per §5.5, both surfaced through the CLI (2026-07-31)
 - [ ] EP-3: `sources` entries and the `usage_window` sibling are read, including per-entry override
 - [ ] EP-3: credibility signals `author`, `usage_count`, `last_modified` are projected and surfaced
 - [ ] EP-4: footnote parsing is enabled across all three CommonMark call sites without regressing link, log, or schema extraction
@@ -362,6 +362,30 @@ re-serialization reaches users through `Okf.Bundle.writeBundle` and
 key-order hazard EP-1's Milestone 2 flagged is therefore smaller than written, which matters
 to EP-6 when it migrates fixtures.
 
+**From EP-2's implementation, two findings for the plans that follow.**
+
+*The word, not just the module, can already be taken.* Importing `Okf.Trust.staleness` into
+`okf-cli/src/Okf/Cli.hs` shadowed two pre-existing locals also named `staleness`, both holding
+`Okf.Validation.logStaleness` results — a concept newer than its change log, which is an
+entirely different notion from a concept past its `stale_after`. The locals were renamed to
+`logStalenessReport`. EP-3 introduces `sources`, a word plausible as a local name for a list
+of anything, and should expect the same collision. The general lesson for EP-3 through EP-6:
+`-Wname-shadowing` warnings in this repository are worth reading rather than suppressing,
+because the CLI module is large enough that two meanings of one word genuinely mislead.
+
+*The completions hazard recorded in EP-2's plan does not exist, and EP-3 through EP-6 should
+not repeat it.* `okf-cli/src/Okf/Cli/Completions.hs` generates its script from the
+`optparse-applicative` parser rather than enumerating command names, so a new command added to
+`commandParser` is picked up automatically with no second registration. EP-2 added
+`okf trust` and verified this.
+
+The Integration Points note on the `Concept` projection record is now settled in practice:
+EP-2 added three more projections (`verified`, `status`, `staleAfter`) and deliberately added
+no derived ones. Trust tiers and staleness live in a new `Okf.Trust` module as plain
+functions, per §5.1's "Credibility is *inferred* from the signals ... not stored". That is now
+`docs/adr/8-derived-not-stored-trust-and-credibility.md`, the second of the two ADRs this
+initiative planned.
+
 
 ## Decision Log
 
@@ -416,6 +440,17 @@ to EP-6 when it migrates fixtures.
   Rationale: v0.2 §13.2 carries the permission forward unchanged, so the claim stands and
   only the version reference was wrong. Amending in place with a dated note was cheaper than
   leaving a known-stale sentence for a later plan to trip over.
+  Date: 2026-07-31
+
+- Decision: Both planned ADRs are now written and accepted —
+  `docs/adr/7-okf-v0-1-legacy-fallback-policy.md` (EP-1) and
+  `docs/adr/8-derived-not-stored-trust-and-credibility.md` (EP-2). The second also fixes the
+  clock boundary: `okf-core` never calls `getCurrentTime`, and any function whose answer
+  depends on today takes the day as an argument.
+  Rationale: the clock boundary was not anticipated during decomposition but belongs with the
+  derived-not-stored rule, because both are about keeping a derivation reproducible rather
+  than ambient. EP-3's `sources[].last_modified` and `usage_window` are the next fields whose
+  interpretation could tempt a library-level clock read; the ADR now forbids it in advance.
   Date: 2026-07-31
 
 - Decision: This initiative will produce two new ADRs, to be written by the plans that
