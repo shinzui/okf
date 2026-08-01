@@ -215,7 +215,7 @@ is green (`cabal test all`, 2026-08-01).
 | 1 | Resolve path valued frontmatter fields against the bundle | docs/plans/48-resolve-path-valued-frontmatter-fields-against-the-bundle.md | None | None | Complete |
 | 2 | Read the Attested Computation contract fields | docs/plans/49-read-the-attested-computation-contract-fields.md | None | EP-1 | Complete |
 | 3 | Inspect the Computation body section and enforce exactly one computation source | docs/plans/50-inspect-the-computation-body-section-and-enforce-exactly-one-computation-source.md | EP-2 | None | Complete |
-| 4 | Adopt the references convention for executors and attesters | docs/plans/51-adopt-the-references-convention-for-executors-and-attesters.md | EP-1 | EP-2 | In Progress |
+| 4 | Adopt the references convention for executors and attesters | docs/plans/51-adopt-the-references-convention-for-executors-and-attesters.md | EP-1 | EP-2 | Complete |
 | 5 | Surface attested computations across the CLI and documentation | docs/plans/52-surface-attested-computations-across-the-cli-and-documentation.md | EP-2, EP-3 | EP-4 | Not Started |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
@@ -461,11 +461,11 @@ coherent across the tool rather than the plan that first makes it visible.
 - [x] EP-3 (2026-08-01): the `# Computation` body section and its code block are extracted, bounded at the next heading of the same or shallower level, accepting the indented spelling §10.2's own example uses as well as the fenced one §10.3's prose names
 - [x] EP-3 (2026-08-01): providing both an inline block and a `computation` path, neither, or more than one block, is reported per §10.3 under `StrictAuthoring` and for that `type` alone
 - [x] EP-3 (2026-08-01): the computation is reachable from the CLI in both of §10.3's forms — `okf show --computation` reads the file named by `computation` rather than printing its path
-- [ ] EP-4: what okf does today with a `references/` directory is surveyed against the shipped bundles, and the four provisional decisions are confirmed or revised against that evidence before any code is written
-- [ ] EP-4: a dangling relative frontmatter path that would resolve read from the bundle root says so, and §6.2 resolution itself is unchanged — this is EP-4's answer to the question EP-2 handed it
-- [ ] EP-4: `okf validate --profile` resolves a path rule against every file in the bundle rather than only `.md` concepts, closing the core-versus-profile divergence EP-1 left open, additively via `validateProfileWith`
-- [ ] EP-4: a generated `index.md` lists a directory's non-Markdown files, retiring the one-byte index EP-2 shipped
-- [ ] EP-4: `docs/adr/13-the-references-convention-and-non-markdown-files.md` is written — the second of the two ADRs this initiative owes
+- [x] EP-4 (2026-08-01): what okf does today with a `references/` directory is surveyed against the shipped bundles, and the four provisional decisions are confirmed or revised against that evidence before any code is written — all four confirmed
+- [x] EP-4 (2026-08-01): a dangling relative frontmatter path that would resolve read from the bundle root says so, and §6.2 resolution itself is unchanged — this is EP-4's answer to the question EP-2 handed it
+- [x] EP-4 (2026-08-01): `okf validate --profile` resolves a path rule against every file in the bundle rather than only `.md` concepts, closing the core-versus-profile divergence EP-1 left open, additively via `validateProfileWith`
+- [x] EP-4 (2026-08-01): a generated `index.md` lists a directory's non-Markdown files, retiring the one-byte index EP-2 shipped
+- [x] EP-4 (2026-08-01): `docs/adr/13-the-references-convention-and-non-markdown-files.md` is written — the second of the two ADRs this initiative owes
 - [ ] EP-5: every command is audited against an attested computation and each gap is scheduled or deliberately left alone with a reason
 - [ ] EP-5: `okf computations` lists a bundle's attested computations in the house style of `okf trust` and `okf sources`
 - [ ] EP-5: `okf profile show` renders `objectFields`, closing the gap inherited from `docs/masterplans/8-extend-okf-profiles-for-v0-2-field-families.md`
@@ -790,6 +790,48 @@ EP-5 owns coherence across every command; it does not own the reference entry fo
 plan shipped.
 
 
+**EP-4 is complete, and what it leaves EP-5 is one release check and a widened coherence pass.**
+Landed 2026-08-01 in commits `ba1518c`, `4179f4d`, `90b4c3b`, `66712c1`, and `4bce913` — one per
+milestone — with `cabal test all` green after each. The durable half is
+`docs/adr/13-the-references-convention-and-non-markdown-files.md`, the second and last ADR this
+initiative owed. Four things EP-5 should know.
+
+First, **a precisely-written plan instruction produced a defect, and this is the most transferable
+finding of the initiative.** EP-4 specified Milestone 3 as "rework `validatePathText` to take a
+`FilePath -> Bool` existence predicate … and delete the `takeExtension resolved /= ".md"` early
+return", while promising in the same plan that `validateProfile` would keep "its exact current
+signature and meaning". Those are incompatible: the deleted early return *was* the meaning. Two
+tests failed immediately, reporting §6.3's own `references/attesters/revenue.py` as dangling
+through the entry point the plan had singled out to protect. The fix is that existence has three
+answers rather than two — an internal `PathTargetPresence` with `TargetUnknown` for "this caller
+never looked" — and it is now ADR 13's load-bearing paragraph rather than an implementation note.
+The general rule: **a boolean is the wrong shape for a question whose honest answer is sometimes
+"I did not look"**, and collapsing the third state turns silence into a rejection, which
+`docs/adr/11-growing-the-profile-descriptor-language.md` forbids.
+
+Second, **`DanglingFrontmatterPath` now has four fields and that completes the release surface.**
+The fourth is `Maybe FilePath`, carrying the resolved bundle-relative alternative. It is an arity
+change, which breaks a downstream exhaustive matcher harder than a new constructor does. With
+EP-1's required `BundleInventory` on `validateBundle` and EP-3's three `ValidationError`
+constructors, plus EP-4's two new `Okf.Index` parameters and `Okf.Profile.validateProfileWith`,
+**the vocabulary is now final for this initiative** and the one-time release check the Decision Log
+assigned to EP-5 can be performed against a surface that has stopped moving.
+
+Third, **the transcript rule earned its place twice, in two different ways.** EP-4's own hint
+transcript was wrong on the first implementation — it emitted the bare `references/…` spelling,
+which is true and useless because it names what is already on the line — and only diffing against
+the command caught it. Separately, the sweep found a documented block in `docs/user/profiles.md`
+that had become *ambiguous* rather than wrong: a six-source example ending in a `.py` target said
+it "produces no line", which after Milestone 3 depends on whether the file is in the bundle. Both
+readings were built as real bundles and run. **A documented transcript can rot into ambiguity
+without any word of it changing**, which grepping for changed behaviour will not find.
+
+Fourth, **`docs/user/profiles.md` no longer documents a `.md`-only limitation, and
+`docs/user/format.md` has a `references/` subsection.** EP-5 inherits both as current rather than
+as work. What EP-5 still owns on the documentation side is the embedded `okf help` topics, which
+remain v0.1.
+
+
 ## Decision Log
 
 - Decision: Scope this MasterPlan to recording and checking attested computations, and
@@ -1027,6 +1069,21 @@ plan shipped.
   belongs to EP-5, which is the plan that closes the initiative. `okf-cli` is itself the first
   consumer that must handle every one of them, which the `-Wincomplete-patterns` habit in each
   plan's Concrete Steps already enforces at compile time.
+  Date: 2026-08-01
+
+- Decision: Where a caller cannot answer an existence question, it says so rather than answering
+  "absent". `Okf.Profile` carries a three-valued `PathTargetPresence`, and only `TargetAbsent`
+  produces a diagnostic.
+  Rationale: EP-4 implemented its own Milestone 3 instruction exactly and broke the guarantee the
+  same plan made one paragraph earlier — see Surprises & Discoveries. A boolean existence predicate
+  cannot distinguish "the bundle does not hold this" from "I was handed concepts and never looked",
+  and `Okf.Bundle.bundleInventoryOfConcepts` holds only `.md` paths, so every non-Markdown target
+  became dangling through `validateProfile`. That is a retroactive rejection through a preserved
+  entry point, which `docs/adr/11-growing-the-profile-descriptor-language.md` forbids. The
+  alternative — accept the tightening and update the two failing tests — was rejected because those
+  tests are the pinned statement of the behaviour that had to stay fixed. This generalises beyond
+  the profile layer and is recorded in
+  `docs/adr/13-the-references-convention-and-non-markdown-files.md` rather than only in EP-4.
   Date: 2026-08-01
 
 - Decision: A documented transcript is verified by running it and diffing, never by reading it.
@@ -1322,3 +1379,41 @@ covering `# Schema` as well, which is not this initiative's to write.
 
 EP-4 and EP-5 are both implementable now and are independent of each other. EP-3 was the sole
 remaining serialization.
+
+
+## Revision note — 2026-08-01 (EP-4 complete)
+
+`docs/plans/51-adopt-the-references-convention-for-executors-and-attesters.md` is Complete, in
+commits `ba1518c`, `4179f4d`, `90b4c3b`, `66712c1`, and `4bce913` — one per milestone — with
+`cabal test all` green on both packages after each. The registry, the Progress list, Surprises &
+Discoveries, and the Decision Log are updated.
+
+**The decomposition did not change and no child plan needed cascading.** EP-4 delivered exactly its
+five milestones. All four of its provisional decisions — written before implementation and required
+by the plan to be re-run against the working tree first — were confirmed rather than revised, which
+is the parent deferral discipline paying off a fourth time.
+
+**`docs/adr/13-the-references-convention-and-non-markdown-files.md` is written, and this initiative
+now owes no further ADR.** The Decision Log entry of 2026-07-31 scheduled exactly two; ADR 12
+landed with EP-1 and ADR 13 with EP-4. ADR 12 was amended in the same change with a cross-reference
+and its two now-stale sentences corrected — including the retraction of its own estimate that
+closing the profile divergence would be "a wider change to the profile-validation signature than
+this decision needs", which EP-4 showed was wrong.
+
+**One finding is new and generalises past this MasterPlan, and it is in Surprises & Discoveries and
+the Decision Log.** EP-4's Milestone 3 instructions were precise, were followed exactly, and
+produced a defect, because the plan asked to delete an early return while promising in the same
+document to preserve the meaning that early return *was*. The tests caught it within a minute. The
+answer — that a caller which cannot answer an existence question must say so rather than answering
+"absent" — is now a decision at this level, because the same shape will recur wherever okf gives one
+layer more visibility than another.
+
+**Two documentation surfaces EP-5 inherits as current rather than as work.**
+`docs/user/profiles.md` no longer documents the `.md`-only limitation, which Milestone 3 retired,
+and `docs/user/format.md` has a `references/` subsection. The embedded `okf help` topics are still
+v0.1 and are still EP-5's.
+
+**EP-5 is the sole remaining plan and is implementable now.** Its hard dependencies on EP-2 and
+EP-3 were already satisfied and its soft dependency on EP-4 is now discharged. The
+`okf-core` vocabulary has stopped moving, so the one-time release check the Decision Log assigned
+to EP-5 can be performed against a final surface.
