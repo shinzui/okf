@@ -36,6 +36,12 @@ data ValidationError
   | FieldMustBeNonEmptyText Text
   | MissingRecommendedField Text
   | FieldMustBeListOfText Text
+  | -- | Neither the OKF v0.2 @generated@ family (§5.2) nor the legacy v0.1
+    -- @timestamp@ it supersedes (§13.1) records when the content last changed.
+    MissingGeneratedField
+  | -- | @generated@ is present but carries no textual @by@ actor, which
+    -- specification §5.2 marks REQUIRED within the mapping.
+    GeneratedMustHaveActor
   deriving stock (Generic, Eq, Show)
 
 -- | A whole-bundle validation problem.
@@ -104,7 +110,31 @@ validateDocument profile document =
     <> case profile of
       PermissiveConformance -> []
       StrictAuthoring ->
-        foldMap (requireNonEmptyText MissingRecommendedField `flip` document) ["title", "description", "timestamp"]
+        foldMap (requireNonEmptyText MissingRecommendedField `flip` document) ["title", "description"]
+          <> requireGenerated document
+
+-- | Strict-mode check for the OKF v0.2 @generated@ family (specification §5.2).
+--
+-- A document satisfies "when was this last changed" with either @generated@
+-- carrying a @by@ actor or, falling back per §13.1, a non-empty legacy v0.1
+-- @timestamp@. Reading the legacy key is deliberately silent: a warning on
+-- every v0.1 document would make the tool unusable against existing bundles.
+-- See @docs\/adr\/7-okf-v0-1-legacy-fallback-policy.md@.
+--
+-- Both diagnostics are strict-mode only. Specification §11 forbids rejecting a
+-- bundle for a missing optional frontmatter field, and @generated@ is optional.
+requireGenerated :: OKFDocument -> [ValidationError]
+requireGenerated document@OKFDocument {frontmatter} =
+  case frontmatterLookup "generated" frontmatter of
+    Nothing
+      | hasLegacyTimestamp -> []
+      | otherwise -> [MissingGeneratedField]
+    Just _
+      | isJust (readGenerated frontmatter) -> []
+      | otherwise -> [GeneratedMustHaveActor]
+  where
+    hasLegacyTimestamp =
+      null (requireNonEmptyText MissingRecommendedField "timestamp" document)
 
 requireNonEmptyText :: (Text -> ValidationError) -> Text -> OKFDocument -> [ValidationError]
 requireNonEmptyText missing key OKFDocument {frontmatter} =

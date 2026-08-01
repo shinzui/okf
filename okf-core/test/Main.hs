@@ -45,7 +45,8 @@ main = do
         test "reject unterminated frontmatter" testRejectUnterminatedFrontmatter,
         test "reject frontmatter that is not a YAML mapping" testRejectNonMappingFrontmatter,
         test "validate permissive profile with only type" testPermissiveValidation,
-        test "validate strict profile requiring title description timestamp" testStrictValidation,
+        test "validate strict profile requiring title description generated" testStrictValidation,
+        test "strict validation accepts generated, falls back to timestamp, reports neither" testStrictValidationGeneratedFamily,
         test "validate rejects tags that are not a string list" testRejectInvalidTags,
         test "round-trip preserves semantic frontmatter and body" testRoundTrip,
         test "reject invalid concept id segment" testRejectInvalidConceptId,
@@ -258,7 +259,29 @@ testStrictValidation = do
   let errors = validateDocument StrictAuthoring document
   assertBool "missing title" (MissingRecommendedField "title" `List.elem` errors)
   assertBool "missing description" (MissingRecommendedField "description" `List.elem` errors)
-  assertBool "missing timestamp" (MissingRecommendedField "timestamp" `List.elem` errors)
+  assertBool "missing generated" (MissingGeneratedField `List.elem` errors)
+
+-- | Specification section 5.2 satisfies the "when was this last changed"
+-- requirement with `generated`, and section 13.1 permits falling back to the
+-- superseded v0.1 `timestamp`. Both must pass strict validation; neither
+-- present must fail it, naming the v0.2 field.
+testStrictValidationGeneratedFamily :: Either Text ()
+testStrictValidationGeneratedFamily = do
+  let strictErrors source = validateDocument StrictAuthoring <$> firstShow (parseDocument source)
+      preamble = "---\ntype: BigQuery Table\ntitle: Orders\ndescription: Order fact table.\n"
+  withGenerated <- strictErrors (preamble <> "generated: { by: human:ahormati, at: 2026-06-20T22:53:05Z }\n---\nBody\n")
+  assertEqual [] withGenerated
+  withLegacyTimestamp <- strictErrors (preamble <> "timestamp: 2026-06-16T00:00:00Z\n---\nBody\n")
+  assertEqual [] withLegacyTimestamp
+  withNeither <- strictErrors (preamble <> "---\nBody\n")
+  assertEqual [MissingGeneratedField] withNeither
+  -- `generated` present but without the actor section 5.2 requires within it.
+  withoutActor <- strictErrors (preamble <> "generated: { at: 2026-06-20T22:53:05Z }\n---\nBody\n")
+  assertEqual [GeneratedMustHaveActor] withoutActor
+  -- Section 11 forbids rejecting a bundle for a missing optional field, so
+  -- neither diagnostic may fire under PermissiveConformance.
+  permissive <- validateDocument PermissiveConformance <$> firstShow (parseDocument (preamble <> "---\nBody\n"))
+  assertEqual [] permissive
 
 testRejectInvalidTags :: Either Text ()
 testRejectInvalidTags = do

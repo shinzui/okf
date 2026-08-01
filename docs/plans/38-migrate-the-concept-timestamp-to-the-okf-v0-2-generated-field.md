@@ -79,7 +79,7 @@ rather than inventing their own.
 - [x] Milestone 2: `coreFrontmatterFieldOrder` carries the six version 0.2 concept keys in a settled order; serialization tests updated (2026-07-31)
 - [x] Milestone 3: `generated` is readable through `Okf.Document` and projected onto `Okf.Bundle.Concept` (2026-07-31)
 - [x] Milestone 3 (added): `okf show` renders the generating actor, delivering the user-visible outcome the Purpose section promises (2026-07-31)
-- [ ] Milestone 4: strict validation accepts `generated`, falls back to `timestamp`, and reports a v0.2-shaped message
+- [x] Milestone 4: strict validation accepts `generated`, falls back to `timestamp`, and reports a v0.2-shaped message (2026-07-31)
 - [ ] Milestone 5: log staleness reads `generated.at` first; CLI wording no longer says "timestamp"
 - [ ] Milestone 6: authoring API can write `generated`; round-trip test proves it survives serialize-then-parse
 - [ ] Milestone 7: ADR written on the version 0.1 legacy-fallback policy
@@ -146,6 +146,15 @@ rather than inventing their own.
   CLI, so this was added as an extra Progress entry rather than folded silently into
   Milestone 3. The `at` clause is omitted when `generated.at` is absent, because §5.2 does
   not require it within the mapping.
+  Date: 2026-07-31
+
+- Decision: `GeneratedMustHaveActor` is reported under `StrictAuthoring` only, and a
+  document carrying a malformed `generated` reports it *instead of*, not alongside,
+  `MissingGeneratedField`.
+  Rationale: the plan permits reporting the shape error in either mode and asks for
+  consistency with the rest of the initiative, so it goes under strict like everything
+  else. Reporting both would be misleading — the field is present, so "missing" is false —
+  and it would produce two diagnostics for one authoring mistake.
   Date: 2026-07-31
 
 (Add further decisions as you make them. Milestone 7 below ends with a decision this plan

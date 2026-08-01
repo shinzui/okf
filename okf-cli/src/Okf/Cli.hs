@@ -1649,6 +1649,8 @@ renderValidationErrorText = \case
   FieldMustBeNonEmptyText fieldName -> "field must be non-empty text: " <> fieldName
   MissingRecommendedField fieldName -> "missing recommended field: " <> fieldName
   FieldMustBeListOfText fieldName -> "field must be a list of text values: " <> fieldName
+  MissingGeneratedField -> "missing generated field (or legacy timestamp)"
+  GeneratedMustHaveActor -> "generated must carry a by actor"
 
 renderLogValidationError :: Log.LogValidationError -> Text
 renderLogValidationError = \case
