@@ -711,6 +711,7 @@ frontmatter.required:
     reference: (none)
     path: (none)
     when: (none)
+    objectFields: (none)
     elementFields: (none)
   - title: (none)
     allowedValues: (any)
@@ -719,6 +720,7 @@ frontmatter.required:
     reference: (none)
     path: (none)
     when: (none)
+    objectFields: (none)
     elementFields: (none)
   - docId: (none)
     allowedValues: (any)
@@ -727,6 +729,7 @@ frontmatter.required:
     reference: (none)
     path: (none)
     when: (none)
+    objectFields: (none)
     elementFields: (none)
   - status: (none)
     allowedValues: (any)
@@ -735,6 +738,7 @@ frontmatter.required:
     reference: (none)
     path: (none)
     when: (none)
+    objectFields: (none)
     elementFields: (none)
   - date: (none)
     allowedValues: (any)
@@ -743,6 +747,7 @@ frontmatter.required:
     reference: (none)
     path: (none)
     when: (none)
+    objectFields: (none)
     elementFields: (none)
 frontmatter.recommended:
   - description: (none)
@@ -752,6 +757,7 @@ frontmatter.recommended:
     reference: (none)
     path: (none)
     when: (none)
+    objectFields: (none)
     elementFields: (none)
   - timestamp: (none)
     allowedValues: (any)
@@ -760,6 +766,7 @@ frontmatter.recommended:
     reference: (none)
     path: (none)
     when: (none)
+    objectFields: (none)
     elementFields: (none)
   - supersedes: (none)
     allowedValues: (any)
@@ -768,6 +775,7 @@ frontmatter.recommended:
     reference: (none)
     path: (none)
     when: (none)
+    objectFields: (none)
     elementFields: (none)
   - supersededBy: (none)
     allowedValues: (any)
@@ -776,6 +784,7 @@ frontmatter.recommended:
     reference: (none)
     path: (none)
     when: (none)
+    objectFields: (none)
     elementFields: (none)
   - originatingPlan: (none)
     allowedValues: (any)
@@ -784,6 +793,7 @@ frontmatter.recommended:
     reference: (none)
     path: (none)
     when: (none)
+    objectFields: (none)
     elementFields: (none)
 frontmatter.optional: (none)
 
@@ -805,9 +815,15 @@ Use it with:
 
 Every optional field prints, as `(none)` when absent, so the output shape does
 not shift between profiles and stays reliable to grep. All three presence lists
-print at profile scope, under every type rule, and inside `elementFields`, always
-in the order required, recommended, optional. Type rules print in the order the
-profile declares them.
+print at profile scope, under every type rule, and inside `objectFields` and
+`elementFields`, always in the order required, recommended, optional. Type rules
+print in the order the profile declares them.
+
+`objectFields` and `elementFields` print together, in that order, so the two
+shapes read side by side rather than seven scalar lines apart. A rule declaring
+both — which is how `field.recordOrList` describes the v0.2 `verified` key —
+shows the same member rules twice, once under each heading, because either
+spelling is accepted and both are checked.
 
 Each frontmatter list is a headed block with one key per rule and one line per
 constraint, because those details cannot share a comma-joined line with
@@ -825,6 +841,7 @@ frontmatter.required:
     reference: (none)
     path: (none)
     when: (none)
+    objectFields: (none)
     elementFields: (none)
 frontmatter.recommended:
   - status: Lifecycle state.
@@ -834,6 +851,7 @@ frontmatter.recommended:
     reference: (none)
     path: (none)
     when: (none)
+    objectFields: (none)
     elementFields: (none)
 frontmatter.optional:
   - supersedes: The decision this one replaces, if any.
@@ -843,6 +861,7 @@ frontmatter.optional:
     reference: local-prefix(ADR), external-uri-schemes([]), allow-self(false)
     path: (none)
     when: (none)
+    objectFields: (none)
     elementFields: (none)
 ```
 

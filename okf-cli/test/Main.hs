@@ -15,7 +15,7 @@ import Okf.Cli.Help (HelpTopic (..), helpTopics)
 import Okf.ConceptId (parseConceptId, renderConceptId)
 import Okf.Document (Attester (..), Executor (..), Parameter (..), parseDocument)
 import Okf.Index (OkfVersion (..), VersionDeclaration (..))
-import Okf.Profile (Cardinality (..), FieldCondition (..), FieldFormat (..), FieldRule (..), FrontmatterRules (..), HandleReferenceRule (..), NestedFieldRule (..), NestedRules (..), ProfileSpec (..), TypeRule (..), compileProfile, loadProfileFile, validateProfile)
+import Okf.Profile (Cardinality (..), FieldCondition (..), FieldFormat (..), FieldRule (..), FrontmatterRules (..), HandleReferenceRule (..), NestedFieldRule (..), NestedRules (..), PathReferenceRule (..), ProfileSpec (..), TypeRule (..), compileProfile, loadProfileFile, validateProfile)
 import Okf.Profile.Registry (RegistryEntry (..))
 import Okf.Validation (ValidationProfile (..), validateBundle)
 import Options.Applicative
@@ -472,6 +472,28 @@ sampleNestedProfile =
                   Nothing
                   Nothing
                   Nothing
+                  Nothing,
+                -- The OKF v0.2 §10 executor, as a house convention would express
+                -- it: a mapping-valued key whose members are constrained with
+                -- `objectFields`, with a path policy on the member that names a
+                -- file. This is the shape `okf profile show` rendered nowhere
+                -- before, so it is asserted here rather than only in prose.
+                FieldRule
+                  "executor"
+                  (Just "Run instructions and the receipt fields a run must return.")
+                  []
+                  Any
+                  Nothing
+                  Nothing
+                  ( Just
+                      NestedRules
+                        { required = [NestedFieldRule "resource" (Just "The skill a runner follows.") [] Scalar Nothing (Just (PathReferenceRule [] False)) Nothing],
+                          recommended = [],
+                          optional = [NestedFieldRule "receipt" Nothing [] List Nothing Nothing Nothing]
+                        }
+                  )
+                  Nothing
+                  Nothing
                   Nothing
               ],
             recommended = [],
@@ -500,6 +522,7 @@ sampleNestedProfileDetail =
     "    reference: (none)",
     "    path: (none)",
     "    when: (none)",
+    "    objectFields: (none)",
     "    elementFields:",
     "      required:",
     "        - outcome: (none)",
@@ -522,6 +545,30 @@ sampleNestedProfileDetail =
     "          format: (none)",
     "          path: (none)",
     "          when: (none)",
+    "  - executor: Run instructions and the receipt fields a run must return.",
+    "    allowedValues: (any)",
+    "    cardinality: any",
+    "    format: (none)",
+    "    reference: (none)",
+    "    path: (none)",
+    "    when: (none)",
+    "    objectFields:",
+    "      required:",
+    "        - resource: The skill a runner follows.",
+    "          allowedValues: (any)",
+    "          cardinality: scalar",
+    "          format: (none)",
+    "          path: external-uri-schemes([]), allow-self(false)",
+    "          when: (none)",
+    "      recommended: (none)",
+    "      optional:",
+    "        - receipt: (none)",
+    "          allowedValues: (any)",
+    "          cardinality: list",
+    "          format: (none)",
+    "          path: (none)",
+    "          when: (none)",
+    "    elementFields: (none)",
     "frontmatter.recommended: (none)",
     "frontmatter.optional: (none)"
   ]
@@ -546,6 +593,7 @@ sampleProfileDetail =
     "    reference: (none)",
     "    path: (none)",
     "    when: (none)",
+    "    objectFields: (none)",
     "    elementFields: (none)",
     "  - title: (none)",
     "    allowedValues: (any)",
@@ -554,6 +602,7 @@ sampleProfileDetail =
     "    reference: (none)",
     "    path: (none)",
     "    when: (none)",
+    "    objectFields: (none)",
     "    elementFields: (none)",
     "frontmatter.recommended: (none)",
     "frontmatter.optional:",
@@ -564,6 +613,7 @@ sampleProfileDetail =
     "    reference: (none)",
     "    path: (none)",
     "    when: (none)",
+    "    objectFields: (none)",
     "    elementFields: (none)",
     "",
     "type: Decision Record",
@@ -576,6 +626,7 @@ sampleProfileDetail =
     "      reference: (none)",
     "      path: (none)",
     "      when: (none)",
+    "      objectFields: (none)",
     "      elementFields: (none)",
     "  frontmatter.recommended:",
     "    - reviewer: (none)",
@@ -585,6 +636,7 @@ sampleProfileDetail =
     "      reference: local-prefix(ADR), external-uri-schemes([mori]), allow-self(false)",
     "      path: (none)",
     "      when: (none)",
+    "      objectFields: (none)",
     "      elementFields: (none)",
     "  frontmatter.optional:",
     "    - supersedes: (none)",
@@ -594,6 +646,7 @@ sampleProfileDetail =
     "      reference: local-prefix(ADR), external-uri-schemes([]), allow-self(false)",
     "      path: (none)",
     "      when: (none)",
+    "      objectFields: (none)",
     "      elementFields: (none)",
     "  pathPattern: decisions/*",
     "  resourceScheme: (none)",
@@ -622,6 +675,7 @@ sampleUndocumentedProfileDetail =
     "    reference: (none)",
     "    path: (none)",
     "    when: (none)",
+    "    objectFields: (none)",
     "    elementFields: (none)",
     "  - title: (none)",
     "    allowedValues: (any)",
@@ -630,6 +684,7 @@ sampleUndocumentedProfileDetail =
     "    reference: (none)",
     "    path: (none)",
     "    when: (none)",
+    "    objectFields: (none)",
     "    elementFields: (none)",
     "frontmatter.recommended: (none)",
     "frontmatter.optional: (none)",

@@ -83,7 +83,7 @@ This section must always reflect the actual current state of the work.
 - [x] Milestone 1 (2026-08-01): every `okf` command is run against an attested computation and what it does is recorded in Surprises & Discoveries, one entry per command, with the transcript
 - [x] Milestone 1 (2026-08-01): each gap the audit finds is either scheduled into a milestone below or recorded in the Decision Log as deliberately left alone, with the reason — five new Decision Log entries, one new file scheduled into Milestone 4
 - [x] Milestone 2 (2026-08-01): `okf computations BUNDLE` lists every attested computation in a bundle, one aligned row each, in the house style of `okf trust` and `okf sources`
-- [ ] Milestone 3: `okf profile show` renders `objectFields`, so a profile constraining `executor.resource` displays the rule it enforces
+- [x] Milestone 3 (2026-08-01): `okf profile show` renders `objectFields`, so a profile constraining `executor.resource` displays the rule it enforces
 - [x] Milestone 3 (2026-08-01): any further gap Milestone 1 scheduled is closed — the audit scheduled none into this milestone; `okf profile document` already renders object fields
 - [ ] Milestone 4: the embedded `okf help format`, `okf help validation`, and `okf help okf` topics describe OKF v0.2 rather than v0.1, including the attested computation type
 - [ ] Milestone 5: `docs/user/cli.md` documents the new command, and `docs/user/profiles.md` carries a worked §10 house-convention descriptor with a fixture proving it compiles and validates
@@ -282,6 +282,61 @@ its OUTPUT block shows `OK: 4 concepts` where the tool now prints
 reads a bundle or a profile; they install skills, launch an agent session, emit a completion
 script, and print configuration. Nothing about a concept type can reach them.
 
+### Milestone 3 — the `objectFields` gap was hiding rules the shipped profile already enforces
+
+The pre-implementation finding above framed this as a rendering gap on a construct nobody had
+adopted yet. The diff says otherwise. `okf profile show --registry docs/profiles/okf-v0-2.dhall`
+gained eight `objectFields: (none)` lines **and three real blocks**: the shipped v0.2 reference
+profile constrains the members of `generated`, of `verified`, and of `usage_window`, and
+`okf profile show` was displaying none of it. A team reading that command to learn what the
+reference profile demands of their `generated: {by, at}` mapping saw nothing about `by` being
+required or `at` needing `rfc3339-utc`.
+
+The diff against the pre-milestone capture contains no removed line and no moved line — every
+hunk is an addition, which is the acceptance criterion the plan set. It is stricter than the
+criterion's letter, which anticipated only `(none)` lines:
+
+```text
+39a43,58
+>     objectFields:
+>       required:
+>         - by: §7. The actor responsible: `<producer>/<version>`, `human:<id>`, or `process:<id>`.
+>           allowedValues: (any)
+>           cardinality: any
+>           format: actor
+>           path: (none)
+>           when: (none)
+```
+
+And the acceptance transcript for an executor-constraining profile:
+
+```text
+$ cabal run -v0 okf -- profile show --registry /tmp/okf-executor.dhall
+...
+  - executor: (none)
+    ...
+    objectFields:
+      required:
+        - resource: (none)
+          allowedValues: (any)
+          cardinality: any
+          format: (none)
+          path: external-uri-schemes([]), allow-self(false)
+          when: (none)
+      recommended: (none)
+      optional:
+        - receipt: (none)
+```
+
+**The documented transcript in `docs/user/profiles.md` reproduces, which was not a given.** It is
+generated from the pinned remote `okf-profiles` registry, and that registry is content-addressed
+into `~/.cache/dhall`, so the command runs offline and its output could be diffed line by line
+against the document rather than patched by eye. Ten `objectFields: (none)` lines were inserted
+and the result is byte-identical to the command's output apart from the registry path the
+document deliberately genericises to `/path/to/okf-profiles`. This is the transcript rule the
+parent MasterPlan's Decision Log records, applied to a block that looked mechanical enough to
+edit by hand.
+
 **The one gap the audit found that no milestone had:** there is no way to ask a bundle what
 attested computations it holds. Every command above either takes one concept (`show`), reports
 every concept (`trust`), or reports a different family (`sources`). §10.5 step 1 is "discover via
@@ -427,6 +482,27 @@ Record every decision made while working on the plan.
   rather than the accessors behind it, which is what the plan asked for. Column widths are
   computed over the selected rows only, so an unrelated long concept ID elsewhere in the bundle
   cannot pad the report.
+  Date: 2026-08-01
+
+- Decision: `objectFields` prints before `elementFields`, and the two share one
+  `renderNestedBlock` helper.
+  Rationale: the plan asked for the new block "beside the `elementFields` block rather than after
+  the seven scalar lines" and left the order open. Before it matches
+  `Okf.Profile.Documentation.renderFieldRule`, which is the other renderer of the same rule and
+  already emits `Object fields:` ahead of `Element fields:`. Making the two commands agree is the
+  point of this milestone; having them agree on content and disagree on order would be a new
+  inconsistency in place of the old one. Factoring the shared shape into one helper also means a
+  future member of `NestedRules` cannot reach one block and miss the other.
+  Date: 2026-08-01
+
+- Decision: The `objectFields` case is asserted with a real block in `okf-cli/test/Main.hs`, not
+  only in its `(none)` form.
+  Rationale: adding `objectFields: (none)` to the three existing expectations proves the line
+  prints and proves nothing about the block. `sampleNestedProfile` gained an `executor` field
+  whose `objectFields` carries a required `resource` with a path policy and an optional list
+  `receipt` — the §10 house convention in miniature, and exactly the shape this plan's Milestone 5
+  documents. The rendered block, including `path: external-uri-schemes([]), allow-self(false)` on
+  a nested member, is now pinned.
   Date: 2026-08-01
 
 - Decision: This plan does not write an ADR of its own, but it does run the parent MasterPlan's

@@ -998,13 +998,23 @@ renderProfileDetail
           indent <> "    path: " <> maybe "(none)" renderPathReferenceRule (rule ^. #path),
           indent <> "    when: " <> maybe "(none)" renderCondition (rule ^. #when)
         ]
-          <> case rule ^. #elementFields of
-            Nothing -> [indent <> "    elementFields: (none)"]
-            Just nestedRules ->
-              [indent <> "    elementFields:"]
-                <> renderNestedFieldRules (indent <> "      ") "required" (nestedRules ^. #required)
-                <> renderNestedFieldRules (indent <> "      ") "recommended" (nestedRules ^. #recommended)
-                <> renderNestedFieldRules (indent <> "      ") "optional" (nestedRules ^. #optional)
+          -- The two nested shapes print together and in this order, matching
+          -- 'Okf.Profile.Documentation.renderFieldRule', which is the other
+          -- renderer of the same rule. @objectFields@ constrains the record that
+          -- /is/ the value, so it reaches @executor.resource@; @elementFields@
+          -- constrains the members of each element of a list, so it reaches
+          -- @sources[].resource@. A reader comparing the two should not have to
+          -- scroll past seven scalar lines to find the second one.
+          <> renderNestedBlock indent "objectFields" (rule ^. #objectFields)
+          <> renderNestedBlock indent "elementFields" (rule ^. #elementFields)
+
+      renderNestedBlock indent label = \case
+        Nothing -> [indent <> "    " <> label <> ": (none)"]
+        Just nestedRules ->
+          [indent <> "    " <> label <> ":"]
+            <> renderNestedFieldRules (indent <> "      ") "required" (nestedRules ^. #required)
+            <> renderNestedFieldRules (indent <> "      ") "recommended" (nestedRules ^. #recommended)
+            <> renderNestedFieldRules (indent <> "      ") "optional" (nestedRules ^. #optional)
 
       renderNestedFieldRules indent label [] = [indent <> label <> ": " <> renderList []]
       renderNestedFieldRules indent label rules =
