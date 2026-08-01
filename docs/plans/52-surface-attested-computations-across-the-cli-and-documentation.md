@@ -82,7 +82,7 @@ This section must always reflect the actual current state of the work.
 
 - [x] Milestone 1 (2026-08-01): every `okf` command is run against an attested computation and what it does is recorded in Surprises & Discoveries, one entry per command, with the transcript
 - [x] Milestone 1 (2026-08-01): each gap the audit finds is either scheduled into a milestone below or recorded in the Decision Log as deliberately left alone, with the reason — five new Decision Log entries, one new file scheduled into Milestone 4
-- [ ] Milestone 2: `okf computations BUNDLE` lists every attested computation in a bundle, one aligned row each, in the house style of `okf trust` and `okf sources`
+- [x] Milestone 2 (2026-08-01): `okf computations BUNDLE` lists every attested computation in a bundle, one aligned row each, in the house style of `okf trust` and `okf sources`
 - [ ] Milestone 3: `okf profile show` renders `objectFields`, so a profile constraining `executor.resource` displays the rule it enforces
 - [x] Milestone 3 (2026-08-01): any further gap Milestone 1 scheduled is closed — the audit scheduled none into this milestone; `okf profile document` already renders object fields
 - [ ] Milestone 4: the embedded `okf help format`, `okf help validation`, and `okf help okf` topics describe OKF v0.2 rather than v0.1, including the attested computation type
@@ -405,6 +405,28 @@ Record every decision made while working on the plan.
   made once for this plan and on the same reasoning: a coherence plan that corrected two of three
   stale help topics would be performing the neglect it exists to correct. It remains an editing
   pass with no code behind it.
+  Date: 2026-08-01
+
+- Decision: A concept offering more than one computation prints `(2 computations)` rather than
+  the first one.
+  Rationale: the plan named four column phrases and left this case unnamed, because it wrote the
+  column as "`inline`, the path for the file form, or `(no computation)`". The fixture bundle has
+  two concepts that fit none of those — `both-computations` names a path *and* carries a body
+  fence, and `two-blocks` carries two fences. Printing the first would make a §10.3 defect look
+  like a well-formed row, which is exactly the reasoning the plan already gave for `(no runtime)`:
+  a report that hides what `okf validate --strict` reports is worse than one that says nothing.
+  `okf show --computation` refuses the same case for the same reason.
+  Date: 2026-08-01
+
+- Decision: The report is a pure `computationReport :: [Concept] -> [Text]`, exported, with
+  `runComputations` reduced to loading the bundle and printing it.
+  Rationale: `okf-cli/test/Main.hs` has no stdout capture and every existing assertion is either
+  over a pure renderer or over files a command wrote. `renderProfileDetail` is exported for
+  exactly this reason and is asserted three times in that suite. Splitting the report the same way
+  lets the test pin the whole rendered report — alignment, ordering, and every absence phrase —
+  rather than the accessors behind it, which is what the plan asked for. Column widths are
+  computed over the selected rows only, so an unrelated long concept ID elsewhere in the bundle
+  cannot pad the report.
   Date: 2026-08-01
 
 - Decision: This plan does not write an ADR of its own, but it does run the parent MasterPlan's

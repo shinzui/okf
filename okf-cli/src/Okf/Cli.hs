@@ -1,6 +1,7 @@
 -- | Top-level CLI entry point for okf.
 module Okf.Cli
   ( Command (..),
+    ComputationsOptions (..),
     GraphOptions (..),
     IdOptions (..),
     IdSub (..),
@@ -16,6 +17,7 @@ module Okf.Cli
     ProfileShowOptions (..),
     ShowOptions (..),
     ValidateOptions (..),
+    computationReport,
     parserInfo,
     profileRegistryEnvVar,
     renderProfileDetail,
@@ -150,6 +152,7 @@ data Command
   | ShowConcept ShowOptions
   | Trust TrustOptions
   | Sources SourcesOptions
+  | Computations ComputationsOptions
   | Id IdOptions
   | Config ConfigCommand
   | Profile ProfileCommand
@@ -216,6 +219,11 @@ data TrustOptions = TrustOptions
   deriving stock (Show, Eq)
 
 data SourcesOptions = SourcesOptions
+  { bundlePath :: !FilePath
+  }
+  deriving stock (Show, Eq)
+
+data ComputationsOptions = ComputationsOptions
   { bundlePath :: !FilePath
   }
   deriving stock (Show, Eq)
@@ -305,6 +313,7 @@ commandParser =
         <> command "show" (info (ShowConcept <$> showOptionsParser <**> helper) (progDesc "Show one concept"))
         <> command "trust" (info (Trust <$> trustOptionsParser <**> helper) (progDesc "Report trust tiers, status, and staleness for every concept"))
         <> command "sources" (info (Sources <$> sourcesOptionsParser <**> helper) (progDesc "List the provenance recorded by each concept"))
+        <> command "computations" (info (Computations <$> computationsOptionsParser <**> helper) (progDesc "List the attested computations a bundle declares"))
         <> command "id" (info (Id <$> idOptionsParser <**> helper) (progDesc "Allocate and list document IDs"))
         <> command "config" (info (Config <$> configCommandParser <**> helper) (progDesc "Show and manage okf configuration"))
         <> command "profile" (info (Profile <$> profileCommandParser <**> helper) (progDesc "List and inspect profiles published by a registry"))
@@ -594,6 +603,9 @@ trustOptionsParser = TrustOptions <$> bundleArgument
 sourcesOptionsParser :: Parser SourcesOptions
 sourcesOptionsParser = SourcesOptions <$> bundleArgument
 
+computationsOptionsParser :: Parser ComputationsOptions
+computationsOptionsParser = ComputationsOptions <$> bundleArgument
+
 runCommand :: Command -> IO ()
 runCommand = \case
   Validate options -> runValidate options
@@ -603,6 +615,7 @@ runCommand = \case
   ShowConcept options -> runShow options
   Trust options -> runTrust options
   Sources options -> runSources options
+  Computations options -> runComputations options
   Id options -> runId options
   Config configCommand -> runConfig configCommand
   Profile profileCommand -> runProfile profileCommand
@@ -1391,6 +1404,98 @@ sourceSignals window Source {sourceAuthor, sourceUsageCount, sourceLastModified}
         Just (UsageWindow (Just windowFrom) Nothing) -> " since " <> windowFrom
         Just (UsageWindow Nothing (Just windowTo)) -> " until " <> windowTo
         _ -> ""
+
+-- | List the OKF v0.2 attested computations a bundle declares (specification
+-- §10), one aligned line each.
+--
+-- This is specification §10.5 step 1 — \"Discover via @type: Attested
+-- Computation@\" — asked of a whole bundle at once. Every other okf command
+-- either takes one concept, reports every concept, or reports a different
+-- family, so before this there was no way to ask a bundle what computations it
+-- holds short of grepping @okf graph --json@.
+--
+-- Every column restates frontmatter and none says anything about a run. §10.5
+-- marks the execute-and-attest workflow informative and puts the receipt and the
+-- verdict outside the bundle entirely, so a column reading \"attests cleanly\"
+-- would be a claim okf cannot make; see
+-- @docs\/adr\/8-derived-not-stored-trust-and-credibility.md@ for the general
+-- principle that okf derives on read and stores nothing it was not told.
+--
+-- Selection is on the exact @type@ string and nothing else. A @Metric@ that
+-- happens to carry a @runtime@ key is not an attested computation, and §4.1
+-- keeps no taxonomy okf could consult to decide otherwise.
+--
+-- Absences print as a parenthesised phrase rather than as an empty cell, because
+-- a blank column hides exactly what @okf validate --strict@ reports: @(no
+-- runtime)@ is the §10.2-REQUIRED field missing, and @(2 computations)@ is
+-- §10.3's exactly-one rule broken.
+--
+-- Output is sorted by concept ID, which 'walkBundle' already guarantees, so the
+-- report is stable and diffable in pipelines and CI. A bundle with no attested
+-- computations prints nothing and exits zero, as @okf sources@ does for a bundle
+-- with no provenance: an empty report is not an error.
+runComputations :: ComputationsOptions -> IO ()
+runComputations ComputationsOptions {bundlePath} = do
+  concepts <- loadBundleOrExit bundlePath
+  mapM_ Text.IO.putStrLn (computationReport concepts)
+
+-- | The lines @okf computations@ prints, as data. Pure and separate from
+-- 'runComputations' so a test can assert the whole report rather than only the
+-- accessors behind it; 'renderProfileDetail' is exported for the same reason.
+--
+-- Concepts arrive in 'walkBundle' order and keep it. Column widths are computed
+-- over the selected rows only, so one unrelated long concept ID elsewhere in the
+-- bundle cannot pad this report.
+computationReport :: [Concept] -> [Text]
+computationReport concepts =
+  [ Text.intercalate
+      "  "
+      [ pad idWidth conceptId,
+        pad runtimeWidth runtime,
+        pad parameterWidth parameters,
+        pad computationWidth computation,
+        contract
+      ]
+  | (conceptId, runtime, parameters, computation, contract) <- rows
+  ]
+  where
+    rows = computationRow <$> filter isAttestedComputation concepts
+    widthOf column = maximum (0 : map (Text.length . column) rows)
+    (idWidth, runtimeWidth, parameterWidth, computationWidth) =
+      ( widthOf (\(a, _, _, _, _) -> a),
+        widthOf (\(_, b, _, _, _) -> b),
+        widthOf (\(_, _, c, _, _) -> c),
+        widthOf (\(_, _, _, d, _) -> d)
+      )
+    pad width cell = cell <> Text.replicate (width - Text.length cell) " "
+    isAttestedComputation concept = conceptType concept == attestedComputationType
+    computationRow concept =
+      ( renderConceptId (conceptIdOf concept),
+        fromMaybe "(no runtime)" (conceptRuntime concept),
+        case conceptParameters concept of
+          [] -> "(no parameters)"
+          parameters -> Text.intercalate ", " (renderParameter <$> parameters),
+        computationLocation (conceptComputationSources concept),
+        contractHalves concept
+      )
+    -- Where §10.3 says the computation lives. Naming the count rather than
+    -- picking one of two is the honest answer: a concept offering both is what
+    -- `okf validate --strict` reports, and `okf show --computation` refuses it
+    -- for the same reason.
+    computationLocation = \case
+      [] -> "(no computation)"
+      [ComputationFile rawPath] -> rawPath
+      [ComputationInline _] -> "inline"
+      sources -> "(" <> countPhrase (length sources) "computation" <> ")"
+    -- Which of §10.2's two run-and-check halves the concept declares. Neither is
+    -- REQUIRED, so all four combinations are legitimate and the phrase says which
+    -- one this is rather than passing judgement on it.
+    contractHalves concept =
+      case (isJust (conceptExecutor concept), isJust (conceptAttester concept)) of
+        (True, True) -> "executor + attester"
+        (True, False) -> "executor"
+        (False, True) -> "attester"
+        (False, False) -> "(neither)"
 
 -- | Use the given bundle, or ask the user to pick one.
 resolveBundlePath :: FzfConfig -> Maybe FilePath -> IO FilePath

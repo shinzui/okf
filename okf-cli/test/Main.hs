@@ -41,6 +41,8 @@ main = do
   referenceProfileCompiles <- testReferenceProfileCompiles
   referenceProfileAcceptsExample <- testReferenceProfileAcceptsDddOrdering
   exampleAttestedComputation <- testExampleAttestedComputationValidates
+  computationsReportsFixtures <- testComputationsReportsFixtureBundle
+  computationsReportsExample <- testComputationsReportsExampleBundle
   profileDocStrictWithTimestamp <- testProfileDocumentationStrictWithTimestamp
   let results =
         [ parseSucceeds ["validate", "bundle"],
@@ -273,6 +275,10 @@ main = do
                     timestamp = Nothing
                   }
             ),
+          parseSucceeds ["trust", "bundle"],
+          parseSucceeds ["sources", "bundle"],
+          parseSucceeds ["computations", "bundle"],
+          parseFails ["computations"],
           renderRegistryTable sampleRegistryEntries == sampleRegistryTable,
           renderProfileDetail "nested.decisions" sampleDecisionsProfile == sampleProfileDetail,
           renderProfileDetail "" samplePostgresqlProfile == sampleUndocumentedProfileDetail,
@@ -286,6 +292,8 @@ main = do
           referenceProfileCompiles,
           referenceProfileAcceptsExample,
           exampleAttestedComputation,
+          computationsReportsFixtures,
+          computationsReportsExample,
           profileDocStrictWithTimestamp,
           configDefaults,
           configProjectPrecedence,
@@ -860,6 +868,55 @@ testExampleAttestedComputationValidates = do
           pure (null bundleErrors && contract == expected)
   where
     reportFailure message = putStrLn message >> pure False
+
+-- | @okf computations@ over the fixture bundle, which is built to exercise every
+-- shape the report has a phrase for.
+--
+-- The assertion that matters most is the negative one: @metrics/revenue@ is a
+-- @Metric@ in the same bundle and must not appear, which is what proves the
+-- report keys on the exact @type@ string rather than on the presence of a
+-- contract field. The rest cover the four absence phrases — @(no runtime)@ for
+-- the §10.2-REQUIRED field missing, @(no computation)@ and @(2 computations)@
+-- for the two ways §10.3's exactly-one rule breaks, and @(neither)@ for a
+-- concept declaring no executor and no attester.
+testComputationsReportsFixtureBundle :: IO Bool
+testComputationsReportsFixtureBundle =
+  assertComputationReport
+    ("okf-core" </> "test" </> "fixtures" </> "attested-computation")
+    [ "computations/both-computations  bigquery      (no parameters)           (2 computations)  (neither)",
+      "computations/margin             (no runtime)  year (integer, required)  inline            (neither)",
+      "computations/no-computation     bigquery      (no parameters)           (no computation)  (neither)",
+      "computations/revenue            bigquery      year (integer, required)  inline            executor + attester",
+      "computations/two-blocks         bigquery      (no parameters)           (2 computations)  (neither)"
+    ]
+
+-- | @okf computations@ over the shipped example, whose twenty-two concepts
+-- reduce to the one row §10.5 step 1 asks for. This is the transcript
+-- @docs\/user\/cli.md@ documents, pinned so the documentation cannot rot.
+testComputationsReportsExampleBundle :: IO Bool
+testComputationsReportsExampleBundle =
+  assertComputationReport
+    ("examples" </> "ddd-ordering")
+    ["computations/order-total  postgres  order_id (uuid, required)  inline  executor + attester"]
+
+assertComputationReport :: FilePath -> [Text.Text] -> IO Bool
+assertComputationReport relativeBundle expected = do
+  bundleRoot <- repositoryPath relativeBundle
+  walked <- walkBundle bundleRoot
+  case walked of
+    Left bundleError -> do
+      putStrLn ("failed to walk " <> relativeBundle <> ": " <> show bundleError)
+      pure False
+    Right concepts -> do
+      let actual = computationReport concepts
+      unless (actual == expected) $
+        putStrLn
+          ( "unexpected okf computations report for "
+              <> relativeBundle
+              <> ":\n"
+              <> unlines (map Text.unpack actual)
+          )
+      pure (actual == expected)
 
 -- | Generated output can satisfy strict OKF authoring once a timestamp is
 -- supplied, and the meta-profile's @optional@ classification for @timestamp@
