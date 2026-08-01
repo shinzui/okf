@@ -152,7 +152,7 @@ from the signals ... not stored") and a boundary later work will be tempted to c
 | 1 | Migrate the concept timestamp to the OKF v0.2 generated field | docs/plans/38-migrate-the-concept-timestamp-to-the-okf-v0-2-generated-field.md | None | None | Complete |
 | 2 | Read the OKF v0.2 verified status and stale after fields and derive trust tiers | docs/plans/39-read-the-okf-v0-2-verified-status-and-stale-after-fields-and-derive-trust-tiers.md | EP-1 | None | Complete |
 | 3 | Read the OKF v0.2 sources provenance family with credibility signals | docs/plans/40-read-the-okf-v0-2-sources-provenance-family-with-credibility-signals.md | EP-1 | EP-2 | Complete |
-| 4 | Join per claim footnote attribution to OKF v0.2 source entries | docs/plans/41-join-per-claim-footnote-attribution-to-okf-v0-2-source-entries.md | EP-3 | None | In Progress |
+| 4 | Join per claim footnote attribution to OKF v0.2 source entries | docs/plans/41-join-per-claim-footnote-attribution-to-okf-v0-2-source-entries.md | EP-3 | None | Complete |
 | 5 | Declare and honour okf version in the bundle root index | docs/plans/42-declare-and-honour-okf-version-in-the-bundle-root-index.md | EP-1 | EP-2, EP-3 | Not Started |
 | 6 | Migrate okf documentation examples and fixtures to OKF v0.2 | docs/plans/43-migrate-okf-documentation-examples-and-fixtures-to-okf-v0-2.md | EP-1, EP-2, EP-3, EP-4, EP-5 | None | Not Started |
 
@@ -276,8 +276,8 @@ section carries the granular work; this list tracks the story.
 - [x] EP-2: trust tiers derive per §5.3 and staleness derives per §5.5, both surfaced through the CLI (2026-07-31)
 - [x] EP-3: `sources` entries and the `usage_window` sibling are read, including per-entry override (2026-07-31)
 - [x] EP-3: credibility signals `author`, `usage_count`, `last_modified` are projected and surfaced (2026-07-31)
-- [ ] EP-4: footnote parsing is enabled across all three CommonMark call sites without regressing link, log, or schema extraction
-- [ ] EP-4: footnote labels join to `sources[].id`, and unmatched labels are reported
+- [x] EP-4: footnote parsing is enabled across all three CommonMark call sites without regressing link, log, or schema extraction (2026-07-31)
+- [x] EP-4: footnote labels join to `sources[].id`, and unmatched labels are reported (2026-07-31)
 - [ ] EP-5: root `index.md` carries and round-trips `okf_version`
 - [ ] EP-5: the declared version gates every v0.1 fallback through one code path
 - [ ] EP-6: README, `docs/user/`, examples, and fixtures describe v0.2, with designated legacy fixtures retained
@@ -406,6 +406,55 @@ functions, per §5.1's "Credibility is *inferred* from the signals ... not store
 initiative planned.
 
 
+**From EP-4's implementation, three findings, the first of which corrects this section.**
+
+*The pre-implementation footnote discovery recorded above was wrong in its conclusion, and
+EP-4's spike overturned it.* The reading of `cbits/blocks.c` was accurate as far as it went —
+cmark-gfm does overwrite a matched reference's literal with an ordinal — but the case it
+concluded was safe never arises. An unmatched reference is not a footnote node at all; the
+parser reverts it to plain text. And a footnote definition that nothing cites is deleted
+outright. The parse tree therefore exposes only labels that are both cited and defined, which
+are exactly the labels that are already consistent. Patching the binding (the leading
+candidate) and scraping rendered HTML both read that tree and are blind the same way, so
+EP-4 scans the body source with code regions taken from the parse instead. Two mechanical
+facts from the same spike are recorded in
+`docs/adr/9-one-markdown-parse-configuration-and-source-scanned-authoring-checks.md` because
+later plans will meet them: cmark-gfm's `PosInfo` columns are byte offsets rather than
+character offsets, and a matched reference's recovered literal is an ordinal rather than a
+name.
+
+The general lesson, which EP-5 and EP-6 should apply rather than re-learn: a CommonMark parse
+tree is a rendering of what a document *means*, not a record of what its author *typed*. A
+check that asks what a document says belongs on the tree; a check that tells an author they
+wrote something wrong must read source text. This was settled in ten minutes in
+`cabal repl` after careful reading of C sources had produced a confident wrong answer written
+into three places.
+
+*Enabling footnotes fixed a pre-existing bug nobody had reported.* With footnotes off, a
+single-token footnote definition such as `[^src]: doc.md` parses as a CommonMark link
+reference definition, so its citation becomes a phantom link with a bogus destination that
+`Okf.Graph` extracts and `okf validate` reports as dangling. The Integration Points note
+above framed enabling footnotes purely as a regression risk to be contained; it was also a
+correctness fix. The regression risk was real but did not materialise: `okf graph --json`,
+`okf log`, and `okf validate --strict` on `okf-core/test/fixtures/valid-bundle` are
+byte-identical before and after. EP-6 should keep that byte-identical check when it migrates
+fixtures.
+
+*A new check's blast radius reaches sibling plans' fixtures, and that is a useful signal.*
+EP-4's first draft of the uncited-id lint fired on every document with a `sources` list and no
+footnotes — which is the common shape — and EP-3's existing tests caught it immediately by
+reporting two unexpected lint lines for a fixture whose body is just `# Orders`. The fix was
+to gate each direction of the join on the other side having opted into attribution. EP-5 and
+EP-6 should read an unexpected diff in a sibling plan's test as a design question rather than
+an expectation to update.
+
+The Integration Points note on the Markdown parse configuration is now settled: all three
+`commonmarkToNode` call sites route through `Okf.Markdown.markdownOptions`, footnotes are on,
+and extensions deliberately stay per call site because `schemaSectionColumns` needs
+`extTable` and the other two need nothing. MasterPlan 9's second body inspector routes
+through the same list.
+
+
 ## Decision Log
 
 - Decision: Split OKF v0.2 adoption across three MasterPlans — this one for core
@@ -470,6 +519,17 @@ initiative planned.
   derived-not-stored rule, because both are about keeping a derivation reproducible rather
   than ambient. EP-3's `sources[].last_modified` and `usage_window` are the next fields whose
   interpretation could tempt a library-level clock read; the ADR now forbids it in advance.
+  Date: 2026-07-31
+
+- Decision: A third ADR, unplanned during decomposition, was written by EP-4:
+  `docs/adr/9-one-markdown-parse-configuration-and-source-scanned-authoring-checks.md`.
+  Rationale: decomposition anticipated two ADRs and named the fallback policy and the
+  derived-not-stored rule. EP-4's Context section had flagged that no ADR covered Markdown
+  parse configuration and that its milestone might deserve one; the spike then produced a
+  second, more durable rule worth recording alongside it — that a check meant to catch an
+  author's mistake must read source text, because a CommonMark parse tree has already erased
+  the mistake. Both are cross-plan: MasterPlan 9's body inspector must route through the same
+  option list, and any later authoring check inherits the source-versus-tree rule.
   Date: 2026-07-31
 
 - Decision: This initiative will produce two new ADRs, to be written by the plans that
