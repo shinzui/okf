@@ -94,9 +94,11 @@ committed worked example `examples/postgresql-profile/` will be regenerated to m
       new shape. `cabal test all` passes, and
       `okf validate examples/postgresql-profile --profile docs/profiles/profile-documentation.dhall --profile-enforce --strict`
       prints `OK: 4 concepts (okf_version 0.2)` and exits 0.
-- [ ] Milestone 4: `docs/adr/6-generated-profile-documentation.md` is amended, and
-      `okf-cli/help/profiles.md`, `docs/user/profiles.md`, `README.md`, and the three
-      changelogs describe the new behavior.
+- [x] Milestone 4 (2026-08-01): `docs/adr/6-generated-profile-documentation.md` is amended,
+      and `okf-cli/help/profiles.md`, `docs/user/profiles.md`, `docs/user/cli.md`,
+      `README.md`, and the three changelogs describe the new behavior. `cabal test all`
+      passes, `okf help profiles` prints the corrected text, and `grep -rn "no timestamp
+      unless"` finds hits only inside this plan, where the old wording is quoted on purpose.
 
 
 ## Surprises & Discoveries
@@ -234,10 +236,64 @@ committed worked example `examples/postgresql-profile/` will be regenerated to m
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation. Before marking the plan complete, do the ADR
-distillation pass described in the skill: promote durable decisions from the Decision Log
-and Surprises & Discoveries into `docs/adr/`, which for this plan means at minimum the
-amendment to `docs/adr/6-generated-profile-documentation.md` described in Milestone 4.)
+All four milestones are complete and the plan's stated acceptance holds in full.
+
+What was achieved. The documented one-command workflow now produces a conformant bundle:
+
+```text
+$ okf profile document --profile docs/profiles/postgresql.dhall --out /tmp/okf-accept --write --okf-version 0.2
+Wrote 4 concepts and 2 index.md files to /tmp/okf-accept
+$ okf validate /tmp/okf-accept --strict
+OK: 4 concepts (okf_version 0.2)
+```
+
+Before this change the same two commands exited 1 with four `missing generated field`
+advisories. Every generated page carries
+`generated:\n  by: process:okf-profile-document`; `--generated-by` and `--generated-at`
+override it, and the value reaches readers rather than merely the file — `okf trust` on a
+bundle generated with `--generated-by okf/0.5.0.0 --generated-at 2026-08-01T00:00:00Z`
+reports a tier for every concept, and the frontmatter reads `by: okf/0.5.0.0`. Generation
+remains deterministic: regenerating `examples/postgresql-profile/` after committing it
+produces no diff. The committed example passes okf's own shipped meta-profile with
+deviations enforced and strict authoring on:
+
+```text
+$ okf validate examples/postgresql-profile --profile docs/profiles/profile-documentation.dhall --profile-enforce --strict
+OK: 4 concepts (okf_version 0.2)
+```
+
+`--okf-version` is validated before anything is written, so a malformed version leaves no
+partial bundle behind — `--okf-version 9` prints
+`Not an OKF version of the form MAJOR.MINOR: 9` and the destination directory is never
+created.
+
+What remains. Nothing in scope. The one deliberate non-change worth naming for a future
+reader: Mori (`mori://shinzui/mori`) pins okf-core and is the known downstream consumer, but
+it uses validation and advisory rendering rather than the documentation generator, so the
+new `DocumentationOptions` field cannot break it. That was reasoned from the plan's
+Interfaces section rather than verified against Mori's tree, so verify before moving Mori's
+pin, as the plan instructed.
+
+Lessons. Two are worth carrying forward. First, a rule that is *recommended* is a rule
+`--strict` enforces, so a descriptor describing a deliberately clock-free generator must put
+time-valued keys in `optional` — the same argument the meta-profile already made for
+`timestamp` applied to `generated.at`, and the plan's instruction to copy
+`docs/profiles/okf-v0-2.dhall` verbatim would have shipped a profile okf's own output
+violates. Second, the reason okf's two descriptors for the same OKF family legitimately
+differ is that one describes the format and the other describes okf's output; that
+distinction is now written into both files and into ADR 6, so the next reader does not
+"fix" the divergence.
+
+ADR distillation. Performed. `docs/adr/6-generated-profile-documentation.md` was amended
+rather than superseded: its determinism decision now states that `generated.by` is written
+by default and default output is strict-clean, and it gained the version-free-actor decision
+with its release-churn rationale, the `generated`-is-part-of-the-published-contract
+sentence, the `generated.at`-is-optional decision with the divergence from
+`okf-v0-2.dhall` explained, and a Consequences paragraph recording that
+`okf profile document --okf-version` exists and behaves as
+[ADR 10](../adr/10-okf-version-declaration-and-best-effort-reading.md) requires. No new ADR
+was created: every durable decision here narrows or extends a decision ADR 6 already owns,
+and a second record about the same feature would leave a reader unsure which governs.
 
 
 ## Context and Orientation

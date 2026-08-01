@@ -186,8 +186,16 @@ type's own already merged. The output is an ordinary OKF bundle, and generation
 never reads the clock, so regenerating it in CI and running `git diff
 --exit-code` is a complete drift check.
 
+Every generated page records its producer as `generated.by:
+process:okf-profile-document`, so the output passes `okf validate --strict`
+with no extra flag. `--generated-by ACTOR` and `--generated-at RFC3339` name a
+different producer and a time, and `--okf-version MAJOR.MINOR` declares the OKF
+version in the generated bundle's root index just as `okf index` does.
+
 ```bash
-cabal run okf -- profile document --profile docs/profiles/postgresql.dhall --out /tmp/pg-profile --write
+cabal run okf -- profile document --profile docs/profiles/postgresql.dhall --out /tmp/pg-profile --write --okf-version 0.2
+cabal run okf -- validate /tmp/pg-profile --strict
+# OK: 4 concepts (okf_version 0.2)
 ```
 
 [examples/postgresql-profile](./examples/postgresql-profile) is a committed

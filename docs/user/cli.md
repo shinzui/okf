@@ -625,9 +625,24 @@ cabal run okf -- profile document --profile docs/profiles/postgresql.dhall \
 # Wrote 4 concepts and 2 index.md files to /tmp/pg-profile
 
 cabal run okf -- profile document postgresql --registry /path/to/okf-profiles \
-  --out /tmp/pg-profile --write --timestamp 2026-07-31T00:00:00Z
+  --out /tmp/pg-profile --write --okf-version 0.2
 # Wrote 4 concepts and 2 index.md files to /tmp/pg-profile
+
+cabal run okf -- validate /tmp/pg-profile --strict
+# OK: 4 concepts (okf_version 0.2)
 ```
+
+Every generated page carries its producer, so default output is strict-clean
+with no extra flag:
+
+```yaml
+generated:
+  by: process:okf-profile-document
+```
+
+Pass `--generated-by ACTOR` to name a different producer and `--generated-at
+RFC3339` to record when. Neither `generated.at` nor `--timestamp` is written
+unless you ask, which is what keeps regeneration byte-identical.
 
 | Flag | Applies to | Meaning |
 |------|------------|---------|
@@ -637,7 +652,10 @@ cabal run okf -- profile document postgresql --registry /path/to/okf-profiles \
 | `--profile PROFILE` | `document` | Document a Dhall descriptor file directly instead of a registry export. Cannot be combined with `EXPORT` or `--registry`. |
 | `--out DIR` | `document` | Directory to write the generated bundle into. Required by `--write`; without `--write` it only changes the preview's closing line. |
 | `--write` | `document` | Write the bundle to `--out` instead of previewing it on standard output. |
-| `--timestamp RFC3339` | `document` | Value for the `timestamp` frontmatter key. Omitted entirely when not given, which is what makes regeneration byte-identical — supply it if you intend to run `okf validate --strict` on the result. |
+| `--timestamp RFC3339` | `document` | Value for the superseded v0.1 `timestamp` frontmatter key. Omitted entirely when not given. Needed only when producing a v0.1 bundle; provenance is otherwise carried by `generated`. |
+| `--generated-by ACTOR` | `document` | Actor recorded in `generated.by` on every page: `<producer>/<version>`, `human:<id>`, or `process:<id>`. Defaults to `process:okf-profile-document`, which is version-free so regeneration stays byte-identical across okf releases. |
+| `--generated-at RFC3339` | `document` | Timestamp recorded in `generated.at`. Omitted entirely when not given, which is what makes regeneration byte-identical: generation never reads the clock. |
+| `--okf-version MAJOR.MINOR` | `document` | Declare the OKF version in the generated bundle's root index, exactly as `okf index --okf-version` does. Omitting it preserves any declaration the destination already carries. |
 
 Without `--registry`, the reference comes from `OKF_PROFILE_REGISTRY`, then
 `profiles.registry` in configuration, then the built-in default — the

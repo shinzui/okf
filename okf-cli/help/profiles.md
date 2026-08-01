@@ -97,12 +97,24 @@ GENERATING DOCUMENTATION
 
   after regenerating is a complete CI drift check.
 
+  Every generated page records who produced it:
+
+    generated:
+      by: process:okf-profile-document
+
+  so default output passes `okf validate --strict` with no extra flag. Pass
+  --generated-by ACTOR to name a different producer -- <producer>/<version>,
+  human:<id>, or process:<id> -- and --generated-at RFC3339 to record when.
+  Neither is written unless you ask: generation never reads the clock.
+
+  Pass --okf-version 0.2 to declare the OKF version in the generated bundle's
+  root index, exactly as `okf index --okf-version` does. Omitting it preserves
+  whatever declaration the destination already carries.
+
   Two things that will otherwise look like bugs:
 
-  Generated pages carry no timestamp unless you pass --timestamp, and
-  `okf validate --strict` requires one. Pass --timestamp RFC3339 to get
-  strict-clean output. A stamped bundle has timestamps but no log.md, so do
-  not check generated documentation with --log-enforce.
+  A bundle generated with --timestamp or --generated-at has dates but no
+  log.md, so do not check generated documentation with --log-enforce.
 
   --write regenerates index.md for EVERY directory under --out, including
   ones it did not write into, and never deletes a file it did not generate.

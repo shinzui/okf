@@ -7,6 +7,26 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- `Okf.Profile.Documentation.defaultDocumentationActor`, the actor
+  `defaultDocumentationOptions` names as the producer of a generated
+  documentation bundle: `ProcessActor "okf-profile-document"`. Deliberately
+  version-free, so generated output stays byte-identical across okf releases.
+
+### Changed
+
+- `Okf.Profile.Documentation.DocumentationOptions` gains a `generated ::
+  Maybe Generated` field carrying the OKF v0.2 `generated` family written on
+  every generated document, and `defaultDocumentationOptions` now supplies one.
+  `Nothing` omits the key. Generation still reads no clock: `generatedAt` is
+  caller-supplied and absent by default.
+- **Breaking for record-literal callers.** A consumer that constructs
+  `DocumentationOptions` as a record literal rather than by overriding
+  `defaultDocumentationOptions` must add the new field. The module Haddock has
+  always directed callers to start from `defaultDocumentationOptions` for
+  exactly this reason; a call site that does so is unaffected.
+
 ## [0.5.0.0] - 2026-08-01
 
 ### Added

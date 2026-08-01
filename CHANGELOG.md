@@ -7,6 +7,25 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Changed
+
+- **`okf profile document` now produces bundles that pass `okf validate --strict`
+  with no extra flags.** Every generated page records its producer as
+  `generated.by: process:okf-profile-document`, the OKF v0.2 provenance key,
+  where previously a generated bundle carried no provenance at all and strict
+  validation reported a missing `generated` field on every page. Pass
+  `--generated-by ACTOR` to name a different producer and `--generated-at
+  RFC3339` to record when; neither is written unless asked, so regenerating the
+  same profile still produces byte-identical output and remains usable as a
+  `git diff --exit-code` CI drift check.
+- `okf profile document --okf-version MAJOR.MINOR` declares the OKF version in
+  the generated bundle's root index, so a conformant bundle takes one command
+  rather than a follow-up `okf index --write --okf-version`. Omitting the flag
+  preserves any declaration the destination already carries.
+- The shipped `docs/profiles/profile-documentation.dhall` declares
+  `okfVersion = "0.2"` and requires the `generated` family, and the committed
+  worked example `examples/postgresql-profile/` was regenerated to match.
+
 ## [0.5.0.0] - 2026-08-01
 
 ### Added
