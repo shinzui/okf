@@ -66,8 +66,8 @@ the separate "profile" mechanism.
 
 - [x] Milestone 1: `verified` reads as a list, with a bare mapping normalised to one element (2026-07-31)
 - [x] Milestone 2: `status` and `stale_after` read, with absent `status` defaulting to stable (2026-07-31)
-- [ ] Milestone 3: trust tiers derive from `verified` per specification §5.3
-- [ ] Milestone 4: staleness derives from `stale_after` against a caller-supplied date
+- [x] Milestone 3: trust tiers derive from `verified` per specification §5.3 (2026-07-31)
+- [x] Milestone 4: staleness derives from `stale_after` against a caller-supplied date (2026-07-31)
 - [ ] Milestone 5: `okf trust` command and `okf show` additions surface all four derivations
 - [ ] Milestone 6: ADR written on derived-not-stored trust and credibility
 
@@ -120,8 +120,35 @@ the separate "profile" mechanism.
   `setStaleAfter` all exist with the exact signatures given.
   Date: 2026-07-31
 
-(Add further decisions as you make them. Milestones 4 and 6 each end with a decision this
-plan requires you to record.)
+- Decision: `okf-core` never reads the clock. `staleness` takes the current `Day` as its first
+  argument and the CLI reads `getCurrentTime` once per invocation and passes it down.
+  Rationale: two reasons, both load-bearing. It keeps the function pure and therefore testable
+  against a fixed date, which is what makes the §5.5 boundary case (`today == stale_after` is
+  stale, not fresh) assertable at all rather than being a thing that only misbehaves once a
+  year. And it removes an ambient clock dependency under which two calls in one run could
+  straddle midnight and disagree about whether the same concept is stale. Recorded durably in
+  `docs/adr/8-derived-not-stored-trust-and-credibility.md`.
+  Date: 2026-07-31
+
+- Decision: Added `renderStaleness :: Staleness -> Text` beyond the plan's Interfaces list,
+  and both `Fresh` and `NoStaleAfter` render as `ok`.
+  Rationale: the Purpose section's transcript shows an `ok` column, and the CLI needs one
+  place that decides how a `Staleness` reads. Collapsing the two into `ok` is deliberate: a
+  concept with no `stale_after` has made no freshness claim, and reporting that distinction in
+  a summary column would imply a problem where none exists. The distinction is preserved in
+  the type for callers who need it, and `okf show` prints the underlying date.
+  Date: 2026-07-31
+
+- Decision: An actor matching none of the three §7 shapes (`UnclassifiedActor`) counts toward
+  `MachineConfirmed`, not `Unverified`.
+  Rationale: §5.3's middle tier is "`verified` by non-`human:` actors only", which an
+  unclassified actor satisfies — it is a verification event by something that is not a
+  declared human. Treating it as no verification at all would discard a signal the producer
+  did record, and §5.3 keys the bottom tier off "No `verified` key", not off actor validity.
+  Date: 2026-07-31
+
+(Add further decisions as you make them. Milestone 6 ends with a decision this plan requires
+you to record.)
 
 
 ## Outcomes & Retrospective

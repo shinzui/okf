@@ -57,6 +57,7 @@ library
     Okf.Profile
     Okf.Profile.Documentation
     Okf.Profile.Registry
+    Okf.Trust
     Okf.Validation
 
   build-depends:

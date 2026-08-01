@@ -9,6 +9,7 @@ import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text.IO
+import Data.Time (fromGregorian)
 import Okf.Actor
 import Okf.Bundle
 import Okf.ConceptId
@@ -21,6 +22,7 @@ import Okf.Prelude hiding (List, setField, (.=))
 import Okf.Profile
 import Okf.Profile.Documentation
 import Okf.Profile.Registry
+import Okf.Trust
 import Okf.Validation
 import System.Directory
   ( createDirectoryIfMissing,
@@ -94,6 +96,9 @@ main = do
         test "setVerified always writes a list and round-trips" testVerifiedRoundTrip,
         test "readStatus defaults to stable and preserves an unknown value" testReadStatus,
         test "readStaleAfter reads the date verbatim" testReadStaleAfter,
+        test "trustTier derives the three specification section 5.3 tiers" testTrustTier,
+        test "latestVerification returns the newest at" testLatestVerification,
+        test "staleness compares inclusively against a supplied day" testStaleness,
         testIO "writeBundle then walkBundle round-trips" testWriteBundleRoundTrip,
         testIO "fixture dangling link reports a bundle validation error" testFixtureDanglingLink,
         testIO "loadProfileFile decodes the postgresql fixture" testLoadProfileFixture,
@@ -972,6 +977,62 @@ testReadStaleAfter = do
   reparsed <- firstShow (parseDocument (serializeDocument (OKFDocument built "# Demo\n")))
   assertEqual (Just "2026-09-23") (readStaleAfter (reparsed ^. #frontmatter))
   assertEqual Deprecated (readStatus (reparsed ^. #frontmatter))
+
+testTrustTier :: Either Text ()
+testTrustTier = do
+  let verifiedBy actor = Verification (parseActor actor) (Just "2026-06-25T09:00:00Z")
+  -- Section 5.3: "No `verified` key => unverified."
+  assertEqual Unverified (trustTier [])
+  -- "`verified` by non-`human:` actors only => machine-confirmed."
+  assertEqual MachineConfirmed (trustTier [verifiedBy "process:finance-nightly"])
+  assertEqual MachineConfirmed (trustTier [verifiedBy "reference_agent/gemini-2.5-pro"])
+  -- An actor matching none of the three section 7 shapes is still not a human.
+  assertEqual MachineConfirmed (trustTier [verifiedBy "something"])
+  -- "`verified` by a `human:<id>` actor => human-reviewed", including mixed.
+  assertEqual HumanReviewed (trustTier [verifiedBy "human:ahormati"])
+  assertEqual
+    HumanReviewed
+    (trustTier [verifiedBy "process:finance-nightly", verifiedBy "human:ahormati"])
+  -- The Ord instance runs lowest to highest, as section 5.3 presents them.
+  assertBool "tiers ordered lowest to highest" (Unverified < MachineConfirmed && MachineConfirmed < HumanReviewed)
+
+testLatestVerification :: Either Text ()
+testLatestVerification = do
+  -- Section 5.2: "'How recently' is the latest `at`."
+  assertEqual
+    (Just "2026-06-26T02:00:00Z")
+    ( latestVerification
+        [ Verification (HumanActor "ahormati") (Just "2026-06-25T09:00:00Z"),
+          Verification (ProcessActor "finance-nightly") (Just "2026-06-26T02:00:00Z")
+        ]
+    )
+  -- Entries without an `at` are skipped rather than losing the whole result.
+  assertEqual
+    (Just "2026-06-25T09:00:00Z")
+    ( latestVerification
+        [ Verification (ProcessActor "nightly") Nothing,
+          Verification (HumanActor "ahormati") (Just "2026-06-25T09:00:00Z")
+        ]
+    )
+  assertEqual Nothing (latestVerification [])
+  assertEqual Nothing (latestVerification [Verification (HumanActor "ahormati") Nothing])
+
+testStaleness :: Either Text ()
+testStaleness = do
+  let today = fromGregorian 2026 6 15
+  assertEqual NoStaleAfter (staleness today Nothing)
+  -- Section 5.5: "A concept is stale when `today >= stale_after`."
+  assertEqual (Stale (fromGregorian 2026 6 1)) (staleness today (Just "2026-06-01"))
+  -- The boundary: equal to today is stale, not fresh. An off-by-one here is a
+  -- real bug, so it is asserted explicitly.
+  assertEqual (Stale (fromGregorian 2026 6 15)) (staleness today (Just "2026-06-15"))
+  assertEqual Fresh (staleness today (Just "2026-06-16"))
+  assertEqual Fresh (staleness today (Just "2026-09-23"))
+  -- A malformed deadline is surfaced, never silently treated as fresh.
+  assertEqual (StaleAfterUnparseable "not-a-date") (staleness today (Just "not-a-date"))
+  assertEqual (StaleAfterUnparseable "2026-13-01") (staleness today (Just "2026-13-01"))
+  assertEqual "stale since 2026-06-01" (renderStaleness (staleness today (Just "2026-06-01")))
+  assertEqual "ok" (renderStaleness (staleness today (Just "2026-09-23")))
 
 testConceptFromDocumentDerivesFields :: Either Text ()
 testConceptFromDocumentDerivesFields = do
