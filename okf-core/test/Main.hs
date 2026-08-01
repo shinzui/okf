@@ -699,10 +699,16 @@ testGenerateIndexGroupsByType =
           ( do
               orders <- requireConcept "tables/orders" concepts
               customers <- requireConcept "tables/customers" concepts
-              let rendered = renderIndex [] [orders, customers]
+              let rendered = renderIndex [] [] [orders, customers]
               assertBool "has type heading" ("# BigQuery Table" `Text.isInfixOf` rendered)
               assertBool "has orders bullet" ("[Orders](orders.md) - Order records." `Text.isInfixOf` rendered)
               assertBool "has customers bullet" ("[Customers](customers.md) - Customer records." `Text.isInfixOf` rendered)
+              -- §8's progressive disclosure reaches a file with no frontmatter:
+              -- a directory holding only an attester used to render one newline.
+              let withFiles = renderIndex [] ["revenue.py"] []
+              -- The trailing blank line is 'renderIndex''s own, appended after
+              -- every section; a concepts-only index ends the same way.
+              assertEqual "# Files\n\n- [revenue.py](revenue.py)\n\n" withFiles
           )
     )
 

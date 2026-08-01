@@ -136,11 +136,22 @@ declarationFromValue value =
       -- what was written. A YAML number reaches here as @0.2@, which parses.
       other -> Text.Lazy.toStrict (Aeson.Text.encodeToLazyText other)
 
--- | Render an @index.md@ for one bundle directory from its immediate concepts
--- and subdirectory names.
-renderIndex :: [FilePath] -> [Concept] -> Text
-renderIndex subdirectories concepts =
-  Text.intercalate "\n" (filter (not . Text.null) [subdirectorySection, conceptSections]) <> "\n"
+-- | Render an @index.md@ for one bundle directory from its immediate concepts,
+-- subdirectory names, and non-concept files.
+--
+-- Specification §8 says an index "enumerates the directory's contents to support
+-- progressive disclosure". A directory holding only
+-- @references\/attesters\/revenue.py@ has contents, and before the files
+-- parameter existed its generated index was a single newline — which is exactly
+-- the directory shape §6.3's @references\/@ convention encourages. See
+-- @docs\/adr\/13-the-references-convention-and-non-markdown-files.md@.
+--
+-- The files given are those that are not concepts and not reserved: in practice
+-- every regular file whose extension is not @.md@. Dotfiles are excluded by the
+-- caller, so a stray @.DS_Store@ never reaches a committed index.
+renderIndex :: [FilePath] -> [FilePath] -> [Concept] -> Text
+renderIndex subdirectories files concepts =
+  Text.intercalate "\n" (filter (not . Text.null) [subdirectorySection, fileSection, conceptSections]) <> "\n"
   where
     sortedSubdirectories = List.sort subdirectories
     subdirectorySection
@@ -151,6 +162,11 @@ renderIndex subdirectories concepts =
                 : ""
                 : (directoryBullet <$> sortedSubdirectories)
             )
+
+    sortedFiles = List.sort files
+    fileSection
+      | null sortedFiles = ""
+      | otherwise = Text.unlines ("# Files" : "" : (fileBullet <$> sortedFiles))
 
     groupedConcepts = Map.toAscList (foldr addConcept Map.empty concepts)
     conceptSections =
@@ -176,18 +192,18 @@ sectionForType (typeName, concepts) =
 -- nothing keeps a frontmatter-free root index. The value is quoted because §12
 -- writes it quoted and because an unquoted @0.2@ is a YAML float whose text
 -- form no serializer guarantees to preserve.
-renderRootIndex :: Maybe OkfVersion -> [FilePath] -> [Concept] -> Text
+renderRootIndex :: Maybe OkfVersion -> [FilePath] -> [FilePath] -> [Concept] -> Text
 renderRootIndex version = renderRootIndexText (renderOkfVersion <$> version)
 
 -- | 'renderRootIndex' over the declaration's raw text rather than a parsed
 -- version, so that a declaration okf cannot parse survives regeneration
 -- verbatim instead of being deleted.
-renderRootIndexText :: Maybe Text -> [FilePath] -> [Concept] -> Text
-renderRootIndexText Nothing subdirectories concepts =
-  renderIndex subdirectories concepts
-renderRootIndexText (Just versionText) subdirectories concepts =
+renderRootIndexText :: Maybe Text -> [FilePath] -> [FilePath] -> [Concept] -> Text
+renderRootIndexText Nothing subdirectories files concepts =
+  renderIndex subdirectories files concepts
+renderRootIndexText (Just versionText) subdirectories files concepts =
   Text.unlines ["---", "okf_version: \"" <> escaped versionText <> "\"", "---", ""]
-    <> renderIndex subdirectories concepts
+    <> renderIndex subdirectories files concepts
   where
     -- The only two characters that can end a double-quoted YAML scalar early.
     -- A parsed version can contain neither; a preserved raw one might.
@@ -196,6 +212,12 @@ renderRootIndexText (Just versionText) subdirectories concepts =
 directoryBullet :: FilePath -> Text
 directoryBullet directory =
   "- [" <> Text.pack directory <> "/](" <> Text.pack directory <> "/index.md)"
+
+-- | A file has no frontmatter, so there is no title to prefer and no description
+-- to append: the link text is the name.
+fileBullet :: FilePath -> Text
+fileBullet file =
+  "- [" <> Text.pack file <> "](" <> Text.pack file <> ")"
 
 conceptBullet :: Concept -> Text
 conceptBullet concept =
@@ -284,6 +306,7 @@ discoverDirectories root relativeDir = do
 renderDirectoryIndex :: Maybe Text -> FilePath -> [Concept] -> FilePath -> IO (FilePath, Text)
 renderDirectoryIndex rootVersion root concepts relativeDir = do
   subdirectories <- immediateSubdirectories root relativeDir
+  files <- immediateFiles root relativeDir
   let immediateConcepts =
         List.filter
           (\concept -> FilePath.normalise (FilePath.takeDirectory (conceptSourcePath concept)) == FilePath.normalise relativeDir)
@@ -291,7 +314,7 @@ renderDirectoryIndex rootVersion root concepts relativeDir = do
       indexPath = relativeDir </> "index.md"
       isBundleRoot = FilePath.normalise indexPath == "index.md"
       renderFor = if isBundleRoot then renderRootIndexText rootVersion else renderIndex
-  pure (FilePath.normalise indexPath, renderFor subdirectories immediateConcepts)
+  pure (FilePath.normalise indexPath, renderFor subdirectories files immediateConcepts)
 
 immediateSubdirectories :: FilePath -> FilePath -> IO [FilePath]
 immediateSubdirectories root relativeDir = do
@@ -301,5 +324,27 @@ immediateSubdirectories root relativeDir = do
       ( \entry -> do
           isDirectory <- doesDirectoryExist (root </> relativeDir </> entry)
           pure [entry | isDirectory]
+      )
+      entries
+
+-- | The directory's immediate non-concept files, for the @# Files@ section.
+--
+-- Every @.md@ file is excluded rather than only the concepts: a concept has its
+-- own typed section and @index.md@ and @log.md@ are reserved, so listing any of
+-- the three here would duplicate or clutter. A name beginning with @.@ is
+-- skipped so a stray @.DS_Store@ never lands in a committed index.
+immediateFiles :: FilePath -> FilePath -> IO [FilePath]
+immediateFiles root relativeDir = do
+  entries <- List.sort <$> listDirectory (root </> relativeDir)
+  fmap concat $
+    mapM
+      ( \entry -> do
+          isDirectory <- doesDirectoryExist (root </> relativeDir </> entry)
+          pure
+            [ entry
+            | not isDirectory,
+              FilePath.takeExtension entry /= ".md",
+              not ("." `List.isPrefixOf` entry)
+            ]
       )
       entries

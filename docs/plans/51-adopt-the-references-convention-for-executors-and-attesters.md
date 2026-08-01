@@ -100,7 +100,7 @@ This section must always reflect the actual current state of the work.
 - [x] Milestone 1 (2026-08-01): what okf does today with a `references/` directory is surveyed against the shipped bundles and recorded in Surprises & Discoveries with real transcripts, and the Decision Log's first four decisions are each confirmed or revised against that evidence — all four hold; the plan's list of non-Markdown files was short by one (`references/queries/revenue.sql`)
 - [x] Milestone 2 (2026-08-01): a dangling relative frontmatter path that *would* resolve read from the bundle root says so in the diagnostic, and the resolution rule itself is unchanged
 - [x] Milestone 3 (2026-08-01): `okf validate --profile` resolves a path-valued rule against every file in the bundle, not only against `.md` concepts, and the existing `validateProfile` entry point keeps its current meaning
-- [ ] Milestone 4: `okf index` lists a directory's non-Markdown files, so a directory holding only an attester no longer generates a one-byte index
+- [x] Milestone 4 (2026-08-01): `okf index` lists a directory's non-Markdown files, so a directory holding only an attester no longer generates a one-byte index
 - [ ] Milestone 5: `docs/adr/13-the-references-convention-and-non-markdown-files.md` records the durable decisions, and `docs/user/format.md` and `docs/user/profiles.md` are corrected, including the profile limitation this plan retires
 - [ ] Milestone 5: every `okf` transcript in `docs/` that this plan perturbs is re-run and corrected
 
@@ -407,6 +407,18 @@ rule cost it a withdrawn check and thirty-one failing tests. Confirm before buil
   `examples/ddd-ordering/references/index.md`'s bullet `- [attesters/](attesters/index.md)`
   pointing at a file that no longer exists, and it discloses less rather than more. Files whose
   name begins with `.` are skipped, so a stray `.DS_Store` never lands in a committed index.
+  Date: 2026-08-01
+
+- Decision: The `# Files` section is regenerated into `examples/ddd-ordering` only. The two
+  fixture bundles that also hold non-Markdown files keep their hand-written indexes.
+  Rationale: `okf-core/test/fixtures/attested-computation/` and
+  `okf-core/test/fixtures/dangling-frontmatter-path/` have no `index.md` in the directories that
+  would gain a `# Files` section, so regenerating would *create* files rather than update them,
+  and their root indexes are deliberately hand-written prose that generated output does not match.
+  No test compares either bundle's indexes against generated output. Milestone 4's acceptance is
+  that exactly one block of one shipped bundle changed, and running `okf index` over both fixtures
+  confirmed the new section is what it would produce — `references/attesters/index.md` and
+  `references/queries/index.md` — without writing it.
   Date: 2026-08-01
 
 - Decision: Existence at the profile layer has three answers, not two. An internal
