@@ -63,10 +63,10 @@ This section must always reflect the actual current state of the work.
 - [x] Milestone 1 (2026-08-01): a test proves a `.py` file under `references/` is visible to okf without becoming a concept
 - [x] Milestone 2 (2026-08-01): `Okf.Path.resolvePathReference` decides whether a classified path exists in a bundle inventory — commit `e82e31f`
 - [x] Milestone 2 (2026-08-01): unit tests cover external URL, bundle-absolute, relative, escaping, malformed, and non-Markdown targets
-- [ ] Milestone 3: `okf validate --strict` reports a dangling `resource` path with a new `ValidationError`/`BundleValidationError` constructor
-- [ ] Milestone 3: the check is silent under the default profile, and silent for a `resource` that is an absolute URL
-- [ ] Milestone 4: the check is run against every bundle in this repository and produces zero new diagnostics
-- [ ] Milestone 4: `docs/user/format.md` documents the check, and `docs/adr/12-frontmatter-path-resolution.md` is written
+- [x] Milestone 3 (2026-08-01): `okf validate --strict` reports a dangling `resource` path with the new `BundleValidationError` constructor `DanglingFrontmatterPath` — commit `f196a8d`
+- [x] Milestone 3 (2026-08-01): the check is silent under the default profile, and silent for a `resource` that is an absolute URL
+- [x] Milestone 4 (2026-08-01): the check is run against every bundle in this repository and produces zero new diagnostics
+- [x] Milestone 4 (2026-08-01): `docs/user/format.md` documents the check, `docs/user/profiles.md` records where the two layers now differ, and `docs/adr/12-frontmatter-path-resolution.md` is written
 
 
 ## Surprises & Discoveries
@@ -111,6 +111,57 @@ fixtures, failed 31 tests, and was withdrawn — because the fixtures were right
 recorded in `docs/adr/11-growing-the-profile-descriptor-language.md` is that a rule reasoned
 out from the specification, which reading cannot falsify, must be run before it is believed.
 Milestone 4 of this plan exists to do exactly that.
+
+Four findings came out of implementation.
+
+**Milestone 4 vindicated the plan's caution and found nothing.** The check was run
+against `examples/ddd-ordering`, `examples/postgresql-sample`,
+`examples/postgresql-profile`, and every fixture bundle under
+`okf-core/test/fixtures/`. Zero new diagnostics, as predicted: every `resource` in
+this repository carries a URI scheme and resolves external. `examples/ddd-ordering`
+in particular is clean, which is the whole point — its §5.1 scope
+descriptor sits in `sources[].resource`, which this plan deliberately does not
+check.
+
+```text
+$ cabal run -v0 okf -- validate examples/ddd-ordering --strict
+... 19 pre-existing log advisories ...
+OK: 19 concepts (okf_version 0.2)
+```
+
+**A prose `resource` on the top-level field is reported, and that is correct.** The
+Validation and Acceptance section flagged this as a judgement call the implementer
+must make consciously. Observed, with `resource: all rows in the warehouse`:
+
+```text
+bad: resource names all rows in the warehouse, which does not exist in this bundle
+```
+
+Accepted rather than worked around. Section 4.1 defines `resource` as "a URI that
+uniquely identifies the underlying asset"; §5.1 explicitly permits
+`sources[].resource` to be prose and §4.1 extends that permission to nothing
+else. The asymmetry is the specification's, not okf's. A producer whose `resource`
+values are prose is using a field the format defines as a URI to hold something
+else.
+
+**The plan's Purpose transcript does not match okf's real output format; the
+Validation section's criteria do.** The Purpose section shows lines prefixed
+`strict:` and a summary line `FAILED: 1 problem in 4 concepts`. Neither exists: okf
+renders `BundleValidationError` values to stderr with no severity prefix, prints no
+FAILED summary, prints `OK: N concepts` on success, and otherwise exits non-zero.
+The implemented message follows the repository's actual convention and this plan's
+own stated acceptance criteria — name the concept, the field, and the target:
+
+```text
+dangling: resource names references/deleted.txt, which does not exist in this bundle
+```
+
+**`validateBundle`'s new parameter reached seventeen call sites, all of them in
+tests.** The plan predicted the breakage and treated it as the point. Two test
+helpers absorbed it: `validateInMemoryBundle` in `okf-core/test/Main.hs` for
+concepts built in memory, and `readBundleInventory` for the four tests that walk a
+real fixture directory and should therefore see its non-Markdown files.
+`okf-cli/test/Main.hs`'s two call sites pass `bundleInventoryOfConcepts` directly.
 
 
 ## Decision Log
@@ -170,6 +221,46 @@ Record every decision made while working on the plan.
   the inventory once during the walk, where okf is already doing IO, preserves it.
   Date: 2026-08-01
 
+- Decision: The dangling-path diagnostic goes on `BundleValidationError` as
+  `DanglingFrontmatterPath ConceptId Text FilePath`, carrying the field name, rather than
+  generalising `DanglingReference`.
+  Rationale: `DanglingReference`'s two `ConceptId` values encode an assumption that no
+  longer holds — a frontmatter path may name `references/attesters/revenue.py`, which is
+  not a concept and has no `ConceptId`. Generalising it would have widened a type every
+  consumer already matches on, to express a claim it was not making. The field name is
+  carried because `resource` and a later `executor.resource` produce identical messages
+  otherwise and the author cannot tell which line to fix.
+  Date: 2026-08-01
+
+- Decision: A prose value in the top-level `resource` field is reported as dangling, and
+  that behaviour is accepted rather than special-cased.
+  Rationale: this was the judgement call the Validation and Acceptance section reserved for
+  the implementer. §4.1 defines `resource` as "a URI that uniquely identifies the underlying
+  asset" and grants no prose alternative; §5.1 grants one explicitly, and only to
+  `sources[].resource`. Suppressing the report would mean inventing a tolerance the
+  specification does not offer, on a field where every value in this repository is a URI.
+  The asymmetry between the two fields is the specification's.
+  Date: 2026-08-01
+
+- Decision: Two test helpers absorb `validateBundle`'s new parameter —
+  `validateInMemoryBundle` for concepts built in memory and `readBundleInventory` for tests
+  that walk a real fixture directory — rather than threading `bundleInventoryOfConcepts`
+  through all seventeen call sites.
+  Rationale: the distinction is load-bearing rather than cosmetic. A test walking a fixture
+  root should see that bundle's non-Markdown files, because that is what the production path
+  does; a test assembling concepts in memory cannot. Two helpers make which one a test is
+  using visible at the call site.
+  Date: 2026-08-01
+
+- Decision: Profile validation keeps its `.md`-only existence check; the inventory is not
+  threaded into `Okf.Profile.validateProfile`.
+  Rationale: closing that gap means changing `validateProfile`'s signature and every profile
+  test, for a capability the profile layer did not ask for in this plan.
+  `docs/user/profiles.md` already documented the limitation, and it now says where the core
+  check differs and why, so the divergence is recorded rather than latent. Recorded as
+  deliberately deferred in `docs/adr/12-frontmatter-path-resolution.md`.
+  Date: 2026-08-01
+
 
 ## Outcomes & Retrospective
 
@@ -178,7 +269,65 @@ Compare the result against the original purpose. Before marking the plan complet
 distill durable project context from the Decision Log, Surprises & Discoveries, and
 this section into docs/adr/. Keep task-local execution details here.
 
-(To be filled during and after implementation.)
+**Complete, 2026-08-01.** All four milestones landed in three commits, and the
+user-visible outcome is the one the Purpose section promised: `okf validate --strict`
+reports a frontmatter `resource` naming a file the bundle does not hold, and says which
+concept, which field, and which target.
+
+```text
+$ cabal run -v0 okf -- validate okf-core/test/fixtures/dangling-frontmatter-path --strict
+dangling: resource names references/deleted.txt, which does not exist in this bundle
+$ cabal run -v0 okf -- validate okf-core/test/fixtures/dangling-frontmatter-path
+OK: 3 concepts (okf_version 0.2)
+```
+
+What exists now that did not before: `Okf.Bundle.walkBundleInventory` and
+`BundleInventory`, which record every file in a bundle rather than only the parseable
+Markdown; `Okf.Path.PathResolution` and `resolvePathReference`, which close the seam
+`Okf.Path` deliberately left open by naming the five outcomes of resolving a §6.2 value
+once; `Okf.Validation.DanglingFrontmatterPath` and the `danglingFrontmatterPaths` check
+behind it; and the regression fixture at
+`okf-core/test/fixtures/dangling-frontmatter-path/`, the only bundle in the repository
+that deliberately contains a non-Markdown file. `docs/adr/12-frontmatter-path-resolution.md`
+carries the durable half.
+
+What the next plan inherits. `Okf.Validation.pathValuedFields` returns
+`(fieldName, value)` pairs per concept and today returns only `resource`; wiring
+`computation`, `executor.resource`, and `attester.resource` into it is one edit in one
+place, and belongs to
+`docs/plans/49-read-the-attested-computation-contract-fields.md` or to whichever plan
+lands second. The rendering, the constructor, the placement decision, and the inventory
+are all in place, so that edit adds three list entries and a test rather than a
+mechanism.
+
+Two things a reader should not mistake for gaps. Profile validation still checks the
+existence of `.md` targets only, so the two layers now disagree about non-Markdown
+targets; `docs/user/profiles.md` says so, and the ADR records why closing it was
+deferred. And a prose `resource` such as `all rows in the warehouse` is reported —
+correct per §4.1, and deliberately not extended to `sources[].resource`.
+
+Three lessons.
+
+The plan's caution about running a specification-derived check before believing it paid
+for itself twice, in opposite directions. Milestone 4 found nothing, which is what a
+correctly scoped check should find — but the scoping only happened because the plan's
+own Surprises section had already run the grep that falsified the MasterPlan's original
+promise. The lesson generalises past this repository: the cheap step is not "run the
+check afterwards", it is "run the check against the corpus while still writing the
+plan".
+
+A plan's illustrative transcript can be wrong in a way its acceptance criteria are not.
+The Purpose section here showed a `strict:` prefix and a `FAILED:` summary line, neither
+of which okf emits; the Validation and Acceptance section instead stated what the message
+must *contain*, and that was implementable exactly as written. Acceptance criteria phrased
+as content survive being written before the code; transcripts phrased as output do not.
+
+Breaking a signature on purpose worked as the plan predicted. `validateBundle` gaining a
+required `BundleInventory` made all seventeen call sites visible in one compile, and no
+caller could quietly pass an empty inventory and have every path report as dangling.
+The cost was two test helpers; the alternative — an optional or defaulted parameter —
+would have cost a silent failure mode that only shows up as false positives in someone
+else's bundle.
 
 
 ## Context and Orientation

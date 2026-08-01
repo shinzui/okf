@@ -374,6 +374,63 @@ graph edge list, but `okf validate` reports it as an error and exits non-zero �
 see [Referential integrity](cli.md#validate).
 
 
+### Path-valued frontmatter fields
+
+A path can also sit in a *frontmatter value* rather than in a body link. OKF v0.2
+§6.2 names five such fields — `resource`, `sources[].resource`, and the
+attested-computation fields `computation`, `executor.resource`, and
+`attester.resource` — and each accepts an absolute URL, a bundle-relative path
+beginning with `/`, or an ordinary relative path resolved against the concept's
+own directory, exactly as a body link would be.
+
+`okf validate --strict` resolves the top-level `resource` against the bundle and
+reports a value that looks like a bundle path and names no file:
+
+```text
+$ okf validate ./bundle --strict
+tables/orders: resource names references/deleted.txt, which does not exist in this bundle
+```
+
+Three things about that check are deliberate.
+
+It resolves against **every file in the bundle**, not only concepts. A `resource`
+naming `references/attesters/revenue.py` — §6.3's own example of the
+`references/` convention — resolves, because the file is there. This is the one
+place okf looks at a non-Markdown file.
+
+It reports **only the dangling case**. An absolute URL is left alone, whatever
+its scheme, because okf has no network access and never fetches. A value that
+climbs above the bundle root, or that is empty, is also left alone: §4.1 defines
+`resource` as "a URI", and a producer writing a bare `analytics.tables.orders`
+has written a legitimate value that carries no scheme and so looks like a bundle
+path. Reporting anything but "there is no such file" would fire on correct
+documents.
+
+It is **strict-only**, like the dangling body-link check, and for the same
+reason. §11 says a consumer must not reject a bundle over a broken cross-link,
+because §6.1 permits a link to knowledge nobody has written yet. This is an
+authoring-time lint, not a conformance requirement.
+
+`sources[].resource` is **not** checked, and that is not an omission. §5.1 says
+an entry's resource names "either a concrete artifact a consumer can follow … or
+a population or scope descriptor it cannot", and the second form is ordinary
+prose:
+
+```yaml
+sources:
+  - resource: all order-domain terms agreed in the ordering team's glossary reviews
+```
+
+`examples/ddd-ordering` carries exactly that, and it is correct. A team whose own
+corpus does use followable paths there opts in by writing a profile — see
+[path-valued fields](profiles.md#path-valued-fields), which reaches
+`sources[].resource` through a nested rule.
+
+The `computation`, `executor.resource`, and `attester.resource` fields are not
+checked either, because okf does not yet read the Attested Computation concept
+type that carries them.
+
+
 ## Authoring
 
 To produce bundles in code — build frontmatter, render links that are guaranteed

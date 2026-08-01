@@ -179,6 +179,12 @@ resolvable, and how a dangling frontmatter path differs from a dangling body lin
 one); and one on the `references/` convention — whether a file under `references/` is a
 concept, and what okf does with non-Markdown files in a bundle (plan four).
 
+The first of those is written: `docs/adr/12-frontmatter-path-resolution.md`, landed with
+EP-1 on 2026-08-01. It answers all three of the questions listed above and adds two the plan
+surfaced while implementing — that the check is strict-only and ungated on `okf_version`, and
+that `sources[].resource` is excluded on §5.1 grounds with the profile route named as the
+alternative. EP-4 still owes the second ADR.
+
 
 ## Exec-Plan Registry
 
@@ -198,7 +204,7 @@ is green (`cabal test all`, 2026-08-01).
 
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
-| 1 | Resolve path valued frontmatter fields against the bundle | docs/plans/48-resolve-path-valued-frontmatter-fields-against-the-bundle.md | None | None | Not Started |
+| 1 | Resolve path valued frontmatter fields against the bundle | docs/plans/48-resolve-path-valued-frontmatter-fields-against-the-bundle.md | None | None | Complete |
 | 2 | Read the Attested Computation contract fields | docs/plans/49-read-the-attested-computation-contract-fields.md | None | EP-1 | Not Started |
 | 3 | Inspect the Computation body section and enforce exactly one computation source | (not yet created) | EP-2 | None | Not Started |
 | 4 | Adopt the references convention for executors and attesters | (not yet created) | EP-1 | EP-2 | Not Started |
@@ -285,9 +291,13 @@ grep for.
 `okf-core/src/Okf/Graph.hs:103`. Involved: EP-1, EP-4. Today the only referential check is
 over body markdown links, and it reports `DanglingReference` carrying two `ConceptId`
 values. A dangling *frontmatter path* is a different thing — its target may not be a concept
-at all, so it cannot be reported as a `ConceptId` pair. EP-1 owns the decision and must
-either add a distinct `BundleValidationError` constructor or generalise the existing one;
-EP-4 consumes whatever EP-1 chooses. Note the constraint recorded in this repository's
+at all, so it cannot be reported as a `ConceptId` pair. **EP-1 decided this and the decision
+is now fixed:** a distinct constructor, `DanglingFrontmatterPath ConceptId Text FilePath`,
+carrying the concept, the frontmatter field name as written, and the resolved
+bundle-relative target. Generalising `DanglingReference` was rejected because its two
+`ConceptId` values encode an assumption that no longer holds. `validateBundle` also gained a
+required `BundleInventory` parameter. EP-4 consumes both as given. Note the constraint
+recorded in this repository's
 memory of the specification and reaffirmed by §11: okf's dangling-reference check is an
 *authoring-time linter that goes beyond spec conformance*, since §6.1 says consumers must
 tolerate broken links because a link may represent not-yet-written knowledge. Any new
@@ -405,8 +415,8 @@ milestone rather than in a purpose paragraph.* The list below is amended accordi
 and EP-3 each carry their own surfacing milestone, and EP-5 is the plan that makes the type
 coherent across the tool rather than the plan that first makes it visible.
 
-- [ ] EP-1: `Okf.Path` gains existence checking, and which of §6.2's five fields are checked by default is decided and justified against `examples/ddd-ordering`
-- [ ] EP-1: a frontmatter path that points at nothing in the bundle is reported, distinctly from a dangling body link, and at the `ValidationProfile` placement ADR 7 requires
+- [x] EP-1 (2026-08-01): `Okf.Path` gains existence checking, and which of §6.2's five fields are checked by default is decided and justified against `examples/ddd-ordering` — only the top-level `resource`
+- [x] EP-1 (2026-08-01): a frontmatter path that points at nothing in the bundle is reported, distinctly from a dangling body link, and at the `ValidationProfile` placement ADR 7 requires
 - [ ] EP-2: `type: Attested Computation` concepts are read with their `runtime`, `parameters`, `computation`, `executor`, and `attester` contract
 - [ ] EP-2: whether the five contract keys join `Okf.Document.coreFrontmatterFieldOrder` is decided, and serialization round-trips a §10.2 concept unchanged
 - [ ] EP-2: a contract missing `runtime` is reported for that type only, leaving other types untouched, and `okf show` renders the contract
@@ -541,6 +551,45 @@ has never compiled, and is excluded from `testFrozenFixturesCompile` with its de
 Neither is this MasterPlan's to fix; both are recorded so that meeting them is not mistaken
 for a regression.
 
+**EP-1 is complete, and what it leaves for the other four plans is smaller than it looks.**
+Landed 2026-08-01 in commits `5248f02`, `e82e31f`, and `f196a8d`; the durable half is
+`docs/adr/12-frontmatter-path-resolution.md`. Four things every remaining plan should know
+rather than rediscover.
+
+First, **`Okf.Validation.validateBundle` now takes a `BundleInventory`**, and the parameter
+is required rather than defaulted so that no caller can pass an empty inventory and have
+every path report as dangling. That is a breaking change to an exported function, and the
+consequence for the downstream pin is recorded in ADR 12: Mori
+(`mori://shinzui/mori`) matches `ProfileViolation` rather than `ValidationError`, so the new
+`DanglingFrontmatterPath` constructor does not reach it, but a call to `validateBundle`
+would. Check before releasing rather than assuming.
+
+Second, **wiring the three attested-computation path fields into the check is one edit in
+one place.** `Okf.Validation.pathValuedFields` returns `(fieldName, value)` pairs per concept
+and today returns only `resource`. Adding `computation`, `executor.resource`, and
+`attester.resource` is three list entries and a test once EP-2 reads them; the constructor,
+the CLI rendering, the strict-only placement, and the inventory are already in place. The
+MasterPlan's earlier note that this was "follow-up work neither plan owns" is discharged in
+favour of naming it here: **it belongs to EP-2**, because EP-2 is the plan that makes those
+values readable and a field nothing reads cannot be checked.
+
+Third, **the core and the profile layer now disagree about non-Markdown targets**, and this
+is documented rather than latent. `okf validate --strict` resolves a `resource` naming
+`references/attesters/revenue.py` because the CLI walks the directory;
+`Okf.Profile.validateProfile` still checks the existence of `.md` targets only, because it
+receives concepts and no inventory. `docs/user/profiles.md` says so. Threading the inventory
+into profile validation would close the gap and was deliberately deferred — it is a wider
+change to `validateProfile`'s signature than EP-1 needed. **EP-4 should decide whether the
+`references/` convention makes closing it worthwhile**, since that plan already owns the
+question of what a file under `references/` is.
+
+Fourth, **a prose value in the top-level `resource` field is reported as dangling.** §4.1
+defines `resource` as "a URI" and grants no prose alternative; §5.1 grants one explicitly and
+only to `sources[].resource`. So `resource: all rows in the warehouse` produces a diagnostic
+and `sources[].resource: all order-domain terms ...` does not. The asymmetry is the
+specification's, it was accepted consciously rather than worked around, and any plan tempted
+to "fix" it should read ADR 12 first.
+
 
 ## Decision Log
 
@@ -664,6 +713,30 @@ for a regression.
   is wrong, which is not.
   Date: 2026-08-01
 
+- Decision: EP-2 owns wiring `computation`, `executor.resource`, and `attester.resource` into
+  the core path check that EP-1 built.
+  Rationale: the revision note of 2026-08-01 left this as "follow-up work for whichever plan
+  lands second, and neither plan owns it today". EP-1 landing first settles it. EP-1's
+  `Okf.Validation.pathValuedFields` returns `(fieldName, value)` pairs per concept and returns
+  only `resource`; the constructor, the CLI rendering, the strict-only placement, and the
+  bundle inventory are all in place, so the remaining work is three list entries and a test.
+  It falls to EP-2 because a field nothing reads cannot be checked, and EP-2 is the plan that
+  makes those three readable.
+  Date: 2026-08-01
+
+- Decision: EP-4 decides whether to close the core-versus-profile divergence over
+  non-Markdown targets; EP-1 deliberately left it open.
+  Rationale: `okf validate --strict` now resolves a `resource` naming
+  `references/attesters/revenue.py`, because the CLI walks the directory and hands validation
+  an inventory. `Okf.Profile.validateProfile` still resolves `.md` targets only, because it
+  receives concepts and no inventory. Threading one in means changing `validateProfile`'s
+  signature and every profile test, which is wider than EP-1 needed and is recorded as
+  deliberately deferred in `docs/adr/12-frontmatter-path-resolution.md`. EP-4 already owns the
+  question of what a file under `references/` is, which is the same question seen from the
+  other side.
+  Date: 2026-08-01
+
+
 ## Outcomes & Retrospective
 
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
@@ -764,3 +837,37 @@ made once rather than arriving incidentally.
 The working tree was confirmed green before either plan was written (`cabal test all`,
 1 of 1 test suites passed), so a future failure during implementation is attributable to that
 implementation.
+
+
+## Revision note — 2026-08-01 (EP-1 complete)
+
+`docs/plans/48-resolve-path-valued-frontmatter-fields-against-the-bundle.md` is Complete, in
+commits `5248f02`, `e82e31f`, and `f196a8d`, with `cabal test all` green. The registry and
+the Progress list are updated, and `docs/adr/12-frontmatter-path-resolution.md` is the first
+of the two ADRs this initiative owes.
+
+The decomposition did not change. EP-1 delivered what it was scoped to deliver and, more to
+the point, it delivered the *narrowing* this MasterPlan's pre-implementation review asked
+for: it checks the top-level `resource` alone, and `examples/ddd-ordering` — whose §5.1 scope
+descriptor was the review's headline finding — validates clean under `--strict`. The check
+was run against all three example bundles and every fixture bundle before its acceptance
+criteria were counted, per the Decision Log entry that required it, and produced zero new
+diagnostics.
+
+Two open items the review had left dangling are now closed by decision rather than left to
+whoever gets there first, and both are recorded in the Decision Log above. Wiring the three
+attested-computation path fields into the check belongs to **EP-2**, and is three list
+entries in `Okf.Validation.pathValuedFields` rather than a mechanism. Deciding whether
+profile validation should also resolve non-Markdown targets belongs to **EP-4**, which
+already owns the `references/` question that gap is a facet of.
+
+One consequence every remaining plan inherits: `Okf.Validation.validateBundle` now takes a
+`BundleInventory` and the parameter is required, which is a breaking change to an exported
+function. Per ADR 12, Mori (`mori://shinzui/mori`) matches `ProfileViolation` rather than
+`ValidationError`, so the new `DanglingFrontmatterPath` constructor does not reach it — but a
+call to `validateBundle` would, and that must be checked before releasing rather than
+assumed.
+
+No child ExecPlan needed cascading. EP-2 was written before EP-1 landed and none of its
+content is invalidated; the one thing it gains is a named obligation, recorded here and in
+Surprises & Discoveries rather than by editing that plan mid-flight.
