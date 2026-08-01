@@ -77,7 +77,8 @@ rather than inventing their own.
 
 - [x] Milestone 1: `Okf.Actor` module exists, parses the three actor shapes, and is covered by tests (2026-07-31)
 - [x] Milestone 2: `coreFrontmatterFieldOrder` carries the six version 0.2 concept keys in a settled order; serialization tests updated (2026-07-31)
-- [ ] Milestone 3: `generated` is readable through `Okf.Document` and projected onto `Okf.Bundle.Concept`
+- [x] Milestone 3: `generated` is readable through `Okf.Document` and projected onto `Okf.Bundle.Concept` (2026-07-31)
+- [x] Milestone 3 (added): `okf show` renders the generating actor, delivering the user-visible outcome the Purpose section promises (2026-07-31)
 - [ ] Milestone 4: strict validation accepts `generated`, falls back to `timestamp`, and reports a v0.2-shaped message
 - [ ] Milestone 5: log staleness reads `generated.at` first; CLI wording no longer says "timestamp"
 - [ ] Milestone 6: authoring API can write `generated`; round-trip test proves it survives serialize-then-parse
@@ -136,6 +137,15 @@ rather than inventing their own.
   `generated` — its replacement — ahead of it in every serialized document. All six v0.2
   keys were added in this one edit even though this plan implements only `generated`, so
   the three sibling plans that add the others do not each re-edit one shared list.
+  Date: 2026-07-31
+
+- Decision: `okf show` renders the family as `generated: <actor> at <datetime>`, after
+  `tags`, via a `renderGenerated` helper in `okf-cli/src/Okf/Cli.hs`.
+  Rationale: the Purpose section promises that a user can ask who generated a concept, and
+  a projection nothing displays does not deliver that. The milestone list did not name the
+  CLI, so this was added as an extra Progress entry rather than folded silently into
+  Milestone 3. The `at` clause is omitted when `generated.at` is absent, because §5.2 does
+  not require it within the mapping.
   Date: 2026-07-31
 
 (Add further decisions as you make them. Milestone 7 below ends with a decision this plan

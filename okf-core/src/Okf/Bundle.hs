@@ -6,6 +6,7 @@ module Okf.Bundle
     conceptFromDocument,
     conceptDescription,
     conceptDocument,
+    conceptGenerated,
     conceptIdOf,
     conceptResource,
     conceptSourcePath,
@@ -49,7 +50,8 @@ data Concept = Concept
     title :: !(Maybe Text),
     description :: !(Maybe Text),
     resource :: !(Maybe Text),
-    tags :: ![Text]
+    tags :: ![Text],
+    generated :: !(Maybe Generated)
   }
   deriving stock (Generic, Eq, Show)
 
@@ -136,6 +138,12 @@ conceptResource Concept {resource} = resource
 
 conceptTags :: Concept -> [Text]
 conceptTags Concept {tags} = tags
+
+-- | The OKF v0.2 @generated@ family projected from frontmatter, or 'Nothing'
+-- when the concept carries none (or carries one without the @by@ actor that
+-- specification §5.2 requires within it).
+conceptGenerated :: Concept -> Maybe Generated
+conceptGenerated Concept {generated} = generated
 
 -- | Reserved Markdown filenames are not normal concept documents.
 isReservedMarkdownFile :: FilePath -> Bool
@@ -249,8 +257,10 @@ tryBundleIo path action = do
     )
 
 -- | Build a 'Concept' from its identity and document. The typed projection
--- fields (@type_@, @title@, @description@, @resource@, @tags@) are derived from
--- the document's frontmatter, so they can never disagree with it. The source
+-- fields (@type_@, @title@, @description@, @resource@, @tags@, @generated@) are
+-- derived from the document's frontmatter, so they can never disagree with it.
+-- A projection may only restate what frontmatter says; it may never store a
+-- derivation frontmatter does not carry. The source
 -- path is derived from the concept ID. Use this when assembling concepts in
 -- memory (for 'writeBundle' or 'Okf.Validation.validateBundle').
 conceptFromDocument :: ConceptId -> OKFDocument -> Concept
@@ -268,7 +278,8 @@ conceptAt conceptId relativePath document =
       title = optionalTextField "title" (frontmatter document),
       description = optionalTextField "description" (frontmatter document),
       resource = optionalTextField "resource" (frontmatter document),
-      tags = tagsField (frontmatter document)
+      tags = tagsField (frontmatter document),
+      generated = readGenerated (frontmatter document)
     }
 
 textField :: Text -> Frontmatter -> Text

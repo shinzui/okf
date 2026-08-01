@@ -86,6 +86,8 @@ main = do
         test "validateBundle accepts a bundle whose links all resolve" testValidateBundleAcceptsResolved,
         test "duplicateConceptIds finds repeated ids" testDuplicateConceptIds,
         test "conceptFromDocument derives typed fields from frontmatter" testConceptFromDocumentDerivesFields,
+        test "conceptGenerated projects the v0.2 generated family" testConceptGeneratedProjection,
+        test "readGenerated ignores a generated mapping with no by actor" testReadGeneratedWithoutActor,
         testIO "writeBundle then walkBundle round-trips" testWriteBundleRoundTrip,
         testIO "fixture dangling link reports a bundle validation error" testFixtureDanglingLink,
         testIO "loadProfileFile decodes the postgresql fixture" testLoadProfileFixture,
@@ -794,6 +796,33 @@ testConceptWithTimestamp rawId timestamp = do
               commonTimestamp = Just timestamp
             }
   pure (conceptFromDocument conceptId (OKFDocument frontmatterValue "# Test\n"))
+
+testConceptGeneratedProjection :: Either Text ()
+testConceptGeneratedProjection = do
+  conceptId <- parseTestConceptId "tables/orders"
+  document <-
+    firstShow
+      ( parseDocument
+          "---\ntype: BigQuery Table\ngenerated: { by: human:ahormati, at: 2026-06-20T22:53:05Z }\n---\n\n# Orders\n"
+      )
+  let concept = conceptFromDocument conceptId document
+  assertEqual
+    (Just (Generated (HumanActor "ahormati") (Just "2026-06-20T22:53:05Z")))
+    (conceptGenerated concept)
+
+testReadGeneratedWithoutActor :: Either Text ()
+testReadGeneratedWithoutActor = do
+  -- Section 5.2 makes `by` REQUIRED within `generated`, so a mapping without
+  -- one is not a Generated. Reading is silent; reporting is validation's job.
+  withoutBy <- firstShow (parseDocument "---\ntype: Recipe\ngenerated: { at: 2026-06-20T22:53:05Z }\n---\nBody\n")
+  assertEqual Nothing (readGenerated (withoutBy ^. #frontmatter))
+  notAMapping <- firstShow (parseDocument "---\ntype: Recipe\ngenerated: human:ahormati\n---\nBody\n")
+  assertEqual Nothing (readGenerated (notAMapping ^. #frontmatter))
+  -- `at` is not required within the mapping.
+  withoutAt <- firstShow (parseDocument "---\ntype: Recipe\ngenerated: { by: reference_agent/gemini-2.5-pro }\n---\nBody\n")
+  assertEqual
+    (Just (Generated (ProducerActor "reference_agent" "gemini-2.5-pro") Nothing))
+    (readGenerated (withoutAt ^. #frontmatter))
 
 testConceptFromDocumentDerivesFields :: Either Text ()
 testConceptFromDocumentDerivesFields = do

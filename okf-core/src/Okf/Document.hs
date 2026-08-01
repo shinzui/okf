@@ -10,6 +10,10 @@ module Okf.Document
     parseDocument,
     serializeDocument,
 
+    -- * OKF v0.2 trust family
+    Generated (..),
+    readGenerated,
+
     -- * Frontmatter authoring
     frontmatterFromFields,
     setField,
@@ -39,6 +43,7 @@ import Data.Text.Encoding qualified as Text.Encoding
 import Data.Vector qualified as Vector
 import Data.Yaml qualified as Yaml
 import Data.Yaml.Pretty qualified as YamlPretty
+import Okf.Actor (Actor, parseActor, renderActor)
 import Okf.Prelude hiding (setField)
 
 -- | YAML frontmatter fields. OKF allows producer-defined extension keys, so
@@ -82,6 +87,41 @@ frontmatterKeys (Frontmatter rawFields) =
 -- repeated as profile field rules.
 coreFrontmatterFields :: Set Text
 coreFrontmatterFields = Set.fromList coreFrontmatterFieldOrder
+
+-- | The OKF v0.2 @generated@ family (specification §5.2): who or what produced
+-- the concept's current content, and when.
+--
+-- @generatedAt@ stays 'Text' rather than a parsed time value for two reasons.
+-- §5.2 does not mark @at@ required within the mapping, and okf's convention is
+-- to keep frontmatter values exactly as the producer wrote them so
+-- serialization round-trips. Checking the value against ISO 8601 belongs to the
+-- profile layer, which already has an @Rfc3339Utc@ format for it.
+data Generated = Generated
+  { generatedBy :: !Actor,
+    generatedAt :: !(Maybe Text)
+  }
+  deriving stock (Generic, Eq, Show)
+
+-- | Read the @generated@ family from frontmatter.
+--
+-- Returns 'Nothing' when the key is absent, when its value is not a YAML
+-- mapping, or when the mapping has no textual @by@ — §5.2 makes @by@ REQUIRED
+-- within @generated@, so a mapping without one is not a 'Generated'. This never
+-- fails: a malformed value is simply not read, because §11 forbids rejecting a
+-- document for a malformed optional field. Reporting it is
+-- 'Okf.Validation.validateDocument''s job.
+readGenerated :: Frontmatter -> Maybe Generated
+readGenerated frontmatterValue =
+  case frontmatterLookup "generated" frontmatterValue of
+    Just (Object generatedFields) -> do
+      by <- textMember "by" generatedFields
+      pure (Generated (parseActor by) (textMember "at" generatedFields))
+    _ -> Nothing
+  where
+    textMember key members =
+      case KeyMap.lookup (AesonKey.fromText key) members of
+        Just (String value) -> Just value
+        _ -> Nothing
 
 -- | Build frontmatter from a list of @(key, value)@ pairs. Later duplicate
 -- keys overwrite earlier ones.

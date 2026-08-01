@@ -37,6 +37,7 @@ import Data.Set qualified as Set
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text.IO
 import Data.Time (defaultTimeLocale, formatTime, getCurrentTime, utctDay)
+import Okf.Actor (renderActor)
 import Okf.Bundle
 import Okf.Cli.Assist (AssistOptions, assistOptionsParser, handleAssistCommand)
 import Okf.Cli.Completions (CompletionsShell, completionsParser, handleCompletions)
@@ -53,7 +54,7 @@ import Okf.Cli.Help (HelpCommand, handleHelpCommand, helpCommandParser)
 import Okf.Cli.Kit (KitCommand, handleKitCommand, kitCommandParser)
 import Okf.Cli.Version (appVersionWithGit)
 import Okf.ConceptId
-import Okf.Document (DocumentParseError (..), Frontmatter (..), OKFDocument (..), body)
+import Okf.Document (DocumentParseError (..), Frontmatter (..), Generated (..), OKFDocument (..), body)
 import Okf.Graph (buildGraph)
 import Okf.Index
 import Okf.Log qualified as Log
@@ -1686,8 +1687,15 @@ renderConcept concept = do
   traverse_ (Text.IO.putStrLn . ("description: " <>)) (conceptDescription concept)
   traverse_ (Text.IO.putStrLn . ("resource: " <>)) (conceptResource concept)
   unless (null (conceptTags concept)) (Text.IO.putStrLn ("tags: " <> Text.intercalate ", " (conceptTags concept)))
+  traverse_ (Text.IO.putStrLn . ("generated: " <>) . renderGenerated) (conceptGenerated concept)
   Text.IO.putStrLn ""
   Text.IO.putStr (bodyText concept)
+
+-- | Render the OKF v0.2 @generated@ family as @\<actor\>@, or
+-- @\<actor\> at \<datetime\>@ when the family carries an @at@.
+renderGenerated :: Generated -> Text
+renderGenerated Generated {generatedBy, generatedAt} =
+  renderActor generatedBy <> maybe "" (" at " <>) generatedAt
 
 bodyText :: Concept -> Text
 bodyText concept =
