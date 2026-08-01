@@ -239,7 +239,48 @@ an unknown major applies no version-specific rule at all.
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+All five milestones are complete and every item in Validation and Acceptance was
+checked against a running binary rather than reasoned about.
+
+`cabal test all` passes for both suites, with seven new assertions and every
+pre-existing one still passing. `okf index okf-core/test/fixtures/valid-bundle` was
+diffed against the same command built from commit `732b86d` in a temporary git
+worktree — the plan asked for the baseline to be captured before starting and it was
+not, so it was reconstructed — and the output is byte-identical. `okf validate` on the
+same fixture still prints exactly `OK: 4 concepts`; on a copy declaring `"0.2"` it
+prints `OK: 4 concepts (okf_version 0.2)`. The data-loss sequence in Concrete Steps now
+leaves the declaration in place where before it destroyed it. The central asymmetry
+holds: a declared-0.2 bundle whose concepts carry only `timestamp` reports
+`LegacyFieldInDeclaredV2` under `--strict`, the same bundle with the declaration removed
+reports nothing, and both are silent under the default profile. A bundle declaring
+`"0.3"` is read as `0.2`; one declaring `"1.0"` emits exactly one lint under `--strict`
+and none of the four legacy lines, because an unknown major applies no version-specific
+rule. Neither is ever refused.
+
+Two things came out larger than the plan expected, both worth carrying forward.
+
+The plan framed Milestone 4 as "route the v0.1 fallbacks through one gate". The gate that
+resulted is smaller than that framing suggests, and better for it. The fallbacks
+themselves are not routed anywhere — `Okf.Document.readGenerated` and
+`Okf.Validation.conceptGeneratedDate` still tolerate `timestamp` unconditionally, exactly
+as `docs/adr/7-okf-v0-1-legacy-fallback-policy.md` says they should. What the gate decides
+is only the *second* question: whether the bundle has opted into a reading strict enough
+to complain. Trying to make a version gate control the tolerance itself would have made
+every read site version-aware for no benefit, since the tolerant read is always correct.
+
+The ADR work doubled. The plan required amending ADR 7; the version rules turned out to
+be a separate durable subject — how to read a version, where its meaning is decided, and
+why regenerating a file must not destroy what it declares — none of which is about the
+v0.1 fallback. That is now
+`docs/adr/10-okf-version-declaration-and-best-effort-reading.md`, and ADR 7 keeps its own
+subject and points at it.
+
+One thing this plan deliberately does not do, and which
+`docs/plans/43-migrate-okf-documentation-examples-and-fixtures-to-okf-v0-2.md` inherits:
+the new `--okf-version` flag and the `validate` version suffix are undocumented in
+`docs/user/cli.md`, which documents the `index` command's flags at line 130. EP-6 owns
+documenting the declaration for users, and it should add the flag to that reference at
+the same time.
 
 
 ## Context and Orientation

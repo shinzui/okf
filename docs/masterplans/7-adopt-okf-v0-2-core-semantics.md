@@ -153,7 +153,7 @@ from the signals ... not stored") and a boundary later work will be tempted to c
 | 2 | Read the OKF v0.2 verified status and stale after fields and derive trust tiers | docs/plans/39-read-the-okf-v0-2-verified-status-and-stale-after-fields-and-derive-trust-tiers.md | EP-1 | None | Complete |
 | 3 | Read the OKF v0.2 sources provenance family with credibility signals | docs/plans/40-read-the-okf-v0-2-sources-provenance-family-with-credibility-signals.md | EP-1 | EP-2 | Complete |
 | 4 | Join per claim footnote attribution to OKF v0.2 source entries | docs/plans/41-join-per-claim-footnote-attribution-to-okf-v0-2-source-entries.md | EP-3 | None | Complete |
-| 5 | Declare and honour okf version in the bundle root index | docs/plans/42-declare-and-honour-okf-version-in-the-bundle-root-index.md | EP-1 | EP-2, EP-3 | In Progress |
+| 5 | Declare and honour okf version in the bundle root index | docs/plans/42-declare-and-honour-okf-version-in-the-bundle-root-index.md | EP-1 | EP-2, EP-3 | Complete |
 | 6 | Migrate okf documentation examples and fixtures to OKF v0.2 | docs/plans/43-migrate-okf-documentation-examples-and-fixtures-to-okf-v0-2.md | EP-1, EP-2, EP-3, EP-4, EP-5 | None | Not Started |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
@@ -278,8 +278,8 @@ section carries the granular work; this list tracks the story.
 - [x] EP-3: credibility signals `author`, `usage_count`, `last_modified` are projected and surfaced (2026-07-31)
 - [x] EP-4: footnote parsing is enabled across all three CommonMark call sites without regressing link, log, or schema extraction (2026-07-31)
 - [x] EP-4: footnote labels join to `sources[].id`, and unmatched labels are reported (2026-07-31)
-- [ ] EP-5: root `index.md` carries and round-trips `okf_version`
-- [ ] EP-5: the declared version gates every v0.1 fallback through one code path
+- [x] EP-5: root `index.md` carries and round-trips `okf_version` (2026-08-01)
+- [x] EP-5: the declared version gates every v0.1 fallback through one code path (2026-08-01)
 - [ ] EP-6: README, `docs/user/`, examples, and fixtures describe v0.2, with designated legacy fixtures retained
 
 
@@ -455,6 +455,49 @@ and extensions deliberately stay per call site because `schemaSectionColumns` ne
 through the same list.
 
 
+**From EP-5's implementation, three findings, one of which narrows the gate this
+MasterPlan asked for.**
+
+*The version gate is smaller than the Integration Points section describes, and that is
+the right size.* This MasterPlan wrote that EP-5 "defines how a bundle's declared
+`okf_version` … selects between v0.1 and v0.2 reading", and that earlier plans must
+"implement its fallback as an unconditionally-applied tolerance" so that "EP-5 then routes
+them through one place". The first half held; the second turned out to be the wrong shape.
+The tolerances are *not* routed anywhere and should not be:
+`Okf.Document.readGenerated` and `Okf.Validation.conceptGeneratedDate` still read
+`timestamp` unconditionally, because a tolerant read is always the correct read. What the
+declaration decides is only the second question — whether the bundle has opted into a
+reading strict enough to *complain* about the legacy construct. So
+`Okf.Validation.versionGate` gates diagnostics, not reads, and the one question a check
+may ask it is `gateDeclaresAtLeast :: OkfVersion -> VersionGate -> Bool`. EP-6, and
+MasterPlan 9's attested computations, should register a new version-dependent
+authoring check by asking that question and should not make a read site version-aware.
+
+*A projection nobody renders is not a user-visible outcome — the third instance.* EP-1
+recorded this for `okf show`, EP-2 for `okf trust`, and EP-5 met it again: the declaration
+is worthless if a user cannot see what their bundle claims, so `okf validate` prints
+`OK: N concepts (okf_version 0.2)`. The suffix appears only when a version is declared, so
+every existing bundle's output stays byte-identical — the constraint
+`docs/adr/2-interactive-bundle-and-concept-selection.md` imposes. EP-6 inherits the
+counterpart obligation: `--okf-version` and this suffix are undocumented in
+`docs/user/cli.md`, whose `index` command reference lists that command's flags.
+
+*Preserving only what a tool can parse is still data loss.* EP-5's plan specified
+`renderRootIndex :: Maybe OkfVersion -> …`, which cannot express "keep the declaration
+that is there" when the declaration does not parse — there is no `OkfVersion` to pass, so
+the root index would be rewritten without it. The signature was kept and delegated to an
+internal function over the raw declared text, so an unparseable declaration survives
+regeneration verbatim and is reported rather than quietly deleted. The general form is
+worth carrying: any okf command that regenerates a file must round-trip what it does not
+understand in that file, and EP-6 rewrites fixtures and examples wholesale.
+
+The Integration Points note on the version gate is now settled. `Okf.Index` owns
+`OkfVersion`, `VersionDeclaration`, and `readBundleVersion`; `Okf.Validation` owns
+`versionGate` and `gateDeclaresAtLeast`, and `validateBundle` takes the declaration as a
+parameter. The rules are recorded in
+`docs/adr/10-okf-version-declaration-and-best-effort-reading.md`.
+
+
 ## Decision Log
 
 - Decision: Split OKF v0.2 adoption across three MasterPlans — this one for core
@@ -540,6 +583,31 @@ through the same list.
   derived-not-stored rule is a direct instruction of specification §5.1 and is exactly the
   boundary that a later performance optimisation would be tempted to cross.
   Date: 2026-07-31
+
+- Decision: A fourth ADR, also unplanned during decomposition, was written by EP-5:
+  `docs/adr/10-okf-version-declaration-and-best-effort-reading.md`. EP-5's plan required
+  only an amendment to `docs/adr/7-okf-v0-1-legacy-fallback-policy.md`, which was also
+  made.
+  Rationale: the amendment ADR 7 needed was one sentence's worth — whether reading a v0.1
+  construct is reported now has a two-part answer, split by the declaration. But §12's
+  reading rules (a known major with a higher minor reads as the highest known version; an
+  unknown major reads permissively and is never refused), the single-gate constraint, and
+  the rule that regenerating a file must not destroy what it declares are about *versions*
+  rather than about the v0.1 fallback. MasterPlan 9 will meet all three without caring
+  about `timestamp` at all. Keeping ADR 7 about its own subject and pointing it at ADR 10
+  left both readable alone.
+  Date: 2026-08-01
+
+- Decision: `Okf.Validation.validateBundle` takes the `VersionDeclaration` as a new
+  parameter rather than gaining a differently named sibling with a compatibility wrapper.
+  Rationale: EP-5's Idempotence section permitted the wrapper if the change rippled
+  further than expected. It did not — eight call sites, all in this repository's two test
+  suites plus `runValidate`. A wrapper would have let a caller keep the old name and
+  silently receive the undeclared reading forever, which is the distinction the whole plan
+  exists to make visible. This is a breaking library change; EP-1's finding that Mori
+  matches neither `ValidationError` nor `validateBundle` still holds, so nothing outside
+  this repository is affected.
+  Date: 2026-08-01
 
 - Decision: No 0.2 family will be made mandatory in `PermissiveConformance` mode.
   Rationale: specification §11 forbids rejecting a bundle for a missing optional family,
