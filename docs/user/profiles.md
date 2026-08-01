@@ -152,6 +152,7 @@ Each `FieldRule` — one frontmatter key, and optionally what it is for:
 | `elementFields` | `Optional NestedRules` | When present, the field must be a list whose elements are flat records checked with nested required, recommended, and optional rules. `None` means no element schema. |
 | `objectFields` | `Optional NestedRules` | When present, the field's value must itself be a mapping, whose members are checked with the same nested rules. Declaring it alongside `elementFields` accepts either spelling and checks both against the same members. `None` means no object schema. |
 | `reference` | `Optional HandleReferenceRule` | Declares that present top-level values are local handles with one prefix or absolute external URIs using an explicitly allowed scheme. Local handles must resolve inside the bundle. |
+| `path` | `Optional PathReferenceRule` | Declares that present values name a path or URI per OKF v0.2 §6.2: an absolute URL with an allowed scheme, a bundle-relative path beginning with `/`, or a relative path resolved against the concept's own directory. Distinct from `reference`, and declaring both on one key is a definition error. See [path-valued fields](#path-valued-fields). |
 | `when` | `Optional FieldCondition` | Gates only this rule's required or recommended presence check on a same-scope scalar sibling having one of `hasValue`. Present values are still constrained when the condition is false. Rejected on an `optional` rule, which has no presence check to gate. |
 
 A description is attached to the key it documents rather than kept in a parallel
@@ -176,8 +177,9 @@ Each `TypeRule`:
 Use `elementFields` when one frontmatter key contains a list of flat records,
 such as reviews. `NestedRules` has the same three presence lists as
 `FrontmatterRules` — `required`, `recommended`, and `optional` — and
-`NestedFieldRule` has the same description, vocabulary, cardinality, and
-named-format fields as `FieldRule`, but deliberately has no `elementFields`; the
+`NestedFieldRule` has the same description, vocabulary, cardinality,
+named-format, and `path` fields as `FieldRule`, but deliberately has no
+`elementFields` and no `reference`; the
 schema cannot recurse beyond one list-of-records level.
 
 ```dhall
@@ -602,6 +604,7 @@ frontmatter.required:
     cardinality: any
     format: (none)
     reference: (none)
+    path: (none)
     when: (none)
     elementFields: (none)
   - title: (none)
@@ -609,6 +612,7 @@ frontmatter.required:
     cardinality: any
     format: (none)
     reference: (none)
+    path: (none)
     when: (none)
     elementFields: (none)
   - docId: (none)
@@ -616,6 +620,7 @@ frontmatter.required:
     cardinality: any
     format: (none)
     reference: (none)
+    path: (none)
     when: (none)
     elementFields: (none)
   - status: (none)
@@ -623,6 +628,7 @@ frontmatter.required:
     cardinality: any
     format: (none)
     reference: (none)
+    path: (none)
     when: (none)
     elementFields: (none)
   - date: (none)
@@ -630,6 +636,7 @@ frontmatter.required:
     cardinality: any
     format: (none)
     reference: (none)
+    path: (none)
     when: (none)
     elementFields: (none)
 frontmatter.recommended:
@@ -638,6 +645,7 @@ frontmatter.recommended:
     cardinality: any
     format: (none)
     reference: (none)
+    path: (none)
     when: (none)
     elementFields: (none)
   - timestamp: (none)
@@ -645,6 +653,7 @@ frontmatter.recommended:
     cardinality: any
     format: (none)
     reference: (none)
+    path: (none)
     when: (none)
     elementFields: (none)
   - supersedes: (none)
@@ -652,6 +661,7 @@ frontmatter.recommended:
     cardinality: any
     format: (none)
     reference: (none)
+    path: (none)
     when: (none)
     elementFields: (none)
   - supersededBy: (none)
@@ -659,6 +669,7 @@ frontmatter.recommended:
     cardinality: any
     format: (none)
     reference: (none)
+    path: (none)
     when: (none)
     elementFields: (none)
   - originatingPlan: (none)
@@ -666,6 +677,7 @@ frontmatter.recommended:
     cardinality: any
     format: (none)
     reference: (none)
+    path: (none)
     when: (none)
     elementFields: (none)
 frontmatter.optional: (none)
@@ -706,6 +718,7 @@ frontmatter.required:
     cardinality: scalar
     format: (none)
     reference: (none)
+    path: (none)
     when: (none)
     elementFields: (none)
 frontmatter.recommended:
@@ -714,6 +727,7 @@ frontmatter.recommended:
     cardinality: scalar
     format: (none)
     reference: (none)
+    path: (none)
     when: (none)
     elementFields: (none)
 frontmatter.optional:
@@ -722,6 +736,7 @@ frontmatter.optional:
     cardinality: scalar
     format: (none)
     reference: local-prefix(ADR), external-uri-schemes([]), allow-self(false)
+    path: (none)
     when: (none)
     elementFields: (none)
 ```
@@ -1155,6 +1170,120 @@ only when both declarations allow it.
 profile: decisions/current: supersedes[1] references ADR-99, which does not exist in this bundle
 ```
 
+## Path-valued fields
+
+A `reference` names a *document handle*. A `path` names a *path or URI*, which
+OKF v0.2 specification §6.2 defines as a separate thing with its own grammar.
+Several frontmatter fields are path-valued — `resource`, `sources[].resource`,
+and the attested-computation fields `computation`, `executor.resource`, and
+`attester.resource` — and each accepts one of exactly three shapes:
+
+- an absolute URL, such as `https://wiki.acme/finance/revenue-recognition`;
+- a bundle-relative path beginning with `/`, such as `/references/policy.md`,
+  which resolves from the bundle root wherever the concept sits;
+- an ordinary relative path, such as `../computations/revenue.md`, which
+  resolves against the directory of the concept carrying it — exactly as a
+  Markdown link in that concept's body would.
+
+Declare one with `path`, which is available on a `FieldRule` and, unlike
+`reference`, on a `NestedFieldRule` too. That is the point of the rule kind:
+`sources[].resource` lives inside a list element and is unreachable from a
+top-level rule.
+
+```dhall
+let okf = ./okf-core/dhall/package.dhall
+
+let field = okf.mk.FieldRule
+
+let nested = okf.mk.NestedFieldRule
+
+in  okf.defaults.Profile::{
+    , name = "sources-are-followable"
+    , frontmatter = okf.defaults.FrontmatterRules::{
+      , required = [ field.plain "type" ]
+      , optional =
+        [ field.recordList
+            "sources"
+            okf.defaults.NestedRules::{
+            , required = [ nested.localOrExternalPath "resource" [ "https" ] ]
+            }
+        ]
+      }
+    }
+```
+
+`externalUriSchemes` lists the URL schemes the profile permits and `allowSelf`
+controls whether a path may resolve to the concept carrying it, mirroring
+`HandleReferenceRule` minus the `localPrefix` a path has no analogue for. An
+**empty scheme list means no absolute URL is permitted at all**, so
+`field.bundlePath "computation"` says "this must be a path". Both knobs default
+that way; reach for `okf.defaults.PathReferenceRule` when you want something
+else.
+
+Against a bundle whose `metric` concept lists six sources — one resolving, one
+deleted, one `https`, one `ftp`, one climbing out of the bundle, and one naming
+a Python file — that descriptor reports:
+
+```text
+profile: metric: sources[1].resource references /references/deleted-three-commits-ago.md, which does not exist in this bundle
+profile: metric: external reference at sources[3].resource uses scheme ftp, allowed schemes: [https]
+profile: metric: path at sources[4].resource climbs above the bundle root: ../../etc/passwd
+```
+
+Every diagnostic names the raw text you wrote rather than the collapsed path okf
+computed from it, so the message points at something you can find in the file.
+List failures carry the exact index. A value that is not text, and text that is
+none of the three shapes, are malformed paths.
+
+### okf checks the existence only of `.md` targets
+
+`sources[5]` above names `references/attesters/revenue.py`, which is §6.3's own
+example of the `references/` convention, and it produces **no line**. That is a
+deliberate limitation rather than an oversight. Profile validation is entirely
+offline and is handed a list of concepts — non-reserved `.md` files — and no
+filesystem handle, so okf can decide whether a path names a concept and cannot
+decide whether it names a Python script. Reporting the second as dangling would
+be a claim okf never checked. A path resolving inside the bundle to anything
+other than `.md` is therefore accepted without a check; the scheme, shape, and
+bundle-escape checks still apply to it.
+
+### A path rule and a document reference cannot be combined
+
+A value is resolved as one or the other, so declaring both on one key is
+rejected at compile time rather than silently preferring one:
+
+```text
+invalid profile definition:
+  - profile frontmatter: path at resource cannot also declare a document reference; a value is resolved as one or the other
+```
+
+Compilation likewise rejects an invalid external scheme name — at nested scope as
+well as top-level — and a `path` declared alongside a named `format`, which would
+be checked against text the path rule is already interpreting structurally.
+Matching profile and type policies intersect their external schemes and permit
+self-reference only when both allow it.
+
+### `sources[].resource` is not always a path
+
+Specification §5.1 says `sources[].resource` names "either a concrete artifact a
+consumer can follow … or a population or scope descriptor it cannot". This
+repository's own `examples/ddd-ordering` bundle uses the second form:
+
+```yaml
+resource: all order-domain terms agreed in the ordering team's glossary reviews
+```
+
+Applying a path rule to `sources[].resource` is therefore a **house decision**
+that every source must be followable. It is a legitimate convention and it is not
+what the specification requires, so a profile that adopts it is narrowing v0.2
+rather than implementing it.
+
+Dangling paths stay advisory for the same reason every profile deviation does.
+§6.1 says a consumer must tolerate a broken link because it may represent
+knowledge not yet written, and §11 forbids rejecting a bundle over one. A team
+that wants dangling frontmatter paths reported opts in by declaring the rule, and
+chooses separately whether `--profile-enforce` makes them fatal.
+
 ## The canonical schema
 
 The descriptor shape above is published as Dhall under
@@ -1239,13 +1368,15 @@ in  [ -- 1. constructors — the form to reach for
       , cardinality = okf.Cardinality.Any
       , format = None okf.FieldFormat
       , elementFields = None okf.NestedRules
+      , objectFields = None okf.NestedRules
       , reference = None okf.HandleReferenceRule
+      , path = None okf.PathReferenceRule
       , when = None okf.FieldCondition
       }
     ]
 ```
 
-`okf.mk.FieldRule` exports fourteen functions:
+`okf.mk.FieldRule` exports twenty-three functions:
 
 | Constructor | Type | Use |
 |-------------|------|-----|
@@ -1259,12 +1390,19 @@ in  [ -- 1. constructors — the form to reach for
 | `uri` | `Text -> FieldRule` | A key constrained to an absolute URI. |
 | `uriWithScheme` | `Text -> Text -> FieldRule` | A key constrained to an absolute URI with the given scheme. |
 | `documentHandle` | `Text -> Text -> FieldRule` | A key constrained to a canonical document handle with the given prefix. |
+| `actor` | `Text -> FieldRule` | A key constrained to an OKF v0.2 §7 actor. |
+| `humanActor` | `Text -> FieldRule` | A key constrained to a `human:` actor specifically. |
+| `integer` | `Text -> FieldRule` | A key constrained to an integer. |
+| `nonNegativeInteger` | `Text -> FieldRule` | A key constrained to an integer of zero or more. |
+| `boolean` | `Text -> FieldRule` | A key constrained to a boolean. |
 | `recordList` | `Text -> NestedRules -> FieldRule` | A list field whose flat record elements follow the given nested rules. |
 | `record` | `Text -> NestedRules -> FieldRule` | A field whose value is itself a flat record following the given nested rules. |
 | `recordOrList` | `Text -> NestedRules -> FieldRule` | A field written either as one flat record or as a list of them, both checked against the given nested rules. |
 | `conditional` | `FieldRule -> FieldCondition -> FieldRule` | Attach a same-scope presence condition to an existing rule. |
 | `localReference` | `Text -> Text -> FieldRule` | A local-only reference field with the given handle prefix. |
 | `localOrExternalReference` | `Text -> Text -> List Text -> FieldRule` | A local reference field with explicit external URI-scheme alternatives. |
+| `bundlePath` | `Text -> FieldRule` | A path-valued field that must be a bundle path; no absolute URL is permitted. |
+| `localOrExternalPath` | `Text -> List Text -> FieldRule` | A path-valued field that may also be an absolute URL using one of the given schemes. |
 
 **What this does and does not protect against.** Record completion and the
 constructors both shield you from *additive, defaulted* schema fields: if another

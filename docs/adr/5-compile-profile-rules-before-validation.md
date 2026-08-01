@@ -231,6 +231,76 @@ member is `MissingNestedProfileField` with a two-segment `FieldPath` such as
 payloads already say exactly the right thing and every added `ProfileViolation`
 constructor is a breaking change for exhaustive consumers.
 
+**Path-valued fields are a rule kind of their own, not a widening of document
+references.** OKF v0.2 §6.2 defines a grammar that has nothing to do with the
+`PREFIX-N` handle scheme of [ADR 1](1-profile-declared-document-ids.md): a
+path-valued field accepts an absolute URL, a bundle-relative path beginning with
+`/`, or a relative path resolved against the concept's own directory. A
+`FieldRule` therefore carries `path : Maybe PathReferenceRule` beside
+`reference : Maybe HandleReferenceRule` rather than one record with knobs
+conditional on which kind was meant. The two resolve against different things —
+a handle against the bundle's document-ID index, a path against its concept
+tree — and fail in disjoint ways.
+
+`PathReferenceRule` has exactly two knobs, `externalUriSchemes` and `allowSelf`,
+mirroring `HandleReferenceRule` minus the `localPrefix` a path has no analogue
+for. An empty scheme list already means "no absolute URL is permitted", so a
+separate must-be-a-path flag would be redundant. Because there is no prefix for
+two scopes to disagree about, the profile/type merge is **total**: schemes
+intersect and `allowSelf` combines with logical AND, and unlike
+`mergeReferenceRule` it needs no failure case and no conflicting-definition
+error.
+
+Unlike `reference`, `path` is also a member of `NestedFieldRule`. The motivating
+field, `sources[].resource`, lives inside a list element and is unreachable from
+a top-level rule, so a path rule that could not descend would not do the job it
+exists for. `reference` is deliberately *not* added there: no v0.2 field names a
+document handle at nested scope, and an unused member of a published record is a
+compatibility event bought for nothing. That asymmetry is intentional and is
+stated in the schema file itself.
+
+**okf resolves a path only to a concept, and says so rather than pretending
+otherwise.** `validateProfile` receives `[Concept]` and no filesystem handle, and
+a `Concept` is a non-reserved `.md` file, so okf can decide whether a path names
+a concept and cannot decide whether it names `references/attesters/revenue.py` —
+which is §6.3's own example of the `references/` convention. A bundle path whose
+target is not `.md` is therefore accepted without an existence check. The
+alternative, giving `validateProfile` filesystem access, would break the property
+this record states above: validation is entirely offline and performs no
+registry, filesystem, DNS, or network resolution. Every other check — the §6.2
+shape, the bundle-escape check, and the scheme allow-list — still applies to such
+a value.
+
+Three new violations are added because no existing constructor says the right
+thing: `MalformedPathReference` (not one of the three §6.2 shapes, which is a
+different claim from `MalformedDocumentReference`'s "neither a handle nor a valid
+absolute URI"), `PathEscapesBundle` (a well-formed relative path pointing outside
+the bundle, which "malformed" would send an author looking in the wrong place
+for), and `DanglingPathReference`. `ExternalReferenceSchemeNotAllowed` and
+`SelfDocumentReference` are reused, because for those two the claim and the
+payload are already exactly right. One definition error is added,
+`PathReferenceWithHandleReference`; an invalid scheme reuses
+`InvalidExternalReferenceScheme` and a path paired with a named format reuses
+`ReferenceWithFormat`, for the same reason a handle rule does — the format would
+be checked against text the path rule is already interpreting structurally. The
+reference definition-error walk, which previously visited only top-level rules,
+now descends to nested and object scope, so an invalid scheme inside
+`sources[].resource` is caught at compile time.
+
+Every path diagnostic carries the **raw text the author wrote**, not the
+collapsed path okf computed from it, so the message names something findable in
+the file — the general lesson
+[ADR 9](9-one-markdown-parse-configuration-and-source-scanned-authoring-checks.md)
+records about checks meant to catch an author's mistake.
+
+The §6.2 grammar itself lives in `Okf.Path`, exported from `okf-core`, rather
+than in `Okf.Profile` or `Okf.Graph`. `Okf.Graph.resolveLink` consumes it, and
+`Okf.Graph.isExternalUrl` deliberately stays behind: a *body* link is a heuristic
+over prose that recognizes only `http`, `https`, and `mailto` and drops anything
+unresolved in silence, per §6.1; a path *field* recognizes every scheme and
+reports one the profile did not permit. The two want opposite defaults, so they
+are two functions.
+
 
 ## Consequences
 
@@ -298,6 +368,24 @@ moving its okf pin even though it declares no actor or numeric rules. Unlike
 every earlier addition this one widens a Dhall *union* rather than a record, so
 it is not recoverable by a record-level fallback — see
 [ADR 11](11-growing-the-profile-descriptor-language.md).
+
+Path-valued reference rules add three `ProfileViolation` constructors —
+`MalformedPathReference`, `PathEscapesBundle`, and `DanglingPathReference` — and
+one `ProfileDefinitionError` constructor, `PathReferenceWithHandleReference`.
+Exhaustive consumers, including Mori's advisory renderer, must handle all four
+before moving their okf pin. `PathReferenceRule` is a new exported type but is
+not a payload of any pre-existing constructor, so unlike `Cardinality`'s `Object`
+and the `FieldFormat` additions it reaches only consumers that read
+`fieldRulePath`. Adding `path` to `FieldRule` **and** to `NestedFieldRule` is one
+closed-record Dhall migration rather than two, because a frozen generation
+freezes the whole descriptor: the pre-path generation is frozen before the
+addition and upgrades with `path = Nothing` at both levels. Every descriptor in
+this repository already used record completion, so none needed editing.
+
+This is also the first check of its kind anywhere in okf: before it, a
+frontmatter value naming a file that had been deleted was invisible to every
+check okf performed, because `Okf.Graph` reads links out of concept bodies and
+never looks at a frontmatter value.
 
 Later profile constraints extend the compiled field rule rather than scanning
 raw declarations again. Human and JSON profile display continue to preserve the

@@ -110,6 +110,17 @@ released schema ever published, and supporting it would mean a second parallel
 chain forever, so it is deliberately not supported. That is only tenable because
 the frozen fixtures name their unions literally — see the fixture rule above.
 
+**A generation freezes the whole descriptor, so touching two records is still
+one generation.** Path-valued reference rules added a `path` member to
+`FieldRule` *and* to `NestedFieldRule`, and that is one frozen generation, one
+`upgrade*` step supplying `path = Nothing` at both levels, and one fixture — not
+two of each. The frozen copy is a complete private mirror of the descriptor, so
+the unit of freezing is the descriptor rather than the record. The corollary is
+worth stating because it points the other way from intuition: a change that
+touches one record and a change that touches five cost the same in this chain, so
+there is no compatibility reason to split a coherent addition across plans. The
+reason to split is reviewability, which is a different argument.
+
 **Not every plan is a schema event.** A change that adds only a compile-time
 check, a shipped descriptor, or a renderer freezes no generation and adds no
 fixture. Requiring a fixture of such a change would be cargo cult.

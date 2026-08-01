@@ -84,7 +84,7 @@ This section must always reflect the actual current state of the work.
 - [x] Milestone 4: compile path rules, including the definition error for combining one with a handle reference, and wire reference checking into nested and object scopes (2026-08-01).
 - [x] Milestone 5: validate path values and report the four distinct failures (2026-08-01).
 - [x] Milestone 6: render the new rule kind in generated profile documentation, regenerate the committed example, and extend the CLI diagnostic vocabulary (2026-08-01).
-- [ ] Milestone 7: document the feature in `docs/user/profiles.md` and amend the ADRs.
+- [x] Milestone 7: document the feature in `docs/user/profiles.md` and amend the ADRs (2026-08-01).
 
 
 ## Surprises & Discoveries
@@ -115,6 +115,49 @@ CommonMark parser strips it — so no graph behaviour changes, which the byte-id
 before/after images confirm. Trimming lives in `Okf.Path` because a frontmatter value written
 as `resource: "  /x.md  "` is a real thing an author can write, and the profile layer is the
 caller that will see it.
+
+**The documentation drift this plan was told to look for was real, and there was more of
+it than the diagnostic-string grep would have found.** MasterPlan 7's EP-6 lesson is "a plan
+that changes a diagnostic owes a grep across `docs/`". This plan changed no existing
+diagnostic string, so that grep came back clean — and `docs/user/profiles.md` was stale
+anyway, because adding `path` to a rule changes `okf profile show`'s **fixed-shape** output,
+which the document reproduces in thirteen places. The generalised lesson: grep for the
+*shape* a change perturbs, not only for the strings it renames. Three further staleness
+items surfaced from the same reading, all predating this plan and all fixed here because
+leaving a knowingly wrong document is worse than the scope argument for leaving it:
+
+- the `okf.mk.FieldRule` constructor table said "fourteen functions" while listing sixteen,
+  and omitted the five value-format constructors added with the OKF v0.2 formats. It now
+  says twenty-three and lists twenty-three, which matches `okf-core/dhall/mk/FieldRule.dhall`;
+- the "bare record literal" example, which exists precisely to show every field spelled out,
+  had been missing `objectFields` since object rules landed and would not have typechecked.
+  It was corrected and then *run*, along with the new `bundlePath` snippet;
+- the `FieldRule` schema table gained a `path` row beside `reference`.
+
+**`okf profile show` does not render `objectFields` at all**, and that gap is left
+deliberately rather than fixed here. `renderProfileDetail` in `okf-cli/src/Okf/Cli.hs`
+renders `elementFields` as a nested block and has no `objectFields` case, so a profile using
+object rules displays them nowhere. This plan added the `path:` line to both
+`renderFieldRule` and `renderNestedFieldRule` there, but fixing the `objectFields` hole
+means adding a whole nested block to a command reviewed for something else, and the ADR rule
+about silent documentation holes is about `okf profile document` — which EP-1 *did* extend.
+Recorded for the MasterPlan to schedule.
+
+**A path rule is checked at three scopes, and the third one needed no new code.** Wiring the
+check into `checkRecordMember` — which EP-1 built as one body shared by the list-element and
+object-value walks — made `executor.resource` work at object scope for free, reported as
+`executor.resource` with no index. That is EP-1's shared-body decision paying off a second
+time.
+
+**The plan's own acceptance transcript was slightly wrong, in a way worth recording.** It
+predicted exactly three output lines from a profile declaring `sources` under `required`.
+Run as written it produces four: the second concept in the bundle, `references/policy`,
+carries no `sources` key and is reported missing it. The path diagnostics are exactly the
+three predicted. The transcript committed to `docs/user/profiles.md` declares `sources`
+under `optional` instead, which is the honest framing anyway — the section is about what a
+present value resolves to, not about presence — and produces exactly the three lines. The
+same correction was applied to the in-repository tests, which failed for the same reason on
+their first run.
 
 One finding predates implementation. `Okf.Profile.validateProfile` receives only
 `[Concept]` — no bundle root, no filesystem handle — and a `Concept` corresponds to a
@@ -195,6 +238,46 @@ Record every decision made while working on the plan.
   whoever has a motivating case.
   Date: 2026-08-01
 
+- Decision: `classifyPathReference` trims surrounding whitespace before classifying, which
+  the `Okf.Graph.resolveLink` it replaces did not do.
+  Rationale: the refactor was required to be behaviour-preserving, and this is the one place
+  it is not. It is unobservable for graph purposes, because a CommonMark link destination
+  cannot carry surrounding whitespace — the parser strips it — and the byte-identical
+  before/after `okf graph` and `okf validate --strict` images confirm no behaviour changed.
+  Trimming belongs in `Okf.Path` because the profile layer, the caller that motivated the
+  extraction, reads values an author can genuinely write as `resource: "  /x.md  "`.
+  Date: 2026-08-01
+
+- Decision: Milestone 6's `- Path:` bullet is emitted unconditionally on a top-level rule
+  and only-when-declared on a nested one.
+  Rationale: `renderFieldRule` emits a deliberately fixed bullet list so the output shape
+  never varies between profiles, and a new bullet must join it. `renderElementField` is a
+  different thing: one dense semicolon-separated line per member, where a `path: none` on
+  every member of every record would cost more than it says. A nested path policy is
+  nevertheless the motivating case for the whole rule kind, so it must be visible when it is
+  present.
+  Date: 2026-08-01
+
+- Decision: Fix three pre-existing staleness items in `docs/user/profiles.md` — the
+  constructor count and its five missing rows, and the bare record literal missing
+  `objectFields` — rather than only the ones this plan caused.
+  Rationale: they were found while doing the grep this plan was required to do, they are
+  purely documentary, and one of them is an example that would not typecheck. Leaving a
+  known-wrong count or a known-broken snippet in a document this plan is actively editing is
+  worse than the scope argument for leaving them. The one gap deliberately *not* fixed is
+  `okf profile show`'s missing `objectFields` block, which is a code change to a command
+  reviewed for something else; it is recorded in Surprises & Discoveries instead.
+  Date: 2026-08-01
+
+- Decision: The tests and the documented transcript declare the path-carrying key under
+  `optional` rather than `required`.
+  Rationale: the subject is what a present value resolves to. Declaring the key required
+  means every other concept in the bundle also reports it missing, which buries the three
+  lines the reader is meant to see and made the first test run fail on noise rather than on
+  substance. An optional rule is fully value-checked whenever the key is present, so nothing
+  under test is lost.
+  Date: 2026-08-01
+
 
 ## Outcomes & Retrospective
 
@@ -203,7 +286,64 @@ Compare the result against the original purpose. Before marking the plan complet
 distill durable project context from the Decision Log, Surprises & Discoveries, and
 this section into docs/adr/. Keep task-local execution details here.
 
-(To be filled during and after implementation.)
+**Complete on 2026-08-01, in three commits.** `b57c62e` extracted the grammar, `71c3be5`
+was the schema event, and the documentation-and-ADR commit follows. The plan predicted two
+commits and the MasterPlan's EP-2 note predicted the same; three is the honest count, and
+the third is documentation only.
+
+The purpose is met against the transcript that defined the problem. A `sources[].resource`
+naming a file deleted three commits ago used to be invisible to every check okf performed;
+it is now reported as
+`metric: sources[1].resource references /references/deleted-three-commits-ago.md, which does
+not exist in this bundle`, and a value naming a real concept, a permitted `https` URL, or a
+`.py` file each produce nothing.
+
+Every acceptance criterion the plan named was run rather than reasoned about:
+
+- **A dangling frontmatter path is reported**, and deleting the rule from the profile
+  silences it.
+- **A path rule works at nested scope**, with `sources[1].resource`-style paths — the wiring
+  that did not exist before this plan, because `NestedFieldRule` had no reference member of
+  any kind.
+- **A path rule works at object scope**, reporting `executor.resource`. This needed no
+  scope-specific code: EP-1's shared `checkRecordMember` body carried it.
+- **A non-Markdown target is accepted**, and `docs/user/profiles.md` has a subsection saying
+  why rather than leaving it to be discovered.
+- **A handle rule and a path rule cannot be combined**, printed as
+  `path at resource cannot also declare a document reference; a value is resolved as one or
+  the other`.
+- **Graph behaviour is unchanged**: `okf graph … --json` over
+  `okf-core/test/fixtures/valid-bundle` is byte-identical before and after Milestone 2, and
+  every pre-existing link test passes unedited.
+- **Core validation is unchanged**: `okf validate … --strict` over the same bundle is
+  byte-identical across the whole plan.
+- **The frozen fixture still loads unedited**, and so does every pre-existing one. The new
+  fixture was verified by negative control — removing the fallback decoder makes its test
+  fail with `failed to load frozen pre-path profile` — which is the check ADR 11 requires
+  and the only thing that distinguishes a real freeze from a test of the current decoder.
+- **`cabal test all` is green at 192 tests**, including the regenerated byte-comparison
+  drift test against `examples/postgresql-profile/`.
+
+Three lessons this plan inherited from the MasterPlan held, and one generalised.
+
+The two the MasterPlan predicted exactly. **One commit per schema event** was right for the
+reason given: `upgradePrePathProfileFrontmatter` constructs a current-shape `FieldRule` and
+does not compile before `path` exists, so freezing and adding could not be split. And
+**grepping build output for `atterns` rather than `error`** paid immediately: the library and
+CLI executable both compiled clean while `renderProfileViolation` and
+`renderProfileDefinitionError` were silently non-exhaustive over four new constructors.
+
+The one that generalised is EP-6's documentation-drift lesson, and the generalisation is the
+most transferable thing here. "Grep `docs/` for any diagnostic string this plan changes"
+returns nothing when a plan only *adds* diagnostics — and the document was stale anyway,
+because a fixed-shape renderer means adding a field perturbs output that has nothing to do
+with the field. The rule that would have caught it is **grep for the shape a change
+perturbs, not only for the strings it renames**.
+
+One thing the plan got slightly wrong and one thing it left undone are recorded above: its
+acceptance transcript predicted three output lines from a profile that produces four, and
+`okf profile show` still renders no `objectFields` block, which is EP-1's hole rather than
+this plan's but is now written down instead of merely true.
 
 
 ## Context and Orientation

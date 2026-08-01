@@ -219,7 +219,7 @@ upgrade shims.
 |---|-------|------|-----------|-----------|--------|
 | 1 | Validate nested rules on scalar object fields | docs/plans/44-validate-nested-rules-on-scalar-object-fields.md | None | None | Complete |
 | 2 | Add the actor field format and non-textual value constraints | docs/plans/45-add-the-actor-field-format-and-non-textual-value-constraints.md | EP-1 | None | Complete |
-| 3 | Add path valued reference rules distinct from document handles | docs/plans/46-add-path-valued-reference-rules-distinct-from-document-handles.md | EP-1 | EP-2 | In Progress |
+| 3 | Add path valued reference rules distinct from document handles | docs/plans/46-add-path-valued-reference-rules-distinct-from-document-handles.md | EP-1 | EP-2 | Complete |
 | 4 | Enforce the profile declared okfVersion and ship a v0.2 reference profile | docs/plans/47-enforce-the-profile-declared-okfversion-and-ship-a-v0-2-reference-profile.md | EP-1, EP-2, EP-3 | None | Not Started |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
@@ -383,8 +383,8 @@ section carries the granular work; this list tracks the story.
 - [x] EP-2: a profile can require a value to be a well-formed specification §7 actor, or specifically a `human:` actor (2026-08-01)
 - [x] EP-2: a profile can constrain a numeric or boolean value, and can require such a key at all (2026-08-01)
 - [x] EP-2: the frozen five-alternative `FieldFormat` union still loads through every earlier generation (2026-08-01)
-- [ ] EP-3: a profile can require a path-valued field to resolve inside the bundle or to an allowed external scheme, at top-level, nested, and object scope
-- [ ] EP-3: `Okf.Path` exports the specification §6.2 grammar and `Okf.Graph` behaviour is unchanged
+- [x] EP-3: a profile can require a path-valued field to resolve inside the bundle or to an allowed external scheme, at top-level, nested, and object scope (2026-08-01)
+- [x] EP-3: `Okf.Path` exports the specification §6.2 grammar and `Okf.Graph` behaviour is unchanged (2026-08-01)
 - [ ] EP-4: a profile whose declared `okfVersion` contradicts the rules it uses is rejected at compile time, in both directions
 - [ ] EP-4: the shipped PostgreSQL profile and the shipped PostgreSQL example bundle agree again
 - [ ] EP-4: a shipped v0.2 reference profile validates `examples/ddd-ordering` end to end, under test
@@ -541,6 +541,50 @@ Milestones 2, 3, and 4 together, because publishing union alternatives without i
 their match leaves a non-exhaustive `textMatchesFormat` — a state worth passing through and not
 worth committing. Milestone 1 stayed separate because it is green on its own. **EP-3 should
 expect two commits, not five.**
+
+**EP-3 delivered, and its central finding sharpens a lesson this MasterPlan had already
+written down twice.** The inherited rule was MasterPlan 7 EP-6's: a plan that changes a
+diagnostic message owes a grep for that message across `docs/`. EP-3 changed no existing
+diagnostic — it only added constructors — so that grep came back clean, and
+`docs/user/profiles.md` was stale anyway in **thirteen** places. The cause is structural
+rather than incidental: `renderProfileDetail` and `Okf.Profile.Documentation.renderFieldRule`
+both emit deliberately *fixed-shape* output so it stays reliable to eyeball and grep, which
+means adding any rule member perturbs output for every profile, including transcripts about
+something else entirely. The rule that would have caught it, and which EP-4 must apply:
+**grep for the shape a change perturbs, not only for the strings it renames.** EP-4 ships a
+reference profile and migrates `docs/profiles/postgresql.dhall`, so it perturbs both fixed
+shapes.
+
+Reading for that drift surfaced three pre-existing documentation faults, all fixed in EP-3
+because leaving a knowingly wrong document is worse than the scope argument for leaving it:
+the `okf.mk.FieldRule` constructor table said "fourteen functions" while listing sixteen and
+omitting EP-2's five; the "bare record literal" example — which exists precisely to show
+every field spelled out — had been missing `objectFields` since EP-1 and would not have
+typechecked; and the `FieldRule` schema table had no row for the new member. EP-4 should
+expect to re-check the same three artifacts rather than assume EP-3 left them correct
+forever.
+
+**One real gap is left open for the MasterPlan to schedule: `okf profile show` renders no
+`objectFields` block at all.** `renderProfileDetail` in `okf-cli/src/Okf/Cli.hs` renders
+`elementFields` as a nested block and has no `objectFields` case, so a profile using EP-1's
+object rules displays them nowhere in that command. EP-3 added its own `path:` line there
+and deliberately did not fix EP-1's hole, because it is a code change to a command reviewed
+for something else, and because this MasterPlan's renderer obligation is stated about
+`okf profile document` — which EP-1 did extend. It is a small addition and a natural fit for
+EP-4, which is already the plan that touches shipped descriptors and their display.
+
+**Two EP-3 findings are smaller but concrete.** *A generation freezes the whole descriptor,
+so touching two records is one generation, not two.* EP-3 added `path` to `FieldRule` and to
+`NestedFieldRule` and paid for one frozen copy, one `upgrade*` step, and one fixture. The
+corollary points against intuition and is now in ADR 11: there is no *compatibility* reason
+to split a coherent addition across plans, because the chain costs the same either way — the
+reason to split is reviewability, which is a different argument. And *the third scope came
+free*: wiring the path check into EP-1's shared `checkRecordMember` body made object scope
+work with no scope-specific code, which is EP-1's one-body decision paying off a second time.
+
+EP-2's "expect two commits, not five" was close. EP-3 took three: the `Okf.Path` extraction
+is genuinely green on its own, the schema event is one commit for the reason EP-1 found, and
+documentation is the third. **EP-4, which freezes no generation, should expect one or two.**
 
 **Three lessons inherited from MasterPlan 7 are written into every child plan rather than
 left to be rediscovered.** A projection nobody renders is not a user-visible outcome, which
@@ -741,6 +785,28 @@ which is why EP-4's reference profile ships with a test that validates it agains
   Date: 2026-08-01
 
 
+- Decision: A frozen generation is the unit of freezing, so a change touching two published
+  records is one generation rather than two.
+  Rationale: discovered while implementing EP-3, which added `path` to both `FieldRule` and
+  `NestedFieldRule`. A frozen generation is a complete private mirror of the descriptor, so
+  its cost is one copy, one `upgrade*`, and one fixture whether the change touched one record
+  or five. The consequence is the one worth recording, because it points against intuition:
+  splitting a coherent addition across plans buys nothing in compatibility terms and doubles
+  the most expensive kind of event in this initiative. Reviewability remains a legitimate
+  reason to split, and is the reason this MasterPlan's decomposition actually gives.
+  Date: 2026-08-01
+
+- Decision: EP-3 fixes three pre-existing documentation faults it found while grepping, and
+  deliberately leaves one code-level gap for EP-4.
+  Rationale: the three — a wrong constructor count, five undocumented constructors, and a
+  bare record literal that would not typecheck — are purely documentary and were found in a
+  file EP-3 was already editing, so leaving them known-wrong was the worse option. The gap
+  left open is that `okf profile show` renders no `objectFields` block, which is a code change
+  to a command reviewed for something else and is EP-1's hole rather than EP-3's. Writing it
+  down converts it from an invisible defect into scheduled work.
+  Date: 2026-08-01
+
+
 ## Outcomes & Retrospective
 
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
@@ -791,6 +857,34 @@ The predicted "EP-2 needs no renderer change" was confirmed rather than assumed,
 both render sites and by generating documentation for a profile that uses the new formats and
 validating it against the meta-profile under `--profile-enforce`. That prediction is the one
 place this MasterPlan told a plan to verify rather than trust, and it paid for itself cheaply.
+
+
+**EP-3 complete, 2026-08-01, in three commits (`b57c62e` through the documentation commit).**
+The third of the four expressiveness gaps is closed, and it is the one that was not merely a
+missing vocabulary but a missing *check*: before this plan, a `sources[].resource` naming a
+file deleted three commits ago passed everything okf performed, and no profile could be
+written that would notice. A profile can now demand that a path-valued field resolve inside
+the bundle or to an allowed external scheme, at top-level, list-element, and object scope, so
+`sources[].resource`, `executor.resource`, and `attester.resource` are all expressible.
+
+Three coordination judgments this MasterPlan made were tested by EP-3 and held. **Keeping
+path references separate from value formats was right, and for the stated reason**: the rule
+kind turned out to need a bundle-wide concept index, a resolution step, and four distinct
+failure modes, none of which a `FieldFormat` alternative could have carried — and it added
+records only, so it never faced EP-2's union problem. **The ordering constraint held again**:
+EP-3 extended the chain EP-2 left and needed no rework of it, which is now three consecutive
+plans for which that has been true. **Doing object rules first paid a third time**: EP-1's
+decision to check list-element and object members through one shared body meant object scope
+needed no code of its own here.
+
+The cross-MasterPlan obligation is discharged. `okf-core/src/Okf/Path.hs` exists, exports
+`classifyPathReference` and `collapseBundlePath`, and
+`docs/masterplans/9-support-okf-v0-2-attested-computations.md`'s Surprises & Discoveries now
+names it as the resolver its EP-1 must extend rather than copy — including the two things
+that plan must not get wrong, that `isExternalUrl` deliberately stayed behind in `Okf.Graph`
+and that non-Markdown existence checking is deliberately unfinished and belongs to it.
+`Okf.Graph` behaviour is byte-identical before and after, which is the only evidence that
+claim is worth anything.
 
 
 ## Revision note — 2026-08-01
@@ -892,3 +986,39 @@ two violations rather than one. EP-1's "one commit per schema event" correction 
 generalised — EP-2 committed three milestones together because publishing union alternatives
 without implementing their match leaves a non-exhaustive case expression, so **EP-3 should
 expect two commits, not five.**
+
+
+## Revision note — 2026-08-01 (EP-3 complete)
+
+`docs/plans/46-add-path-valued-reference-rules-distinct-from-document-handles.md` is
+Complete, in three commits from `b57c62e`. The Exec-Plan Registry, the Progress list,
+Surprises & Discoveries, the Decision Log, and Outcomes & Retrospective are all updated;
+`docs/adr/5-compile-profile-rules-before-validation.md` and
+`docs/adr/11-growing-the-profile-descriptor-language.md` are both amended, and
+`docs/masterplans/9-support-okf-v0-2-attested-computations.md` records `Okf.Path` as the
+resolver its EP-1 must extend.
+
+Two things changed in this document beyond marking progress, and both change what EP-4 must
+do rather than only what it should expect.
+
+The documentation-drift lesson this MasterPlan inherited from MasterPlan 7 is too narrow as
+written. "Grep `docs/` for any diagnostic string this plan changes" returns nothing for a
+plan that only *adds* diagnostics, and `docs/user/profiles.md` was stale in thirteen places
+anyway — because `renderProfileDetail` and `renderFieldRule` both emit deliberately
+fixed-shape output, so adding any rule member perturbs transcripts about unrelated features.
+**EP-4 must grep for the shape a change perturbs, not only for the strings it renames**, and
+should expect to re-check the `okf.mk.FieldRule` constructor table, the bare-record-literal
+example, and the `FieldRule` schema table, all three of which EP-3 found stale from earlier
+plans and repaired.
+
+One genuine gap is now scheduled rather than merely true: **`okf profile show` renders no
+`objectFields` block at all**, which is EP-1's hole and a natural fit for EP-4, the plan that
+already touches shipped descriptors and their display.
+
+Two smaller EP-3 findings are recorded in Surprises & Discoveries and the Decision Log: a
+frozen generation is the unit of freezing, so adding a member to two published records is one
+generation and not two — which means splitting a coherent addition across plans buys nothing
+in compatibility terms; and object scope needed no scope-specific validation code, because
+EP-1 built list-element and object member checking as one shared body. EP-2's "expect two
+commits" was close — EP-3 took three, the extra one being documentation — and **EP-4, which
+freezes no generation, should expect one or two.**

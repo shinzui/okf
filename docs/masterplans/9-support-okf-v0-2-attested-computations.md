@@ -307,6 +307,44 @@ value is ever resolved by any code path in the repository. That means the v0.2
 MasterPlan's EP-1 lands, which is why EP-1 is written as a standalone capability with
 acceptance criteria that never mention attested computations.
 
+**`Okf.Path` now exists, and EP-1 must extend it rather than write its own resolver.**
+`docs/plans/46-add-path-valued-reference-rules-distinct-from-document-handles.md` — EP-3 of
+`docs/masterplans/8-extend-okf-profiles-for-v0-2-field-families.md`, complete 2026-08-01 —
+landed the extraction this MasterPlan's Integration Points section asked for. The new
+exposed module `okf-core/src/Okf/Path.hs` exports:
+
+```haskell
+data PathReference = ExternalUrl !Text | BundlePath !FilePath | EscapesBundle | MalformedPath
+classifyPathReference :: ConceptId -> Text -> PathReference
+collapseBundlePath :: FilePath -> Maybe FilePath
+```
+
+`classifyPathReference` is total and offline and decides only what §6.2 *shape* a value
+has; it never decides whether a target exists, because what counts as existing depends on
+what the caller can see. That is the seam EP-1 extends. Three things it must know.
+
+First, **`Okf.Graph.isExternalUrl` deliberately did not move.** It recognizes only `http`,
+`https`, and `mailto`, which is right for a Markdown-link heuristic over prose and wrong for
+§6.2, where any absolute URL is permitted subject to the caller's policy. `resolveLink` now
+calls `classifyPathReference` but still guards with `isExternalUrl` first, and a comment
+there says why. EP-1 should use `classifyPathReference` and leave `isExternalUrl` alone.
+
+Second, **existence checking is deliberately unfinished and EP-1 owns finishing it.**
+`Okf.Profile` resolves a `BundlePath` only when it ends in `.md`, because `validateProfile`
+receives `[Concept]` and no filesystem handle, and a `Concept` is a non-reserved `.md` file.
+A path naming `references/attesters/revenue.py` — §6.3's own example — is accepted without
+a check, and `docs/user/profiles.md` states that as a limitation rather than leaving it to
+be discovered. The general question of non-Markdown files in a bundle is this MasterPlan's
+EP-1's, and MasterPlan 8 EP-3 was explicitly forbidden from pre-empting it.
+
+Third, **a profile can already demand a path-valued field, at three scopes.** `FieldRule`
+and `NestedFieldRule` both carry `path : Optional PathReferenceRule`, so
+`executor.resource`, `attester.resource`, and `computation` are all expressible as house
+conventions today, with `ProfileViolation` constructors `MalformedPathReference`,
+`PathEscapesBundle`, and `DanglingPathReference`. EP-1's job is the *core* check that needs
+no profile, so it should reuse those violation names' phrasing where it reports the same
+claim, and must not duplicate the profile-side machinery.
+
 
 ## Decision Log
 
