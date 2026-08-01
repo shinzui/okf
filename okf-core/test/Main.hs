@@ -92,6 +92,8 @@ main = do
         test "readGenerated ignores a generated mapping with no by actor" testReadGeneratedWithoutActor,
         test "readVerified reads a list and normalises a bare mapping to one element" testReadVerifiedShapes,
         test "setVerified always writes a list and round-trips" testVerifiedRoundTrip,
+        test "readStatus defaults to stable and preserves an unknown value" testReadStatus,
+        test "readStaleAfter reads the date verbatim" testReadStaleAfter,
         testIO "writeBundle then walkBundle round-trips" testWriteBundleRoundTrip,
         testIO "fixture dangling link reports a bundle validation error" testFixtureDanglingLink,
         testIO "loadProfileFile decodes the postgresql fixture" testLoadProfileFixture,
@@ -931,6 +933,45 @@ testVerifiedRoundTrip = do
   assertBool
     ("single entry not written as a list: " <> serializeDocument single)
     (isJust (substringIndex "- by:" (serializeDocument single)))
+
+testReadStatus :: Either Text ()
+testReadStatus = do
+  let statusIn source = readStatus . (^. #frontmatter) <$> firstShow (parseDocument source)
+      withStatus value = statusIn ("---\ntype: Recipe\nstatus: " <> value <> "\n---\nBody\n")
+  for_
+    [("draft", Draft), ("stable", Stable), ("deprecated", Deprecated)]
+    (\(text, expected) -> withStatus text >>= assertEqual expected)
+  -- Section 5.4: "Absent `status` => `stable`."
+  absent <- statusIn "---\ntype: Recipe\n---\nBody\n"
+  assertEqual Stable absent
+  -- Section 11 forbids rejecting for an unexpected optional value, and the
+  -- original text must survive so renderStatus reproduces it.
+  unknown <- withStatus "archived"
+  assertEqual (UnknownStatus "archived") unknown
+  assertEqual "archived" (renderStatus unknown)
+  -- Case-sensitive, consistent with the section 7 actor convention.
+  wrongCase <- withStatus "Stable"
+  assertEqual (UnknownStatus "Stable") wrongCase
+  -- renderStatus inverts readStatus on every value it can read back.
+  for_
+    [Draft, Stable, Deprecated, UnknownStatus "archived"]
+    (\value -> withStatus (renderStatus value) >>= assertEqual value)
+
+testReadStaleAfter :: Either Text ()
+testReadStaleAfter = do
+  let staleAfterIn source = readStaleAfter . (^. #frontmatter) <$> firstShow (parseDocument source)
+  present <- staleAfterIn "---\ntype: Recipe\nstale_after: 2026-09-23\n---\nBody\n"
+  assertEqual (Just "2026-09-23") present
+  absent <- staleAfterIn "---\ntype: Recipe\n---\nBody\n"
+  assertEqual Nothing absent
+  -- Read verbatim and not parsed here: a malformed date must survive to be
+  -- reported by Okf.Trust.staleness rather than vanish on serialization.
+  malformed <- staleAfterIn "---\ntype: Recipe\nstale_after: not-a-date\n---\nBody\n"
+  assertEqual (Just "not-a-date") malformed
+  let built = setStaleAfter "2026-09-23" (setStatus Deprecated emptyFrontmatter)
+  reparsed <- firstShow (parseDocument (serializeDocument (OKFDocument built "# Demo\n")))
+  assertEqual (Just "2026-09-23") (readStaleAfter (reparsed ^. #frontmatter))
+  assertEqual Deprecated (readStatus (reparsed ^. #frontmatter))
 
 testConceptFromDocumentDerivesFields :: Either Text ()
 testConceptFromDocumentDerivesFields = do

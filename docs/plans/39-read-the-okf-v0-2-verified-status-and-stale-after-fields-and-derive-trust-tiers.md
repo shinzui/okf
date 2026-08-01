@@ -65,7 +65,7 @@ the separate "profile" mechanism.
 ## Progress
 
 - [x] Milestone 1: `verified` reads as a list, with a bare mapping normalised to one element (2026-07-31)
-- [ ] Milestone 2: `status` and `stale_after` read, with absent `status` defaulting to stable
+- [x] Milestone 2: `status` and `stale_after` read, with absent `status` defaulting to stable (2026-07-31)
 - [ ] Milestone 3: trust tiers derive from `verified` per specification §5.3
 - [ ] Milestone 4: staleness derives from `stale_after` against a caller-supplied date
 - [ ] Milestone 5: `okf trust` command and `okf show` additions surface all four derivations
@@ -100,6 +100,24 @@ the separate "profile" mechanism.
   prerequisite plan had written a private `textMember` helper inside `readGenerated` that this
   plan would otherwise have duplicated verbatim. One shape, one implementation; a future
   divergence between them would be a specification change, not a local edit.
+  Date: 2026-07-31
+
+- Decision: `readStatus` matches the three §5.4 values case-sensitively, so `Stable` reads as
+  `UnknownStatus "Stable"`.
+  Rationale: consistent with the actor convention decision recorded in
+  `docs/plans/38-migrate-the-concept-timestamp-to-the-okf-v0-2-generated-field.md`. The
+  specification writes all three in lower case, and accepting other casings silently would
+  hide a producer bug that `UnknownStatus` surfaces. Nothing is rejected either way — §11
+  forbids that — so the only question is whether the deviation is visible, and it should be.
+  Date: 2026-07-31
+
+- Decision: Added `renderStatus :: Status -> Text` beyond the signatures the plan's Interfaces
+  section names.
+  Rationale: `setStatus` must turn a `Status` back into text, and `UnknownStatus` exists
+  precisely so the producer's original wording survives that trip. Writing the inverse inline
+  inside `setStatus` would have left the CLI needing its own copy for display. The plan's
+  Interfaces list is a floor, not a ceiling; `readStatus`, `readStaleAfter`, `setStatus`, and
+  `setStaleAfter` all exist with the exact signatures given.
   Date: 2026-07-31
 
 (Add further decisions as you make them. Milestones 4 and 6 each end with a decision this

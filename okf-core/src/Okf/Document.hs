@@ -16,6 +16,12 @@ module Okf.Document
     Verification (..),
     readVerified,
 
+    -- * OKF v0.2 lifecycle family
+    Status (..),
+    readStatus,
+    renderStatus,
+    readStaleAfter,
+
     -- * Frontmatter authoring
     frontmatterFromFields,
     setField,
@@ -28,6 +34,8 @@ module Okf.Document
     setTimestamp,
     setGenerated,
     setVerified,
+    setStatus,
+    setStaleAfter,
     setResource,
     setTags,
   )
@@ -163,6 +171,60 @@ readVerified frontmatterValue =
         pure (Verification (parseActor by) (objectText "at" entryFields))
       _ -> Nothing
 
+-- | The OKF v0.2 @status@ lifecycle field (specification §5.4).
+--
+-- 'UnknownStatus' carries a value outside the three the specification names,
+-- verbatim. §11 forbids rejecting a concept for an unexpected optional value,
+-- and preserving the text is what lets 'renderStatus' reproduce exactly what
+-- the producer wrote.
+data Status
+  = -- | @draft@: not yet reviewed; possibly incomplete.
+    Draft
+  | -- | @stable@: ready for consumption. Also the value an absent key means.
+    Stable
+  | -- | @deprecated@: kept for links and history; no longer current.
+    Deprecated
+  | -- | A value outside the three named in §5.4, preserved as written.
+    UnknownStatus !Text
+  deriving stock (Generic, Eq, Ord, Show)
+
+-- | Read the OKF v0.2 @status@ field (specification §5.4).
+--
+-- An absent key, or a value that is not text, yields 'Stable': §5.4 states
+-- "Absent @status@ ⇒ @stable@". Matching is case-sensitive, consistent with the
+-- actor convention of §7 — the specification writes all three values in lower
+-- case, and a case-insensitive match would quietly accept a value it should
+-- surface as unknown.
+readStatus :: Frontmatter -> Status
+readStatus frontmatterValue =
+  case frontmatterLookup "status" frontmatterValue of
+    Just (String "draft") -> Draft
+    Just (String "stable") -> Stable
+    Just (String "deprecated") -> Deprecated
+    Just (String other) -> UnknownStatus other
+    _ -> Stable
+
+-- | Render a status back to the text a producer wrote. Inverse of 'readStatus'
+-- on every value except an absent key, which reads as 'Stable'.
+renderStatus :: Status -> Text
+renderStatus = \case
+  Draft -> "draft"
+  Stable -> "stable"
+  Deprecated -> "deprecated"
+  UnknownStatus other -> other
+
+-- | Read the OKF v0.2 @stale_after@ field (specification §5.5) verbatim.
+--
+-- Deliberately unparsed. §5.5 specifies an absolute @YYYY-MM-DD@ date, but
+-- parsing here would either lose a malformed value on serialization or force
+-- this total reader to fail. Interpreting the date is 'Okf.Trust.staleness''s
+-- job, where a comparison is actually needed.
+readStaleAfter :: Frontmatter -> Maybe Text
+readStaleAfter frontmatterValue =
+  case frontmatterLookup "stale_after" frontmatterValue of
+    Just (String value) -> Just value
+    _ -> Nothing
+
 objectText :: Text -> KeyMap.KeyMap Value -> Maybe Text
 objectText key members =
   case KeyMap.lookup (AesonKey.fromText key) members of
@@ -247,6 +309,15 @@ setVerified verifications =
   where
     entryValue Verification {verificationBy, verificationAt} =
       actorMapping verificationBy verificationAt
+
+-- | Set the OKF v0.2 @status@ field (specification §5.4).
+setStatus :: Status -> Frontmatter -> Frontmatter
+setStatus status = setField "status" (String (renderStatus status))
+
+-- | Set the OKF v0.2 @stale_after@ field (specification §5.5). The value is an
+-- absolute @YYYY-MM-DD@ date; it is written as given and not validated here.
+setStaleAfter :: Text -> Frontmatter -> Frontmatter
+setStaleAfter value = setField "stale_after" (String value)
 
 -- | A @{ by, at }@ YAML mapping, omitting @at@ when absent. Shared by the
 -- @generated@ and @verified@ families, which specification §5.2 gives the same

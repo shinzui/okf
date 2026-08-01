@@ -10,6 +10,8 @@ module Okf.Bundle
     conceptIdOf,
     conceptResource,
     conceptSourcePath,
+    conceptStaleAfter,
+    conceptStatus,
     conceptTags,
     conceptTitle,
     conceptType,
@@ -53,7 +55,9 @@ data Concept = Concept
     resource :: !(Maybe Text),
     tags :: ![Text],
     generated :: !(Maybe Generated),
-    verified :: ![Verification]
+    verified :: ![Verification],
+    status :: !Status,
+    staleAfter :: !(Maybe Text)
   }
   deriving stock (Generic, Eq, Show)
 
@@ -157,6 +161,16 @@ conceptGenerated Concept {generated} = generated
 -- @Okf.Trust.trustTier . conceptVerified@.
 conceptVerified :: Concept -> [Verification]
 conceptVerified Concept {verified} = verified
+
+-- | The OKF v0.2 @status@ lifecycle field, 'Stable' when the concept carries
+-- none (specification §5.4).
+conceptStatus :: Concept -> Status
+conceptStatus Concept {status} = status
+
+-- | The OKF v0.2 @stale_after@ date read verbatim (specification §5.5).
+-- Interpreting it against a calendar day is 'Okf.Trust.staleness''s job.
+conceptStaleAfter :: Concept -> Maybe Text
+conceptStaleAfter Concept {staleAfter} = staleAfter
 
 -- | Reserved Markdown filenames are not normal concept documents.
 isReservedMarkdownFile :: FilePath -> Bool
@@ -271,8 +285,8 @@ tryBundleIo path action = do
 
 -- | Build a 'Concept' from its identity and document. The typed projection
 -- fields (@type_@, @title@, @description@, @resource@, @tags@, @generated@,
--- @verified@) are derived from the document's frontmatter, so they can never
--- disagree with it.
+-- @verified@, @status@, @staleAfter@) are derived from the document's
+-- frontmatter, so they can never disagree with it.
 -- A projection may only restate what frontmatter says; it may never store a
 -- derivation frontmatter does not carry. The source
 -- path is derived from the concept ID. Use this when assembling concepts in
@@ -294,7 +308,9 @@ conceptAt conceptId relativePath document =
       resource = optionalTextField "resource" (frontmatter document),
       tags = tagsField (frontmatter document),
       generated = readGenerated (frontmatter document),
-      verified = readVerified (frontmatter document)
+      verified = readVerified (frontmatter document),
+      status = readStatus (frontmatter document),
+      staleAfter = readStaleAfter (frontmatter document)
     }
 
 textField :: Text -> Frontmatter -> Text
