@@ -154,7 +154,7 @@ from the signals ... not stored") and a boundary later work will be tempted to c
 | 3 | Read the OKF v0.2 sources provenance family with credibility signals | docs/plans/40-read-the-okf-v0-2-sources-provenance-family-with-credibility-signals.md | EP-1 | EP-2 | Complete |
 | 4 | Join per claim footnote attribution to OKF v0.2 source entries | docs/plans/41-join-per-claim-footnote-attribution-to-okf-v0-2-source-entries.md | EP-3 | None | Complete |
 | 5 | Declare and honour okf version in the bundle root index | docs/plans/42-declare-and-honour-okf-version-in-the-bundle-root-index.md | EP-1 | EP-2, EP-3 | Complete |
-| 6 | Migrate okf documentation examples and fixtures to OKF v0.2 | docs/plans/43-migrate-okf-documentation-examples-and-fixtures-to-okf-v0-2.md | EP-1, EP-2, EP-3, EP-4, EP-5 | None | In Progress |
+| 6 | Migrate okf documentation examples and fixtures to OKF v0.2 | docs/plans/43-migrate-okf-documentation-examples-and-fixtures-to-okf-v0-2.md | EP-1, EP-2, EP-3, EP-4, EP-5 | None | Complete |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
 Hard Deps and Soft Deps reference other rows by their # prefix (e.g., EP-1, EP-3).
@@ -280,7 +280,7 @@ section carries the granular work; this list tracks the story.
 - [x] EP-4: footnote labels join to `sources[].id`, and unmatched labels are reported (2026-07-31)
 - [x] EP-5: root `index.md` carries and round-trips `okf_version` (2026-08-01)
 - [x] EP-5: the declared version gates every v0.1 fallback through one code path (2026-08-01)
-- [ ] EP-6: README, `docs/user/`, examples, and fixtures describe v0.2, with designated legacy fixtures retained
+- [x] EP-6: README, `docs/user/`, examples, and fixtures describe v0.2, with designated legacy fixtures retained (2026-08-01)
 
 
 ## Surprises & Discoveries
@@ -498,6 +498,28 @@ parameter. The rules are recorded in
 `docs/adr/10-okf-version-declaration-and-best-effort-reading.md`.
 
 
+**From EP-6's implementation, two findings that outlive this initiative.**
+
+*Documentation decays from underneath, and only a plan that re-runs its transcripts
+notices.* EP-6's rule that every transcript must be one you actually ran turned up three
+in `docs/user/profiles.md` that had silently stopped reproducing. Two were EP-1's doing —
+strict validation now says `missing generated field (or legacy timestamp)` rather than
+`missing recommended field: timestamp`, and the log advisory says `generated date` rather
+than `timestamp date` — and neither EP-1 nor any reviewer noticed, because `profiles.md`
+was nobody's file. The general form for MasterPlan 8 and 9: a plan that changes a
+diagnostic message owes a grep for that message across `docs/`, and a plan that writes
+documentation should re-run the transcripts it did not write.
+
+*The examples, not the code, were where the initiative's claims were weakest.* EP-6 was
+written as the last chance to notice that something documented does not work. What it
+found was that `examples/ddd-ordering` had never passed `--strict` (two bounded contexts
+carried a type-specific `purpose` and no OKF `description`) and that
+`examples/postgresql-sample` carried no date at all. Nothing the five feature plans built
+turned out to be broken. Shipped examples are user-facing surface with no test behind
+them; MasterPlan 9 should validate its example bundles as an acceptance step rather than
+assuming they are exercised.
+
+
 ## Decision Log
 
 - Decision: Split OKF v0.2 adoption across three MasterPlans — this one for core
@@ -619,9 +641,72 @@ parameter. The rules are recorded in
 
 ## Outcomes & Retrospective
 
-Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
-Compare the result against the original vision. Before marking the MasterPlan complete,
-distill durable project context from this MasterPlan and its child ExecPlans into
-docs/adr/. Keep task-local execution and coordination details here.
+All six child plans are complete, and the initiative delivered what the Vision & Scope
+section promised. Measured against that section's own list of things a user could not do
+before:
 
-(To be filled during and after implementation.)
+A user can ask who wrote a concept and who confirmed it, and get back a trust tier —
+`okf show` prints `generated` and the derived `trust`, and `okf trust <bundle>` prints a
+tier, status, and staleness for every concept. They can ask which concepts have passed
+their `stale_after`. They can ask what material a concept was extracted from with its
+per-source credibility signals, through `okf sources`. They can footnote a claim with
+`[^some-id]` and have `okf validate --strict` confirm the label names a real `sources`
+entry, in both directions. And a bundle can declare `okf_version: "0.2"` in its root
+`index.md`, which `okf validate` reports and which turns the v0.1 fallback from a silent
+tolerance into a list of files to migrate.
+
+The scope boundary held exactly. `Okf.Profile` was not extended; the shipped PostgreSQL
+profile still asks for `timestamp` and the descriptor examples still say
+`okfVersion = "0.1"`, both correct until
+`docs/masterplans/8-extend-okf-profiles-for-v0-2-field-families.md`. `Attested Computation`
+is unimplemented and `docs/user/format.md` says so by name, pointing at
+`docs/masterplans/9-support-okf-v0-2-attested-computations.md` rather than omitting it
+silently. Nothing executes anything.
+
+The decomposition was right in its shape and wrong in one detail. Six plans along family
+lines, with the breaking migration isolated first, produced six reviewable changes with no
+cross-plan conflict on the four integration points the plan named — the key order, the
+actor module, the `Concept` projection, and the parse configuration each had exactly one
+owner and every later plan consumed rather than re-edited it. The detail the decomposition
+got wrong was the version gate: the Integration Points section described EP-5 as routing
+the earlier plans' fallbacks through one place, and the right answer turned out to be that
+the fallbacks route nowhere and the gate decides only whether to *complain* about them.
+That is recorded above and in ADR 10.
+
+Two things the decomposition did not anticipate and that cost real time. EP-4's
+pre-implementation research into cmark-gfm produced a confident wrong answer from careful
+reading of C sources, overturned in ten minutes in `cabal repl`; the lesson, now ADR 9, is
+that a parse tree records what a document means and an authoring check must read what its
+author typed. And three separate plans discovered independently that projecting a family
+onto `Concept` is not a user-visible outcome until something renders it — EP-1 for
+`okf show`, EP-2 for `okf trust`, EP-5 for the `validate` success line. A future MasterPlan
+adding a frontmatter family should put "surfaced in the CLI" in the milestone, not in the
+purpose paragraph.
+
+### ADR distillation
+
+Reviewed the Decision Logs, Surprises & Discoveries, and Outcomes sections of this
+MasterPlan and all six child plans. Four ADRs carry the durable context, and the
+distillation pass added nothing further because each was written by the plan that first
+forced the decision rather than retrofitted at the end:
+
+- `docs/adr/7-okf-v0-1-legacy-fallback-policy.md` (EP-1, amended by EP-5) — what okf does
+  with a v0.1 construct, which keys the core format owns, and the strict-only placement
+  rule every later family's checks follow.
+- `docs/adr/8-derived-not-stored-trust-and-credibility.md` (EP-2) — trust tiers and
+  staleness are derived on read and never stored, and `okf-core` never reads the clock.
+- `docs/adr/9-one-markdown-parse-configuration-and-source-scanned-authoring-checks.md`
+  (EP-4) — one shared parse option list, and the rule that a check meant to catch an
+  author's mistake must read source text.
+- `docs/adr/10-okf-version-declaration-and-best-effort-reading.md` (EP-5) — how a declared
+  version is read, where its meaning is decided, and why regenerating a file must not
+  destroy what it declares.
+
+`docs/adr/1-profile-declared-document-ids.md` was amended by EP-1 to drop a version number
+that this initiative made stale.
+
+Deliberately left in the plans rather than promoted: the milestone-ordering and
+transcript-verification lessons above, which are about how to run a plan rather than how
+okf is built; the CLI-surfacing gap, which belongs in the next MasterPlan's milestone list
+rather than in an architecture record; and every task-local note about which fixture broke
+which test.
