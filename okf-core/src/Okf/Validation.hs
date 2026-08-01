@@ -26,7 +26,10 @@ import Okf.Bundle
     Concept,
     LogFile,
     bundleInventoryMember,
+    conceptAttester,
+    conceptComputation,
     conceptDocument,
+    conceptExecutor,
     conceptIdOf,
     conceptResource,
     conceptSourcePath,
@@ -88,6 +91,20 @@ data ValidationError
     -- said it targets v0.2 is describing an authoring mistake rather than
     -- exercising a compatibility path.
     LegacyFieldInDeclaredV2 Text
+  | -- | A concept declaring @type: Attested Computation@ carries no @runtime@,
+    -- which specification §10.2 marks REQUIRED for that type — it is "the single
+    -- field that says how to run the computation, and so how the executor and
+    -- attester interpret it and what @parameters@ mean", so without it a
+    -- parameter has no binding semantics at all.
+    --
+    -- Strict-only. §11's conformance list has three items and none is a
+    -- computation field, and §11 separately says a consumer "MUST NOT reject a
+    -- bundle because of ... Unknown @type@ values". "REQUIRED for this type"
+    -- binds the producer; it does not license a consumer to refuse. This is
+    -- therefore an authoring lint, placed exactly where
+    -- @docs\/adr\/7-okf-v0-1-legacy-fallback-policy.md@ places every other
+    -- optional-family presence check.
+    AttestedComputationMissingRuntime
   deriving stock (Generic, Eq, Show)
 
 -- | A whole-bundle validation problem.
@@ -286,12 +303,26 @@ danglingFrontmatterPaths inventory concepts =
 -- broken. A team whose corpus does use followable paths there opts in by writing
 -- a profile: @path@ on a @NestedFieldRule@ reaches @sources.resource@ already.
 --
--- @computation@, @executor.resource@, and @attester.resource@ belong to the
--- Attested Computation concept type, which okf does not read yet. Adding them
--- here is extending this list, which is why it is a list.
+-- @computation@, @executor.resource@, and @attester.resource@ are here, and
+-- unlike @sources[].resource@ nothing in §10 sanctions a non-path value for
+-- them: §10.2 defines @computation@ as "a path (§6.2) to a file holding the
+-- computation" and both @resource@ members as naming code or run instructions "a
+-- runner ... follows", which a scope descriptor is not. Their whole purpose is
+-- to be followed, and §6.3 puts the files they name inside the bundle under
+-- @references\/@, so a value naming nothing is exactly the authoring mistake
+-- this check exists to catch. A target that is not Markdown — §6.3's own
+-- @references\/attesters\/revenue.py@ — resolves like any other, because the
+-- 'BundleInventory' records every file rather than only the concepts.
+--
+-- The nested field names are written with a dot, as @executor.resource@, so the
+-- diagnostic names the line an author must fix rather than the mapping holding
+-- it.
 pathValuedFields :: Concept -> [(Text, Text)]
 pathValuedFields concept =
   [("resource", value) | Just value <- [conceptResource concept]]
+    <> [("computation", value) | Just value <- [conceptComputation concept]]
+    <> [("executor.resource", value) | Just executor <- [conceptExecutor concept], Just value <- [executorResource executor]]
+    <> [("attester.resource", value) | Just attester <- [conceptAttester concept], Just value <- [attesterResource attester]]
 
 -- | Strict-mode check that a bundle which has declared OKF v0.2 carries no
 -- superseded v0.1 construct.
@@ -348,6 +379,30 @@ validateDocument profile document =
           <> requireGenerated document
           <> checkSources document
           <> checkFootnoteAttribution document
+          <> requireComputationRuntime document
+
+-- | Strict-mode check on the OKF v0.2 attested computation contract
+-- (specification §10.2).
+--
+-- Fires only on a concept whose @type@ is exactly
+-- 'Okf.Document.attestedComputationType', and reports only the one field §10.2
+-- marks REQUIRED. Everything else the contract can get wrong — a @parameters@
+-- entry with no @type@, an @executor@ with no @resource@, an @attester@ naming a
+-- file nobody wrote — is a house convention a profile already expresses, with
+-- @objectFields@ reaching inside @executor@ and a @TypeRule@ scoping it to this
+-- type. Adding those here would be inventing a taxonomy the specification
+-- declines to fix, which is the mistake
+-- @docs\/plans\/47-enforce-the-profile-declared-okfversion-and-ship-a-v0-2-reference-profile.md@
+-- made and withdrew.
+--
+-- A whitespace-only @runtime@ counts as absent: it names no runtime, and §10.2's
+-- whole point is that the value is what gives @parameters@ their meaning.
+requireComputationRuntime :: OKFDocument -> [ValidationError]
+requireComputationRuntime OKFDocument {frontmatter}
+  | frontmatterLookup "type" frontmatter /= Just (String attestedComputationType) = []
+  | maybe True (Text.null . Text.strip) (readRuntime frontmatter) =
+      [AttestedComputationMissingRuntime]
+  | otherwise = []
 
 -- | Strict-mode checks on the OKF v0.2 @sources@ family (specification §5.1).
 --

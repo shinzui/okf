@@ -8,11 +8,16 @@ module Okf.Bundle
     bundleInventoryOfConcepts,
     walkBundleInventory,
     conceptFromDocument,
+    conceptAttester,
+    conceptComputation,
     conceptDescription,
     conceptDocument,
+    conceptExecutor,
     conceptGenerated,
     conceptIdOf,
+    conceptParameters,
     conceptResource,
+    conceptRuntime,
     conceptSourcePath,
     conceptSources,
     conceptStaleAfter,
@@ -67,7 +72,12 @@ data Concept = Concept
     status :: !Status,
     staleAfter :: !(Maybe Text),
     sources :: ![Source],
-    usageWindow :: !(Maybe UsageWindow)
+    usageWindow :: !(Maybe UsageWindow),
+    runtime :: !(Maybe Text),
+    parameters :: ![Parameter],
+    computation :: !(Maybe Text),
+    executor :: !(Maybe Executor),
+    attester :: !(Maybe Attester)
   }
   deriving stock (Generic, Eq, Show)
 
@@ -240,6 +250,41 @@ conceptSources Concept {sources} = sources
 conceptUsageWindow :: Concept -> Maybe UsageWindow
 conceptUsageWindow Concept {usageWindow} = usageWindow
 
+-- | The @runtime@ that says how an attested computation is run, and so what its
+-- @parameters@ mean (specification §10.2).
+--
+-- Present on any concept that declares it, not only on one whose @type@ is
+-- @Attested Computation@: a projection restates what frontmatter says and
+-- nothing more. Only 'Okf.Validation.validateDocument' knows that the field is
+-- REQUIRED for that one type.
+conceptRuntime :: Concept -> Maybe Text
+conceptRuntime Concept {runtime} = runtime
+
+-- | The typed, named holes an agent may fill (specification §10.2), empty when
+-- the concept declares none. An entry with no @name@ is absent here.
+conceptParameters :: Concept -> [Parameter]
+conceptParameters Concept {parameters} = parameters
+
+-- | The §6.2 path to a file holding the computation, when the concept names one
+-- instead of carrying an inline body fence (specification §10.2, §10.3).
+--
+-- Verbatim, and not resolved against the bundle. Resolving a path-valued
+-- frontmatter field is 'Okf.Validation.validateBundle''s job, which has the
+-- 'BundleInventory' this projection does not.
+conceptComputation :: Concept -> Maybe Text
+conceptComputation Concept {computation} = computation
+
+-- | How the computation is run and what evidence a run must return
+-- (specification §10.2). okf never runs it; §10.5 places the run and its receipt
+-- outside the bundle.
+conceptExecutor :: Concept -> Maybe Executor
+conceptExecutor Concept {executor} = executor
+
+-- | The deterministic, no-LLM check that inspects a receipt (specification
+-- §10.2). okf never runs it and never computes a verdict.
+conceptAttester :: Concept -> Maybe Attester
+conceptAttester Concept {attester} = attester
+
 -- | Reserved Markdown filenames are not normal concept documents.
 isReservedMarkdownFile :: FilePath -> Bool
 isReservedMarkdownFile path =
@@ -378,7 +423,8 @@ tryBundleIo path action = do
 
 -- | Build a 'Concept' from its identity and document. The typed projection
 -- fields (@type_@, @title@, @description@, @resource@, @tags@, @generated@,
--- @verified@, @status@, @staleAfter@, @sources@, @usageWindow@) are derived
+-- @verified@, @status@, @staleAfter@, @sources@, @usageWindow@, @runtime@,
+-- @parameters@, @computation@, @executor@, @attester@) are derived
 -- from the document's frontmatter, so they can never disagree with it.
 -- A projection may only restate what frontmatter says; it may never store a
 -- derivation frontmatter does not carry. The source
@@ -405,7 +451,12 @@ conceptAt conceptId relativePath document =
       status = readStatus (frontmatter document),
       staleAfter = readStaleAfter (frontmatter document),
       sources = readSources (frontmatter document),
-      usageWindow = readUsageWindow (frontmatter document)
+      usageWindow = readUsageWindow (frontmatter document),
+      runtime = readRuntime (frontmatter document),
+      parameters = readParameters (frontmatter document),
+      computation = readComputation (frontmatter document),
+      executor = readExecutor (frontmatter document),
+      attester = readAttester (frontmatter document)
     }
 
 textField :: Text -> Frontmatter -> Text

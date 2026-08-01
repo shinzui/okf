@@ -31,6 +31,17 @@ module Okf.Document
     readUsageWindow,
     effectiveUsageWindow,
 
+    -- * OKF v0.2 attested computation family
+    Parameter (..),
+    Executor (..),
+    Attester (..),
+    attestedComputationType,
+    readRuntime,
+    readParameters,
+    readComputation,
+    readExecutor,
+    readAttester,
+
     -- * Frontmatter authoring
     frontmatterFromFields,
     setField,
@@ -341,6 +352,166 @@ usageWindowFromValue = \case
     Just (UsageWindow (objectText "from" windowFields) (objectText "to" windowFields))
   _ -> Nothing
 
+-- | The one @type@ value that carries the OKF v0.2 computation contract
+-- (specification §10.1).
+--
+-- Matched as an exact, case-sensitive string. §4.1 says type values are "not
+-- registered centrally" and consumers "MUST tolerate unknown types gracefully",
+-- so okf keeps no taxonomy of types; but §10.1 names this one explicitly and
+-- §10.5 calls @type: Attested Computation@ "a frontmatter signal", so matching
+-- that single literal follows the specification rather than inventing a
+-- registry. A document saying @attested computation@ gets no contract handling,
+-- which is the tolerance §4.1 asks for.
+attestedComputationType :: Text
+attestedComputationType = "Attested Computation"
+
+-- | One typed, named hole an agent may fill when running an attested
+-- computation (specification §10.2).
+--
+-- Binding semantics follow the concept's @runtime@: the same entry is a SQL
+-- bind variable under @bigquery@, a var under @dbt@, and a function argument
+-- under @python@. That is why @runtime@ is the field §10.2 marks REQUIRED —
+-- without it a parameter has no meaning.
+--
+-- @parameterType@ and @parameterRequired@ are optional even though §10.2 writes
+-- every entry as @{ name, type, required }@: that describes the shape rather
+-- than marking the members REQUIRED, and §11 forbids rejecting a document for a
+-- malformed optional field. @parameterName@ is not optional, because an entry
+-- naming no hole is not a parameter at all.
+data Parameter = Parameter
+  { parameterName :: !Text,
+    parameterType :: !(Maybe Text),
+    parameterRequired :: !(Maybe Bool)
+  }
+  deriving stock (Generic, Eq, Show)
+
+-- | How an attested computation is run (specification §10.2).
+--
+-- @executorResource@ names run instructions or code that a runner — an agent,
+-- or deterministic consumer code — follows. @executorReceipt@ declares the
+-- fields a run must return: the evidence the attester inspects, such as a
+-- BigQuery @job_id@ and the SQL the job actually executed.
+--
+-- okf never runs an executor and never sees a receipt. §10.5 marks the
+-- execute-and-attest workflow informative and places its runtime artifacts
+-- outside the bundle entirely; this record only says where the instructions
+-- live.
+data Executor = Executor
+  { executorResource :: !(Maybe Text),
+    executorReceipt :: ![Text]
+  }
+  deriving stock (Generic, Eq, Show)
+
+-- | The deterministic check on a run's receipt (specification §10.2).
+--
+-- @attesterResource@ names code — explicitly with no language model in it —
+-- that takes a receipt and returns a verdict, meant to run consumer-side. okf
+-- never runs it and never computes a verdict; see
+-- @docs\/adr\/8-derived-not-stored-trust-and-credibility.md@ on what okf
+-- declines to derive.
+--
+-- A newtype over one field rather than a bare 'Maybe' 'Text', because §12 lists
+-- "the attester ABI, portability, and sandboxing" among the items deferred to a
+-- future OKF revision. The record will grow; a named type means it grows
+-- without changing every call site.
+newtype Attester = Attester {attesterResource :: Maybe Text}
+  deriving stock (Generic, Eq, Show)
+
+-- | Read the @runtime@ field (specification §10.2): the system that would
+-- execute the computation, such as @bigquery@, @postgres@, @dbt@, @python@, or
+-- @Looker@.
+--
+-- Kept verbatim and never matched against a list of known runtimes. §10.2 gives
+-- those five as examples rather than as an enumeration, and a closed set here
+-- would reject a correct document naming a runtime okf has not heard of.
+--
+-- Like every v0.2 reader this never fails: a non-textual value is simply not
+-- read. Reporting a missing @runtime@ on an 'attestedComputationType' concept is
+-- 'Okf.Validation.validateDocument''s job.
+readRuntime :: Frontmatter -> Maybe Text
+readRuntime frontmatterValue =
+  case frontmatterLookup "runtime" frontmatterValue of
+    Just (String value) -> Just value
+    _ -> Nothing
+
+-- | Read the @parameters@ list (specification §10.2).
+--
+-- An entry with no textual @name@ is skipped, exactly as 'readSources' skips an
+-- entry with no @resource@: a hole with no name cannot be filled. An absent key,
+-- or a value that is not a list, yields @[]@.
+--
+-- @required@ is read only from a YAML boolean. The string @"true"@ yields
+-- 'Nothing', for the same reason 'objectInteger' refuses a numeric string:
+-- coercing it would make the field's type unpredictable and hide a producer
+-- mistake.
+readParameters :: Frontmatter -> [Parameter]
+readParameters frontmatterValue =
+  case frontmatterLookup "parameters" frontmatterValue of
+    Just (Array entries) -> foldMap (toList . parameterFromValue) entries
+    _ -> []
+  where
+    parameterFromValue = \case
+      Object entryFields -> do
+        name <- objectText "name" entryFields
+        pure
+          Parameter
+            { parameterName = name,
+              parameterType = objectText "type" entryFields,
+              parameterRequired = objectBool "required" entryFields
+            }
+      _ -> Nothing
+
+-- | Read the @computation@ field (specification §10.2): a §6.2 path to a file
+-- holding the computation, used instead of an inline body fence.
+--
+-- Deliberately returns the raw text and does __not__ resolve the path. Resolving
+-- a path-valued frontmatter field against the bundle is
+-- 'Okf.Validation.validateBundle''s job, which has the bundle inventory this
+-- reader does not; keeping the reader dumb is also what preserves the
+-- round-trip property, since a resolved path is not the text the producer wrote.
+--
+-- §10.3 makes this key and the body's @# Computation@ fence mutually exclusive.
+-- Checking that is body inspection and is not done here.
+readComputation :: Frontmatter -> Maybe Text
+readComputation frontmatterValue =
+  case frontmatterLookup "computation" frontmatterValue of
+    Just (String value) -> Just value
+    _ -> Nothing
+
+-- | Read the @executor@ mapping (specification §10.2).
+--
+-- Returns 'Nothing' when the key is absent or its value is not a mapping. Unlike
+-- 'readGenerated' no member is mandatory, because §10.2 marks none of them
+-- REQUIRED: an @executor@ carrying only a @receipt@ still says something a
+-- consumer can use.
+--
+-- A @receipt@ written as a bare string rather than a list is read as a
+-- one-element list, mirroring how §5.2's @verified@ tolerates a bare mapping
+-- where a list is expected. A non-textual list element is dropped.
+readExecutor :: Frontmatter -> Maybe Executor
+readExecutor frontmatterValue =
+  case frontmatterLookup "executor" frontmatterValue of
+    Just (Object executorFields) ->
+      Just
+        Executor
+          { executorResource = objectText "resource" executorFields,
+            executorReceipt = objectTextList "receipt" executorFields
+          }
+    _ -> Nothing
+
+-- | Read the @attester@ mapping (specification §10.2).
+--
+-- Returns 'Nothing' when the key is absent or its value is not a mapping. An
+-- @attester@ mapping with no @resource@ still reads as an 'Attester' carrying
+-- 'Nothing': §10.2 marks no member REQUIRED, and the distinction between "no
+-- attester declared" and "an attester declared badly" is one a diagnostic can
+-- make only if the reader keeps it.
+readAttester :: Frontmatter -> Maybe Attester
+readAttester frontmatterValue =
+  case frontmatterLookup "attester" frontmatterValue of
+    Just (Object attesterFields) -> Just (Attester (objectText "resource" attesterFields))
+    _ -> Nothing
+
 -- | Read an integral member. Only a YAML integer qualifies: a numeric string
 -- and a fractional number both yield 'Nothing', because aeson's @Integer@
 -- decoder rejects each. Coercing either would make the field's type
@@ -359,6 +530,30 @@ objectText key members =
   case KeyMap.lookup (AesonKey.fromText key) members of
     Just (String value) -> Just value
     _ -> Nothing
+
+-- | Read a boolean member. Only a YAML boolean qualifies; the string @"true"@
+-- yields 'Nothing', for the same reason 'objectInteger' refuses a numeric
+-- string.
+objectBool :: Text -> KeyMap.KeyMap Value -> Maybe Bool
+objectBool key members =
+  case KeyMap.lookup (AesonKey.fromText key) members of
+    Just (Bool value) -> Just value
+    _ -> Nothing
+
+-- | Read a member that is a list of strings, tolerating a bare string as a
+-- one-element list. Non-textual elements are dropped rather than failing, and an
+-- absent or otherwise-shaped value yields @[]@ — the same shape 'tagsField' in
+-- @Okf.Bundle@ gives @tags@.
+objectTextList :: Text -> KeyMap.KeyMap Value -> [Text]
+objectTextList key members =
+  case KeyMap.lookup (AesonKey.fromText key) members of
+    Just (Array values) -> foldMap textValue (toList values)
+    Just (String value) -> [value]
+    _ -> []
+  where
+    textValue = \case
+      String value -> [value]
+      _ -> []
 
 -- | Build frontmatter from a list of @(key, value)@ pairs. Later duplicate
 -- keys overwrite earlier ones.
@@ -550,9 +745,24 @@ okfKeyRank keyText =
     commonRanks = zip coreFrontmatterFieldOrder [0 ..]
 
 -- | The deterministic OKF concept-level key order: identity first, then the
--- v0.2 lifecycle and trust families (§5.2 through §5.5), then the v0.2
--- provenance family (§5.1), then the v0.1 @timestamp@ superseded by
--- @generated.at@ (§13.1).
+-- v0.2 lifecycle field (§5.4), then the v0.2 attested computation contract
+-- (§10.2), then the v0.2 trust families (§5.2, §5.5), then the v0.2 provenance
+-- family (§5.1), then the v0.1 @timestamp@ superseded by @generated.at@ (§13.1).
+--
+-- The five computation keys sit between @status@ and @generated@ because that is
+-- where §10.2's own worked example puts them, so a concept copied out of the
+-- specification and regenerated by okf comes back in the order its author wrote.
+-- They are in this list at all for the reason
+-- [ADR 7](docs/adr/7-okf-v0-1-legacy-fallback-policy.md) gives for the six v0.2
+-- concept keys before them: the list "exists to name the keys the format itself
+-- defines", §13.2 makes these five format-defined, and leaving them out would
+-- make a closed profile (@allowUnknownFields = False@) reject a conformant
+-- Attested Computation until its author redeclared five keys they did not
+-- choose — "a tax that grows with every specification revision". That they are
+-- meaningful for exactly one @type@, unlike every other key here, does not
+-- change the answer: closure governs /unknown/ keys, and a key §13.2 names is
+-- not unknown. A profile that wants to reject @runtime@ on a @Metric@ says so
+-- with a @TypeRule@, which is the layer that knows about types.
 --
 -- @okf_version@ is deliberately absent: it is an index-level key that appears
 -- only in a bundle-root @index.md@ (§12), never on a concept.
@@ -564,6 +774,11 @@ coreFrontmatterFieldOrder =
     "resource",
     "tags",
     "status",
+    "runtime",
+    "parameters",
+    "computation",
+    "executor",
+    "attester",
     "generated",
     "verified",
     "stale_after",
@@ -609,7 +824,15 @@ fieldsIntroducedInV02 =
     "verified",
     "stale_after",
     "sources",
-    "usage_window"
+    "usage_window",
+    -- §13.2's second bullet: "New concept type `Attested Computation` and its
+    -- computation keys `runtime`, `parameters`, `computation`, `executor`,
+    -- `attester` (§10)."
+    "runtime",
+    "parameters",
+    "computation",
+    "executor",
+    "attester"
   ]
 
 -- | Concept-level frontmatter keys OKF v0.2 superseded (specification §13.1).

@@ -131,9 +131,14 @@ main = do
         test "usage_window applies at document scope with per-entry override" testUsageWindowOverride,
         test "setSources and setUsageWindow round-trip through serialize and parse" testSourcesRoundTrip,
         test "strict validation reports sources missing resource and duplicate ids" testValidateSources,
+        test "the attested computation contract reads from the specification worked example" testReadAttestedComputationContract,
+        test "a malformed contract field is not read rather than rejected" testReadAttestedComputationDegenerateShapes,
+        test "the specification worked example serializes byte-identically" testAttestedComputationRoundTrip,
+        test "strict validation reports an Attested Computation with no runtime" testValidateAttestedComputationRuntime,
         testIO "writeBundle then walkBundle round-trips" testWriteBundleRoundTrip,
         testIO "fixture dangling link reports a bundle validation error" testFixtureDanglingLink,
         testIO "fixture dangling frontmatter path reports exactly one strict problem" testFixtureDanglingFrontmatterPath,
+        testIO "fixture attested computation bundle reports one missing runtime and no path problem" testFixtureAttestedComputation,
         testIO "loadProfileFile decodes the postgresql fixture" testLoadProfileFixture,
         testIO "loadProfileFile decodes record-completed document ID rules" testLoadDocumentIdProfileFixture,
         testIO "loadProfileFile accepts the pre-type-frontmatter described schema" testLoadDescribedProfileFixture,
@@ -1732,6 +1737,243 @@ testSourcesRoundTrip = do
   assertEqual sources (readSources (reparsed ^. #frontmatter))
   assertEqual (Just window) (readUsageWindow (reparsed ^. #frontmatter))
 
+-- | Specification §10.2's worked example, verbatim. Flow-style mappings and a
+-- flow-style @receipt@ list are exactly how the specification writes it, which
+-- is why they are here: a reader that only handles block style would pass a
+-- hand-normalized fixture and fail on the document an author copied out of §10.
+attestedComputationFixtureDocument :: Text
+attestedComputationFixtureDocument =
+  Text.unlines
+    [ "---",
+      "type: Attested Computation",
+      "title: Revenue for fiscal year",
+      "description: Recognized revenue for a fiscal year, per Finance's definition.",
+      "status: stable",
+      "runtime: bigquery",
+      "parameters:",
+      "  - { name: year, type: integer, required: true }",
+      "executor:",
+      "  resource: references/skills/run-on-bq.md",
+      "  receipt: [job_id, executed_sql, result]",
+      "attester:",
+      "  resource: references/attesters/revenue.py",
+      "generated: { by: reference_agent/gemini-2.5-pro, at: 2026-06-20T22:53:05Z }",
+      "verified: { by: human:ahormati, at: 2026-06-25T09:00:00Z }",
+      "stale_after: 2026-09-23",
+      "sources:",
+      "  - id: rev-policy",
+      "    resource: https://wiki.acme/finance/revenue-recognition",
+      "    title: Revenue recognition policy",
+      "---",
+      "",
+      "# Computation",
+      "",
+      "    SELECT SUM(amount) AS revenue FROM finance.recognized_revenue WHERE fiscal_year = @year"
+    ]
+
+-- | The five §10.2 contract fields read off the specification's own worked
+-- example. The trust and provenance families in the same frontmatter block are
+-- asserted too: §10.2 puts them there deliberately, and reading the contract
+-- must not disturb them.
+testReadAttestedComputationContract :: Either Text ()
+testReadAttestedComputationContract = do
+  document <- firstShow (parseDocument attestedComputationFixtureDocument)
+  let frontmatterValue = document ^. #frontmatter
+  assertEqual (Just "bigquery") (readRuntime frontmatterValue)
+  assertEqual
+    [Parameter {parameterName = "year", parameterType = Just "integer", parameterRequired = Just True}]
+    (readParameters frontmatterValue)
+  -- Absent: §10.3 says an absent `computation` means the body fence is the
+  -- computation. Reading the body is a sibling plan's job.
+  assertEqual Nothing (readComputation frontmatterValue)
+  assertEqual
+    ( Just
+        Executor
+          { executorResource = Just "references/skills/run-on-bq.md",
+            executorReceipt = ["job_id", "executed_sql", "result"]
+          }
+    )
+    (readExecutor frontmatterValue)
+  assertEqual (Just (Attester (Just "references/attesters/revenue.py"))) (readAttester frontmatterValue)
+  -- The §5 families sharing the block still read exactly as before.
+  assertEqual
+    (Just (Generated (parseActor "reference_agent/gemini-2.5-pro") (Just "2026-06-20T22:53:05Z")))
+    (readGenerated frontmatterValue)
+  assertEqual [Verification (parseActor "human:ahormati") (Just "2026-06-25T09:00:00Z")] (readVerified frontmatterValue)
+  assertEqual Stable (readStatus frontmatterValue)
+  assertEqual (Just "2026-09-23") (readStaleAfter frontmatterValue)
+  assertEqual [Just "rev-policy"] (map sourceId (readSources frontmatterValue))
+
+-- | Every degenerate contract shape yields a value rather than an error.
+-- Specification §11 forbids rejecting a document for a malformed optional
+-- field, so the readers are total and reporting is validation's job.
+testReadAttestedComputationDegenerateShapes :: Either Text ()
+testReadAttestedComputationDegenerateShapes = do
+  let readAll source = do
+        document <- firstShow (parseDocument source)
+        pure (document ^. #frontmatter)
+  -- Nothing declared at all.
+  bare <- readAll "---\ntype: Attested Computation\n---\nBody\n"
+  assertEqual Nothing (readRuntime bare)
+  assertEqual [] (readParameters bare)
+  assertEqual Nothing (readComputation bare)
+  assertEqual Nothing (readExecutor bare)
+  assertEqual Nothing (readAttester bare)
+  -- `parameters` present but not a list, and `runtime` present but not text.
+  wrongShapes <-
+    readAll
+      ( Text.unlines
+          [ "---",
+            "type: Attested Computation",
+            "runtime: { name: bigquery }",
+            "parameters: year",
+            "computation: [a, b]",
+            "---",
+            "Body"
+          ]
+      )
+  assertEqual Nothing (readRuntime wrongShapes)
+  assertEqual [] (readParameters wrongShapes)
+  assertEqual Nothing (readComputation wrongShapes)
+  -- An entry with no `name` names no hole and is dropped, exactly as
+  -- `readSources` drops an entry with no `resource`. A `required` written as a
+  -- string is not a boolean, mirroring `usage_count`'s refusal of "5000".
+  partialEntries <-
+    readAll
+      ( Text.unlines
+          [ "---",
+            "type: Attested Computation",
+            "parameters:",
+            "  - { type: integer, required: true }",
+            "  - { name: year }",
+            "  - { name: region, type: string, required: \"true\" }",
+            "  - not-a-mapping",
+            "---",
+            "Body"
+          ]
+      )
+  assertEqual
+    [ Parameter {parameterName = "year", parameterType = Nothing, parameterRequired = Nothing},
+      Parameter {parameterName = "region", parameterType = Just "string", parameterRequired = Nothing}
+    ]
+    (readParameters partialEntries)
+  -- `executor` as a scalar is not a mapping and is not read; a `receipt`
+  -- written as a bare string is read as a one-element list, mirroring how §5.2
+  -- tolerates a bare `verified` mapping where a list is expected.
+  scalarExecutor <- readAll "---\ntype: Attested Computation\nexecutor: run-on-bq\nattester: revenue.py\n---\nBody\n"
+  assertEqual Nothing (readExecutor scalarExecutor)
+  assertEqual Nothing (readAttester scalarExecutor)
+  bareReceipt <-
+    readAll
+      ( Text.unlines
+          [ "---",
+            "type: Attested Computation",
+            "executor: { receipt: job_id }",
+            "attester: { note: no resource here }",
+            "---",
+            "Body"
+          ]
+      )
+  assertEqual
+    (Just Executor {executorResource = Nothing, executorReceipt = ["job_id"]})
+    (readExecutor bareReceipt)
+  -- An `attester` mapping with no `resource` still reads: "declared badly" and
+  -- "not declared" are different facts and only the reader can keep them apart.
+  assertEqual (Just (Attester Nothing)) (readAttester bareReceipt)
+
+-- | The §10.2 worked example survives serialization losslessly, and the
+-- normalized form emits the five contract keys in their fixed
+-- 'coreFrontmatterFieldOrder' position — between the lifecycle @status@ and the
+-- trust @generated@, which is §10.2's own ordering.
+--
+-- Byte-identity is asserted against the /normalized/ form rather than against
+-- the specification's text, because §10.2 writes flow-style mappings that
+-- 'serializeDocument' expands to block style by design. What this pins is that
+-- serializing is a fixed point: a bundle regenerated twice yields no diff.
+testAttestedComputationRoundTrip :: Either Text ()
+testAttestedComputationRoundTrip = do
+  document <- firstShow (parseDocument attestedComputationFixtureDocument)
+  let normalized = serializeDocument document
+  reparsed <- firstShow (parseDocument normalized)
+  assertEqual normalized (serializeDocument reparsed)
+  -- No contract value was normalized away or rewritten on the way through.
+  assertEqual (readRuntime (document ^. #frontmatter)) (readRuntime (reparsed ^. #frontmatter))
+  assertEqual (readParameters (document ^. #frontmatter)) (readParameters (reparsed ^. #frontmatter))
+  assertEqual (readComputation (document ^. #frontmatter)) (readComputation (reparsed ^. #frontmatter))
+  assertEqual (readExecutor (document ^. #frontmatter)) (readExecutor (reparsed ^. #frontmatter))
+  assertEqual (readAttester (document ^. #frontmatter)) (readAttester (reparsed ^. #frontmatter))
+  assertEqual (body document) (body reparsed)
+  assertEqual
+    [ "type",
+      "title",
+      "description",
+      "status",
+      "runtime",
+      "parameters",
+      "executor",
+      "attester",
+      "generated",
+      "verified",
+      "stale_after",
+      "sources"
+    ]
+    (topLevelKeysInEmissionOrder normalized)
+
+-- | The top-level frontmatter keys of a serialized document, in the order they
+-- were emitted. A top-level key is the only thing that starts in column zero
+-- inside the frontmatter fence.
+topLevelKeysInEmissionOrder :: Text -> [Text]
+topLevelKeysInEmissionOrder serialized =
+  [ Text.takeWhile (/= ':') line
+  | line <- frontmatterLines,
+    not (Text.null line),
+    Text.isInfixOf ":" line,
+    Text.head line /= ' ',
+    Text.head line /= '-'
+  ]
+  where
+    frontmatterLines =
+      takeWhile (/= "---") (drop 1 (Text.lines serialized))
+
+-- | Specification §10.2 marks @runtime@ REQUIRED for @type: Attested
+-- Computation@, and nothing else in the contract. The check is strict-only:
+-- §11's conformance list has three items and none is a computation field, and
+-- §11 separately forbids rejecting a bundle over an unknown @type@ value, so
+-- "REQUIRED for this type" binds the producer rather than licensing a consumer
+-- to refuse.
+testValidateAttestedComputationRuntime :: Either Text ()
+testValidateAttestedComputationRuntime = do
+  let errorsFor profile source = validateDocument profile <$> firstShow (parseDocument source)
+      concept typeValue extraLines =
+        Text.unlines
+          ( [ "---",
+              "type: " <> typeValue,
+              "title: Revenue",
+              "description: Recognized revenue for a fiscal year.",
+              "generated: { by: human:you, at: 2026-08-01T00:00:00Z }"
+            ]
+              <> extraLines
+              <> ["---", "", "# Computation", "", "    SELECT 1"]
+          )
+  -- A complete contract is clean under both profiles.
+  complete <- errorsFor StrictAuthoring (concept "Attested Computation" ["runtime: bigquery"])
+  assertEqual [] complete
+  -- No runtime: exactly one problem, and only under strict.
+  missing <- errorsFor StrictAuthoring (concept "Attested Computation" [])
+  assertEqual [AttestedComputationMissingRuntime] missing
+  permissive <- errorsFor PermissiveConformance (concept "Attested Computation" [])
+  assertEqual [] permissive
+  -- No other type is affected, including a near-miss spelling. §4.1 says types
+  -- are not registered centrally and consumers must tolerate unknown ones, so
+  -- the match is on the one literal §10.1 names, case-sensitively.
+  metric <- errorsFor StrictAuthoring (concept "Metric" [])
+  assertEqual [] metric
+  nearMiss <- errorsFor StrictAuthoring (concept "attested computation" [])
+  assertEqual [] nearMiss
+  -- An empty or whitespace runtime declares nothing.
+  blank <- errorsFor StrictAuthoring (concept "Attested Computation" ["runtime: \"   \""])
+  assertEqual [AttestedComputationMissingRuntime] blank
+
 testValidateSources :: Either Text ()
 testValidateSources = do
   let strictErrors source = validateDocument StrictAuthoring <$> firstShow (parseDocument source)
@@ -1862,6 +2104,46 @@ testFixtureDanglingFrontmatterPath = do
         assertEqual
           []
           (validateBundle PermissiveConformance (VersionDeclared (OkfVersion 0 2)) inventory concepts)
+    )
+
+-- | A whole bundle carrying specification §10.2's contract, checked end to end.
+--
+-- Three things this proves that the document-level tests cannot. The §10.2 check
+-- fires on exactly one concept and leaves the @Metric@ and the two
+-- @references\/@ concepts alone. Both of the completed computation's path-valued
+-- contract fields resolve, including the non-Markdown @revenue.py@ — which only
+-- works because 'walkBundleInventory' records every file rather than only the
+-- concepts. And permissive validation reports nothing at all, because §11's
+-- conformance list reaches none of this.
+testFixtureAttestedComputation :: IO (Either Text ())
+testFixtureAttestedComputation = do
+  root <- fixturePath "attested-computation"
+  concepts <- readBundle root
+  inventory <- readBundleInventory root
+  pure
+    ( do
+        marginId <- firstShow (parseConceptId "computations/margin")
+        revenueId <- firstShow (parseConceptId "computations/revenue")
+        -- Two computations, one metric, and the two `references/` files that
+        -- `walkBundle` treats as concepts because they are non-reserved Markdown.
+        assertEqual 4 (length concepts)
+        assertEqual
+          [DocumentInvalid marginId AttestedComputationMissingRuntime]
+          (validateBundle StrictAuthoring (VersionDeclared (OkfVersion 0 2)) inventory concepts)
+        assertEqual
+          []
+          (validateBundle PermissiveConformance (VersionDeclared (OkfVersion 0 2)) inventory concepts)
+        -- The contract projected onto the concept, which is what every command
+        -- reads rather than reaching back into raw frontmatter.
+        revenue <- maybe (Left "expected computations/revenue") Right (findConcept revenueId concepts)
+        assertEqual (Just "bigquery") (conceptRuntime revenue)
+        assertEqual ["year"] (parameterName <$> conceptParameters revenue)
+        assertEqual Nothing (conceptComputation revenue)
+        assertEqual
+          (Just "/references/skills/run-on-bq.md")
+          (executorResource =<< conceptExecutor revenue)
+        assertEqual (Just ["job_id", "executed_sql", "result"]) (executorReceipt <$> conceptExecutor revenue)
+        assertEqual (Just "/references/attesters/revenue.py") (attesterResource =<< conceptAttester revenue)
     )
 
 -- | Resolve a fixture file path regardless of whether tests run from the repo

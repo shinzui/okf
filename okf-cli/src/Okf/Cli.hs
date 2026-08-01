@@ -57,12 +57,16 @@ import Okf.Cli.Kit (KitCommand, handleKitCommand, kitCommandParser)
 import Okf.Cli.Version (appVersionWithGit)
 import Okf.ConceptId
 import Okf.Document
-  ( DocumentParseError (..),
+  ( Attester (..),
+    DocumentParseError (..),
+    Executor (..),
     Frontmatter (..),
     Generated (..),
     OKFDocument (..),
+    Parameter (..),
     Source (..),
     UsageWindow (..),
+    attestedComputationType,
     body,
     effectiveUsageWindow,
     renderStatus,
@@ -1971,6 +1975,8 @@ renderValidationErrorText = \case
     "legacy v0.1 field in a bundle declaring okf_version 0.2 or later: "
       <> fieldName
       <> maybe "" (\replacement -> " (use " <> replacement <> ")") (supersededBy fieldName)
+  AttestedComputationMissingRuntime ->
+    attestedComputationType <> " concepts must declare runtime"
 
 -- | The OKF v0.2 field that supersedes a v0.1 one (specification §13.1).
 supersededBy :: Text -> Maybe Text
@@ -2015,6 +2021,16 @@ renderConcept concept = do
   traverse_ (Text.IO.putStrLn . ("description: " <>)) (conceptDescription concept)
   traverse_ (Text.IO.putStrLn . ("resource: " <>)) (conceptResource concept)
   unless (null (conceptTags concept)) (Text.IO.putStrLn ("tags: " <> Text.intercalate ", " (conceptTags concept)))
+  -- The OKF v0.2 attested computation contract (specification §10.2), in §10.2's
+  -- own field order. Every line is printed only when the concept declares it, so
+  -- output for a concept that is not an Attested Computation is unchanged.
+  traverse_ (Text.IO.putStrLn . ("runtime: " <>)) (conceptRuntime concept)
+  unless
+    (null (conceptParameters concept))
+    (Text.IO.putStrLn ("parameters: " <> Text.intercalate ", " (renderParameter <$> conceptParameters concept)))
+  traverse_ (Text.IO.putStrLn . ("computation: " <>)) (conceptComputation concept)
+  traverse_ (Text.IO.putStrLn . ("executor: " <>) . renderExecutor) (conceptExecutor concept)
+  traverse_ (Text.IO.putStrLn . ("attester: " <>)) (attesterResource =<< conceptAttester concept)
   traverse_ (Text.IO.putStrLn . ("generated: " <>) . renderGenerated) (conceptGenerated concept)
   Text.IO.putStrLn ("trust: " <> renderTrustTier (trustTier (conceptVerified concept)))
   traverse_ (Text.IO.putStrLn . ("verified: " <>)) (latestVerification (conceptVerified concept))
@@ -2033,6 +2049,29 @@ renderConcept concept = do
         ("sources: " <> countPhrase sourceCount "source" <> " (see `okf sources`)")
   Text.IO.putStrLn ""
   Text.IO.putStr (bodyText concept)
+
+-- | Render one attested-computation parameter as @\<name\> (\<type\>,
+-- required)@, dropping whichever of the two optional members the concept omits
+-- (specification §10.2).
+renderParameter :: Parameter -> Text
+renderParameter Parameter {parameterName, parameterType, parameterRequired} =
+  parameterName <> if null qualifiers then "" else " (" <> Text.intercalate ", " qualifiers <> ")"
+  where
+    qualifiers =
+      toList parameterType
+        <> ["required" | parameterRequired == Just True]
+        <> ["optional" | parameterRequired == Just False]
+
+-- | Render the OKF v0.2 @executor@ as its resource followed by the receipt
+-- fields a run must return (specification §10.2). Either half may be absent, so
+-- an executor declaring only one still renders as something a reader can act on.
+renderExecutor :: Executor -> Text
+renderExecutor Executor {executorResource, executorReceipt} =
+  Text.intercalate
+    ", "
+    ( toList executorResource
+        <> ["receipt: " <> Text.intercalate ", " executorReceipt | not (null executorReceipt)]
+    )
 
 -- | Render the OKF v0.2 @generated@ family as @\<actor\>@, or
 -- @\<actor\> at \<datetime\>@ when the family carries an @at@.
