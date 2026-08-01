@@ -188,12 +188,20 @@ alternative. EP-4 still owes the second ADR.
 
 ## Exec-Plan Registry
 
-The two root plans, EP-1 and EP-2, were created on 2026-08-01. EP-3, EP-4, and EP-5 are
-deliberately deferred until those two land — see the Decision Log entry of that date, which
-records why writing all five up front was rejected. They were originally deferred until
+**All five child plans now exist.** EP-1 and EP-2 were created on 2026-08-01 and are Complete.
+EP-3, EP-4, and EP-5 were deliberately deferred until those two landed — see the Decision Log
+entry of that date, which records why writing all five up front was rejected — and were written
+on 2026-08-01 once they had. They were originally deferred until
 `docs/masterplans/7-adopt-okf-v0-2-core-semantics.md` is complete and
 `docs/masterplans/8-extend-okf-profiles-for-v0-2-field-families.md` has settled its
 descriptor primitives, for the reasons in the Dependency Graph and Decision Log below.
+
+The deferral earned its place. Each of the three plans turns on a decision EP-1 or EP-2 made
+while implementing rather than while planning: EP-3 keys its diagnostics on the exact type string
+and the strict-only placement EP-2 established, EP-4 inherits both a named question EP-2 declined
+to settle (whether a bare `references/…` anchors at the bundle root) and one EP-1 left open
+(whether profile validation should resolve non-Markdown targets), and EP-5's scope is three items
+smaller than originally planned because EP-2 delivered them.
 
 **Both deferrals are discharged as of 2026-08-01.** MasterPlan 7 completed in full with all
 six child plans Complete, and MasterPlan 8 completed in full with all four child plans
@@ -206,9 +214,9 @@ is green (`cabal test all`, 2026-08-01).
 |---|-------|------|-----------|-----------|--------|
 | 1 | Resolve path valued frontmatter fields against the bundle | docs/plans/48-resolve-path-valued-frontmatter-fields-against-the-bundle.md | None | None | Complete |
 | 2 | Read the Attested Computation contract fields | docs/plans/49-read-the-attested-computation-contract-fields.md | None | EP-1 | Complete |
-| 3 | Inspect the Computation body section and enforce exactly one computation source | (not yet created) | EP-2 | None | Not Started |
-| 4 | Adopt the references convention for executors and attesters | (not yet created) | EP-1 | EP-2 | Not Started |
-| 5 | Surface attested computations in the CLI index and documentation | (not yet created) | EP-2, EP-3 | EP-4 | Not Started |
+| 3 | Inspect the Computation body section and enforce exactly one computation source | docs/plans/50-inspect-the-computation-body-section-and-enforce-exactly-one-computation-source.md | EP-2 | None | Not Started |
+| 4 | Adopt the references convention for executors and attesters | docs/plans/51-adopt-the-references-convention-for-executors-and-attesters.md | EP-1 | EP-2 | Not Started |
+| 5 | Surface attested computations across the CLI and documentation | docs/plans/52-surface-attested-computations-across-the-cli-and-documentation.md | EP-2, EP-3 | EP-4 | Not Started |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
 Hard Deps and Soft Deps reference other rows by their # prefix (e.g., EP-1, EP-3).
@@ -279,6 +287,12 @@ report until both the contract and the computation itself are readable.
 
 The critical path is EP-2, then EP-3, then EP-5, with EP-1 and EP-4 running alongside.
 
+As of 2026-08-01, with EP-1 and EP-2 Complete and all three remaining plans written, **EP-3 and
+EP-4 are both implementable now and are independent of each other.** The only file they both
+touch is `okf-cli/src/Okf/Cli.hs`, in different functions — EP-3 in `runShow` and
+`renderValidationErrorText`, EP-4 in `runValidate` and `renderBundleValidationError`. EP-5 waits
+on EP-3, which is the sole remaining serialization.
+
 
 ## Integration Points
 
@@ -296,8 +310,12 @@ is now fixed:** a distinct constructor, `DanglingFrontmatterPath ConceptId Text 
 carrying the concept, the frontmatter field name as written, and the resolved
 bundle-relative target. Generalising `DanglingReference` was rejected because its two
 `ConceptId` values encode an assumption that no longer holds. `validateBundle` also gained a
-required `BundleInventory` parameter. EP-4 consumes both as given. Note the constraint
-recorded in this repository's
+required `BundleInventory` parameter. EP-4 consumes both — and **extends the constructor**, adding
+a fourth field `Maybe FilePath` carrying the bundle-relative spelling that would have resolved,
+so that an author copying §10.2's bare `references/…` path is told what to write. That is a
+constructor-arity change rather than a new constructor, which is a harder break for a downstream
+exhaustive matcher; the consumers ADR 7 lists must be checked before releasing. Note the
+constraint recorded in this repository's
 memory of the specification and reaffirmed by §11: okf's dangling-reference check is an
 *authoring-time linter that goes beyond spec conformance*, since §6.1 says consumers must
 tolerate broken links because a link may represent not-yet-written knowledge. Any new
@@ -363,9 +381,28 @@ plan first needs one.
 record and the `requireSchemaSection` / `schemaColumns` pair, with
 `Okf.Profile.schemaSectionColumns` as the body inspector. Involved: EP-2, EP-3, and
 MasterPlan 8 EP-1. This is the one existing precedent for a rule that spans frontmatter and
-body, and EP-3's exactly-one rule is the second such rule. EP-3 must follow the precedent's
-shape — a boolean or enumerated knob on the type rule, a body inspector in `Okf.Profile`, a
-`ProfileViolation` constructor — rather than inventing a parallel mechanism.
+body, and EP-3's exactly-one rule is the second such rule.
+
+**This entry's instruction to EP-3 was wrong and is corrected here.** It formerly said EP-3 "must
+follow the precedent's shape — a boolean or enumerated knob on the type rule, a body inspector in
+`Okf.Profile`, a `ProfileViolation` constructor". That is the shape of a *house convention*, and
+§10.3 is not one: the specification itself says the computation is provided in exactly one of two
+ways, so the check belongs in core validation beside EP-2's `AttestedComputationMissingRuntime`,
+as `ValidationError` constructors reported under `StrictAuthoring` for that `type` alone. Putting
+it on a `TypeRule` would mean okf enforced §10.2's REQUIRED `runtime` without a profile and
+§10.3's exactly-one rule only with one, which is incoherent, and it would contradict this
+MasterPlan's own Decision Log entry that what it adds beyond MasterPlan 8 is the *unprofiled core*
+half.
+
+What EP-3 does take from the precedent is the **body inspector's shape**, not its placement:
+`schemaSectionColumns` finds a conventional heading among the parse tree's top-level nodes and
+reads what follows, and EP-3 copies that traversal. It departs in two places, both recorded in
+`docs/plans/50-inspect-the-computation-body-section-and-enforce-exactly-one-computation-source.md`:
+the inspector lives in `Okf.Markdown` rather than `Okf.Profile`, because it is a format rule and
+not a profile rule; and it **bounds** the section at the next heading of the same or shallower
+level, which `firstTableAfterSchema` does not do. The bounding is not optional — §10.3 counts
+computations, and `examples/ddd-ordering/computations/order-total.md` has a fenced block under a
+later `# Notes` heading that an unbounded scan would count as a second one.
 
 **The Markdown parse configuration** — `Okf.Markdown.markdownOptions` at
 `okf-core/src/Okf/Markdown.hs:39`, and the body inspector `Okf.Profile.schemaSectionColumns`
@@ -421,10 +458,19 @@ coherent across the tool rather than the plan that first makes it visible.
 - [x] EP-2 (2026-08-01): whether the five contract keys join `Okf.Document.coreFrontmatterFieldOrder` is decided — they join it, between `status` and `generated` — and serialization round-trips a §10.2 concept unchanged
 - [x] EP-2 (2026-08-01): a contract missing `runtime` is reported for that type only, leaving other types untouched, and `okf show` renders the contract
 - [x] EP-2 (2026-08-01): `computation`, `executor.resource`, and `attester.resource` are wired into EP-1's core path check, discharging the obligation the Decision Log assigned to this plan
-- [ ] EP-3: the `# Computation` body section and its fenced block are extracted
-- [ ] EP-3: providing both an inline fence and a `computation` path, or neither, is reported per §10.3, and the computation is reachable from the CLI
-- [ ] EP-4: the `references/` convention is documented and okf's treatment of Markdown and non-Markdown files under it is decided and tested
-- [ ] EP-5: the CLI reports attested computations and their contract problems coherently across commands
+- [ ] EP-3: the `# Computation` body section and its code block are extracted, bounded at the next heading of the same or shallower level, accepting the indented spelling §10.2's own example uses as well as the fenced one §10.3's prose names
+- [ ] EP-3: providing both an inline block and a `computation` path, neither, or more than one block, is reported per §10.3 under `StrictAuthoring` and for that `type` alone
+- [ ] EP-3: the computation is reachable from the CLI in both of §10.3's forms — `okf show --computation` reads the file named by `computation` rather than printing its path
+- [ ] EP-4: what okf does today with a `references/` directory is surveyed against the shipped bundles, and the four provisional decisions are confirmed or revised against that evidence before any code is written
+- [ ] EP-4: a dangling relative frontmatter path that would resolve read from the bundle root says so, and §6.2 resolution itself is unchanged — this is EP-4's answer to the question EP-2 handed it
+- [ ] EP-4: `okf validate --profile` resolves a path rule against every file in the bundle rather than only `.md` concepts, closing the core-versus-profile divergence EP-1 left open, additively via `validateProfileWith`
+- [ ] EP-4: a generated `index.md` lists a directory's non-Markdown files, retiring the one-byte index EP-2 shipped
+- [ ] EP-4: `docs/adr/13-the-references-convention-and-non-markdown-files.md` is written — the second of the two ADRs this initiative owes
+- [ ] EP-5: every command is audited against an attested computation and each gap is scheduled or deliberately left alone with a reason
+- [ ] EP-5: `okf computations` lists a bundle's attested computations in the house style of `okf trust` and `okf sources`
+- [ ] EP-5: `okf profile show` renders `objectFields`, closing the gap inherited from `docs/masterplans/8-extend-okf-profiles-for-v0-2-field-families.md`
+- [ ] EP-5: the embedded `okf help` topics describe OKF v0.2 rather than v0.1
+- [ ] EP-5: the profile route to the rest of the §10 contract is demonstrated in `docs/user/profiles.md` with a fixture that cannot rot, and is deliberately not added to `docs/profiles/okf-v0-2.dhall`
 - [x] EP-5 (2026-08-01, delivered by EP-2): index treatment is verified against a real bundle — `Okf.Index.renderIndex` already groups by `type`, so §10.5's claim holds with no code change; EP-5 still owns whether more than that is wanted
 - [x] EP-5 (2026-08-01, delivered by EP-2): an attested computation appears in a shipped example — `examples/ddd-ordering/computations/order-total.md`, with a test asserting it validates
 - [x] EP-5 (2026-08-01, delivered by EP-2): user documentation covers the type, and `docs/user/format.md`'s "one v0.2 addition okf does not implement" paragraph is retired
@@ -647,6 +693,60 @@ listing, a document about a command unrelated to this initiative, and moved a co
 attested computations. Any plan touching a shipped example should grep `docs/` for that bundle's
 name and re-run what it finds.
 
+**Writing EP-3, EP-4, and EP-5 turned up three things this MasterPlan did not know, none of which
+changes the decomposition.**
+
+First, **specification §10.3 contradicts §10.2's own worked example about what an inline
+computation looks like, and EP-3 must accept both spellings.** §10.3's prose says "a single
+*fenced* code block in the body under `# Computation`". §10.2's example writes the computation as
+four-space-indented lines, which in CommonMark is an *indented* code block, not a fenced one — and
+`examples/ddd-ordering/computations/order-total.md` and both fixtures under
+`okf-core/test/fixtures/attested-computation/` copy that shape, because they were written from the
+example. A check honouring §10.3's letter would report every attested computation this repository
+ships as having none. Probing cmark-gfm with okf's own options settles that accepting both costs
+nothing, because the distinction does not reach the tree as a difference in node type:
+
+```text
+Node ... DOCUMENT
+  [ Node ... (HEADING 1) [Node ... (TEXT "Computation") []]
+  , Node ... (CODE_BLOCK "" "SELECT 1\n") []
+  , Node ... (HEADING 1) [Node ... (TEXT "Notes") []]
+  , Node ... (CODE_BLOCK "sql" "SELECT 2\n") []
+  ]
+```
+
+Both are `CODE_BLOCK info literal`; only the info string differs. Note also that headings and
+blocks are *siblings* under `DOCUMENT`, so "under `# Computation`" is a boundary EP-3 has to draw
+rather than read off the tree — which is the one place EP-3 departs from the
+`Okf.Profile.schemaSectionColumns` precedent this MasterPlan told it to follow, since that
+function scans forward without bounding its section.
+
+Second, **the help text compiled into the shipped binary still describes OKF v0.1, and this is the
+staleness with the widest reach.** `Okf.Cli.Help` embeds eight plain-text guides with `file-embed`
+so `okf help format` works with no files on disk and no network — which is exactly what an agent
+reads. That topic lists `timestamp` among the current frontmatter fields and names `# Citations` as
+a conventional body heading, both superseded by v0.2, and mentions no v0.2 family at all:
+
+```bash
+$ grep -rn "Attested\|generated\|stale_after" okf-cli/help/
+okf-cli/help/format.md:57:    # Citations   Numbered external sources backing claims in the body.
+```
+
+One hit, for the wrong reason. Three MasterPlans of v0.2 work reached `docs/user/` and none of it
+reached the binary. This is EP-5's, and it widens that plan beyond attested computations by
+design: a coherence plan that fixed the help topic for one type and left the rest v0.1 would be
+performing the same neglect it exists to correct.
+
+Third, **closing the core-versus-profile divergence over non-Markdown targets is cheap, and this
+MasterPlan and `docs/adr/12-frontmatter-path-resolution.md` both overestimated it.** Both record
+it as "a wider change to `validateProfile`'s signature than EP-1 needed", and `validateProfile` is
+indeed called from roughly ninety places in `okf-core/test/Main.hs` alone. But the change need not
+touch any of them: a new `validateProfileWith` takes the inventory and `validateProfile` is
+defined as `validateProfileWith (bundleInventoryOfConcepts concepts)`, which reproduces the
+concepts-only view every existing call site already assumes. One implementation, no drift, and the
+CLI switches by passing the inventory it already loads. EP-4 owns it and the estimate is corrected
+here so the plan is not weighed against a cost that was never real.
+
 
 ## Decision Log
 
@@ -824,6 +924,52 @@ name and re-run what it finds.
   Changing the anchoring in EP-2 would have altered §6.2 resolution for every path-valued field,
   days after EP-1 fixed it in an ADR, on the strength of one example whose concept location the
   specification never states.
+  Date: 2026-08-01
+
+- Decision: EP-4 answers the bare-`references/` question by keeping §6.2 resolution exactly as it
+  is and adding a hint to the diagnostic, rather than anchoring a bare `references/` prefix at the
+  bundle root.
+  Rationale: this is the question EP-2 raised and handed to EP-4, and it is now answered in that
+  plan rather than left open. §6.2 defines three forms and special-casing one prefix would make
+  `references/x.md` resolve differently from `./references/x.md`, which no reading supports; it
+  would also break the body-link symmetry `docs/adr/12-frontmatter-path-resolution.md` fixed days
+  earlier. But the risk is real and evidenced — §10.2's own worked example writes the bare form —
+  and a diagnostic that names the resolvable bundle-relative spelling answers it completely at no
+  semantic cost. `DanglingFrontmatterPath` gains a fourth field carrying that alternative, which is
+  a constructor-arity change downstream consumers must handle.
+  Date: 2026-08-01
+
+- Decision: EP-4 closes the core-versus-profile divergence over non-Markdown targets, additively.
+  Rationale: the Decision Log entry above left the *whether* to EP-4 and this settles it as yes.
+  The reason it was in doubt was cost, and the cost estimate was wrong — see Surprises &
+  Discoveries. A new `validateProfileWith` takes the inventory and `validateProfile` is defined in
+  terms of it with `bundleInventoryOfConcepts`, so all ninety-odd existing call sites keep working
+  and keep meaning what they meant. The defect being fixed is real: a team writing a `path` rule on
+  `attester.resource` is asking okf to check that the attester exists, and okf currently accepts
+  any non-`.md` target unchecked while `docs/user/profiles.md` documents that as a limitation.
+  Date: 2026-08-01
+
+- Decision: EP-5's scope is widened beyond attested computations to include the embedded
+  `okf help` topics, which still describe OKF v0.1.
+  Rationale: EP-5 is the coherence plan, and the incoherence found while writing it is not
+  type-specific — the guides compiled into the binary list `timestamp` as a current field and
+  `# Citations` as a conventional heading, and name no v0.2 family at all. Fixing that surface for
+  the Attested Computation type alone would leave the tool's own self-contained documentation
+  describing a superseded version of the format, which is the exact neglect the plan exists to
+  correct. This is a widening of EP-5 rather than a new child plan because it is one editing pass
+  over two files with no code behind it.
+  Date: 2026-08-01
+
+- Decision: EP-5 ships the worked §10 house-convention descriptor in `docs/user/profiles.md` and a
+  test fixture, and deliberately does **not** add it to `docs/profiles/okf-v0-2.dhall`.
+  Rationale: this makes the Decision Log entry above — "EP-5 demonstrates the profile route rather
+  than duplicating it" — concrete about *where*. The shipped reference profile is the v0.2
+  format's own rules; demanding that every parameter carry a `type` is a house convention and
+  putting it there would misrepresent the format to every team that adopts the profile, which is
+  the mistake `docs/plans/47-enforce-the-profile-declared-okfversion-and-ship-a-v0-2-reference-profile.md`
+  made and withdrew. Demanding `runtime` there would duplicate EP-2's core check and double-report.
+  Shipping the descriptor as a fixture inside `testFrozenFixturesCompile` is what stops the
+  documented transcript from rotting.
   Date: 2026-08-01
 
 - Decision: EP-2 delivered three of EP-5's Progress items — index verification, the shipped
@@ -1006,3 +1152,61 @@ The remaining plans are EP-3, EP-4, and EP-5, none of which is written yet. EP-3
 dependency on EP-2 is now satisfied and it is the next implementable plan; EP-4's hard dependency
 on EP-1 was already satisfied, so EP-3 and EP-4 can proceed in parallel. EP-5 still waits on
 EP-3.
+
+
+## Revision note — 2026-08-01 (EP-3, EP-4, and EP-5 created)
+
+The three remaining child ExecPlans are written and the Exec-Plan Registry names them:
+`docs/plans/50-inspect-the-computation-body-section-and-enforce-exactly-one-computation-source.md`,
+`docs/plans/51-adopt-the-references-convention-for-executors-and-attesters.md`, and
+`docs/plans/52-surface-attested-computations-across-the-cli-and-documentation.md`. All five child
+plans now exist; EP-1 and EP-2 are Complete and the other three are Not Started.
+
+**The decomposition did not change** — five plans, same boundaries, same ordering, same critical
+path. The deferral decided on this date is discharged, and it earned its place: each of the three
+plans turns on a decision EP-1 or EP-2 made while implementing rather than while planning, and one
+of them turns on a specification contradiction that only appeared when the body inspector was
+designed concretely.
+
+**One Integration Point was wrong and is corrected.** The `TypeRule` entry told EP-3 to implement
+§10.3's exactly-one rule as a profile rule — "a boolean or enumerated knob on the type rule, a body
+inspector in `Okf.Profile`, a `ProfileViolation` constructor". That is the shape of a house
+convention, and §10.3 is not one. Following it would have left okf enforcing §10.2's REQUIRED
+`runtime` with no profile and §10.3's rule only with one, and would have contradicted this
+document's own Decision Log entry that what this initiative adds beyond MasterPlan 8 is the
+unprofiled core half. The entry now separates what EP-3 genuinely takes from the precedent — the
+body inspector's traversal shape — from where the check lands, and records the two places EP-3
+departs: the inspector lives in `Okf.Markdown`, and it bounds its section, which
+`firstTableAfterSchema` does not.
+
+**Three findings are new and are in Surprises & Discoveries.** Specification §10.3 says "fenced
+code block" while §10.2's own worked example writes an indented one, and every attested computation
+this repository ships copies the example — so EP-3 accepts both, with a cmark-gfm parse transcript
+showing the distinction never reaches the tree as a node-type difference. The help text compiled
+into the shipped binary still describes OKF v0.1, listing `timestamp` as current and `# Citations`
+as a conventional heading, with no v0.2 family anywhere in `okf-cli/help/`. And closing the
+core-versus-profile divergence over non-Markdown targets is cheap rather than wide: an additive
+`validateProfileWith` leaves every existing call site untouched, which corrects an estimate this
+document and `docs/adr/12-frontmatter-path-resolution.md` both got wrong.
+
+**Four decisions the earlier revision notes left to "whichever plan reaches it" are now assigned
+and answered in the Decision Log.** EP-4 answers the bare-`references/` question by keeping §6.2
+resolution and adding a hint to the diagnostic, which costs a fourth field on
+`DanglingFrontmatterPath` — a constructor-arity change, recorded in Integration Points. EP-4 closes
+the profile/inventory divergence. EP-5 is widened to bring the embedded help topics to v0.2, which
+is a widening beyond attested computations by design. And EP-5 ships the worked §10 house-convention
+descriptor in `docs/user/profiles.md` and a compiled fixture rather than in
+`docs/profiles/okf-v0-2.dhall`, which makes the "demonstrate rather than duplicate" decision
+concrete about where.
+
+The Progress list is re-cut against the three plans' actual milestones, and now names EP-4's ADR —
+`docs/adr/13-the-references-convention-and-non-markdown-files.md` — as a tracked item rather than
+leaving the initiative's second owed ADR implicit.
+
+No ADR was created or amended by this revision. The two ADRs this initiative owes are unchanged in
+scope: ADR 12 is written, and ADR 13 belongs to EP-4, written by the plan that implements it rather
+than in advance. EP-5's Milestone 5 runs the initiative-wide distillation pass and writes a third
+only if something durable is left without a home.
+
+The working tree was confirmed green before the plans were written (`cabal test all`, 1 of 1 test
+suites passed), so a future failure during implementation is attributable to that implementation.
