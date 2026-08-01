@@ -99,7 +99,7 @@ This section must always reflect the actual current state of the work.
 
 - [x] Milestone 1 (2026-08-01): what okf does today with a `references/` directory is surveyed against the shipped bundles and recorded in Surprises & Discoveries with real transcripts, and the Decision Log's first four decisions are each confirmed or revised against that evidence — all four hold; the plan's list of non-Markdown files was short by one (`references/queries/revenue.sql`)
 - [x] Milestone 2 (2026-08-01): a dangling relative frontmatter path that *would* resolve read from the bundle root says so in the diagnostic, and the resolution rule itself is unchanged
-- [ ] Milestone 3: `okf validate --profile` resolves a path-valued rule against every file in the bundle, not only against `.md` concepts, and the existing `validateProfile` entry point keeps its current meaning
+- [x] Milestone 3 (2026-08-01): `okf validate --profile` resolves a path-valued rule against every file in the bundle, not only against `.md` concepts, and the existing `validateProfile` entry point keeps its current meaning
 - [ ] Milestone 4: `okf index` lists a directory's non-Markdown files, so a directory holding only an attester no longer generates a one-byte index
 - [ ] Milestone 5: `docs/adr/13-the-references-convention-and-non-markdown-files.md` records the durable decisions, and `docs/user/format.md` and `docs/user/profiles.md` are corrected, including the profile limitation this plan retires
 - [ ] Milestone 5: every `okf` transcript in `docs/` that this plan perturbs is re-run and corrected
@@ -258,6 +258,41 @@ $ cabal run -v0 okf -- validate /tmp/okf-r --strict
 computations/revenue: executor.resource names computations/references/skills/run-on-bq.md, which does not exist in this bundle
 ```
 
+### Milestone 3 — a predicate is not enough, and the tests said so
+
+**Swapping `Set ConceptId` for a `FilePath -> Bool` existence predicate, exactly as this plan
+specified, made `validateProfile` reject what it used to skip.** Two tests failed immediately:
+
+```text
+FAIL validateProfile checks a top-level path-valued field: expected [], got
+  [DanglingPathReference (metrics/revenue) (resource) "/references/attesters/revenue.py"]
+FAIL validateProfile checks sources[].resource with element indexes: ... got one extra
+  DanglingPathReference ... "references/attesters/revenue.py"
+```
+
+The reasoning that produced the defect is worth writing down because it is subtle. This plan's
+Decision Log promised `validateProfile` would keep "its exact current signature and meaning", and
+defined it as `validateProfileWith (bundleInventoryOfConcepts concepts)`. The signature was indeed
+preserved. The *meaning* was not: `bundleInventoryOfConcepts` holds only concept source paths, so a
+`.py` target is absent from it, and a predicate that answers `False` for "absent" turns a question
+okf never asked into a rejection. The old code did not ask — it returned `[]` at
+`FilePath.takeExtension resolved /= ".md"` — and deleting that early return, which this plan
+explicitly instructed, is what did the damage.
+
+This is `docs/adr/11-growing-the-profile-descriptor-language.md`'s rule biting from an unexpected
+direction. That rule says a new rejection must be non-retroactive or unambiguous. Milestone 3's
+*intended* rejection is both: a caller that walked a directory either holds the file or does not.
+But the retroactive one arrived through the entry point the plan set out to preserve, where it is
+neither — a library caller with no directory has not looked at all.
+
+The fix is that existence has three answers rather than two. An internal `PathTargetPresence`
+distinguishes `TargetPresent`, `TargetAbsent`, and `TargetUnknown`; `validateProfileWith` answers
+the first two for every path, and `validateProfile` answers `TargetUnknown` for anything that is
+not `.md`. Both entry points share one implementation, so the only thing that can differ between
+them is the one question that distinguishes them. The two failing tests then passed unchanged,
+which is the point: they are the pinned statement of the preserved behaviour and they were right
+to fail.
+
 **One correction: this plan's list of non-Markdown files in bundles was short by one.** Context
 and Orientation names three, all attesters. There are four, and the fourth is not an attester:
 
@@ -372,6 +407,23 @@ rule cost it a withdrawn check and thirty-one failing tests. Confirm before buil
   `examples/ddd-ordering/references/index.md`'s bullet `- [attesters/](attesters/index.md)`
   pointing at a file that no longer exists, and it discloses less rather than more. Files whose
   name begins with `.` are skipped, so a stray `.DS_Store` never lands in a committed index.
+  Date: 2026-08-01
+
+- Decision: Existence at the profile layer has three answers, not two. An internal
+  `PathTargetPresence` — `TargetPresent`, `TargetAbsent`, `TargetUnknown` — replaces the
+  `FilePath -> Bool` predicate this plan specified, and only `TargetAbsent` produces
+  `DanglingPathReference`.
+  Rationale: this plan's fourth decision promised `validateProfile` would keep its exact meaning
+  and then specified a change that silently broke it — see Surprises & Discoveries. A boolean
+  predicate cannot distinguish "the bundle does not hold this" from "I was handed concepts and
+  never looked", and collapsing the second into the first makes a library caller with no directory
+  start reporting §6.3's `references/attesters/revenue.py` as dangling. That is a retroactive
+  rejection through the preserved entry point, which is exactly what
+  `docs/adr/11-growing-the-profile-descriptor-language.md` forbids. The rejected alternative —
+  accepting the tightening and updating the two tests — was rejected because those tests are the
+  pinned statement of the behaviour this milestone promised not to touch, and because a caller that
+  has not looked cannot honestly report a finding. The type is internal to `Okf.Profile` and is not
+  exported, so the module's public surface gains exactly one function.
   Date: 2026-08-01
 
 - Decision: The fourth field of `DanglingFrontmatterPath` carries the *resolved bundle-relative
@@ -998,6 +1050,44 @@ object-valued key, so the rule must reach a *member* of it; `docs/user/profiles.
 `okf-core/test/fixtures/profiles/object-fields-mp8-ep1.dhall` are working examples of the two
 halves. Read those rather than guessing at constructor names, write the descriptor to
 `/tmp/okf-attester.dhall`, and record the working descriptor in this plan once you have it.
+
+The working descriptor, as run on 2026-08-01. `field.record` refines `attester` to a mapping and
+`nested.bundlePath` puts the path policy on its `resource` member. The rule is `optional` rather
+than `required` so that the four fixture concepts carrying no attester report nothing and the run
+shows only the path behaviour. Imports are absolute because the file sits outside the repository;
+a descriptor kept in-tree writes them relative:
+
+```dhall
+let Profile = /ABSOLUTE/okf/okf-core/dhall/defaults/Profile.dhall
+
+let TypeRule = /ABSOLUTE/okf/okf-core/dhall/defaults/TypeRule.dhall
+
+let FrontmatterRules = /ABSOLUTE/okf/okf-core/dhall/defaults/FrontmatterRules.dhall
+
+let NestedRules = /ABSOLUTE/okf/okf-core/dhall/defaults/NestedRules.dhall
+
+let field = /ABSOLUTE/okf/okf-core/dhall/mk/FieldRule.dhall
+
+let nested = /ABSOLUTE/okf/okf-core/dhall/mk/NestedFieldRule.dhall
+
+in  Profile::{
+    , name = "attester-must-exist"
+    , okfVersion = "0.2"
+    , types =
+      [ TypeRule::{
+        , type = "Attested Computation"
+        , frontmatter = FrontmatterRules::{
+          , optional =
+            [ field.record
+                "attester"
+                NestedRules::{ required = [ nested.bundlePath "resource" ] }
+            ]
+          }
+        }
+      ]
+    }
+```
+
 Then:
 
 ```bash

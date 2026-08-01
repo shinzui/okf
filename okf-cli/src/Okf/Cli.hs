@@ -107,7 +107,7 @@ import Okf.Profile
     parseDocumentId,
     profileFieldDescriptionForType,
     renderDocumentId,
-    validateProfile,
+    validateProfileWith,
   )
 import Okf.Profile.Documentation
   ( DocumentationError (..),
@@ -1092,7 +1092,11 @@ runValidate ValidateOptions {bundlePath, strictMode, profilePath, profileEnforce
                     <> Text.intercalate "\n" (map (("  - " <>) . renderProfileDefinitionError) (toList definitionErrors))
                 )
             Right compiled -> do
-              let violations = validateProfile coreProfile compiled concepts
+              -- With the inventory rather than without it, so a @path@ rule
+              -- naming §6.3's @references/attesters/revenue.py@ is resolved
+              -- rather than accepted unchecked. This command walked a real
+              -- directory, so it can answer the question.
+              let violations = validateProfileWith inventory coreProfile compiled concepts
               mapM_ (Text.IO.hPutStrLn stderr . ("profile: " <>) . renderProfileViolation compiled concepts) violations
               pure violations
 

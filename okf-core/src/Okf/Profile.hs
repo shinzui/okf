@@ -72,6 +72,7 @@ module Okf.Profile
     nextDocumentId,
     ProfileViolation (..),
     validateProfile,
+    validateProfileWith,
 
     -- * Body inspection
     schemaSectionColumns,
@@ -109,7 +110,10 @@ import Numeric.Natural (Natural)
 -- makes the two ambiguous.
 import Okf.Actor qualified as Actor
 import Okf.Bundle
-  ( Concept,
+  ( BundleInventory,
+    Concept,
+    bundleInventoryMember,
+    bundleInventoryOfConcepts,
     conceptDocument,
     conceptIdOf,
     conceptResource,
@@ -198,9 +202,11 @@ data HandleReferenceRule = HandleReferenceRule
 -- that is not there. Declaring both on one rule is a definition error.
 --
 -- An empty @externalUriSchemes@ means no absolute URL is permitted at all, so a
--- separate "must be a path, never a URL" flag would say nothing new. okf
--- resolves a bundle path only when it names a @.md@ file, because
--- 'validateProfile' is handed concepts and no filesystem.
+-- separate "must be a path, never a URL" flag would say nothing new. Which
+-- bundle paths okf can resolve depends on the entry point: 'validateProfileWith'
+-- resolves every file the bundle holds, including §6.3's
+-- @references\/attesters\/revenue.py@, while 'validateProfile' is handed
+-- concepts alone and so resolves @.md@ targets only.
 data PathReferenceRule = PathReferenceRule
   { externalUriSchemes :: ![Text],
     allowSelf :: !Bool
@@ -3169,19 +3175,69 @@ data ProfileViolation
 -- | Check every concept against a compiled profile, returning all deviations.
 -- Profile-wide rules apply even to unknown types; a matching type rule adds its
 -- frontmatter rules and the existing type-specific structural checks.
+--
+-- Existence is decided against the concepts themselves, so a @path@ rule can
+-- tell whether a target names a concept and cannot tell whether it names
+-- @references\/attesters\/revenue.py@; such a target is accepted unchecked.
+-- Callers holding a real directory should use 'validateProfileWith'.
 validateProfile :: ValidationProfile -> CompiledProfile -> [Concept] -> [ProfileViolation]
-validateProfile validationProfile compiled concepts =
+validateProfile =
+  validateProfileWithPresence conceptsOnly bundleInventoryOfConcepts
+  where
+    -- Narrowed to @.md@ on purpose. A caller with concepts and no directory can
+    -- decide a @.md@ target, because a 'Concept' /is/ a non-reserved @.md@
+    -- file — but it has never been able to see §6.3's
+    -- @references/attesters/revenue.py@, and answering 'TargetAbsent' for it
+    -- would turn a question okf cannot ask into a rejection.
+    conceptsOnly conceptInventory resolved
+      | FilePath.takeExtension resolved /= ".md" = TargetUnknown
+      | bundleInventoryMember resolved conceptInventory = TargetPresent
+      | otherwise = TargetAbsent
+
+-- | 'validateProfile' with the bundle's full file inventory, so a @path@ rule
+-- can decide whether a target that is not a concept exists.
+--
+-- Specification §6.3's own example of a path target is
+-- @references\/attesters\/revenue.py@, which is not a concept and which
+-- 'validateProfile' therefore accepts unchecked. A caller that walked a real
+-- directory has 'Okf.Bundle.walkBundleInventory' and can do better. See
+-- @docs\/adr\/13-the-references-convention-and-non-markdown-files.md@.
+--
+-- Passing an inventory does not make validation touch the filesystem. The
+-- inventory is data read once during the bundle walk, where okf is already doing
+-- IO, which is the shape @docs\/adr\/5-compile-profile-rules-before-validation.md@
+-- requires and the one the core §6.2 check already uses.
+validateProfileWith :: BundleInventory -> ValidationProfile -> CompiledProfile -> [Concept] -> [ProfileViolation]
+validateProfileWith inventory =
+  validateProfileWithPresence everyFile (const inventory)
+  where
+    everyFile fullInventory resolved
+      | bundleInventoryMember resolved fullInventory = TargetPresent
+      | otherwise = TargetAbsent
+
+-- | The shared body of 'validateProfile' and 'validateProfileWith'.
+--
+-- The first argument decides what a @path@ rule may conclude about a resolved
+-- §6.2 target; the second supplies the inventory it consults, derived from the
+-- concepts when the caller has no directory to walk. Keeping one implementation
+-- is what stops the two entry points from drifting apart on everything /except/
+-- the one question that distinguishes them.
+validateProfileWithPresence ::
+  (BundleInventory -> FilePath -> PathTargetPresence) ->
+  ([Concept] -> BundleInventory) ->
+  ValidationProfile ->
+  CompiledProfile ->
+  [Concept] ->
+  [ProfileViolation]
+validateProfileWithPresence presenceRule inventoryOf validationProfile compiled concepts =
   concatMap checkConcept sortedConcepts <> checkDuplicateDocumentIds spec sortedConcepts
   where
     spec = compiledProfileSpec compiled
     sortedConcepts = List.sortOn (renderConceptId . conceptIdOf) concepts
     rulesByType = [(rule ^. #type_, rule) | rule <- spec ^. #types]
     validDocumentIdIndex = buildValidDocumentIdIndex spec rulesByType sortedConcepts
-    -- Every concept in the bundle, built once, so a path rule can decide
-    -- whether a resolved @.md@ target is there. This is the whole of what
-    -- profile validation can see: a 'Concept' is a non-reserved @.md@ file, so
-    -- there is deliberately no way to ask about @references/revenue.py@.
-    knownConceptIds = Set.fromList (map conceptIdOf sortedConcepts)
+    -- What this caller can say about a resolved §6.2 path, built once.
+    presenceOf = presenceRule (inventoryOf sortedConcepts)
 
     checkConcept concept =
       let cid = conceptIdOf concept
@@ -3246,7 +3302,7 @@ validateProfile validationProfile compiled concepts =
         pathViolations fieldPath rule actual =
           case rule ^. #path of
             Nothing -> []
-            Just policy -> validatePathValue knownConceptIds cid fieldPath policy actual
+            Just policy -> validatePathValue presenceOf cid fieldPath policy actual
 
         nestedViolations parentKey parentRule = \case
           Array elementValues
@@ -3392,27 +3448,52 @@ validateReferenceText validOwners sourceConcept path policy rawReference =
 -- | Check one path-valued frontmatter value, at any scope. A list is checked
 -- element-wise so that a diagnostic names @sources[1].resource@ rather than the
 -- whole list.
-validatePathValue :: Set ConceptId -> ConceptId -> FieldPath -> PathReferenceRule -> Value -> [ProfileViolation]
-validatePathValue knownConcepts sourceConcept path policy = \case
-  String rawPath -> validatePathText knownConcepts sourceConcept path policy rawPath
+validatePathValue :: (FilePath -> PathTargetPresence) -> ConceptId -> FieldPath -> PathReferenceRule -> Value -> [ProfileViolation]
+validatePathValue presenceOf sourceConcept path policy = \case
+  String rawPath -> validatePathText presenceOf sourceConcept path policy rawPath
   Array values ->
     concat
       [ case value of
           String rawPath ->
-            validatePathText knownConcepts sourceConcept (appendArrayIndex path elementIndex) policy rawPath
+            validatePathText presenceOf sourceConcept (appendArrayIndex path elementIndex) policy rawPath
           _ -> [MalformedPathReference sourceConcept (appendArrayIndex path elementIndex) value]
       | (elementIndex, value) <- zip [0 ..] (Vector.toList values)
       ]
   actual -> [MalformedPathReference sourceConcept path actual]
 
+-- | What a caller can say about a resolved §6.2 bundle path.
+--
+-- Three answers rather than two, because "I cannot tell" is a real state and
+-- collapsing it into "absent" turns silence into a rejection. 'validateProfile'
+-- is handed concepts alone, so it genuinely cannot say whether §6.3's
+-- @references\/attesters\/revenue.py@ is there, and reporting it as dangling
+-- would be a claim okf did not check.
+data PathTargetPresence
+  = -- | The bundle holds it.
+    TargetPresent
+  | -- | The bundle does not hold it, and the caller can see enough to be sure.
+    TargetAbsent
+  | -- | The caller cannot answer for this path.
+    TargetUnknown
+  deriving stock (Generic, Eq, Show)
+
 -- | Check one path value against the §6.2 grammar and the profile's policy.
 --
 -- Every diagnostic carries the raw text the author wrote rather than the
 -- collapsed path okf computed from it, so the message names something findable
--- in the file. Existence is decided only for a @.md@ target; see
--- 'validateProfile'.
-validatePathText :: Set ConceptId -> ConceptId -> FieldPath -> PathReferenceRule -> Text -> [ProfileViolation]
-validatePathText knownConcepts sourceConcept path policy rawPath =
+-- in the file.
+--
+-- Existence is decided by the supplied lookup, which reports what the caller can
+-- actually see: 'validateProfileWith' holds a real directory's inventory and so
+-- resolves §6.3's own @references\/attesters\/revenue.py@, while
+-- 'validateProfile' holds the concepts alone and answers 'TargetUnknown' for it.
+--
+-- The @.md@ branch still goes through 'conceptIdFromFilePath', because that is
+-- what decides self-reference and what makes 'MalformedPathReference' reachable
+-- for a path no concept ID could be built from. What it no longer decides is
+-- whether the target is there.
+validatePathText :: (FilePath -> PathTargetPresence) -> ConceptId -> FieldPath -> PathReferenceRule -> Text -> [ProfileViolation]
+validatePathText presenceOf sourceConcept path policy rawPath =
   case classifyPathReference sourceConcept rawPath of
     ExternalUrl scheme
       | scheme `elem` policy ^. #externalUriSchemes -> []
@@ -3421,20 +3502,20 @@ validatePathText knownConcepts sourceConcept path policy rawPath =
     EscapesBundle -> [PathEscapesBundle sourceConcept path rawPath]
     MalformedPath -> [MalformedPathReference sourceConcept path (String rawPath)]
     BundlePath resolved
-      -- A path to anything other than a concept is accepted without a check.
-      -- OKF v0.2 §6.3's own example is @references/attesters/revenue.py@, and
-      -- 'validateProfile' never sees a file that is not a concept, so reporting
-      -- one as dangling would be a claim okf did not check.
-      | FilePath.takeExtension resolved /= ".md" -> []
-      | otherwise ->
+      | FilePath.takeExtension resolved == ".md" ->
           case conceptIdFromFilePath resolved of
             Left _ -> [MalformedPathReference sourceConcept path (String rawPath)]
             Right target
               | target == sourceConcept,
                 not (policy ^. #allowSelf) ->
                   [SelfDocumentReference sourceConcept path rawPath]
-              | target `Set.member` knownConcepts -> []
-              | otherwise -> [DanglingPathReference sourceConcept path rawPath]
+              | otherwise -> danglingWhenAbsent resolved
+      | otherwise -> danglingWhenAbsent resolved
+  where
+    danglingWhenAbsent resolved = case presenceOf resolved of
+      TargetAbsent -> [DanglingPathReference sourceConcept path rawPath]
+      TargetPresent -> []
+      TargetUnknown -> []
 
 appendArrayIndex :: FieldPath -> Int -> FieldPath
 appendArrayIndex (FieldPath pathSegments) elementIndex =

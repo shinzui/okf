@@ -219,6 +219,7 @@ main = do
         test "validateProfile checks a top-level path-valued field" testValidatePathTopLevel,
         test "validateProfile checks sources[].resource with element indexes" testValidatePathNested,
         test "validateProfile checks a path inside an object-valued field" testValidatePathObjectScope,
+        testIO "validateProfileWith resolves a non-Markdown path target" testValidateProfileWithInventory,
         test "compileProfile keeps a rule declaring both shapes at any cardinality" testCompileRecordOrListRule,
         test "validateProfile requires a member of an object field" testValidateObjectMember,
         test "validateProfile checks a bare mapping and a list against the same member rules" testValidateRecordOrList,
@@ -4120,6 +4121,48 @@ testValidatePathTopLevel = do
   -- A path resolving to the concept that carries it, with allowSelf unset.
   check (String "/metrics/revenue.md")
     >>= assertEqual [SelfDocumentReference cid resourcePath "/metrics/revenue.md"]
+
+-- | The core-versus-profile divergence, closed: 'validateProfileWith' resolves a
+-- path naming a file that is not a concept, and 'validateProfile' still cannot
+-- and still says nothing.
+--
+-- Run against a real directory because that is the only way to have an inventory
+-- holding a file 'walkBundle' filters out. @dangling-frontmatter-path@ carries
+-- both halves already: @non-markdown.md@ names a @.py@ that is there and
+-- @dangling.md@ names a @.txt@ that is not.
+--
+-- Specification §6.3's example is exactly this shape, and
+-- @docs\/adr\/13-the-references-convention-and-non-markdown-files.md@ records why
+-- the silent answer is preserved rather than tightened: a caller with no
+-- directory has not looked, and reporting a target it never checked would be a
+-- claim okf cannot back.
+testValidateProfileWithInventory :: IO (Either Text ())
+testValidateProfileWithInventory = do
+  root <- fixturePath "dangling-frontmatter-path"
+  concepts <- readBundle root
+  inventory <- readBundleInventory root
+  pure
+    ( do
+        compiled <-
+          firstShow
+            ( compileProfile
+                (pathProfileWith (Just (PathReferenceRule ["bigquery"] False)) Nothing Nothing Nothing)
+            )
+        danglingId <- firstShow (parseConceptId "dangling")
+        specSpellingId <- firstShow (parseConceptId "computations/spec-spelling")
+        let resourcePath = fieldPath "resource"
+        -- With the full inventory: the missing .txt and the relative .py that
+        -- resolves outside the bundle are both reported, and the .py that is
+        -- really there is silent.
+        assertEqual
+          [ DanglingPathReference specSpellingId resourcePath "references/attesters/revenue.py",
+            DanglingPathReference danglingId resourcePath "/references/deleted.txt"
+          ]
+          (validateProfileWith inventory PermissiveConformance compiled concepts)
+        -- Without it: nothing at all, exactly as before this plan. Neither target
+        -- is Markdown, so a concepts-only caller has not looked at either.
+        assertEqual [] (validateProfile PermissiveConformance compiled concepts)
+    )
 
 -- | The motivating case: a path rule on @sources[].resource@, reported with the
 -- element index so the author can find the entry. Nested path checking did not
