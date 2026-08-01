@@ -80,6 +80,8 @@ main = do
         testIO "writeBundleIndexes is deterministic" testWriteBundleIndexesDeterministic,
         testIO "readBundleVersion reads a declared, absent, or unparseable okf_version" testReadBundleVersion,
         testIO "readBundleVersion accepts the unquoted YAML number form" testReadBundleVersionUnquoted,
+        testIO "writeBundleIndexes preserves an existing okf_version declaration" testWriteBundleIndexesPreservesVersion,
+        testIO "writeBundleIndexesWith declares a version and leaves others alone" testWriteBundleIndexesDeclaresVersion,
         testIO "fixture valid bundle validates and graphs expected edges" testFixtureValidBundle,
         testIO "fixture graph JSON shape is stable" testFixtureGraphJsonShape,
         testIO "fixture unterminated frontmatter reports parse error" testFixtureUnterminatedFrontmatter,
@@ -695,6 +697,54 @@ testReadBundleVersionUnquoted = do
 versionOf :: [(FilePath, Text)] -> IO (Either BundleError VersionDeclaration)
 versionOf files =
   withDiscoveryTree "okf-version" files readBundleVersion
+
+-- | Index generation rewrites the bundle root's @index.md@, so without reading
+-- the existing declaration first a single write destroys it. Fails on the code
+-- that preceded this test.
+testWriteBundleIndexesPreservesVersion :: IO (Either Text ())
+testWriteBundleIndexesPreservesVersion =
+  withDiscoveryTree
+    "okf-version-preserve"
+    [ ("index.md", "---\nokf_version: \"0.2\"\n---\n\n# Root\n"),
+      ("tables/orders.md", typedConcept "Orders")
+    ]
+    ( \root -> do
+        written <- writeBundleIndexes root
+        rootIndex <- Text.IO.readFile (root </> "index.md")
+        tablesIndex <- Text.IO.readFile (root </> "tables" </> "index.md")
+        declaration <- readBundleVersion root
+        pure
+          ( do
+              firstShow written
+              assertEqual (Right (VersionDeclared (OkfVersion 0 2))) declaration
+              assertBool "root index keeps the declaration" ("okf_version: \"0.2\"" `Text.isInfixOf` rootIndex)
+              assertBool "root index still lists subdirectories" ("[tables/](tables/index.md)" `Text.isInfixOf` rootIndex)
+              assertBool "only the root index carries frontmatter" (not ("---" `Text.isInfixOf` tablesIndex))
+          )
+    )
+
+-- | An explicit declaration is written where there was none; a bundle that
+-- declares nothing keeps a frontmatter-free root index.
+testWriteBundleIndexesDeclaresVersion :: IO (Either Text ())
+testWriteBundleIndexesDeclaresVersion =
+  withDiscoveryTree
+    "okf-version-declare"
+    [("tables/orders.md", typedConcept "Orders")]
+    ( \root -> do
+        untouched <- writeBundleIndexes root
+        withoutDeclaration <- Text.IO.readFile (root </> "index.md")
+        declared <- writeBundleIndexesWith (Just (OkfVersion 0 2)) root
+        withDeclaration <- Text.IO.readFile (root </> "index.md")
+        pure
+          ( do
+              firstShow untouched
+              firstShow declared
+              assertBool "undeclared bundle gets no frontmatter" (not ("---" `Text.isInfixOf` withoutDeclaration))
+              assertEqual
+                ("---\nokf_version: \"0.2\"\n---\n\n" <> withoutDeclaration)
+                withDeclaration
+          )
+    )
 
 testFixtureValidBundle :: IO (Either Text ())
 testFixtureValidBundle = do

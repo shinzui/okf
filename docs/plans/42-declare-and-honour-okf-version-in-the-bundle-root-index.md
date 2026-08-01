@@ -67,7 +67,7 @@ plan is what makes it possible to say so.
 ## Progress
 
 - [x] Milestone 1: a bundle-root `index.md` declaration is parsed into a typed version value (2026-08-01)
-- [ ] Milestone 2: index generation preserves an existing declaration and can write one
+- [x] Milestone 2: index generation preserves an existing declaration and can write one (2026-08-01)
 - [ ] Milestone 3: the declared version is reported by the CLI
 - [ ] Milestone 4: v0.1 fallbacks route through one gate that consults the declaration
 - [ ] Milestone 5: an unknown declared version degrades to best-effort consumption, never refusal
@@ -84,6 +84,34 @@ rendered `index.md` over every directory in the bundle, including the root, and
 `okf_version: "0.2"` to their root index and then runs `okf index --write` **silently loses
 the declaration**. Preserving it is therefore not a nicety; it is a data-loss fix that must
 land in the same change that makes the declaration meaningful.
+
+The hazard was reproduced and then fixed. On the code before Milestone 2,
+`okf index --write` against a copy of the fixture bundle carrying
+`okf_version: "0.2"` left a root index whose first line was `# Subdirectories`; after
+it, the same command leaves the three-line frontmatter block intact and rewrites only
+the body. The regression guard is
+`writeBundleIndexes preserves an existing okf_version declaration` in
+`okf-core/test/Main.hs`.
+
+Two discoveries from implementing Milestones 1 and 2.
+
+*Preserving only what okf can parse is still data loss.* The plan's shape for the fix —
+`renderRootIndex :: Maybe OkfVersion -> …` — cannot express "keep the declaration that
+is there" when the declaration does not parse, because there is no `OkfVersion` to pass.
+Rendering such a root index without frontmatter would delete an author's text in exactly
+the case where they most need to see the diagnostic that tells them it is wrong.
+`renderRootIndex` keeps the plan's signature and delegates to an internal
+`renderRootIndexText :: Maybe Text -> …`, which index generation feeds with the raw
+declared text. An unparseable declaration therefore survives regeneration verbatim and
+is reported by validation rather than quietly repaired.
+
+*The bundle root is rendered twice and both writes hit the same file.*
+`indexDirectories` yields the root as both `""` and `"."` — the comment at
+`okf-cli/src/Okf/Cli.hs` in `writeProfileDocumentation` already noted this for its
+count — so "is this the root?" cannot be a test on the relative directory string.
+`renderDirectoryIndex` decides it on the normalised index path instead
+(`FilePath.normalise indexPath == "index.md"`), which is true for both spellings and
+false for every subdirectory.
 
 (Record further discoveries here as you work, with short evidence.)
 
@@ -121,6 +149,16 @@ land in the same change that makes the declaration meaningful.
   the same rule `readBundleVersion` applies, and Milestone 5's gate must compare against a
   single named "highest version okf understands" rather than an inline literal. Both are
   additions; every signature the plan fixes is unchanged.
+  Date: 2026-08-01
+
+- Decision: Carry the `--okf-version` override through new `renderBundleIndexesWith` and
+  `writeBundleIndexesWith` functions, leaving `renderBundleIndexes` and
+  `writeBundleIndexes` as wrappers that pass `Nothing`.
+  Rationale: the override and the preserved declaration are different questions —
+  "declare this" versus "keep whatever is there" — and only the CLI's new flag asks the
+  first. Wrapping keeps every existing caller, including
+  `writeProfileDocumentation` in `okf-cli/src/Okf/Cli.hs` and the profile documentation
+  tests, unchanged while giving them the preservation fix for free.
   Date: 2026-08-01
 
 (Add further decisions as you make them. Milestones 4 and 5 each end with a decision this

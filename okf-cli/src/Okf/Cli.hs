@@ -155,7 +155,8 @@ data ValidateOptions = ValidateOptions
 
 data IndexOptions = IndexOptions
   { bundlePath :: !FilePath,
-    write :: !Bool
+    write :: !Bool,
+    okfVersion :: !(Maybe Text)
   }
   deriving stock (Show, Eq)
 
@@ -317,6 +318,13 @@ indexOptionsParser =
   IndexOptions
     <$> bundleArgument
     <*> switch (long "write" <> help "Write generated index.md files instead of previewing")
+    <*> optional
+      ( strOption
+          ( long "okf-version"
+              <> metavar "MAJOR.MINOR"
+              <> help "Declare the OKF version in the bundle root index"
+          )
+      )
 
 logOptionsParser :: Parser LogOptions
 logOptionsParser =
@@ -1085,16 +1093,22 @@ runValidate ValidateOptions {bundlePath, strictMode, profilePath, profileEnforce
           )
 
 runIndex :: IndexOptions -> IO ()
-runIndex IndexOptions {bundlePath, write} =
+runIndex IndexOptions {bundlePath, write, okfVersion} = do
+  override <- traverse requestedVersion okfVersion
   if write
     then do
-      result <- writeBundleIndexes bundlePath
+      result <- writeBundleIndexesWith override bundlePath
       case result of
         Left bundleError -> dieText (renderBundleError bundleError)
         Right () -> Text.IO.putStrLn "Wrote index.md files"
     else do
-      indexes <- loadIndexesOrExit bundlePath
+      indexes <- loadIndexesOrExit override bundlePath
       mapM_ renderIndexPreview indexes
+  where
+    requestedVersion rawVersion =
+      case parseOkfVersion rawVersion of
+        Just version -> pure version
+        Nothing -> dieText ("Not an OKF version of the form MAJOR.MINOR: " <> rawVersion)
 
 runLog :: LogOptions -> IO ()
 runLog LogOptions {bundlePath, checkStale, sinceRef, logSub = LogPreview} = do
@@ -1463,9 +1477,9 @@ loadBundleOrExit bundlePath = do
     Left bundleError -> dieText (renderBundleError bundleError)
     Right concepts -> pure concepts
 
-loadIndexesOrExit :: FilePath -> IO [(FilePath, Text)]
-loadIndexesOrExit bundlePath = do
-  result <- renderBundleIndexes bundlePath
+loadIndexesOrExit :: Maybe OkfVersion -> FilePath -> IO [(FilePath, Text)]
+loadIndexesOrExit override bundlePath = do
+  result <- renderBundleIndexesWith override bundlePath
   case result of
     Left bundleError -> dieText (renderBundleError bundleError)
     Right indexes -> pure indexes
