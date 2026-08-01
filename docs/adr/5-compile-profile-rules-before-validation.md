@@ -83,6 +83,38 @@ profile display uses the corresponding stable lowercase names. This keeps raw
 format parameters machine-readable without depending on generic Haskell sum
 encoding.
 
+OKF v0.2 added five more formats, all unparameterized and therefore all encoded
+as plain lowercase strings: `actor`, `human-actor`, `integer`,
+`non-negative-integer`, and `boolean`. `Actor` and `HumanActor` check text
+against the specification §7 actor convention by case matching on
+`Okf.Actor.parseActor`, so the classification lives in one place rather than
+being re-derived as a second parser; a value the convention does not define is
+reported, including the specification's own illustrative `team:ga4-docs`. They
+check the *shape* of a value only — deriving a trust tier from it stays in
+`Okf.Trust`, per [ADR 8](8-derived-not-stored-trust-and-credibility.md). They
+add two narrowing pairs to the merge rules above, written the way `Uri` and
+`UriWithScheme` already are: `Actor` is narrowed by `HumanActor`, and `Integer`
+by `NonNegativeInteger`, in either declaration order.
+
+`Integer`, `NonNegativeInteger`, and `Boolean` are the first formats that match
+a value which is not text, and they carry a consequence for cardinality:
+**declaring one of them refines an unspecified cardinality to `Scalar`**, in the
+same way declaring `elementFields` refines it to `List`. Without that the rule
+would be useless, because `Any` routes presence through the legacy predicate,
+which counts only non-empty text and non-empty arrays — so a present
+`usage_count: 5000` is reported *missing* before its value is ever examined. The
+refinement is preferred over widening the legacy predicate, which would change
+what every existing profile means, in particular by making a key whose value is
+`false` stop being reported as missing. An explicitly declared cardinality still
+wins, including `List`: a list of integers is a coherent thing to demand, and a
+format constrains each element. These formats never coerce, so a numeric string
+`"5000"` is reported rather than read as a number.
+
+`allowedValues` stays textual. A numeric enumeration has no motivating case in
+OKF v0.2, the one boolean-shaped key has exactly two values and is fully
+described by `boolean`, and widening the list would change the published JSON
+contract `"allowedValues": ["a","b"]` for no gain.
+
 One-level nested records extend the same compiler without making the raw schema
 recursive. A top-level `FieldRule` may carry `elementFields : Maybe NestedRules`;
 `NestedRules` contains required and recommended `NestedFieldRule` values, and a
@@ -253,6 +285,19 @@ is added. Adding `objectFields` to `FieldRule` is a closed-record Dhall
 migration: the complete optional-presence generation is frozen before this
 addition and upgrades with `objectFields = Nothing`, and every descriptor in this
 repository already used record completion, so none needed editing.
+
+The OKF v0.2 value formats add no `ProfileViolation` and no
+`ProfileDefinitionError` constructor at all: an unsatisfied format is already
+`ValueFormatMismatch`, and a rule pairing a numeric format with an explicit
+cardinality is coherent rather than contradictory. They do add five
+`FieldFormat` constructors, which is the wider kind of change for the same
+reason `Cardinality`'s `Object` was: `FieldFormat` appears in
+`InvalidFormatParameter`, `ConflictingFieldFormat`, `ReferenceWithFormat`, and
+`ValueFormatMismatch`, so Mori's advisory renderer must gain the cases before
+moving its okf pin even though it declares no actor or numeric rules. Unlike
+every earlier addition this one widens a Dhall *union* rather than a record, so
+it is not recoverable by a record-level fallback — see
+[ADR 11](11-growing-the-profile-descriptor-language.md).
 
 Later profile constraints extend the compiled field rule rather than scanning
 raw declarations again. Human and JSON profile display continue to preserve the

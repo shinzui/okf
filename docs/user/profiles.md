@@ -148,7 +148,7 @@ Each `FieldRule` — one frontmatter key, and optionally what it is for:
 | `description` | `Optional Text` | Prose explaining what the key should contain. Printed by `okf profile show`, and repeated in missing required or recommended advisories. Documentary only. |
 | `allowedValues` | `List Text` | Legal textual values. `[]` means unconstrained. Strings and lists of strings are checked whenever present, including recommended fields outside strict mode. |
 | `cardinality` | `Cardinality` | `Any` preserves legacy presence behavior; `Scalar` accepts non-blank text, numbers, and booleans; `List` accepts arrays. Null satisfies no explicit cardinality. A mapping satisfies none of the three either — declare `objectFields` instead, which refines the key to the compiled `object` shape. |
-| `format` | `Optional FieldFormat` | A parser-backed textual contract: UTC RFC3339 timestamp, calendar date, absolute URI, URI with a required scheme, or document handle. `None` means unconstrained. |
+| `format` | `Optional FieldFormat` | A parser-backed value contract: UTC RFC3339 timestamp, calendar date, absolute URI, URI with a required scheme, document handle, OKF v0.2 actor, `human:` actor, integer, non-negative integer, or boolean. `None` means unconstrained. See [actor and non-textual formats](#actor-and-non-textual-formats). |
 | `elementFields` | `Optional NestedRules` | When present, the field must be a list whose elements are flat records checked with nested required, recommended, and optional rules. `None` means no element schema. |
 | `objectFields` | `Optional NestedRules` | When present, the field's value must itself be a mapping, whose members are checked with the same nested rules. Declaring it alongside `elementFields` accepts either spelling and checks both against the same members. `None` means no object schema. |
 | `reference` | `Optional HandleReferenceRule` | Declares that present top-level values are local handles with one prefix or absolute external URIs using an explicitly allowed scheme. Local handles must resolve inside the bundle. |
@@ -306,6 +306,89 @@ and is fully expressible; a per-entry `usage_window` *inside* a `sources`
 element, which OKF v0.2 also permits, is at depth two and is not. A profile can
 require `sources` to be a list of records and can constrain each record's own
 keys, but cannot reach `sources[0].usage_window.from`.
+
+### Actor and non-textual formats
+
+Five of the ten named formats came in with OKF v0.2. Two constrain an identity,
+three constrain a value that is not text at all.
+
+**`actor` and `human-actor`.** Specification §7 defines one convention for every
+field that records who or what acted, and it has exactly three shapes:
+`<producer>/<version>` for an agent or tool, `human:<id>` for a person, and
+`process:<id>` for an automated process. Three v0.2 keys carry one —
+`generated.by`, `verified[].by`, and `sources[].author`. `actor` accepts all
+three shapes; `human-actor` accepts only the second, which is the check that
+makes §5.3's human-reviewed trust tier enforceable as a house convention, since
+the `human:` prefix is the sole thing that distinguishes it from
+machine-confirmed.
+
+```dhall
+let field = ../../okf-core/dhall/mk/FieldRule.dhall
+
+let nested = ../../okf-core/dhall/mk/NestedFieldRule.dhall
+
+let NestedRules = ../../okf-core/dhall/defaults/NestedRules.dhall
+
+in  [ field.record
+        "generated"
+        NestedRules::{ required = [ nested.actor "by" ] }
+    , field.recordOrList
+        "verified"
+        NestedRules::{ required = [ nested.humanActor "by" ] }
+    ]
+```
+
+Matching is case-sensitive and both components must be non-empty, so
+`Human:ahormati`, `human:`, and `producer/` are all reported:
+
+```text
+profile: gen: frontmatter value at generated.by must match format actor, found: "nadeem"
+```
+
+One wrinkle worth stating plainly. Specification §5.1's own illustrative example
+writes `author: team:ga4-docs`, and the `actor` format reports it, because §7
+does not define a `team:` shape. That disagreement belongs in a profile rather
+than in the format: a team that uses `team:` prefixes simply does not apply
+`actor` to `sources[].author`. Putting the tolerance inside the format would
+make it unable to catch the mistake it exists to catch.
+
+**`integer`, `non-negative-integer`, and `boolean`.** OKF v0.2
+`sources[].usage_count` is a count, and profiles previously had no way to say
+anything about a numeric or boolean key — not even that it must be present.
+Declaring one of these formats fixes both halves at once, because a rule that
+names a non-textual format and no cardinality compiles to `scalar`:
+
+```dhall
+let field = ../../okf-core/dhall/mk/FieldRule.dhall
+
+in  [ field.nonNegativeInteger "usage_count", field.boolean "draft" ]
+```
+
+Without that refinement the default `any` cardinality counts only non-empty text
+and non-empty arrays as present, so a document plainly carrying
+`usage_count: 5000` would be reported missing. An explicitly declared
+cardinality still wins, and `list` is left alone: a list of integers is a
+coherent thing to demand, and a format constrains each element.
+
+These formats do not coerce. A numeric *string* is reported rather than read as
+a number, which is the point of being able to declare the format:
+
+```text
+profile: gen: frontmatter value at usage_count must match format non-negative-integer, found: "5000"
+```
+
+`5.5` is reported by both integer formats, `-3` by `non-negative-integer` alone,
+and `required: "true"` by `boolean`.
+
+**A limitation to know about.** `allowedValues` stays textual. There is no way to
+enumerate a closed set of numbers, because `valueMatchesVocabulary` compares text
+and no OKF v0.2 key motivates one; the single boolean-shaped case has exactly two
+values and is fully described by `boolean`.
+
+At profile and type scope the two new narrowing pairs behave like
+`Uri`/`UriWithScheme`: `actor` may be narrowed to `human-actor` and `integer` to
+`non-negative-integer`, in either declaration order. Every other unequal pair is
+still a profile definition error.
 
 ### Same-scope conditional presence
 
@@ -672,18 +755,24 @@ definition error before bundle traversal. A wrong-shape value produces one
 cardinality diagnostic; it does not also produce a missing-field or redundant
 vocabulary-shape diagnostic.
 
-Named formats constrain textual syntax without implying presence.
+Named formats constrain a value's syntax without implying presence.
 `field.rfc3339Utc "timestamp"` requires extended UTC timestamps ending in
 uppercase `Z`; `field.date "published"` requires exactly `YYYY-MM-DD` and a real
 calendar date. `field.uri "source"` accepts absolute RFC 3986 URIs,
 `field.uriWithScheme "originPlan" "mori"` additionally checks the scheme
 case-insensitively, and `field.documentHandle "decision" "ADR"` requires a
-canonical handle with that exact prefix. Lists are checked element-wise.
+canonical handle with that exact prefix. `field.actor "by"` and
+`field.humanActor "by"` check the OKF v0.2 actor convention, and
+`field.integer`, `field.nonNegativeInteger`, and `field.boolean` constrain
+values that are not text — see
+[actor and non-textual formats](#actor-and-non-textual-formats). Lists are
+checked element-wise.
 
-At profile and type scope, equal formats agree, and `Uri` may be narrowed to
-`UriWithScheme`. Other unequal pairs are rejected during profile compilation.
-Malformed URI-scheme and document-prefix parameters are also definition errors,
-before any bundle is traversed.
+At profile and type scope, equal formats agree, `Uri` may be narrowed to
+`UriWithScheme`, `Actor` to `HumanActor`, and `Integer` to
+`NonNegativeInteger`. Other unequal pairs are rejected during profile
+compilation. Malformed URI-scheme and document-prefix parameters are also
+definition errors, before any bundle is traversed.
 
 The closing hint is the whole adoption path: there is no `okf profile install`,
 because `okf validate --profile` already accepts any Dhall file. Save those two

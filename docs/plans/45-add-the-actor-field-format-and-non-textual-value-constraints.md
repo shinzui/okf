@@ -71,11 +71,11 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] Milestone 1: reproduce the "no format fits" transcripts and freeze both the current descriptor generation **and** the current `FieldFormat` union, rebinding every earlier frozen generation to the frozen union.
-- [ ] Milestone 2: add the five new alternatives to the published `FieldFormat` union, its `mk` constructors, and the rendering vocabulary.
-- [ ] Milestone 3: implement matching and narrowing for the new formats, including the cardinality refinement that makes a numeric key requirable.
-- [ ] Milestone 4: render the new formats in generated profile documentation and the CLI, and confirm the committed example does not move.
-- [ ] Milestone 5: document the formats in `docs/user/profiles.md` and amend the ADRs.
+- [x] Milestone 1: reproduce the "no format fits" transcripts and freeze both the current descriptor generation **and** the current `FieldFormat` union, rebinding every earlier frozen generation to the frozen union. (2026-08-01, commit `29b842b`)
+- [x] Milestone 2: add the five new alternatives to the published `FieldFormat` union, its `mk` constructors, and the rendering vocabulary. (2026-08-01, commit `f739e92`)
+- [x] Milestone 3: implement matching and narrowing for the new formats, including the cardinality refinement that makes a numeric key requirable. (2026-08-01, commit `f739e92`)
+- [x] Milestone 4: render the new formats in generated profile documentation and the CLI, and confirm the committed example does not move. (2026-08-01, commit `f739e92`; the renderer needed no change)
+- [x] Milestone 5: document the formats in `docs/user/profiles.md` and amend the ADRs. (2026-08-01)
 
 
 ## Surprises & Discoveries
@@ -99,6 +99,61 @@ present.** Transcript below. This is the same class of gap that
 `docs/plans/44-validate-nested-rules-on-scalar-object-fields.md` found for mappings, and it
 means the numeric work here is not only about constraining a value but about being able to
 demand one at all.
+
+All three transcripts in *Context and Orientation* were reproduced verbatim before any code
+was written, including the `uri`-accepts-`team:ga4-docs` one.
+
+**Five frozen fixtures named the format union by importing the live schema file, so widening
+it broke every one of them at once.** This is the plan's largest discovery and it was not
+anticipated. `conditional-fields-ep2.dhall`, `document-references-ep3.dhall`,
+`formats-ep4.dhall`, `nested-reviews-ep1.dhall`, and `object-fields-mp8-ep1.dhall` each spell
+out every *record* type by hand — which is what `docs/adr/11-growing-the-profile-descriptor-language.md`
+asks for — and then write `let FieldFormat = ../../../dhall/FieldFormat.dhall`. A fixture that
+imports the union it is frozen against is not frozen against it, so adding alternatives
+changed the type each fixture was annotated as and all five stopped loading:
+
+```text
+$ cabal run -v0 okf -- validate <bundle> --profile okf-core/test/fixtures/profiles/object-fields-mp8-ep1.dhall
+Failed to load profile okf-core/test/fixtures/profiles/object-fields-mp8-ep1.dhall:
+Error: Expression doesn't match annotation
+```
+
+The other frozen fixtures were unaffected precisely because they name no format at all.
+
+Each was repaired by replacing that one import with the five-alternative union literal. No
+declared value in any fixture changed, and a negative control — stubbing the corresponding
+fallback decoder out and confirming the test fails — was run to prove each still needs its
+decoder. Two alternatives were considered and rejected. Supporting "old records paired with
+the *new* union" would have meant a second parallel chain of frozen generations forever, for a
+shape no released schema ever published. Leaving the frozen generations bound to the current
+union would have kept the fixtures loading while breaking the descriptors the whole chain
+exists to protect — precisely inverting the guarantee.
+
+**Rebinding reaches further than the records that carry a `format` member.**
+`PreObjectProfileFieldRule` declared `elementFields :: Maybe NestedRules` against the
+*current* nested types, which carry the current union, so rebinding its `format` member alone
+left the current union reachable through its nested rules. That generation needed frozen
+copies of `NestedRules` and `NestedFieldRule` too. Changing the type first and reading GHC's
+errors found this; working from the plan's list of `format` members would not have.
+
+**The renderer needed no change, as predicted.** `Okf.Profile.Documentation.renderFieldRule`
+and `renderElementField` both render a format through `renderFieldFormatName`, which
+Milestone 2 extends anyway, and `examples/postgresql-profile/` did not move. Generated
+documentation for a profile using the new formats emits `format: actor` on an object member
+and `- Format: non-negative-integer` on a top-level key, and validates against
+`docs/profiles/profile-documentation.dhall` under `--profile-enforce` with exit 0.
+
+**`Okf.Actor.HumanActor` and `Okf.Profile.HumanActor` collide in `okf-core/test/Main.hs`.**
+The plan anticipated this inside `Okf.Profile` and prescribed a qualified import there, which
+was enough. It did not anticipate the test module, which imports both modules unqualified and
+names the actor constructor about fifteen times; it now imports `Okf.Profile hiding
+(HumanActor)` alongside `Okf.Profile qualified as Profile`, in the manner it already used for
+`List` and `Object`. `okf-cli` is unaffected: it imports only `renderActor`.
+
+**Presence and value checks are independent, which two test expectations had to be corrected
+for.** A key whose value is a number under a *textual* format and `Any` cardinality produces
+both `MissingProfileField` and `ValueFormatMismatch` — the format check runs on the raw value
+regardless of the presence verdict. This is pre-existing behaviour, now asserted.
 
 
 ## Decision Log
@@ -145,6 +200,29 @@ Record every decision made while working on the plan.
   as missing.
   Date: 2026-08-01
 
+- Decision: Repair the five frozen fixtures that imported the live `FieldFormat.dhall`,
+  replacing the import with the five-alternative union literal, rather than adding a parallel
+  chain of frozen generations bound to the current union.
+  Rationale: `docs/adr/11-growing-the-profile-descriptor-language.md` says a frozen fixture
+  must never be edited, and it says in the same breath that a fixture importing the schema
+  file it is frozen against exercises nothing. These fixtures do both, and the first union
+  widening forced the contradiction. The repair changes no declared value in any fixture; it
+  restores the assertion each was written to make, and a negative control confirms each still
+  fails without its fallback decoder. The alternative — supporting old records paired with the
+  new union — would mean a second parallel chain forever, for a shape no released schema has
+  ever published: a descriptor pinned by URL and hash carries the old records *and* the old
+  union together. The rule is amended rather than broken, and the amendment is in the ADR.
+  Date: 2026-08-01
+
+- Decision: Commit Milestones 2, 3, and 4 together rather than separately.
+  Rationale: the same finding
+  `docs/masterplans/8-extend-okf-profiles-for-v0-2-field-families.md` recorded for EP-1's
+  freeze-then-add pair. Milestone 2 alone leaves `textMatchesFormat` non-exhaustive for the
+  alternatives it just published, which is a state worth passing through and not worth
+  committing. The reviewability the split was meant to buy is recovered in the commit message.
+  Milestone 1 stayed separate because it is genuinely independent and green on its own.
+  Date: 2026-08-01
+
 - Decision: Leave `allowedValues` textual.
   Rationale: `valueMatchesVocabulary` compares text and a numeric enumeration has no
   motivating case in OKF v0.2; the one boolean field in sight has exactly two values and is
@@ -161,7 +239,40 @@ Compare the result against the original purpose. Before marking the plan complet
 distill durable project context from the Decision Log, Surprises & Discoveries, and
 this section into docs/adr/. Keep task-local execution details here.
 
-(To be filled during and after implementation.)
+**Complete, 2026-08-01, in two commits (`29b842b` and `f739e92`).** A profile can now demand an
+actor at `generated.by`, demand specifically a *person* at `verified[].by`, and demand and
+constrain a numeric or boolean key. Every acceptance criterion in *Validation and Acceptance*
+was run and holds: the two named diagnostics reproduce verbatim, `usage_count: 5000` under a
+`non-negative-integer` rule with no declared cardinality produces no line while `"5000"`,
+`-3`, and `5.5` each produce exactly one, narrowing works in both declaration orders across
+scopes, `okf validate okf-core/test/fixtures/valid-bundle --strict` is byte-identical to the
+capture taken before any edit, and `cabal test all` is green at 184 tests including the
+byte-comparison drift test against `examples/postgresql-profile/`.
+
+Two things went differently from the plan, both recorded above in full.
+
+The plan's compatibility analysis was right about the mechanism and wrong about the blast
+radius. Freezing the union and rebinding every generation was necessary and sufficient for
+*external* descriptors, as written. What no one anticipated is that five of this repository's
+own frozen fixtures were not actually frozen against the union — they imported it — so the
+widening broke them, and the fix was in the fixtures rather than the decoder. That is the
+first time under this MasterPlan that the answer to a failing frozen fixture has been anything
+other than "fix the chain", and it is now written into
+`docs/adr/11-growing-the-profile-descriptor-language.md` so the next union change expects it.
+
+The plan's estimate that this is "the same edit in the same place" for the actor and numeric
+gaps held up, and pairing them was the right call: one union change carried five alternatives,
+one frozen generation, one fixture, and one rebinding pass. Splitting would have doubled every
+one of those.
+
+Two notes for the plans that follow.
+`docs/plans/46-add-path-valued-reference-rules-distinct-from-document-handles.md` adds only
+records, so it inherits the union lesson as a caution rather than as work — but it should
+check whether any fixture it writes names a published union, and write it out if so.
+`docs/plans/47-enforce-the-profile-declared-okfversion-and-ship-a-v0-2-reference-profile.md`
+now has `actor`, `human-actor`, and `non-negative-integer` available for its reference profile,
+and should note that `field.record "generated" …` with `nested.actor "by"` is the worked form,
+since it is what both this plan's acceptance transcript and `docs/user/profiles.md` use.
 
 
 ## Context and Orientation

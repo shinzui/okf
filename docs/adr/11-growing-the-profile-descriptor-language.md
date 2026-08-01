@@ -52,6 +52,21 @@ typechecking after the published schema moves on. If a test on a frozen fixture
 fails, the fault is in the decoder chain, never in the fixture. A fixture that
 imports the schema file it is meant to be frozen against exercises nothing.
 
+**"Spells out its types inline" includes the published unions, not only the
+records.** The first union widening found five frozen fixtures that wrote every
+record out by hand and then imported `Cardinality.dhall` and
+`FieldFormat.dhall` by relative path. That is the defect this rule already
+names, hiding in plain sight: a fixture importing the live union acquires
+whatever alternatives that file later gains, so it stops being frozen against
+anything. Widening `FieldFormat` changed the type each was annotated against and
+all five stopped loading at once. Repairing them — replacing the import with the
+union literal the fixture was written against, changing no declared value —
+is not an exception to the never-edit rule but the discharge of it: it restores
+an assertion the fixture was always meant to make, and each was verified by
+negative control to still require its fallback decoder afterwards. A fixture
+that must be repaired this way is evidence the freeze was incomplete, not that
+the rule is negotiable.
+
 **Adding a field to a record is recoverable. Adding an alternative to a union is
 not.** This is the distinction that matters most and the one that is least
 obvious. A record gains a defaulted member, and a frozen fallback decoder can
@@ -75,6 +90,25 @@ must make:
   the generation and every earlier generation rebound to the frozen copy. This is
   strictly more work and more risk, so prefer the first route whenever the value
   can be derived from a record member.
+
+The second route was taken for the OKF v0.2 value formats, and three things
+about it are worth knowing before taking it again. Freezing the union means
+adding a private copy with a *hand-written* `FromDhall` instance, so the Dhall
+alternative names stay what authors wrote while the Haskell constructors stay
+distinct from the current type's. Rebinding is not confined to the records that
+literally carry a `format` member: a frozen record referring to the current
+`NestedRules` drags the current union in with it, so that generation needs a
+frozen copy of the nested types too. Let GHC enumerate the sites by changing the
+type first and reading the errors, rather than working from a list. And the new
+generation to add is the current record shape paired with the frozen union,
+which is the shape a descriptor pinned to the last release actually has.
+
+A union widening also reaches further than a record addition in a way that is
+easy to miss: **a shared union spelling is a compatibility surface even where no
+record changed.** Old records paired with the *new* union is not a shape any
+released schema ever published, and supporting it would mean a second parallel
+chain forever, so it is deliberately not supported. That is only tenable because
+the frozen fixtures name their unions literally — see the fixture rule above.
 
 **Not every plan is a schema event.** A change that adds only a compile-time
 check, a shipped descriptor, or a renderer freezes no generation and adds no
@@ -137,3 +171,11 @@ Because a fixture proves a claim only if it would fail without the decoder, the
 way to check a new link is a negative control: remove the fallback and confirm
 the test fails. A fixture that passes with the fallback removed is testing the
 current decoder and guarantees nothing.
+
+Frozen fixtures that still import `Cardinality.dhall` by relative path are the
+same latent defect as the `FieldFormat.dhall` imports that the OKF v0.2 value
+formats exposed. They are currently harmless only because the published
+`Cardinality` union has stayed at three alternatives, which this record requires
+it to. Anyone who widens it must expect to repair those fixtures in the same way,
+and would do better to reconsider whether the alternative can be reached from
+compilation instead.
