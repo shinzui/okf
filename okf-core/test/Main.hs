@@ -159,6 +159,7 @@ main = do
         test "duplicate type slugs are disambiguated positionally" testProfileDocumentationSlugCollisions,
         test "profile value display names match the documented vocabulary" testProfileValueDisplayNames,
         testIO "profile documentation renders a root concept" testProfileDocumentationRootConcept,
+        test "profile documentation renders object rules" testProfileDocumentationObjectFields,
         testIO "profile documentation renders one concept per declared type" testProfileDocumentationTypeConcept,
         testIO "profile documentation renders inherited rules for a bare type" testProfileDocumentationInheritedRules,
         testIO "generated profile documentation round-trips through serialize and parse" testProfileDocumentationRoundTrip,
@@ -4120,6 +4121,31 @@ testProfileDocumentationRootConcept =
         assertHasLine "- Unknown concept types: rejected" bodyLines
         assertHasLine "- Unknown frontmatter keys: rejected" bodyLines
     )
+
+-- | A rule kind the renderer does not know about is a silent hole in generated
+-- profile documentation, so object rules are rendered in the same change that
+-- creates them. The bullet list is fixed by design, so a key that declares no
+-- object shape says so explicitly rather than omitting the bullet.
+testProfileDocumentationObjectFields :: Either Text ()
+testProfileDocumentationObjectFields = do
+  compiled <-
+    firstShow
+      (compileProfile (objectProfileWithRules "generated" Any (Just provenanceMemberRules) Nothing))
+  concepts <- firstShow (renderProfileDocumentation defaultDocumentationOptions compiled)
+  root <- conceptAt 0 concepts
+  let bodyLines = conceptBodyLines root
+  assertHasLine "- Object fields:" bodyLines
+  assertHasLine
+    "    - `by` — required; allowed values: any; cardinality: any; format: none — Who or what produced this content."
+    bodyLines
+  assertHasLine
+    "    - `at` — recommended; allowed values: any; cardinality: any; format: rfc3339-utc"
+    bodyLines
+  assertHasLine "- Element fields: none" bodyLines
+  assertHasLine "- Cardinality: object" bodyLines
+  -- A key with no object shape still carries the bullet, so the shape of the
+  -- list never shifts between rules.
+  assertHasLine "- Object fields: none" bodyLines
 
 testProfileDocumentationTypeConcept :: IO (Either Text ())
 testProfileDocumentationTypeConcept =

@@ -78,7 +78,7 @@ This section must always reflect the actual current state of the work.
 - [x] Milestone 2: add `objectFields` to the published Dhall schema, its record-completion default, and the `mk` constructors. (2026-08-01)
 - [x] Milestone 3: compile `objectFields` into the effective rule, with the compiled-only `Object` cardinality and the new definition error. (2026-08-01)
 - [x] Milestone 4: validate an object value's members and report a `FieldPath` such as `generated.by`. (2026-08-01)
-- [ ] Milestone 5: render the new rule kind in generated profile documentation, regenerate the committed example, and extend the CLI diagnostic vocabulary.
+- [x] Milestone 5: render the new rule kind in generated profile documentation, regenerate the committed example, and extend the CLI diagnostic vocabulary. (2026-08-01)
 - [ ] Milestone 6: document the feature in `docs/user/profiles.md` and write the descriptor-growth ADR.
 
 
@@ -177,6 +177,33 @@ IDENTICAL
 
 Both captures are `OK: 4 concepts (okf_version 0.2)` from
 `okf validate okf-core/test/fixtures/valid-bundle --strict`.
+
+**The meta-profile needed no change, proved rather than assumed** — a fact the sibling plans
+asked for explicitly. Generating documentation from the shipped PostgreSQL descriptor and
+validating it against `docs/profiles/profile-documentation.dhall` with `--profile-enforce`
+exits 0:
+
+```text
+$ okf profile document --profile docs/profiles/postgresql.dhall --out /tmp/pgdoc --write
+$ okf validate /tmp/pgdoc --profile docs/profiles/profile-documentation.dhall --profile-enforce
+OK: 4 concepts
+```
+
+The reason generalizes: the meta-profile constrains the *frontmatter* of generated concepts,
+and every rule kind this MasterPlan adds changes body prose only. EP-2, EP-3, and EP-4 should
+still run the command rather than cite this.
+
+**The committed example drifted by exactly the predicted amount.** The byte-comparison test in
+`okf-cli/test/Main.hs` failed on four files, and regenerating produced 24 insertions and zero
+deletions — one `- Object fields: none` bullet per documented key:
+
+```text
+ examples/postgresql-profile/profile.md                 | 6 ++++++
+ examples/postgresql-profile/types/postgresql-schema.md | 6 ++++++
+ examples/postgresql-profile/types/postgresql-table.md  | 6 ++++++
+ examples/postgresql-profile/types/postgresql-view.md   | 6 ++++++
+ 4 files changed, 24 insertions(+)
+```
 
 One discovery predates implementation and is the reason this plan is written the way it is.
 The blocker is **not** only the `ElementFieldsRequireList` definition error that

@@ -381,6 +381,7 @@ renderFieldRule level key rule =
         "- Reference: " <> maybe "none" renderReference (fieldRuleReference rule)
       ]
         <> conditionBullets
+        <> objectFieldBullets
         <> elementFieldBullets
         <> strictNote
 
@@ -394,6 +395,16 @@ renderFieldRule level key rule =
 
     clausePhrase clause =
       maybe "always" conditionPhrase (presenceClauseCondition clause)
+
+    -- The members of the mapping that *is* the value, as opposed to the members
+    -- of each element of a list. A rule may declare both, in which case both
+    -- bullets carry content and either spelling of the value is accepted.
+    objectFieldBullets =
+      case fieldRuleObjectFields rule of
+        Nothing -> ["- Object fields: none"]
+        Just members ->
+          ["- Object fields:"]
+            <> ["    - " <> renderElementField memberKey memberRule | (memberKey, memberRule) <- Map.toAscList members]
 
     elementFieldBullets =
       case fieldRuleElementFields rule of

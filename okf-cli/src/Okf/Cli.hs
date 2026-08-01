@@ -1729,6 +1729,12 @@ renderProfileDefinitionError = \case
       <> renderFieldPath fieldPath
       <> " requires list cardinality, found: "
       <> renderCardinality actualCardinality
+  ObjectFieldsRequireObjectShape scope fieldPath actualCardinality ->
+    renderScope scope
+      <> ": objectFields at "
+      <> renderFieldPath fieldPath
+      <> " cannot be combined with cardinality "
+      <> renderCardinality actualCardinality
   InvalidFormatParameter fieldPath fieldFormat parameter ->
     "invalid parameter for format "
       <> renderFieldFormat fieldFormat

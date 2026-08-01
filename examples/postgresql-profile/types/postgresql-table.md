@@ -34,6 +34,7 @@ Human-readable name of the object, as a reader would say it.
 - Format: none
 - Reference: none
 - Condition: none
+- Object fields: none
 - Element fields: none
 
 #### `type` — required
@@ -45,6 +46,7 @@ The OKF concept type; must be one of the type rules below.
 - Format: none
 - Reference: none
 - Condition: none
+- Object fields: none
 - Element fields: none
 
 ### Recommended
@@ -58,6 +60,7 @@ One or two sentences on what this object is for.
 - Format: none
 - Reference: none
 - Condition: none
+- Object fields: none
 - Element fields: none
 - Checked only under `--strict`
 
@@ -70,6 +73,7 @@ postgresql:// URI locating the live object.
 - Format: uri-with-scheme(postgresql)
 - Reference: none
 - Condition: none
+- Object fields: none
 - Element fields: none
 - Checked only under `--strict`
 
@@ -82,6 +86,7 @@ UTC RFC3339 timestamp when the description was last confirmed accurate.
 - Format: rfc3339-utc
 - Reference: none
 - Condition: none
+- Object fields: none
 - Element fields: none
 - Checked only under `--strict`
 
@@ -96,5 +101,6 @@ Team accountable for the object, when one is named.
 - Format: none
 - Reference: none
 - Condition: none
+- Object fields: none
 - Element fields: none
 
