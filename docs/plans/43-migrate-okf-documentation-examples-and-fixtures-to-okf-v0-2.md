@@ -60,7 +60,7 @@ something documented does not actually work.
 - [x] Milestone 3: `docs/user/cli.md` and `docs/user/authoring.md` cover the new commands and setters (2026-08-01)
 - [x] Milestone 4: the example bundles migrate to v0.2 and declare `okf_version` (2026-08-01)
 - [x] Milestone 5: test fixtures migrate, with a designated v0.1 fixture retained and labelled (2026-08-01)
-- [ ] Milestone 6: CHANGELOG entries written for both packages
+- [x] Milestone 6: CHANGELOG entries written for both packages, and the repository one (2026-08-01)
 
 
 ## Surprises & Discoveries
@@ -178,6 +178,15 @@ language the v0.2 families. It is advisory and exits `0`.
   bundle exists to be read and copied, which is where a demonstration belongs.
   Date: 2026-08-01
 
+- Decision: Write the Milestone 6 entry into the repository's `CHANGELOG.md` as well as the
+  two package changelogs the plan names.
+  Rationale: all three files are maintained — the root one carries an `[Unreleased]` section
+  with content neither package's has — and the root changelog is what a reader consults to
+  learn that okf now implements v0.2 at all. Leaving the headline change out of the
+  repository-level record while writing it into both packages would have been the one
+  omission a reader would notice.
+  Date: 2026-08-01
+
 - Decision: Correct the stale transcripts in `docs/user/profiles.md` despite that file
   being out of scope.
   Rationale: the exclusion is about the profile *descriptor language* — the
@@ -197,7 +206,50 @@ you to record.)
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+All six milestones are complete, and every acceptance check was run rather than reasoned
+about.
+
+`grep -rn "v0\.1" README.md docs/user/` returns twenty-five lines and every one refers to
+v0.1 as a previous version — the fallback okf still honours, the key `generated`
+supersedes, or the legacy fixture. None claims okf implements it.
+`okf validate examples/ddd-ordering --strict` prints `OK: 19 concepts (okf_version 0.2)`
+and `examples/postgresql-sample` prints `OK: 2 concepts (okf_version 0.2)`; neither passed
+`--strict` cleanly before this plan. `okf trust examples/ddd-ordering` shows all three
+trust tiers, one draft concept, and one that is stale. `okf sources examples/ddd-ordering`
+shows two entries with `author`, `usage_count`, `last_modified`, and two *different*
+effective usage windows, because one entry overrides the document-scope one.
+`okf validate okf-core/test/fixtures/v01-legacy-bundle --strict` prints `OK: 1 concepts`
+and exits zero, which is the regression guard for
+`docs/adr/7-okf-v0-1-legacy-fallback-policy.md`. `cabal test all` passes for both suites,
+and `cabal sdist okf-core` ships the new fixture.
+
+Every YAML snippet in `docs/user/format.md` was written into a scratch bundle and read back
+by `okf validate --strict`, `okf trust`, `okf sources`, and `okf show` — including the two
+negative claims, that a bare-mapping `verified` is read as a one-element list and that a
+quoted `usage_count: "5000"` is not read at all. Every transcript in `docs/user/cli.md` was
+pasted from a real run. Every function named in `docs/user/authoring.md` was compiled
+against its documented signature in a scratch module, along with the worked example
+verbatim; that check found nothing wrong, which is the outcome it exists to establish.
+
+Three notes for whoever reads this next.
+
+The plan's instruction to write real transcripts is what made the milestone reordering
+necessary, and it earned its keep twice over: it turned up three transcripts in
+`docs/user/profiles.md` that had silently stopped reproducing — two from EP-1's message
+changes weeks earlier, one from this plan's own fixture migration. Documentation decays
+from underneath; a plan that only adds prose will not notice.
+
+The plan's premise that this is "the last chance to notice that something documented does
+not actually work" held, but what it found were gaps in *examples* rather than in code.
+`examples/ddd-ordering` had never passed `--strict`, and `examples/postgresql-sample` had
+no dates at all. Nothing the five sibling plans built turned out to be broken.
+
+One thing is deliberately not done here and is not a gap: `docs/user/profiles.md`'s
+descriptor examples still say `okfVersion = "0.1"`, and the shipped PostgreSQL profile
+still asks for `timestamp`. Both are correct until
+`docs/masterplans/8-extend-okf-profiles-for-v0-2-field-families.md` teaches the descriptor
+language the v0.2 families. A profile that demanded a field it cannot describe would be
+worse than one that has not caught up yet.
 
 
 ## Context and Orientation

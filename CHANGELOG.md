@@ -9,6 +9,30 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- **okf implements OKF v0.2.** Version 0.2 assumes a corpus written and
+  maintained by agents, and adds the frontmatter a reader needs to judge
+  machine-written knowledge: provenance (`sources` with per-source credibility
+  signals, and `usage_window`), trust (`generated`, `verified`), and lifecycle
+  (`status`, `stale_after`), plus a convention for naming actors and per-claim
+  attribution through Markdown footnotes whose labels are `sources` ids. Every
+  family is optional — `type` is still the only key a concept must have.
+  Two commands surface them: `okf trust` reports each concept's derived trust
+  tier, status, and staleness, and `okf sources` lists its provenance. Tiers and
+  staleness are derived on every read and never stored.
+- A bundle may declare which dialect it targets with `okf_version: "0.2"` in its
+  root `index.md`, written by hand or with `okf index --write --okf-version 0.2`
+  and preserved when indexes are regenerated. `okf validate` names a declared
+  version in its success line, and in a bundle that declares v0.2 it reports
+  every concept still carrying the superseded v0.1 `timestamp` — which is how a
+  team ratchets a migration forward. A version okf does not understand is read
+  best-effort and never refused.
+- v0.1 bundles stay readable: `timestamp` is read whenever `generated` is
+  absent, silently, with no removal horizon.
+  `okf-core/test/fixtures/v01-legacy-bundle` keeps that promise under test. The
+  policies are recorded in `docs/adr/7-okf-v0-1-legacy-fallback-policy.md`,
+  `docs/adr/8-derived-not-stored-trust-and-credibility.md`,
+  `docs/adr/9-one-markdown-parse-configuration-and-source-scanned-authoring-checks.md`,
+  and `docs/adr/10-okf-version-declaration-and-best-effort-reading.md`.
 - `okf profile document` generates an OKF bundle documenting a profile: one page
   for the profile and one page per concept type it declares, cross-linked and
   ready for `okf validate`, `okf graph`, `okf show`, and `okf index`. Each type
@@ -35,6 +59,25 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   display names `renderCardinalityName` and `renderFieldFormatName`. All
   additive: no constructor was added to `ProfileViolation` or
   `ProfileDefinitionError`, so exhaustive consumers need no change.
+
+### Changed
+
+- Two behaviour changes a user could be surprised by, both from the v0.2 work.
+  Strict validation asks for `generated` rather than `timestamp` — with a
+  fallback, so nothing that passed before fails, but the message for a concept
+  with neither is now `missing generated field (or legacy timestamp)`. And
+  `okf log --check-stale` reads `generated.at` in preference to `timestamp`, so
+  a v0.2 concept with no `timestamp` at all is staleness-checked for the first
+  time.
+- Library consumers: `Okf.Validation.validateBundle` takes a
+  `VersionDeclaration` between the profile and the concepts. Passing
+  `VersionUndeclared` reproduces the previous behaviour exactly. See
+  `okf-core/CHANGELOG.md` for the new `ValidationError` and
+  `BundleValidationError` constructors.
+- Profiles do not yet describe the v0.2 families. A house profile that asks for
+  `timestamp` still asks for it, which is the core-versus-profile split working
+  as intended; extending the descriptor language is
+  `docs/masterplans/8-extend-okf-profiles-for-v0-2-field-families.md`.
 
 ## [0.4.0.0] - 2026-07-30
 

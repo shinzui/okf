@@ -7,6 +7,85 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- **OKF v0.2 core semantics.** okf now tracks version 0.2 of the Open Knowledge
+  Format. Every family below is optional; `type` remains the only key a concept
+  must have, and no bundle is ever rejected for omitting one.
+- `Okf.Actor`: the specification §7 actor convention, with `parseActor` (total,
+  never fails), `renderActor` (its exact inverse), and `isHumanActor`, which is
+  the single test separating the machine-confirmed trust tier from
+  human-reviewed. Four fields carry an actor: `generated.by`, `verified[].by`,
+  and `sources[].author`.
+- The trust family (§5.2): `Generated`/`readGenerated`/`setGenerated` for who or
+  what produced a concept's content and when, and
+  `Verification`/`readVerified`/`setVerified` for independent confirmation.
+  `readVerified` accepts a bare mapping as a one-element list, as §5.2 requires.
+- The lifecycle family (§5.4, §5.5): `Status`/`readStatus`/`renderStatus`/
+  `setStatus`, where an absent key means `stable`, and `readStaleAfter`/
+  `setStaleAfter`.
+- The provenance family (§5.1): `Source`/`readSources`/`setSources` with the
+  credibility signals `author`, `usage_count`, and `last_modified`, plus
+  `UsageWindow`/`readUsageWindow`/`setUsageWindow` and `effectiveUsageWindow`,
+  which resolves an entry's own window against the document-scope one.
+  `usage_count` is read only from a YAML integer; a numeric string is not
+  coerced.
+- `Okf.Trust`: `trustTier`, `renderTrustTier`, `latestVerification`,
+  `staleness`, and `renderStaleness`. Everything here is derived on read and
+  never stored, and no function in `okf-core` reads the clock — `staleness`
+  takes the current day as an argument. See
+  `docs/adr/8-derived-not-stored-trust-and-credibility.md`.
+- `Okf.Bundle.Concept` projects six more typed fields from frontmatter —
+  `generated`, `verified`, `status`, `staleAfter`, `sources`, `usageWindow` —
+  with matching accessors. Every projection restates frontmatter; none is a
+  derivation.
+- The bundle-root version declaration of §12: `OkfVersion`,
+  `VersionDeclaration`, `readBundleVersion`, `parseOkfVersion`,
+  `renderOkfVersion`, `supportedOkfVersion`, and `renderRootIndex` in
+  `Okf.Index`. `Okf.Validation.versionGate` is the one place that decides what a
+  declared version implies, and `gateDeclaresAtLeast` is the only question a
+  check asks of it. An unknown minor within a known major is read as the highest
+  known version; an unknown major is read permissively. Neither is ever a refusal.
+  See `docs/adr/10-okf-version-declaration-and-best-effort-reading.md`.
+- `Okf.Markdown`, with one shared `markdownOptions` list, `extractFootnoteLabels`,
+  and `footnoteLabelsUsed`. All three `commonmarkToNode` call sites now route
+  through it and Markdown footnotes are enabled. See
+  `docs/adr/9-one-markdown-parse-configuration-and-source-scanned-authoring-checks.md`.
+- `okf-core/test/fixtures/v01-legacy-bundle`, a deliberately unmigrated v0.1
+  bundle that keeps the legacy fallback under test. Do not migrate it.
+
+### Changed
+
+- **Breaking for exhaustive consumers.** `validateBundle` takes a
+  `VersionDeclaration` between the profile and the concepts:
+  `ValidationProfile -> VersionDeclaration -> [Concept] -> [BundleValidationError]`.
+  Passing `VersionUndeclared` reproduces the previous behaviour exactly.
+  `ValidationError` gains `MissingGeneratedField`, `GeneratedMustHaveActor`,
+  `SourceMissingResource`, `DuplicateSourceId`, `FootnoteLabelNotInSources`,
+  `SourceIdNotCited`, and `LegacyFieldInDeclaredV2`; `BundleValidationError`
+  gains `BundleVersionUnparseable` and `BundleVersionNotUnderstood`. Every new
+  diagnostic is `StrictAuthoring` only.
+- **Strict validation asks for `generated` rather than `timestamp`**, falling
+  back to a legacy `timestamp` when `generated` is absent, so nothing that
+  passed before fails now. The message for a concept with neither changes from
+  `missing recommended field: timestamp` to
+  `missing generated field (or legacy timestamp)`. The fallback is silent in an
+  undeclared bundle and reported in one that declares `okf_version: "0.2"`; see
+  `docs/adr/7-okf-v0-1-legacy-fallback-policy.md`.
+- **`logStaleness` reads `generated.at` first**, falling back to `timestamp`. A
+  v0.2 concept with no `timestamp` at all is staleness-checked for the first
+  time.
+- `coreFrontmatterFieldOrder` gains all six v0.2 concept keys, so re-serializing
+  a document orders them deterministically and a closed profile
+  (`allowUnknownFields = False`) permits them without redeclaring. `timestamp`
+  moved to the end of that order, which reorders it once in any document a
+  producer re-serializes.
+- Markdown bodies parse with footnotes enabled. This also fixes a bug: a
+  single-token footnote definition such as `[^src]: doc.md` previously parsed as
+  a link reference definition, producing a phantom dangling link.
+- `setTimestamp`, `OkfCommon`'s `commonTimestamp`, and reading a v0.1
+  `timestamp` are all retained. Writing v0.1 on purpose stays supported.
+
 ## [0.4.0.0] - 2026-07-30
 
 ### Added

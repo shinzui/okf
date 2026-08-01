@@ -7,6 +7,42 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- `okf trust BUNDLE` reports every concept's derived trust tier, `status`, and
+  staleness as one aligned row per concept. A tier is computed from `verified`
+  on each run and never read from the bundle.
+- `okf sources BUNDLE` lists the OKF v0.2 provenance each concept records, with
+  the credibility signals `author`, `usage_count`, and `last_modified`, and the
+  effective usage window per entry. Concepts with no `sources` are skipped, and
+  entries are never sorted or ranked by `usage_count`.
+- `okf index BUNDLE --write --okf-version MAJOR.MINOR` declares an OKF version
+  in the bundle root `index.md`. Without the flag, an existing declaration is
+  preserved and an absent one stays absent — previously, regenerating indexes
+  silently destroyed a declaration.
+- `okf show` prints the v0.2 families a concept carries — `generated`, the
+  derived `trust` tier, the latest `verified` date, `status`, `stale_after` with
+  its staleness verdict, and a `sources` count.
+- `okf validate` renders the new core diagnostics, including the join between a
+  body's footnote labels and its `sources` ids in both directions.
+
+### Changed
+
+- **`okf validate` names a declared OKF version in its success line**:
+  `OK: 4 concepts (okf_version 0.2)`. The suffix appears only when the bundle's
+  root `index.md` declares a version, so a bundle that declares nothing prints
+  exactly `OK: N concepts` as before.
+- **Strict validation asks for `generated` rather than `timestamp`.** It falls
+  back to a legacy `timestamp`, so nothing that passed before fails now, but the
+  message for a concept with neither changes to
+  `missing generated field (or legacy timestamp)`. In a bundle that declares
+  `okf_version: "0.2"`, a concept still carrying `timestamp` is additionally
+  reported under `--strict`; an undeclared bundle never is.
+- **`okf log --check-stale` and `okf validate --log-enforce` read `generated.at`
+  first**, falling back to `timestamp`, and the advisory says `generated date`
+  rather than `timestamp date`.
+- Requires `okf-core ^>=0.4.0.0` with the OKF v0.2 core semantics.
+
 ## [0.4.0.0] - 2026-07-30
 
 ### Added
