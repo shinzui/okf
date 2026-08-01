@@ -1977,6 +1977,17 @@ renderValidationErrorText = \case
       <> maybe "" (\replacement -> " (use " <> replacement <> ")") (supersededBy fieldName)
   AttestedComputationMissingRuntime ->
     attestedComputationType <> " concepts must declare runtime"
+  AttestedComputationHasNoComputation ->
+    attestedComputationType
+      <> " declares no computation: add a code block under a # Computation heading, or a computation path"
+  AttestedComputationHasBothComputations ->
+    attestedComputationType
+      <> " declares a computation both inline and by path; exactly one is permitted"
+  AttestedComputationHasManyBlocks blockCount ->
+    attestedComputationType
+      <> " has "
+      <> Text.pack (show blockCount)
+      <> " code blocks under # Computation; exactly one is permitted"
 
 -- | The OKF v0.2 field that supersedes a v0.1 one (specification §13.1).
 supersededBy :: Text -> Maybe Text

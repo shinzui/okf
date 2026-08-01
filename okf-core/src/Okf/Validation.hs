@@ -105,6 +105,31 @@ data ValidationError
     -- @docs\/adr\/7-okf-v0-1-legacy-fallback-policy.md@ places every other
     -- optional-family presence check.
     AttestedComputationMissingRuntime
+  | -- | A concept declaring @type: Attested Computation@ offers no computation
+    -- at all: no @computation@ path and no code block under @# Computation@.
+    -- Specification §10.3 says the computation is provided in one of two ways,
+    -- so a contract carrying neither promises a sanctioned computation and then
+    -- does not carry one.
+    --
+    -- Strict-only, for the reason 'AttestedComputationMissingRuntime' gives.
+    AttestedComputationHasNoComputation
+  | -- | The concept offers both a @computation@ path and a body block.
+    -- Specification §10.3 permits exactly one — "set @computation@ to a path
+    -- (§6.2) and omit the body fence" — and two leaves a consumer with no way to
+    -- know which one the producer sanctioned.
+    --
+    -- Strict-only, for the reason 'AttestedComputationMissingRuntime' gives.
+    AttestedComputationHasBothComputations
+  | -- | The @# Computation@ section holds more than one code block, where
+    -- specification §10.3 says "a single fenced code block". Carries the count,
+    -- so the diagnostic can say how many were found.
+    --
+    -- The section is bounded at the next heading of the same or a shallower
+    -- level, so a code block under a later heading is not counted here; see
+    -- 'Okf.Markdown.computationBlocks'.
+    --
+    -- Strict-only, for the reason 'AttestedComputationMissingRuntime' gives.
+    AttestedComputationHasManyBlocks Int
   deriving stock (Generic, Eq, Show)
 
 -- | A whole-bundle validation problem.
@@ -380,6 +405,7 @@ validateDocument profile document =
           <> checkSources document
           <> checkFootnoteAttribution document
           <> requireComputationRuntime document
+          <> requireOneComputation document
 
 -- | Strict-mode check on the OKF v0.2 attested computation contract
 -- (specification §10.2).
@@ -403,6 +429,37 @@ requireComputationRuntime OKFDocument {frontmatter}
   | maybe True (Text.null . Text.strip) (readRuntime frontmatter) =
       [AttestedComputationMissingRuntime]
   | otherwise = []
+
+-- | Strict-mode check on specification §10.3's exactly-one rule.
+--
+-- §10.3 provides the computation "in one of two ways" — inline, as a code block
+-- in the body under @# Computation@, or by file, by setting @computation@ to a
+-- path and omitting the body block. Neither and both are equally wrong, and so
+-- is one @# Computation@ section holding two blocks.
+--
+-- Fires only on a concept whose @type@ is exactly
+-- 'Okf.Document.attestedComputationType', like every other check on this
+-- contract. Strict-only for the reason
+-- @docs\/adr\/7-okf-v0-1-legacy-fallback-policy.md@ gives: §11's conformance
+-- list does not reach a computation field, and §11 separately forbids rejecting
+-- a bundle over an unknown @type@ value, so "the format requires this" binds the
+-- producer rather than licensing a consumer to refuse.
+--
+-- At most one diagnostic per document, ambiguity first. A document with a
+-- @computation@ key and two body blocks has one thing to fix, not two, and the
+-- ambiguity is the more serious half.
+requireOneComputation :: OKFDocument -> [ValidationError]
+requireOneComputation document@OKFDocument {frontmatter}
+  | frontmatterLookup "type" frontmatter /= Just (String attestedComputationType) = []
+  | not (null files) && not (null inlines) = [AttestedComputationHasBothComputations]
+  | length inlines > 1 = [AttestedComputationHasManyBlocks (length inlines)]
+  | null files && null inlines = [AttestedComputationHasNoComputation]
+  | otherwise = []
+  where
+    (files, inlines) = List.partition isFile (readComputationSources document)
+    isFile = \case
+      ComputationFile _ -> True
+      ComputationInline _ -> False
 
 -- | Strict-mode checks on the OKF v0.2 @sources@ family (specification §5.1).
 --

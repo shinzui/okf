@@ -2242,15 +2242,20 @@ testFixtureDanglingFrontmatterPath = do
           (validateBundle PermissiveConformance (VersionDeclared (OkfVersion 0 2)) inventory concepts)
     )
 
--- | A whole bundle carrying specification §10.2's contract, checked end to end.
+-- | A whole bundle carrying specification §10.2's contract and §10.3's
+-- exactly-one rule, checked end to end.
 --
--- Three things this proves that the document-level tests cannot. The §10.2 check
--- fires on exactly one concept and leaves the @Metric@ and the two
--- @references\/@ concepts alone. Both of the completed computation's path-valued
--- contract fields resolve, including the non-Markdown @revenue.py@ — which only
--- works because 'walkBundleInventory' records every file rather than only the
--- concepts. And permissive validation reports nothing at all, because §11's
--- conformance list reaches none of this.
+-- Four things this proves that the document-level tests cannot. The §10.2 and
+-- §10.3 checks fire on exactly the concepts that get them wrong and leave the
+-- @Metric@ and the @references\/@ concept alone — @metrics\/revenue@
+-- carries no computation at all and is reported by none of them, which is what
+-- proves the checks are keyed on the one @type@. Both of the completed
+-- computation's path-valued contract fields resolve, including the non-Markdown
+-- @revenue.py@ — which only works because 'walkBundleInventory' records every
+-- file rather than only the concepts. @computations\/both-computations@ names a
+-- @computation@ path that resolves, so its only diagnostic is the §10.3
+-- ambiguity and not a dangling path. And permissive validation reports nothing
+-- at all, because §11's conformance list reaches none of this.
 testFixtureAttestedComputation :: IO (Either Text ())
 testFixtureAttestedComputation = do
   root <- fixturePath "attested-computation"
@@ -2260,11 +2265,19 @@ testFixtureAttestedComputation = do
     ( do
         marginId <- firstShow (parseConceptId "computations/margin")
         revenueId <- firstShow (parseConceptId "computations/revenue")
-        -- Two computations, one metric, and the two `references/` files that
-        -- `walkBundle` treats as concepts because they are non-reserved Markdown.
-        assertEqual 4 (length concepts)
+        bothId <- firstShow (parseConceptId "computations/both-computations")
+        noneId <- firstShow (parseConceptId "computations/no-computation")
+        twoBlocksId <- firstShow (parseConceptId "computations/two-blocks")
+        -- Five computations, one metric, and the one `references/` file that
+        -- `walkBundle` treats as a concept because it is non-reserved Markdown.
+        -- The `.py` and `.sql` under `references/` are files and not concepts.
+        assertEqual 7 (length concepts)
         assertEqual
-          [DocumentInvalid marginId AttestedComputationMissingRuntime]
+          [ DocumentInvalid bothId AttestedComputationHasBothComputations,
+            DocumentInvalid marginId AttestedComputationMissingRuntime,
+            DocumentInvalid noneId AttestedComputationHasNoComputation,
+            DocumentInvalid twoBlocksId (AttestedComputationHasManyBlocks 2)
+          ]
           (validateBundle StrictAuthoring (VersionDeclared (OkfVersion 0 2)) inventory concepts)
         assertEqual
           []

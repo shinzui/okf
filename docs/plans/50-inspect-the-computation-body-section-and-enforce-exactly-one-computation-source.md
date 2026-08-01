@@ -82,9 +82,9 @@ This section must always reflect the actual current state of the work.
 
 - [x] Milestone 1 (2026-08-01): `Okf.Markdown.computationBlocks` extracts the code blocks under a `# Computation` heading, bounded at the next heading of the same or shallower level
 - [x] Milestone 1 (2026-08-01): the cmark-gfm footnote hazard is pinned by a fixture — a code block inside an uncited footnote definition is deleted by the parser and therefore invisible
-- [ ] Milestone 2: `Okf.Document.ComputationSource` and `readComputationSources` report every computation a document offers, and `Okf.Bundle.Concept` projects it
-- [ ] Milestone 3: `okf validate --strict` reports a concept of this type that declares no computation, one that declares two, and one whose `# Computation` section holds more than one block
-- [ ] Milestone 3: no other `type` is affected, and permissive validation reports none of the three
+- [x] Milestone 2 (2026-08-01): `Okf.Document.ComputationSource` and `readComputationSources` report every computation a document offers, and `Okf.Bundle.Concept` projects it
+- [x] Milestone 3 (2026-08-01): `okf validate --strict` reports a concept of this type that declares no computation, one that declares two, and one whose `# Computation` section holds more than one block
+- [x] Milestone 3 (2026-08-01): no other `type` is affected, and permissive validation reports none of the three
 - [ ] Milestone 4: `okf show BUNDLE CONCEPT --computation` prints the computation, reading the file named by `computation` when the concept uses that form
 - [ ] Milestone 4: `okf show` without the flag names where the computation lives
 - [ ] Milestone 5: `docs/user/format.md` documents §10.3 and its "okf does not read the `# Computation` body section yet" paragraph is retired, and every `okf` transcript in `docs/` that this plan perturbs is re-run and corrected
@@ -166,6 +166,37 @@ That is tolerable for a "does a schema table exist" check and is not tolerable h
 has a fenced block region under `# Notes`. This plan bounds the section at the next heading of
 the same or shallower level and says so in the code, rather than silently doing something
 different from the neighbouring function.
+
+
+Three findings arrived during implementation.
+
+**The uncited-footnote hazard swallows more than the fence, and the fixture pins the wider
+behaviour.** Probing cmark-gfm with okf's own options confirms the deletion is of the whole
+definition, so an indented block written after `[^unused]: …` never reaches the tree at all:
+
+```text
+Node ... DOCUMENT
+  [ Node ... (HEADING 1) [Node ... (TEXT "Computation") []] ]
+```
+
+With the same definition *cited*, the block survives but as a `PARAGRAPH` nested inside
+`FOOTNOTE_DEFINITION` rather than a top-level `CODE_BLOCK`, because four spaces inside a footnote
+is the continuation indent rather than a code fence. Either way `computationBlocks` returns `[]`,
+which is what the test asserts. This is the accepted cost
+`docs/adr/9-one-markdown-parse-configuration-and-source-scanned-authoring-checks.md` records, not
+a new one.
+
+**The Validation and Acceptance transcript below omits the `log:` advisories the scratch bundle
+also produces, and that is the transcript's omission rather than a defect.** `/tmp/okf-c` has no
+`log.md`, so every concept in it is reported as `generated date 2026-08-01 has no enclosing
+log.md`, under both profiles. Those lines are unrelated to §10.3 and were present before this
+plan; the §10.3 assertions hold exactly as written once they are set aside.
+
+**The fixture bundle's concept count is seven, not eight.** `references/attesters/revenue.py` and
+the new `references/queries/revenue.sql` are files and not concepts, because `walkBundle` keeps
+only non-reserved `.md`. Only `references/skills/run-on-bq.md` is a concept, which is the
+constraint on bundle authors that
+`docs/plans/51-adopt-the-references-convention-for-executors-and-attesters.md` owns.
 
 
 ## Decision Log
