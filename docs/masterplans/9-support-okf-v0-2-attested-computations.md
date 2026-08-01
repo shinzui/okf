@@ -182,7 +182,9 @@ concept, and what okf does with non-Markdown files in a bundle (plan four).
 
 ## Exec-Plan Registry
 
-Child ExecPlans for this MasterPlan have not been created yet. They were deferred until
+The two root plans, EP-1 and EP-2, were created on 2026-08-01. EP-3, EP-4, and EP-5 are
+deliberately deferred until those two land — see the Decision Log entry of that date, which
+records why writing all five up front was rejected. They were originally deferred until
 `docs/masterplans/7-adopt-okf-v0-2-core-semantics.md` is complete and
 `docs/masterplans/8-extend-okf-profiles-for-v0-2-field-families.md` has settled its
 descriptor primitives, for the reasons in the Dependency Graph and Decision Log below.
@@ -192,14 +194,12 @@ six child plans Complete, and MasterPlan 8 completed in full with all four child
 Complete and its code landed — including `okf-core/src/Okf/Path.hs`, the object rules, the
 path-valued reference rule kind, and a shipped v0.2 reference profile at
 `docs/profiles/okf-v0-2.dhall`. Nothing external blocks this MasterPlan, and the working tree
-is green (`cabal test all`, 2026-08-01). What remains before its child plans are written is
-the review recorded in the revision note at the bottom of this file, whose findings the plans
-must carry.
+is green (`cabal test all`, 2026-08-01).
 
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
-| 1 | Resolve path valued frontmatter fields against the bundle | (not yet created) | None | None | Not Started |
-| 2 | Read the Attested Computation contract fields | (not yet created) | None | EP-1 | Not Started |
+| 1 | Resolve path valued frontmatter fields against the bundle | docs/plans/48-resolve-path-valued-frontmatter-fields-against-the-bundle.md | None | None | Not Started |
+| 2 | Read the Attested Computation contract fields | docs/plans/49-read-the-attested-computation-contract-fields.md | None | EP-1 | Not Started |
 | 3 | Inspect the Computation body section and enforce exactly one computation source | (not yet created) | EP-2 | None | Not Started |
 | 4 | Adopt the references convention for executors and attesters | (not yet created) | EP-1 | EP-2 | Not Started |
 | 5 | Surface attested computations in the CLI index and documentation | (not yet created) | EP-2, EP-3 | EP-4 | Not Started |
@@ -648,6 +648,22 @@ for a regression.
   now prevents EP-2 and EP-5 from reimplementing the profile layer in the core.
   Date: 2026-08-01
 
+- Decision: Write EP-1 and EP-2 now and defer EP-3, EP-4, and EP-5 until those two have
+  landed, rather than writing all five up front.
+  Rationale: `docs/masterplans/8-extend-okf-profiles-for-v0-2-field-families.md` wrote all
+  four of its child plans before implementing any, and its Outcomes section names that as the
+  one thing its decomposition got wrong, in terms addressed to the next MasterPlan: "The plans
+  were strongest where they quoted the working tree and weakest where they reasoned from the
+  specification about what a profile *ought* to reject." EP-1 here is exactly that shape, and
+  its headline check was falsified by one grep during this review. The three deferred plans
+  each depend on a decision EP-1 or EP-2 has not made yet — the violation-constructor shape,
+  whether the contract keys join `coreFrontmatterFieldOrder`, and what a file under
+  `references/` is — so writing them now would mean guessing at all three and revising them
+  afterwards. The cost of deferral is that cross-plan consistency is checked twice rather than
+  once, which is cheap; the cost of writing early is a plan that reads as authoritative and
+  is wrong, which is not.
+  Date: 2026-08-01
+
 ## Outcomes & Retrospective
 
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
@@ -715,5 +731,36 @@ No ADR was created or amended by this revision. The two ADRs this initiative owe
 unchanged in scope, and the `sources[].resource` decision recorded above is durable content
 for EP-1's frontmatter-path-resolution ADR — it belongs there, written by the plan that
 implements it, rather than in a record written before any code exists. No child ExecPlans
-exist yet, so nothing cascaded.
+existed at the time of the review, so nothing cascaded.
 
+
+## Revision note — 2026-08-01 (EP-1 and EP-2 created)
+
+The two root child ExecPlans are written and the Exec-Plan Registry names them:
+`docs/plans/48-resolve-path-valued-frontmatter-fields-against-the-bundle.md` and
+`docs/plans/49-read-the-attested-computation-contract-fields.md`. EP-3, EP-4, and EP-5 are
+deferred until those land, for the reason in the Decision Log entry of this date — MasterPlan
+8 wrote all four of its plans before implementing any and named that as the one thing its
+decomposition got wrong, and the three deferred plans here each turn on a decision EP-1 or
+EP-2 has not made yet.
+
+Writing the two plans changed nothing in this document's decomposition, and confirmed the
+review above rather than revising it. Both carry its findings: EP-1 opens with the
+`sources[].resource` evidence and is scoped to `resource` alone, EP-2 opens with the
+observation that a house profile can already demand the whole §10 contract and must therefore
+justify its core check as something a profile cannot do, and both place their checks under
+`StrictAuthoring` per `docs/adr/7-okf-v0-1-legacy-fallback-policy.md`.
+
+Three scope decisions inside the plans are worth surfacing here because they bear on the
+plans not yet written. EP-1 checks only the top-level `resource` field, since the three
+attested-computation path fields do not exist until EP-2 reads them — so wiring those three
+into EP-1's resolver is explicitly follow-up work for whichever plan lands second, and neither
+plan owns it today. EP-2 renders the contract in `okf show` rather than deferring every
+CLI surface to EP-5, applying MasterPlan 7's retrospective instruction directly; EP-5 remains
+the plan that makes the type coherent across every command. And EP-2 owns the
+`coreFrontmatterFieldOrder` decision explicitly, with both arguments written out, so it is
+made once rather than arriving incidentally.
+
+The working tree was confirmed green before either plan was written (`cabal test all`,
+1 of 1 test suites passed), so a future failure during implementation is attributable to that
+implementation.
