@@ -1,8 +1,12 @@
 -- | Bundle-level discovery for OKF concept documents.
 module Okf.Bundle
   ( BundleError (..),
+    BundleInventory,
     Concept,
     LogFile (..),
+    bundleInventoryMember,
+    bundleInventoryOfConcepts,
+    walkBundleInventory,
     conceptFromDocument,
     conceptDescription,
     conceptDocument,
@@ -31,6 +35,8 @@ where
 import Control.Exception (IOException, try)
 import Data.Aeson.KeyMap qualified as KeyMap
 import Data.List qualified as List
+import Data.Set (Set)
+import Data.Set qualified as Set
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text.IO
 import Okf.ConceptId
@@ -72,6 +78,18 @@ data BundleError
   | BundleIoError FilePath Text
   deriving stock (Generic, Eq, Show)
 
+-- | Every regular file in a bundle, as bundle-relative paths, whether or not okf
+-- can parse it. Concepts are the @.md@ subset; a @references\/@ script, a CSV, or
+-- an image is here and nowhere else.
+--
+-- This exists so that a path-valued frontmatter field can be resolved without
+-- giving validation a filesystem handle. Validation is offline by design
+-- (@docs\/adr\/5-compile-profile-rules-before-validation.md@): it receives parsed
+-- values and decides. Reading the inventory once during the walk, where okf is
+-- already doing IO, keeps it that way.
+newtype BundleInventory = BundleInventory (Set FilePath)
+  deriving stock (Generic, Eq, Show)
+
 -- | A parsed @log.md@ reserved file discovered in a bundle.
 data LogFile = LogFile
   { logSourcePath :: !FilePath,
@@ -98,6 +116,38 @@ walkLogs root = do
     Right paths -> do
       results <- mapM (readLog root) paths
       pure (List.sortOn logSourcePath <$> sequenceA results)
+
+-- | Record every regular file in a bundle, including the ones okf cannot parse.
+--
+-- A second, independent traversal rather than a widening of 'walkBundle', whose
+-- @[Concept]@ result every caller in both packages depends on. Walking twice is
+-- mildly wasteful and is the right trade for a change that cannot alter what
+-- 'walkBundle' returns.
+--
+-- Reserved files (@index.md@, @log.md@) are recorded here even though they are
+-- not concepts: they are files, and a path-valued field naming one names
+-- something that exists.
+walkBundleInventory :: FilePath -> IO (Either BundleError BundleInventory)
+walkBundleInventory root = do
+  discovered <- discoverAllFiles root ""
+  pure (BundleInventory . Set.fromList <$> discovered)
+
+-- | Whether the bundle contains a file at the given bundle-relative path. The
+-- path is normalised the same way the inventory's entries are, so a caller may
+-- pass 'Okf.Path.collapseBundlePath' output directly.
+bundleInventoryMember :: FilePath -> BundleInventory -> Bool
+bundleInventoryMember path (BundleInventory paths) =
+  Set.member (FilePath.normalise path) paths
+
+-- | The inventory an in-memory bundle can honestly report: the concepts' own
+-- source paths and nothing else.
+--
+-- For producers that assemble concepts without a directory to walk. Such a
+-- bundle resolves concept-to-concept paths correctly and simply cannot know
+-- about a non-Markdown file, because there is no filesystem holding one.
+bundleInventoryOfConcepts :: [Concept] -> BundleInventory
+bundleInventoryOfConcepts concepts =
+  BundleInventory (Set.fromList (FilePath.normalise . conceptSourcePath <$> concepts))
 
 -- | Find a concept by identifier in an already walked bundle.
 findConcept :: ConceptId -> [Concept] -> Maybe Concept
@@ -221,6 +271,31 @@ discoverMarkdownFiles root relativeDir = do
                           not (isReservedMarkdownFile entry)
                         ]
                     )
+          )
+      pure (concat <$> sequenceA discovered)
+
+-- | Every regular file under the root, bundle-relative and normalised. Skips
+-- directories, recursing into them rather than recording them, because a
+-- path-valued field names a file.
+discoverAllFiles :: FilePath -> FilePath -> IO (Either BundleError [FilePath])
+discoverAllFiles root relativeDir = do
+  let absoluteDir = root </> relativeDir
+      displayDir = if null relativeDir then root else relativeDir
+  listed <- tryBundleIo displayDir (listDirectory absoluteDir)
+  case listed of
+    Left bundleError -> pure (Left bundleError)
+    Right entries -> do
+      discovered <-
+        for
+          (List.sort entries)
+          ( \entry -> do
+              let relativePath = relativeDir </> entry
+                  absolutePath = root </> relativePath
+              isDirectory <- tryBundleIo relativePath (doesDirectoryExist absolutePath)
+              case isDirectory of
+                Left bundleError -> pure (Left bundleError)
+                Right True -> discoverAllFiles root relativePath
+                Right False -> pure (Right [FilePath.normalise relativePath])
           )
       pure (concat <$> sequenceA discovered)
 

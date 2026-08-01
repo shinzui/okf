@@ -65,6 +65,7 @@ main = do
         testIO "walkBundle reports a structured IO error for a missing root" testWalkBundleMissingRoot,
         testIO "walkBundle skips index.md and log.md" testWalkBundleSkipsReserved,
         testIO "walkBundle discovers nested concept IDs" testWalkBundleDiscoversNestedConceptIds,
+        testIO "walkBundleInventory sees a non-Markdown file that is not a concept" testWalkBundleInventorySeesNonMarkdown,
         testIO "discoverBundleRoots finds a directory holding index.md" testDiscoverIndexMd,
         testIO "discoverBundleRoots finds a directory holding a typed concept" testDiscoverTypedConcept,
         testIO "discoverBundleRoots ignores markdown without a type field" testDiscoverIgnoresPlainMarkdown,
@@ -392,6 +393,50 @@ testWalkBundleSkipsReserved =
     ( \root -> do
         concepts <- readBundle root
         pure (assertEqual ["datasets/sales", "tables/customers", "tables/orders"] (renderConceptId . conceptIdOf <$> concepts))
+    )
+
+-- | The gap this milestone closes: @references\/attesters\/revenue.py@ is
+-- specification §6.3's own example of what an @attester.resource@ points at, and
+-- before 'walkBundleInventory' existed nothing in okf could tell whether it was
+-- there. It must be visible to the inventory without becoming a concept, since
+-- only a @.md@ file carries frontmatter to validate.
+testWalkBundleInventorySeesNonMarkdown :: IO (Either Text ())
+testWalkBundleInventorySeesNonMarkdown = do
+  temporaryDirectory <- getTemporaryDirectory
+  root <- createTempDirectory temporaryDirectory "okf-core-inventory"
+  createFixtureBundle root
+  createDirectoryIfMissing True (root </> "references" </> "attesters")
+  Text.IO.writeFile (root </> "references" </> "attesters" </> "revenue.py") "print('receipt')\n"
+  concepts <- readBundle root
+  walked <- walkBundleInventory root
+  removeDirectoryRecursive root
+  pure
+    ( do
+        inventory <- firstShow walked
+        assertBool
+          "the .py file is in the inventory"
+          (bundleInventoryMember "references/attesters/revenue.py" inventory)
+        assertBool
+          "the .py file is not a concept"
+          (notElem "references/attesters/revenue" (renderConceptId . conceptIdOf <$> concepts))
+        assertBool
+          "a concept's own file is in the inventory"
+          (bundleInventoryMember "tables/orders.md" inventory)
+        -- A reserved file is not a concept but is still a file, so a path naming
+        -- one names something that exists.
+        assertBool "a reserved file is in the inventory" (bundleInventoryMember "index.md" inventory)
+        assertBool
+          "a file that is not there is not in the inventory"
+          (not (bundleInventoryMember "references/attesters/gone.py" inventory))
+        -- An in-memory bundle knows its own concepts and honestly cannot know
+        -- anything else.
+        let inMemory = bundleInventoryOfConcepts concepts
+        assertBool
+          "the in-memory inventory holds concept paths"
+          (bundleInventoryMember "tables/orders.md" inMemory)
+        assertBool
+          "the in-memory inventory cannot know a non-Markdown file"
+          (not (bundleInventoryMember "references/attesters/revenue.py" inMemory))
     )
 
 testWalkBundleDiscoversNestedConceptIds :: IO (Either Text ())
