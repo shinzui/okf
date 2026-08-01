@@ -74,7 +74,7 @@ renderTrustTier = \case
 -- the UTC form with the existing @Rfc3339Utc@ field format.
 latestVerification :: [Verification] -> Maybe Text
 latestVerification verifications =
-  case [at | Verification {verificationAt = Just at} <- verifications] of
+  case [occurredAt | Verification {verificationAt = Just occurredAt} <- verifications] of
     [] -> Nothing
     times -> Just (maximum times)
 

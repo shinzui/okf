@@ -68,10 +68,10 @@ this plan makes readable. That joining is a sibling plan,
 
 ## Progress
 
-- [ ] Milestone 1: `sources` entries read, with `resource` and the optional keys projected
-- [ ] Milestone 2: `usage_window` reads at document scope with per-entry override
+- [x] Milestone 1: `sources` entries read, with `resource` and the optional keys projected (2026-07-31)
+- [x] Milestone 2: `usage_window` reads at document scope with per-entry override (2026-07-31)
 - [ ] Milestone 3: strict validation reports entries missing `resource` and duplicate entry ids
-- [ ] Milestone 4: authoring API can write `sources` and `usage_window`; round-trip proven
+- [x] Milestone 4: authoring API can write `sources` and `usage_window`; round-trip proven (2026-07-31) — done alongside Milestones 1-2 since it edits the same file
 - [ ] Milestone 5: `okf sources` command surfaces provenance with its credibility signals
 
 
@@ -89,8 +89,40 @@ this plan makes readable. That joining is a sibling plan,
   every requirement can be checked rather than recalled.
   Date: 2026-07-31
 
-(Add further decisions as you make them. Milestones 1 and 3 each end with a decision this
-plan requires you to record.)
+- Decision: `usage_count` is read only from a YAML integer. A numeric string such as
+  `"5000"`, and a fractional number, both read as `Nothing`.
+  Rationale: coercing a string would make the field's type unpredictable for downstream
+  consumers, and it would paper over a producer mistake worth surfacing. Nothing is rejected —
+  §11 forbids that — the value is simply not read as a count.
+  Date: 2026-07-31
+
+- Decision: Implemented the integer check with aeson's `fromJSON` rather than adding the
+  `scientific` package.
+  Rationale: the plan states "No new package dependencies", and `Data.Scientific` is not
+  currently in `okf-core`'s `build-depends` even though aeson depends on it transitively.
+  Aeson's `Integer` decoder already has exactly the wanted semantics — it rejects strings and
+  non-integral numbers — so the dependency was unnecessary.
+  Date: 2026-07-31
+
+- Decision: okf does not add a legacy `# Citations` body parser.
+  Rationale: §13.1 says a consumer MAY parse one for v0.1 documents, not MUST, and this is a
+  fallback with no existing behaviour to preserve. Verified rather than assumed: searching
+  `okf-core/src`, `okf-cli/src`, `okf-core/test`, `docs/user`, and `README.md` for "Citations"
+  returns nothing, so okf has never implemented the v0.1 construct and there is neither
+  anything to remove nor any user relying on it. If a fallback is ever wanted, it belongs
+  behind the version gate in
+  `docs/plans/42-declare-and-honour-okf-version-in-the-bundle-root-index.md`.
+  Date: 2026-07-31
+
+- Decision: `setSources` omits every optional key that is `Nothing` rather than writing an
+  explicit null.
+  Rationale: makes the write-then-read round-trip lossless (an explicit null would read back
+  as absent anyway, so writing one adds noise without information) and keeps generated
+  documents minimal, consistent with `setGenerated` and `setVerified`.
+  Date: 2026-07-31
+
+(Add further decisions as you make them. Milestone 3 ends with a decision this plan requires
+you to record.)
 
 
 ## Outcomes & Retrospective

@@ -10,9 +10,11 @@ module Okf.Bundle
     conceptIdOf,
     conceptResource,
     conceptSourcePath,
+    conceptSources,
     conceptStaleAfter,
     conceptStatus,
     conceptTags,
+    conceptUsageWindow,
     conceptTitle,
     conceptType,
     conceptVerified,
@@ -57,7 +59,9 @@ data Concept = Concept
     generated :: !(Maybe Generated),
     verified :: ![Verification],
     status :: !Status,
-    staleAfter :: !(Maybe Text)
+    staleAfter :: !(Maybe Text),
+    sources :: ![Source],
+    usageWindow :: !(Maybe UsageWindow)
   }
   deriving stock (Generic, Eq, Show)
 
@@ -172,6 +176,20 @@ conceptStatus Concept {status} = status
 conceptStaleAfter :: Concept -> Maybe Text
 conceptStaleAfter Concept {staleAfter} = staleAfter
 
+-- | The OKF v0.2 @sources@ provenance entries projected from frontmatter,
+-- empty when the concept carries none (specification §5.1). Entries lacking the
+-- required @resource@ are absent here; 'Okf.Validation.validateDocument'
+-- reports them.
+conceptSources :: Concept -> [Source]
+conceptSources Concept {sources} = sources
+
+-- | The document-scope @usage_window@ that frames every entry's @usage_count@
+-- (specification §5.1). Resolve a given entry's effective window with
+-- @Okf.Document.effectiveUsageWindow (conceptUsageWindow concept)@, which
+-- honours a per-entry override.
+conceptUsageWindow :: Concept -> Maybe UsageWindow
+conceptUsageWindow Concept {usageWindow} = usageWindow
+
 -- | Reserved Markdown filenames are not normal concept documents.
 isReservedMarkdownFile :: FilePath -> Bool
 isReservedMarkdownFile path =
@@ -285,8 +303,8 @@ tryBundleIo path action = do
 
 -- | Build a 'Concept' from its identity and document. The typed projection
 -- fields (@type_@, @title@, @description@, @resource@, @tags@, @generated@,
--- @verified@, @status@, @staleAfter@) are derived from the document's
--- frontmatter, so they can never disagree with it.
+-- @verified@, @status@, @staleAfter@, @sources@, @usageWindow@) are derived
+-- from the document's frontmatter, so they can never disagree with it.
 -- A projection may only restate what frontmatter says; it may never store a
 -- derivation frontmatter does not carry. The source
 -- path is derived from the concept ID. Use this when assembling concepts in
@@ -310,7 +328,9 @@ conceptAt conceptId relativePath document =
       generated = readGenerated (frontmatter document),
       verified = readVerified (frontmatter document),
       status = readStatus (frontmatter document),
-      staleAfter = readStaleAfter (frontmatter document)
+      staleAfter = readStaleAfter (frontmatter document),
+      sources = readSources (frontmatter document),
+      usageWindow = readUsageWindow (frontmatter document)
     }
 
 textField :: Text -> Frontmatter -> Text

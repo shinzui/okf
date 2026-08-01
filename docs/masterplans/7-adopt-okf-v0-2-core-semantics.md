@@ -151,7 +151,7 @@ from the signals ... not stored") and a boundary later work will be tempted to c
 |---|-------|------|-----------|-----------|--------|
 | 1 | Migrate the concept timestamp to the OKF v0.2 generated field | docs/plans/38-migrate-the-concept-timestamp-to-the-okf-v0-2-generated-field.md | None | None | Complete |
 | 2 | Read the OKF v0.2 verified status and stale after fields and derive trust tiers | docs/plans/39-read-the-okf-v0-2-verified-status-and-stale-after-fields-and-derive-trust-tiers.md | EP-1 | None | Complete |
-| 3 | Read the OKF v0.2 sources provenance family with credibility signals | docs/plans/40-read-the-okf-v0-2-sources-provenance-family-with-credibility-signals.md | EP-1 | EP-2 | Not Started |
+| 3 | Read the OKF v0.2 sources provenance family with credibility signals | docs/plans/40-read-the-okf-v0-2-sources-provenance-family-with-credibility-signals.md | EP-1 | EP-2 | In Progress |
 | 4 | Join per claim footnote attribution to OKF v0.2 source entries | docs/plans/41-join-per-claim-footnote-attribution-to-okf-v0-2-source-entries.md | EP-3 | None | Not Started |
 | 5 | Declare and honour okf version in the bundle root index | docs/plans/42-declare-and-honour-okf-version-in-the-bundle-root-index.md | EP-1 | EP-2, EP-3 | Not Started |
 | 6 | Migrate okf documentation examples and fixtures to OKF v0.2 | docs/plans/43-migrate-okf-documentation-examples-and-fixtures-to-okf-v0-2.md | EP-1, EP-2, EP-3, EP-4, EP-5 | None | Not Started |

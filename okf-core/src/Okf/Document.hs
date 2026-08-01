@@ -22,6 +22,13 @@ module Okf.Document
     renderStatus,
     readStaleAfter,
 
+    -- * OKF v0.2 provenance family
+    Source (..),
+    UsageWindow (..),
+    readSources,
+    readUsageWindow,
+    effectiveUsageWindow,
+
     -- * Frontmatter authoring
     frontmatterFromFields,
     setField,
@@ -36,11 +43,14 @@ module Okf.Document
     setVerified,
     setStatus,
     setStaleAfter,
+    setSources,
+    setUsageWindow,
     setResource,
     setTags,
   )
 where
 
+import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as AesonKey
 import Data.Aeson.KeyMap qualified as KeyMap
 import Data.Attoparsec.ByteString qualified as Attoparsec
@@ -225,6 +235,123 @@ readStaleAfter frontmatterValue =
     Just (String value) -> Just value
     _ -> Nothing
 
+-- | The date range over which a @usage_count@ was counted (specification §5.1).
+--
+-- Written once as a sibling of @sources@ to frame every entry's count; a single
+-- entry MAY carry its own to override the shared one. Both bounds stay 'Text'
+-- and are not parsed into a @Day@, consistent with every other date in the v0.2
+-- families: okf preserves the producer's text so serialization round-trips, and
+-- format checking belongs to the profile layer's @Date@ format.
+data UsageWindow = UsageWindow
+  { usageWindowFrom :: !(Maybe Text),
+    usageWindowTo :: !(Maybe Text)
+  }
+  deriving stock (Generic, Eq, Show)
+
+-- | One entry of the OKF v0.2 @sources@ family (specification §5.1): a piece of
+-- material this concept was derived from, with the optional credibility signals
+-- a consumer uses to judge it.
+--
+-- §5.1 records objective signals rather than a score, because a score "is
+-- subjective, unportable across consumers, and goes stale". Nothing here
+-- computes a verdict; see
+-- @docs\/adr\/8-derived-not-stored-trust-and-credibility.md@.
+data Source = Source
+  { -- | Optional stable key used to attribute individual claims. §5.1: SHOULD
+    -- be present when the body cites the source.
+    sourceId :: !(Maybe Text),
+    -- | REQUIRED within an entry. Either a concrete artifact a consumer can
+    -- follow (absolute URL, bundle-relative path, @references\/@ path) __or a
+    -- population or scope descriptor it cannot__, such as
+    -- @all queries in BigQuery project X@. Never treat this as a path.
+    sourceResource :: !Text,
+    -- | Optional human-readable label.
+    sourceTitle :: !(Maybe Text),
+    -- | Credibility signal: who or what produced the source, in the §7 actor
+    -- convention. An authority signal.
+    sourceAuthor :: !(Maybe Actor),
+    -- | Credibility signal: how often the resource was exercised over the
+    -- effective 'UsageWindow'. An adoption and liveness signal. §5.1 warns it
+    -- is coarse — comparable at the alive-versus-dead and order-of-magnitude
+    -- level, not as a precise ranking — so do not sort or score by it.
+    sourceUsageCount :: !(Maybe Integer),
+    -- | Credibility signal: when the source itself last changed. A recency
+    -- signal, distinct from @generated.at@ (§5.2), which records when the
+    -- /concept/ was written.
+    sourceLastModified :: !(Maybe Text),
+    -- | An entry-local window overriding the document-scope one. Resolve with
+    -- 'effectiveUsageWindow' rather than reading this directly.
+    sourceUsageWindow :: !(Maybe UsageWindow)
+  }
+  deriving stock (Generic, Eq, Show)
+
+-- | Read the OKF v0.2 @sources@ family from frontmatter (specification §5.1).
+--
+-- An entry without a usable @resource@ is skipped, because §5.1 makes it
+-- REQUIRED within an entry and a 'Source' without one would be meaningless.
+-- Reporting the skipped entry is 'Okf.Validation.validateDocument''s job; this
+-- reader stays total so §11's prohibition on rejecting a document is never at
+-- risk.
+--
+-- @usage_count@ is read only from a YAML integer. A numeric string such as
+-- @"5000"@ yields 'Nothing': coercing it would make the field's type
+-- unpredictable for downstream consumers and would hide a producer mistake.
+readSources :: Frontmatter -> [Source]
+readSources frontmatterValue =
+  case frontmatterLookup "sources" frontmatterValue of
+    Just (Array entries) -> foldMap (toList . sourceFromValue) entries
+    _ -> []
+  where
+    sourceFromValue = \case
+      Object entryFields -> do
+        resource <- objectText "resource" entryFields
+        pure
+          Source
+            { sourceId = objectText "id" entryFields,
+              sourceResource = resource,
+              sourceTitle = objectText "title" entryFields,
+              sourceAuthor = parseActor <$> objectText "author" entryFields,
+              sourceUsageCount = objectInteger "usage_count" entryFields,
+              sourceLastModified = objectText "last_modified" entryFields,
+              sourceUsageWindow = usageWindowFromValue =<< KeyMap.lookup (AesonKey.fromText "usage_window") entryFields
+            }
+      _ -> Nothing
+
+-- | Read the document-scope @usage_window@, a sibling of @sources@ rather than
+-- a member of it (specification §5.1).
+readUsageWindow :: Frontmatter -> Maybe UsageWindow
+readUsageWindow frontmatterValue =
+  usageWindowFromValue =<< frontmatterLookup "usage_window" frontmatterValue
+
+-- | Resolve which window frames a source's @usage_count@, per §5.1: the entry's
+-- own window wins when present, otherwise the document-scope one applies.
+--
+-- This is a named function rather than an inlined fallback because it is the
+-- one piece of provenance logic a consumer is most likely to get wrong, and
+-- every reader of a @usage_count@ must agree on it.
+effectiveUsageWindow :: Maybe UsageWindow -> Source -> Maybe UsageWindow
+effectiveUsageWindow documentWindow Source {sourceUsageWindow} =
+  sourceUsageWindow <|> documentWindow
+
+usageWindowFromValue :: Value -> Maybe UsageWindow
+usageWindowFromValue = \case
+  Object windowFields ->
+    Just (UsageWindow (objectText "from" windowFields) (objectText "to" windowFields))
+  _ -> Nothing
+
+-- | Read an integral member. Only a YAML integer qualifies: a numeric string
+-- and a fractional number both yield 'Nothing', because aeson's @Integer@
+-- decoder rejects each. Coercing either would make the field's type
+-- unpredictable for downstream consumers and would hide a producer mistake.
+objectInteger :: Text -> KeyMap.KeyMap Value -> Maybe Integer
+objectInteger key members =
+  case KeyMap.lookup (AesonKey.fromText key) members of
+    Just value@(Number _) ->
+      case Aeson.fromJSON value of
+        Aeson.Success parsed -> Just parsed
+        Aeson.Error _ -> Nothing
+    _ -> Nothing
+
 objectText :: Text -> KeyMap.KeyMap Value -> Maybe Text
 objectText key members =
   case KeyMap.lookup (AesonKey.fromText key) members of
@@ -318,6 +445,47 @@ setStatus status = setField "status" (String (renderStatus status))
 -- absolute @YYYY-MM-DD@ date; it is written as given and not validated here.
 setStaleAfter :: Text -> Frontmatter -> Frontmatter
 setStaleAfter value = setField "stale_after" (String value)
+
+-- | Set the OKF v0.2 @sources@ field as a YAML list of mappings (§5.1).
+--
+-- Every optional key that is 'Nothing' is omitted rather than written as an
+-- explicit null, so a round-trip through 'readSources' is lossless and a
+-- generated document carries no noise. This is the single place that knows the
+-- shape of a source entry.
+setSources :: [Source] -> Frontmatter -> Frontmatter
+setSources sources =
+  setField "sources" (Array (Vector.fromList (sourceValue <$> sources)))
+  where
+    sourceValue source =
+      Object
+        ( KeyMap.fromList
+            ( concat
+                [ [(AesonKey.fromText "id", String value) | Just value <- [sourceId source]],
+                  [(AesonKey.fromText "resource", String (sourceResource source))],
+                  [(AesonKey.fromText "title", String value) | Just value <- [sourceTitle source]],
+                  [(AesonKey.fromText "author", String (renderActor value)) | Just value <- [sourceAuthor source]],
+                  [(AesonKey.fromText "usage_count", Number (fromInteger value)) | Just value <- [sourceUsageCount source]],
+                  [(AesonKey.fromText "last_modified", String value) | Just value <- [sourceLastModified source]],
+                  [(AesonKey.fromText "usage_window", usageWindowValue value) | Just value <- [sourceUsageWindow source]]
+                ]
+            )
+        )
+
+-- | Set the document-scope @usage_window@ that frames every @usage_count@
+-- (specification §5.1).
+setUsageWindow :: UsageWindow -> Frontmatter -> Frontmatter
+setUsageWindow window = setField "usage_window" (usageWindowValue window)
+
+usageWindowValue :: UsageWindow -> Value
+usageWindowValue UsageWindow {usageWindowFrom, usageWindowTo} =
+  Object
+    ( KeyMap.fromList
+        ( concat
+            [ [(AesonKey.fromText "from", String value) | Just value <- [usageWindowFrom]],
+              [(AesonKey.fromText "to", String value) | Just value <- [usageWindowTo]]
+            ]
+        )
+    )
 
 -- | A @{ by, at }@ YAML mapping, omitting @at@ when absent. Shared by the
 -- @generated@ and @verified@ families, which specification §5.2 gives the same

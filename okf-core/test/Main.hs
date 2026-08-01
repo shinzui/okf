@@ -99,6 +99,9 @@ main = do
         test "trustTier derives the three specification section 5.3 tiers" testTrustTier,
         test "latestVerification returns the newest at" testLatestVerification,
         test "staleness compares inclusively against a supplied day" testStaleness,
+        test "readSources reads entries and skips one without resource" testReadSources,
+        test "usage_window applies at document scope with per-entry override" testUsageWindowOverride,
+        test "setSources and setUsageWindow round-trip through serialize and parse" testSourcesRoundTrip,
         testIO "writeBundle then walkBundle round-trips" testWriteBundleRoundTrip,
         testIO "fixture dangling link reports a bundle validation error" testFixtureDanglingLink,
         testIO "loadProfileFile decodes the postgresql fixture" testLoadProfileFixture,
@@ -1033,6 +1036,115 @@ testStaleness = do
   assertEqual (StaleAfterUnparseable "2026-13-01") (staleness today (Just "2026-13-01"))
   assertEqual "stale since 2026-06-01" (renderStaleness (staleness today (Just "2026-06-01")))
   assertEqual "ok" (renderStaleness (staleness today (Just "2026-09-23")))
+
+-- | A document exercising both usage-window scopes, both credibility-signal
+-- shapes, a scope-descriptor resource, and an entry missing the one key
+-- section 5.1 requires within an entry.
+sourcesFixtureDocument :: Text
+sourcesFixtureDocument =
+  Text.unlines
+    [ "---",
+      "type: BigQuery Table",
+      "sources:",
+      "  - id: ga4-schema",
+      "    resource: https://developers.google.com/analytics/bigquery/export-schema",
+      "    title: GA4 BigQuery Export schema",
+      "    author: team:ga4-docs",
+      "    usage_count: 5000",
+      "    last_modified: 2026-05-30",
+      "  - id: exec-dash",
+      "    resource: dashboards/exec-revenue",
+      "    usage_count: 12",
+      "    usage_window: { from: 2026-01-01, to: 2026-01-31 }",
+      "  - id: broad-scope",
+      "    resource: all queries in BigQuery project X",
+      "    usage_count: \"5000\"",
+      "  - id: no-resource",
+      "    title: Missing the required key",
+      "usage_window: { from: 2026-06-01, to: 2026-06-30 }",
+      "---",
+      "",
+      "# Orders"
+    ]
+
+testReadSources :: Either Text ()
+testReadSources = do
+  document <- firstShow (parseDocument sourcesFixtureDocument)
+  let sources = readSources (document ^. #frontmatter)
+  -- The entry with no `resource` is skipped: section 5.1 makes it REQUIRED
+  -- within an entry, and reporting it is validation's job, not the reader's.
+  assertEqual [Just "ga4-schema", Just "exec-dash", Just "broad-scope"] (map sourceId sources)
+  case sources of
+    (first_ : _) -> do
+      assertEqual "https://developers.google.com/analytics/bigquery/export-schema" (sourceResource first_)
+      assertEqual (Just "GA4 BigQuery Export schema") (sourceTitle first_)
+      -- `author` uses the section 7 actor convention; `team:ga4-docs` matches
+      -- none of the three shapes, so it stays unclassified rather than failing.
+      assertEqual (Just (UnclassifiedActor "team:ga4-docs")) (sourceAuthor first_)
+      assertEqual (Just 5000) (sourceUsageCount first_)
+      assertEqual (Just "2026-05-30") (sourceLastModified first_)
+    [] -> Left "expected sources"
+  -- Section 5.1 permits a resource to be a population or scope descriptor no
+  -- consumer can follow. It must read cleanly and never be treated as a path.
+  assertEqual
+    (Just "all queries in BigQuery project X")
+    (sourceResource <$> List.find ((== Just "broad-scope") . sourceId) sources)
+  -- A numeric string is not an integer. Reading it as one would make the
+  -- field's type unpredictable and hide a producer mistake.
+  assertEqual
+    (Just Nothing)
+    (sourceUsageCount <$> List.find ((== Just "broad-scope") . sourceId) sources)
+  absent <- firstShow (parseDocument "---\ntype: Recipe\n---\nBody\n")
+  assertEqual [] (readSources (absent ^. #frontmatter))
+
+testUsageWindowOverride :: Either Text ()
+testUsageWindowOverride = do
+  document <- firstShow (parseDocument sourcesFixtureDocument)
+  let documentWindow = readUsageWindow (document ^. #frontmatter)
+      sources = readSources (document ^. #frontmatter)
+      windowFor entryId =
+        effectiveUsageWindow documentWindow <$> List.find ((== Just entryId) . sourceId) sources
+  assertEqual (Just (UsageWindow (Just "2026-06-01") (Just "2026-06-30"))) documentWindow
+  -- An entry with no window of its own inherits the document-scope one...
+  assertEqual (Just (Just (UsageWindow (Just "2026-06-01") (Just "2026-06-30")))) (windowFor "ga4-schema")
+  -- ...and an entry carrying its own overrides it. Two different windows in one
+  -- document is the section 5.1 override rule working.
+  assertEqual (Just (Just (UsageWindow (Just "2026-01-01") (Just "2026-01-31")))) (windowFor "exec-dash")
+  -- With no window at either scope there is nothing to frame a count with.
+  noWindow <- firstShow (parseDocument "---\ntype: Recipe\nsources:\n  - resource: https://example.com/a\n---\nBody\n")
+  let noWindowSources = readSources (noWindow ^. #frontmatter)
+  assertEqual Nothing (readUsageWindow (noWindow ^. #frontmatter))
+  assertEqual [Nothing] (effectiveUsageWindow Nothing <$> noWindowSources)
+
+testSourcesRoundTrip :: Either Text ()
+testSourcesRoundTrip = do
+  let sources =
+        [ Source
+            { sourceId = Just "ga4-schema",
+              sourceResource = "https://developers.google.com/analytics/bigquery/export-schema",
+              sourceTitle = Just "GA4 BigQuery Export schema",
+              sourceAuthor = Just (parseActor "human:ahormati"),
+              sourceUsageCount = Just 5000,
+              sourceLastModified = Just "2026-05-30",
+              sourceUsageWindow = Nothing
+            },
+          -- Every optional key absent: these must be omitted on write, not
+          -- written as explicit nulls, so the round-trip is lossless.
+          Source
+            { sourceId = Nothing,
+              sourceResource = "all queries in BigQuery project X",
+              sourceTitle = Nothing,
+              sourceAuthor = Nothing,
+              sourceUsageCount = Nothing,
+              sourceLastModified = Nothing,
+              sourceUsageWindow = Just (UsageWindow (Just "2026-01-01") Nothing)
+            }
+        ]
+      window = UsageWindow (Just "2026-06-01") (Just "2026-06-30")
+      built = setUsageWindow window (setSources sources (setType "BigQuery Table" emptyFrontmatter))
+  reparsed <- firstShow (parseDocument (serializeDocument (OKFDocument built "# Orders\n")))
+  assertEqual sources (readSources (reparsed ^. #frontmatter))
+  assertEqual (Just window) (readUsageWindow (reparsed ^. #frontmatter))
 
 testConceptFromDocumentDerivesFields :: Either Text ()
 testConceptFromDocumentDerivesFields = do
