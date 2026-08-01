@@ -356,11 +356,12 @@ instance FromDhall TypeRule where
 -- importantly, so 'TypeRule' emits @type@ rather than the Haskell field name
 -- @type_@ — matching the Dhall field and how 'Okf.Graph.Node' already encodes.
 instance ToJSON ProfileSpec where
-  toJSON ProfileSpec {name, description, okfVersion, frontmatter, allowUnknownTypes, allowUnknownFields, idField, types = typeRules} =
+  toJSON ProfileSpec {name, description, okfVersion, frontmatter, allowUnknownTypes, allowUnknownFields, idField, requireBundleVersion, types = typeRules} =
     object
       [ "name" .= name,
         "description" .= description,
         "okfVersion" .= okfVersion,
+        "requireBundleVersion" .= requireBundleVersion,
         "allowUnknownTypes" .= allowUnknownTypes,
         "allowUnknownFields" .= allowUnknownFields,
         "idField" .= idField,

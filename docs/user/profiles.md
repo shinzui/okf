@@ -138,6 +138,7 @@ The fields:
 | `allowUnknownTypes` | `Bool` | When `False`, a concept whose `type` is not listed in `types` is reported as `type not in profile vocabulary`. Profile-wide frontmatter rules still apply whether this is `True` or `False`. |
 | `allowUnknownFields` | `Bool` | When `False`, top-level keys must be declared by the effective profile/type rules. Core OKF keys and `idField` are always permitted. The default is `True`, preserving producer extensions. |
 | `idField` | `Optional Text` | Names the frontmatter key that stores document IDs. `None Text` disables all document-ID checks. |
+| `requireBundleVersion` | `Optional Text` | `Some "0.2"` requires the bundle's root `index.md` to declare `okf_version` at that version or later. `None Text`, the default, demands nothing. See [requiring a bundle version](#requiring-a-bundle-version). |
 | `types` | `List TypeRule` | One rule per allowed `type` string (see below). |
 
 Each `FieldRule` — one frontmatter key, and optionally what it is for:
@@ -578,8 +579,65 @@ means an ADR lifecycle, not OKF v0.2's `status` (§5.4, `draft`/`stable`/
 no house-convention reading — `FieldFormat.Actor` is §7 and nothing else.
 
 okf also does not compare the profile's `okfVersion` against the bundle's
-`okf_version`. Profile validation reports per-concept deviations, and a
-bundle-level version mismatch belongs to neither that vocabulary nor that scope.
+`okf_version`. The two answer different questions — which version's rules the
+profile writes, and which version the bundle targets — and okf never infers one
+demand from the other. A profile that wants to demand something of the bundle's
+declaration says so explicitly, with `requireBundleVersion`.
+
+### Requiring a bundle version
+
+A bundle may declare the format version it targets, with `okf_version: "0.2"` in
+the frontmatter of its root `index.md`. Specification §12 makes that a MAY, so
+`okf validate` never reports a bundle for leaving it out — not even under
+`--strict`.
+
+That is right for the format and thin for a team that has finished migrating,
+because an undeclared bundle quietly opts out of every v0.2-only check. The most
+visible one is the report of concepts still carrying the superseded `timestamp`
+key, which fires only in a bundle declaring 0.2 or later. A profile can therefore
+demand the declaration as a house convention:
+
+```dhall
+, requireBundleVersion = Some "0.2"
+```
+
+A bundle that declares nothing, declares an older version, or declares something
+okf cannot parse is then a deviation:
+
+```text
+$ okf validate BUNDLE --profile house.dhall
+profile: bundle does not declare okf_version; this profile requires 0.2 or later
+OK: 22 concepts
+```
+
+```text
+$ okf validate BUNDLE --profile house.dhall
+profile: bundle declares okf_version 0.1; this profile requires 0.2 or later
+```
+
+Like every profile deviation it is advisory until you ask otherwise:
+`--profile-enforce` turns it into exit code 1. Declaring a *higher* version than
+the minimum is not a deviation — §12 defines a minor bump as backward-compatible
+additions — so `"0.3"` satisfies a profile requiring `"0.2"`. Fix a bundle that
+fails with the command that writes the declaration for you:
+
+```bash
+okf index BUNDLE --write --okf-version 0.2
+```
+
+This is the one profile violation that names no concept, because the declaration
+belongs to the bundle rather than to any document in it. A value okf cannot read
+as `<major>.<minor>` is rejected when the profile is compiled, before any bundle
+is opened:
+
+```text
+requireBundleVersion is not <major>.<minor>: banana
+```
+
+The shipped `docs/profiles/postgresql.dhall` sets it, because its own rules are
+written for v0.2. The shipped `docs/profiles/okf-v0-2.dhall` deliberately does
+not: it is a format-level profile, and demanding what §12 merely permits would
+advise the opposite of the specification.
 
 ## The shipped v0.2 reference profile
 

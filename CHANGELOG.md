@@ -7,6 +7,28 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- **A profile can require its bundles to declare which OKF version they target.**
+  A bundle may say `okf_version: "0.2"` in its root `index.md`, and the
+  specification makes that optional, so okf itself never asks for it — which
+  means an undeclared bundle quietly opts out of every v0.2-only check,
+  including the report of concepts still carrying the superseded `timestamp`
+  key. A team past that migration now writes `requireBundleVersion = Some "0.2"`
+  in its profile, and `okf validate --profile` reports a bundle that declares
+  nothing, declares something older, or declares something unreadable:
+
+  ```text
+  profile: bundle does not declare okf_version; this profile requires 0.2 or later
+  ```
+
+  Advisory like every other profile deviation, fatal with `--profile-enforce`,
+  and fixed with `okf index BUNDLE --write --okf-version 0.2`. A higher declared
+  version is not a deviation. The shipped `docs/profiles/postgresql.dhall`
+  adopts the requirement; `docs/profiles/okf-v0-2.dhall` deliberately does not,
+  because a format-level profile that demanded what the format merely permits
+  would advise against the specification.
+
 ### Changed
 
 - **`okf profile document` now produces bundles that pass `okf validate --strict`

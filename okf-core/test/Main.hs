@@ -185,6 +185,7 @@ main = do
         test "profile value display names match the documented vocabulary" testProfileValueDisplayNames,
         testIO "profile documentation renders a root concept" testProfileDocumentationRootConcept,
         test "profile documentation renders object rules" testProfileDocumentationObjectFields,
+        test "profile documentation renders a required bundle version" testProfileDocumentationRequiredBundleVersion,
         testIO "profile documentation renders one concept per declared type" testProfileDocumentationTypeConcept,
         testIO "profile documentation renders inherited rules for a bare type" testProfileDocumentationInheritedRules,
         testIO "generated profile documentation round-trips through serialize and parse" testProfileDocumentationRoundTrip,
@@ -2884,6 +2885,9 @@ testProfileJsonShape = do
             [ "name" .= ("decisions" :: Text),
               "description" .= ("How this team records architectural decisions." :: Text),
               "okfVersion" .= ("0.1" :: Text),
+              -- Encoded even when absent, so a consumer reads one shape rather
+              -- than having to distinguish a missing key from a null one.
+              "requireBundleVersion" .= (Nothing :: Maybe Text),
               "allowUnknownTypes" .= False,
               "allowUnknownFields" .= True,
               "idField" .= ("docId" :: Text),
@@ -5789,7 +5793,22 @@ testProfileDocumentationRootConcept =
         assertHasLine "- Document ID field: `docId`" bodyLines
         assertHasLine "- Unknown concept types: rejected" bodyLines
         assertHasLine "- Unknown frontmatter keys: rejected" bodyLines
+        -- Every profile-level setting has a bullet whether or not the profile
+        -- sets it, so a reader learns the setting exists and that this profile
+        -- leaves it alone. This fixture declares no bundle-version requirement.
+        assertHasLine "- Required bundle version: none" bodyLines
     )
+
+-- | A profile setting the renderer does not print is a silent hole in generated
+-- documentation, so @requireBundleVersion@ is rendered in the same change that
+-- adds it — the rule stated in
+-- @docs\/adr\/11-growing-the-profile-descriptor-language.md@.
+testProfileDocumentationRequiredBundleVersion :: Either Text ()
+testProfileDocumentationRequiredBundleVersion = do
+  compiled <- firstShow (compileProfile (requireBundleVersionProfile (Just "0.2")))
+  concepts <- firstShow (renderProfileDocumentation defaultDocumentationOptions compiled)
+  root <- conceptAt 0 concepts
+  assertHasLine "- Required bundle version: `0.2`" (conceptBodyLines root)
 
 -- | A rule kind the renderer does not know about is a silent hole in generated
 -- profile documentation, so object rules are rendered in the same change that

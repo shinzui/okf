@@ -13,6 +13,22 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   `defaultDocumentationOptions` names as the producer of a generated
   documentation bundle: `ProcessActor "okf-profile-document"`. Deliberately
   version-free, so generated output stays byte-identical across okf releases.
+- A profile may require its bundle to declare an OKF version.
+  `ProfileSpec.requireBundleVersion` holds a minimum as `Just "0.2"`, and the new
+  `Okf.Profile.validateProfileVersion` reports an undeclared, older, or
+  unparseable declaration as `RequiredBundleVersionUnmet`. Specification §12
+  makes the declaration a MAY, so `validateBundle` still never asks for one; this
+  is the house-convention half, inert until a profile author writes the field.
+  `compiledProfileRequiredBundleVersion` reads the parsed minimum off a compiled
+  profile. See
+  `docs/adr/10-okf-version-declaration-and-best-effort-reading.md`.
+- `validateProfileVersion` is a new entry point rather than a parameter on
+  `validateProfile` or `validateProfileWith`, whose signatures are unchanged: the
+  check consults no concepts, and adding a parameter would break every caller.
+- The generated profile documentation bundle gains a `Required bundle version`
+  bullet in its `## Settings` list, so a profile setting cannot be a silent hole
+  in its own documentation. Regenerating a committed documentation bundle
+  produces that one added line.
 
 ### Changed
 
@@ -26,6 +42,21 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   `defaultDocumentationOptions` must add the new field. The module Haddock has
   always directed callers to start from `defaultDocumentationOptions` for
   exactly this reason; a call site that does so is unaffected.
+- **Breaking for exhaustive matchers and record-literal callers**, from
+  `requireBundleVersion`. `ProfileSpec` gains a field, so a consumer building one
+  as a record literal must add it. `ProfileViolation` gains
+  `RequiredBundleVersionUnmet` — the first violation that carries no `ConceptId`,
+  so a consumer grouping violations by concept needs a case for it — and
+  `ProfileDefinitionError` gains `InvalidRequiredBundleVersion`. Handle all three
+  before moving an okf pin. `okf profile show --json` gains a
+  `requireBundleVersion` key for the same reason.
+- The published Dhall schema `okf-core/dhall/Profile.dhall` gains
+  `requireBundleVersion : Optional Text`, defaulted to `None Text` in
+  `okf-core/dhall/defaults/Profile.dhall`. A descriptor written as
+  `Profile::{ … }` is unaffected; one written as a bare record literal annotated
+  `: Profile` must add the member, and one pinned at an earlier release keeps
+  decoding through a new frozen generation
+  (`okf-core/test/fixtures/profiles/pre-bundle-version.dhall`).
 
 ## [0.5.0.0] - 2026-08-01
 

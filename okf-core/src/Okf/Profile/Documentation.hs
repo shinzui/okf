@@ -264,6 +264,7 @@ renderRootConcept options compiled rootId typeLayout =
           <> [ "## Settings",
                "",
                "- OKF version: " <> code (spec ^. #okfVersion),
+               "- Required bundle version: " <> maybe "none" code (spec ^. #requireBundleVersion),
                "- Unknown concept types: " <> permitted (spec ^. #allowUnknownTypes),
                "- Unknown frontmatter keys: " <> permitted (spec ^. #allowUnknownFields),
                "- Document ID field: " <> maybe "none" code (spec ^. #idField),

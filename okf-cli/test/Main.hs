@@ -15,7 +15,7 @@ import Okf.Cli.Help (HelpTopic (..), helpTopics)
 import Okf.ConceptId (parseConceptId, renderConceptId)
 import Okf.Document (Attester (..), Executor (..), Parameter (..), parseDocument)
 import Okf.Index (OkfVersion (..), VersionDeclaration (..), parseOkfVersion, readBundleVersion)
-import Okf.Profile (Cardinality (..), FieldCondition (..), FieldFormat (..), FieldRule (..), FrontmatterRules (..), HandleReferenceRule (..), NestedFieldRule (..), NestedRules (..), PathReferenceRule (..), ProfileSpec (..), TypeRule (..), compileProfile, loadProfileFile, validateProfile)
+import Okf.Profile (Cardinality (..), FieldCondition (..), FieldFormat (..), FieldRule (..), FrontmatterRules (..), HandleReferenceRule (..), NestedFieldRule (..), NestedRules (..), PathReferenceRule (..), ProfileSpec (..), TypeRule (..), compileProfile, loadProfileFile, validateProfile, validateProfileVersion)
 import Okf.Profile.Registry (RegistryEntry (..))
 import Okf.Validation (ValidationProfile (..), validateBundle)
 import Options.Applicative
@@ -40,6 +40,7 @@ main = do
   profileDocMatchesExample <- testProfileDocumentationMatchesCommittedExample
   profileDocConformsToMeta <- testProfileDocumentationConformsToMetaProfile
   referenceProfileCompiles <- testReferenceProfileCompiles
+  shippedProfileRequiresVersion <- testShippedProfileRequiresBundleVersion
   referenceProfileAcceptsExample <- testReferenceProfileAcceptsDddOrdering
   exampleAttestedComputation <- testExampleAttestedComputationValidates
   computationsReportsFixtures <- testComputationsReportsFixtureBundle
@@ -330,6 +331,7 @@ main = do
           profileDocMatchesExample,
           profileDocConformsToMeta,
           referenceProfileCompiles,
+          shippedProfileRequiresVersion,
           referenceProfileAcceptsExample,
           exampleAttestedComputation,
           computationsReportsFixtures,
@@ -919,6 +921,44 @@ testProfileDocumentationConformsToMetaProfile =
               unless (null structuralErrors) $
                 putStrLn ("committed example is not structurally valid: " <> show structuralErrors)
               pure (null profileViolations && null structuralErrors)
+  where
+    reportFailure message = putStrLn message >> pure False
+
+-- | The shipped PostgreSQL profile requires its bundles to declare v0.2, and the
+-- shipped sample bundle satisfies it.
+--
+-- Asserted against the shipped pair rather than a fixture, because the pair is
+-- what a reader copies: a profile that demanded a declaration its own example
+-- bundle lacked would teach the wrong thing. The second half proves the
+-- requirement is not vacuous — strip the declaration and exactly one violation
+-- appears, which is what @--profile-enforce@ turns into exit code 1.
+testShippedProfileRequiresBundleVersion :: IO Bool
+testShippedProfileRequiresBundleVersion =
+  withRepositoryPath2
+    "the shipped PostgreSQL profile requires a declared v0.2 bundle"
+    ("docs" </> "profiles" </> "postgresql.dhall")
+    ("examples" </> "postgresql-sample")
+    $ \descriptor bundleRoot -> do
+      loaded <- loadProfileFile descriptor
+      declared <- readBundleVersion bundleRoot
+      case (loaded, declared) of
+        (Left err, _) -> reportFailure ("failed to load the PostgreSQL profile: " <> Text.unpack err)
+        (_, Left bundleError) -> reportFailure ("failed to read the sample bundle's version: " <> show bundleError)
+        (Right spec, Right declaration) ->
+          case compileProfile spec of
+            Left definitionErrors ->
+              reportFailure ("the PostgreSQL profile does not compile: " <> show definitionErrors)
+            Right compiled -> do
+              let satisfied = validateProfileVersion declaration compiled
+                  withoutDeclaration = validateProfileVersion VersionUndeclared compiled
+              unless (null satisfied) $
+                putStrLn ("examples/postgresql-sample does not satisfy its own profile: " <> show satisfied)
+              unless (length withoutDeclaration == 1) $
+                putStrLn
+                  ( "expected exactly one violation for an undeclared bundle, got: "
+                      <> show withoutDeclaration
+                  )
+              pure (null satisfied && length withoutDeclaration == 1)
   where
     reportFailure message = putStrLn message >> pure False
 

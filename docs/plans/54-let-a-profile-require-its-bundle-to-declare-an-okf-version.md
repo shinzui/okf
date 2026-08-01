@@ -80,24 +80,73 @@ is still fully OKF-conformant.
 
 ## Progress
 
-- [ ] Milestone 1: the descriptor carries `requireBundleVersion`, one frozen generation keeps
-      every previously-published descriptor decoding, and `compileProfile` rejects an
-      unparseable value.
-- [ ] Milestone 2: `Okf.Profile.validateProfileVersion` reports an unmet requirement as a
-      `ProfileViolation`, with unit tests covering undeclared, lower, equal, higher, and
-      unparseable declarations.
-- [ ] Milestone 3: `okf validate --profile` reports it, `--profile-enforce` exits non-zero on
-      it, and `okf profile show` displays the new setting.
-- [ ] Milestone 4: the profile documentation renderer shows the setting,
-      `examples/postgresql-profile/` is regenerated, and the shipped profiles, help topics,
-      user documentation, ADRs, and changelogs describe the feature.
+- [x] Milestones 1 and 2 (2026-08-01), landed as one commit: the descriptor carries
+      `requireBundleVersion`, `PreBundleVersionProfileSpec` keeps every previously-published
+      descriptor decoding through both chains, `compileProfile` rejects an unparseable value
+      with `InvalidRequiredBundleVersion`, and `validateProfileVersion` reports an unmet
+      requirement as `RequiredBundleVersionUnmet`. Four new `okf-core` tests. See the
+      Decision Log for why the two milestones could not be committed separately.
+- [x] Milestone 3 (2026-08-01): `okf validate --profile` reports the violation,
+      `--profile-enforce` exits 1 on it, `okf profile show` prints a
+      `requireBundleVersion:` line and `--json` a matching key. The shipped
+      `docs/profiles/postgresql.dhall` adopts `Some "0.2"`;
+      `docs/profiles/okf-v0-2.dhall` explicitly declines with a comment saying why. The
+      fail-fix-pass transcript in Validation and Acceptance reproduces exactly.
+- [x] Milestone 4 (2026-08-01): the generated profile page carries a
+      `- Required bundle version:` bullet, `examples/postgresql-profile/` regenerated to
+      exactly the one predicted added line, ADRs 10 and 11 amended,
+      `docs/user/profiles.md` and `okf-cli/help/profiles.md` document the setting, and all
+      three changelogs record it. `README.md` needed no change: it lists commands and their
+      flags, and this feature adds no flag.
 
 
 ## Surprises & Discoveries
 
-(None yet. Record here, with a short transcript as evidence, anything that contradicts what
-this plan assumes — especially anything about the frozen decoder chain, which is the part of
-this work most likely to behave differently from how it reads.)
+- **`Cardinality` has three alternatives, not four.** The plan's frozen fixture was written
+  with `< Any | List | Object | Scalar >`, copied from a MasterPlan 8 note about "`Cardinality`'s
+  new `Object`". The live `okf-core/dhall/Cardinality.dhall` is `< Any | Scalar | List >`; object
+  rules are expressed with the `objectFields` member on `FieldRule`, not with a cardinality
+  alternative. The fixture typechecked in isolation and failed to decode:
+
+  ```text
+  FAIL loadProfileFile preserves the frozen pre-bundle-version schema
+  Error: Expression doesn't match annotation
+  { - requireBundleVersion : … , frontmatter : { … cardinality : < + Object : … | … > … } }
+  ```
+
+  This is exactly the trap ADR 11 warns about from the other direction — a frozen fixture must
+  spell out the published unions — and it shows the rule bites when *writing* one too: the
+  spelled-out union must match the published one at the moment of freezing, and a plan that
+  quotes a union from memory gets it wrong. Read `okf-core/dhall/*.dhall` when writing a
+  fixture; do not copy a union out of prose.
+
+- **Ten in-repo fixtures and both shipped descriptors are bare record literals annotated
+  `: Profile`, so a published field breaks them all at once.** ADR 4 records this as the 0.2.0.0
+  breakage and `okf-core/dhall/mk/` exists to prevent it, but the fixtures under
+  `okf-core/test/fixtures/profiles/` that track the *live* schema never adopted record
+  completion. Adding `requireBundleVersion = None Text` to each is the whole fix, and it is
+  what a downstream descriptor author has to do too — which makes those fixtures an honest,
+  if noisy, rehearsal of the migration this change asks of users.
+
+- **Two golden expectations broke silently rather than loudly.** `okf-cli`'s three
+  `renderProfileDetail` goldens and `okf-core`'s `testProfileJsonShape` both compare whole
+  outputs, so adding a settings line and a JSON key failed them with no compiler help. The
+  `okf-cli` suite prints nothing per check and only exits non-zero, so the first symptom was
+  an exit code with no output at all — worth knowing before hunting a phantom crash.
+
+- **The `okf profile show --json` key needed a hand edit.** The plan predicted the key would
+  appear automatically because `runProfileShow` calls `Aeson.encode spec`. The `ToJSON
+  ProfileSpec` instance is hand-written with an explicit field list, precisely so key order is
+  stable and `type_` never leaks, so a new field is invisible to it until added. Derived-looking
+  is not derived.
+
+- **The `loadProfileFile` fallback staircase is now fourteen levels deep and about 55 columns
+  of indentation at the bottom.** Adding a rung meant re-indenting the whole chain, which is a
+  mechanical but error-prone diff. It was left as a staircase here deliberately — mixing a
+  flattening refactor into a compatibility-critical change is how a chain like this acquires a
+  silent bug — but the next plan to add a generation should flatten it first, in its own
+  commit. A short-circuiting fold over a list of `IO (Maybe ProfileSpec)` preserves both the
+  newest-first order and the per-rung result types.
 
 
 ## Decision Log
@@ -142,6 +191,25 @@ this work most likely to behave differently from how it reads.)
   threading it through a concept-walking function would be misleading.
   Date: 2026-08-01
 
+- Decision: Milestones 1 and 2 were committed together rather than separately.
+  Rationale: Milestone 1 exports `validateProfileVersion` from `Okf.Profile`, and an export
+  list naming a function that does not exist yet does not compile. Splitting them would have
+  meant either a deliberately incomplete export list or a commit that does not build, and this
+  repository's habit is that every commit leaves the tree working. The milestones remain
+  useful as a reading order.
+  Date: 2026-08-01
+
+- Decision: `docs/profiles/postgresql.dhall` adopts `requireBundleVersion = Some "0.2"`, and
+  `docs/profiles/okf-v0-2.dhall` explicitly declines it with a comment saying why.
+  Rationale: The plan flagged this as a Milestone 4 decision and recommended yes; the shipped
+  pair already agreed, so adopting it introduced no new advisory and made the feature
+  exercised by a shipped descriptor rather than only by fixtures. Verified by a new test
+  (`testShippedProfileRequiresBundleVersion`) asserting both that the sample bundle satisfies
+  the profile and that stripping the declaration produces exactly one violation. The reference
+  profile declines for the reason its header already gives for `verified`: a format-level
+  profile that demanded what §12 permits would advise against the specification.
+  Date: 2026-08-01
+
 - Decision: One new `ProfileViolation` constructor,
   `RequiredBundleVersionUnmet Text (Maybe Text)`, carrying the required version and whatever
   the bundle declared, with `Nothing` meaning undeclared.
@@ -156,12 +224,30 @@ this work most likely to behave differently from how it reads.)
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation. Before marking the plan complete, do the ADR
-distillation pass: promote durable decisions into `docs/adr/`, which for this plan means at
-minimum recording in `docs/adr/11-growing-the-profile-descriptor-language.md` that this change
-did freeze a generation, and recording in
-`docs/adr/10-okf-version-declaration-and-best-effort-reading.md` that the profile layer is
-where a demand for the declaration lives.)
+**Complete, 2026-08-01.** A profile can now demand what specification §12 only permits, and a
+team past a v0.2 migration can stop bundles from silently opting out of every v0.2-only check.
+The behavior the Purpose section promised reproduces exactly, including the fail-fix-pass
+sequence through `okf index --write --okf-version 0.2`.
+
+Delivered beyond the plan as written: a CLI test asserting the *shipped* pair agrees
+(`docs/profiles/postgresql.dhall` against `examples/postgresql-sample`) and that the
+requirement is not vacuous, and the `ToJSON` fix the plan wrongly assumed was free.
+
+Two things the plan got wrong, both recorded above: the `Cardinality` union it quoted from
+prose, and the claim that the JSON key would appear automatically. Both were caught by tests
+within minutes, which is the argument for the acceptance transcripts being written before the
+code rather than after.
+
+The ADR distillation pass is done. `docs/adr/10-okf-version-declaration-and-best-effort-reading.md`
+gained a Decision subsection recording that a demand for the declaration is a profile rule and
+only a profile rule, with the three subsidiary decisions (minimum rather than boolean,
+independent of `okfVersion`, separate entry point).
+`docs/adr/11-growing-the-profile-descriptor-language.md` gained the counter-example paragraph:
+version enforcement froze nothing, this version feature froze a generation, and the
+distinguishing question is never what a change is *about* but whether it publishes a field.
+
+What remains, and is deliberately not done here: the fallback-staircase flattening described in
+Surprises, which belongs in its own commit before the next generation is added.
 
 
 ## Context and Orientation

@@ -19,8 +19,22 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   the generated bundle's root index, spelled and validated exactly as the flag
   of the same name on `okf index`. Omitting it preserves any declaration the
   destination already carries rather than deleting one.
+- `okf validate --profile` reports a bundle whose `okf_version` declaration does
+  not meet the profile's `requireBundleVersion`, as `bundle does not declare
+  okf_version; this profile requires 0.2 or later` or `bundle declares
+  okf_version 0.1; …`. Advisory like every other profile deviation and fatal
+  under `--profile-enforce`. It is the one violation that names no concept.
+- `okf profile show` prints a `requireBundleVersion:` line, and `--json` gains
+  the matching key.
 
 ### Changed
+
+- The shipped `docs/profiles/postgresql.dhall` now requires its bundles to
+  declare `okf_version` at 0.2 or later, since its own rules are written for
+  v0.2 and `examples/postgresql-sample` already declares it. The shipped
+  `docs/profiles/okf-v0-2.dhall` deliberately does not: §12 makes the
+  declaration a MAY, and a format-level reference profile that demanded one
+  would advise the opposite of the specification.
 
 - `okf profile document` now writes `generated.by: process:okf-profile-document`
   on every page by default, so default output passes `okf validate --strict`

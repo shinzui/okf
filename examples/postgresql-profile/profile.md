@@ -13,6 +13,7 @@ Conventions for documenting a PostgreSQL database as an OKF bundle.
 ## Settings
 
 - OKF version: `0.2`
+- Required bundle version: `0.2`
 - Unknown concept types: rejected
 - Unknown frontmatter keys: allowed
 - Document ID field: none

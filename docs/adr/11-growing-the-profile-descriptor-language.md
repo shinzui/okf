@@ -127,6 +127,14 @@ fixture. Requiring a fixture of such a change would be cargo cult. Version
 enforcement is the worked example: it added four definition errors, a shipped
 reference profile, and no published field, so it froze nothing.
 
+The counter-example is worth naming beside it, because the two are easy to file
+together and only one is a schema event. `requireBundleVersion` is also a version
+feature, and it *did* freeze a generation — `PreBundleVersionProfileSpec`, with
+`okf-core/test/fixtures/profiles/pre-bundle-version.dhall` — because it published
+a member on the top-level record. The question is never what a change is about. It
+is whether a descriptor pinned at the previous release still decodes, and only a
+published field can change that answer.
+
 **But a compile-time check is a compatibility event of its own kind, and the
 frozen chain cannot help with it.** Everything above protects one property: a
 descriptor pinned at a released version keeps *decoding*. That is not the

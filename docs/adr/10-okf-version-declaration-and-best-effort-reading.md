@@ -128,6 +128,38 @@ it as a bug. See
 checks and for the two that were deliberately not added.
 
 
+**A demand that a bundle declare its version is a profile rule, and only a
+profile rule.** §12's MAY settles what okf may do: read every shape of the
+declaration, including its absence, and never report the absence. That is right
+for a format and wrong for a team that has finished migrating a corpus, because an
+undeclared bundle silently opts out of every v0.2-only check — most visibly
+`LegacyFieldInDeclaredV2`, which fires only in a bundle declaring 0.2 or later.
+
+`ProfileSpec.requireBundleVersion` is where that demand lives. `Some "0.2"` means
+the root `index.md` must declare `okf_version` at 0.2 or later;
+`Okf.Profile.validateProfileVersion` reports an undeclared, older, or unparseable
+declaration as a `RequiredBundleVersionUnmet` violation, advisory by default and
+fatal under `--profile-enforce`, like every other profile deviation. `None Text`
+is the default and demands nothing, so nothing changes for a profile that does not
+opt in, and nothing at all changes for a user who passes no `--profile`.
+
+The check deliberately does **not** live beside the diagnostics above, not even
+under `--strict`. A core check would make okf demand of every user something the
+specification does not, which is the line this record exists to hold. A profile is
+not part of the OKF standard, so a profile may demand what the format only
+permits — that is the whole difference between the two layers, and the version
+declaration is the cleanest example of it okf has.
+
+Three smaller decisions follow the same reasoning. The requirement holds a
+*minimum version* rather than a boolean, because a team migrating from v0.1 wants
+0.2 or later and a bundle declaring `"0.1"` would satisfy a boolean. It is
+independent of the profile's own `okfVersion`, which answers the different
+question above, and no consistency rule relates the two. And
+`validateProfileVersion` is a separate entry point rather than a parameter on
+`validateProfile`: the check consults no concepts, and those signatures are
+depended on downstream.
+
+
 ## Consequences
 
 Consumers that exhaustively match `Okf.Validation.BundleValidationError` must

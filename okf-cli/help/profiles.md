@@ -180,6 +180,38 @@ VALUE VOCABULARIES AND CLOSED FIELDS
     profile: requests/typo: missing profile-required field: status
     profile: requests/typo: frontmatter field not declared by profile: stauts
 
+REQUIRING A BUNDLE VERSION
+
+  A bundle may declare which OKF version it targets, with okf_version: "0.2"
+  in the frontmatter of its root index.md. Specification 12 makes that a MAY,
+  so okf validate never reports a bundle for omitting it, even with --strict.
+
+  A profile can demand it as a house convention:
+
+    , requireBundleVersion = Some "0.2"
+
+  A bundle that declares nothing, declares an older version, or declares
+  something okf cannot parse is then a deviation. A higher version is not:
+
+    profile: bundle does not declare okf_version; this profile requires 0.2 or later
+    profile: bundle declares okf_version 0.1; this profile requires 0.2 or later
+
+  Advisory like every other profile deviation, and fatal with
+  --profile-enforce. This is the one violation that names no concept, because
+  the declaration belongs to the bundle. Fix a failing bundle with
+
+    okf index BUNDLE --write --okf-version 0.2
+
+  requireBundleVersion is distinct from okfVersion. okfVersion says which
+  version's rules the profile itself writes; requireBundleVersion says what
+  the profile demands of a bundle. okf never infers one from the other. A
+  value that is not <major>.<minor> is rejected when the profile compiles,
+  before any bundle is read.
+
+  docs/profiles/postgresql.dhall sets it. docs/profiles/okf-v0-2.dhall
+  deliberately does not: a format-level profile that demanded what the
+  specification only permits would advise against the specification.
+
 FIELD CARDINALITY
 
   Every FieldRule has a cardinality: Any, Scalar, or List. Any is the default
