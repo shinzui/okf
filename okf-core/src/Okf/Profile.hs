@@ -116,7 +116,19 @@ import Okf.Bundle
     conceptType,
   )
 import Okf.ConceptId (ConceptId, conceptIdFromFilePath, renderConceptId)
-import Okf.Document (Frontmatter, coreFrontmatterFields, frontmatterKeys, frontmatterLookup)
+import Okf.Document
+  ( Frontmatter,
+    coreFrontmatterFields,
+    fieldsSupersededInV02,
+    frontmatterKeys,
+    frontmatterLookup,
+  )
+import Okf.Index
+  ( OkfVersion (..),
+    parseOkfVersion,
+    renderOkfVersion,
+    supportedOkfVersion,
+  )
 import Okf.Markdown (markdownOptions)
 import Okf.Path (PathReference (..), classifyPathReference)
 -- 'List' and 'Object' are 'Cardinality' constructors here; the names aeson uses
@@ -2006,6 +2018,17 @@ data ProfileDefinitionError
   | -- | one rule declares both a document-handle policy and a path policy;
     -- a value cannot be resolved as both a handle and a path
     PathReferenceWithHandleReference (Maybe Text) FieldPath
+  | -- | @okfVersion@ is not @\<major\>.\<minor\>@
+    InvalidProfileOkfVersion Text
+  | -- | @okfVersion@ names a major version okf does not implement, so okf cannot
+    -- know which of its rules still hold
+    ProfileOkfVersionNotUnderstood Text
+  | -- | a required or recommended rule names a key the declared version
+    -- supersedes (scope, path, declared version, version that superseded the key)
+    FieldSupersededInOkfVersion (Maybe Text) FieldPath Text Text
+  | -- | a rule names a value format introduced after the declared version
+    -- (scope, path, format, declared version, version that introduced the format)
+    FormatRequiresOkfVersion (Maybe Text) FieldPath FieldFormat Text Text
   deriving stock (Generic, Eq, Ord, Show)
 
 -- | Whether a 'PresenceClause' demands a key or merely recommends it. There is
@@ -2209,6 +2232,7 @@ compileProfile rawSpec =
           <> conflictingFormatErrors
           <> conditionDefinitionErrors
           <> referenceDefinitionErrors
+          <> versionErrors
 
     definitionErrorKey = \case
       DuplicateTypeRule ctype -> (1 :: Int, ctype, 0 :: Int, "", 0 :: Int)
@@ -2255,6 +2279,19 @@ compileProfile rawSpec =
         let (scopeRank, typeName) = scopeKey scope
          in (scopeRank, typeName, 20, renderFieldPathKey fieldPath, fromEnum (cardinality == Scalar))
       PathReferenceWithHandleReference scope target -> referenceErrorKey scope target 21 ""
+      -- The two version-parse errors are profile-wide rather than scoped, and
+      -- rank below every scope rank: if the declared version is unreadable, every
+      -- version-derived error below is downstream noise and the reader should see
+      -- the cause first. Nothing constrains the first component to be
+      -- non-negative.
+      InvalidProfileOkfVersion rawVersion -> (-1, rawVersion, 0, "", 0)
+      ProfileOkfVersionNotUnderstood rawVersion -> (-1, rawVersion, 1, "", 0)
+      FieldSupersededInOkfVersion scope path _declared supersededIn ->
+        let (scopeRank, typeName) = scopeKey scope
+         in (scopeRank, typeName, 23, renderFieldPathKey path <> ":" <> supersededIn, 0)
+      FormatRequiresOkfVersion scope path fieldFormat _declared introducedIn ->
+        let (scopeRank, typeName) = scopeKey scope
+         in (scopeRank, typeName, 24, renderFieldPathKey path <> ":" <> introducedIn, Text.length (Text.pack (show fieldFormat)))
 
     scopeKey Nothing = (0, "")
     scopeKey (Just ctype) = (1, ctype)
@@ -2582,10 +2619,103 @@ compileProfile rawSpec =
                  Just fieldFormat <- [formatRule ^. #format]
                ]
 
+    versionErrors =
+      case effectiveProfileVersion (rawSpec ^. #okfVersion) of
+        Left versionError -> [versionError]
+        Right effectiveVersion ->
+          let atLeastV02 = effectiveVersion >= okfVersion02
+              v02Text = renderOkfVersion okfVersion02
+              -- The /effective/ version, not the raw declared string: a profile
+              -- declaring 0.9 is checked as 0.2 and its diagnostics should say so
+              -- rather than repeating a number okf did not act on.
+              declaredText = renderOkfVersion effectiveVersion
+           in -- A key v0.2 superseded, demanded by a profile declaring v0.2 or
+              -- later. Deliberately /not/ checked in the optional list: a team
+              -- migrating a corpus wants @generated@ required and @timestamp@
+              -- tolerated but not demanded, and the optional list says exactly
+              -- that. This is the one check whose answer depends on which presence
+              -- list a rule came from, so it reads the raw lists rather than the
+              -- compiled map, which erases the distinction into presence clauses.
+              [ FieldSupersededInOkfVersion scope (topLevelFieldPath (rule ^. #field)) declaredText v02Text
+              | atLeastV02,
+                (scope, rules) <- scopedFrontmatterRules,
+                rule <- rules ^. #required <> rules ^. #recommended,
+                rule ^. #field `elem` fieldsSupersededInV02
+              ]
+                -- The actor formats encode the specification §7 convention that
+                -- v0.2 introduced. A format is an okf descriptor feature rather
+                -- than a key name, so unlike the mirror case below it has no
+                -- house-convention reading: @FieldFormat.Actor@ /is/ §7.
+                <> [ FormatRequiresOkfVersion scope path fieldFormat declaredText v02Text
+                   | not atLeastV02,
+                     (scope, path, fieldFormat) <- scopedFormats,
+                     fieldFormat `elem` [Actor, HumanActor]
+                   ]
+
+    -- There is deliberately no mirror check, "a profile declaring v0.1 names a
+    -- key v0.2 introduced", which is why 'fieldsIntroducedInV02' is unused here.
+    -- A profile key /name/ does not imply the OKF core key of that name: per
+    -- docs/adr/1-profile-declared-document-ids.md, constraining keys the core
+    -- format does not own is what profiles are for, and @status@, @sources@, and
+    -- @verified@ are ordinary words teams were already using as house conventions
+    -- before v0.2 claimed them. Such a check is both retroactive and ambiguous,
+    -- which docs/adr/11-growing-the-profile-descriptor-language.md forbids.
+
+    -- Every declared format paired with the path it sits at, top-level first and
+    -- then nested. Only the format checks descend: 'fieldsIntroducedInV02' and
+    -- 'fieldsSupersededInV02' name /concept-level/ frontmatter keys, so matching
+    -- them against a member of a record would reject a profile whose element
+    -- happens to be called @status@ for having a v0.2 key it does not have.
+    scopedFormats =
+      [ (scope, topLevelFieldPath (rule ^. #field), fieldFormat)
+      | (scope, rules) <- scopedFrontmatterRules,
+        rule <- rules ^. #required <> rules ^. #recommended <> rules ^. #optional,
+        Just fieldFormat <- [rule ^. #format]
+      ]
+        <> List.nub
+          [ (scope, nestedDefinitionPath (rule ^. #field) (nestedRule ^. #field), fieldFormat)
+          | (scope, rules) <- scopedFrontmatterRules,
+            rule <- rules ^. #required <> rules ^. #recommended <> rules ^. #optional,
+            nestedRules <- declaredNestedRuleSets rule,
+            nestedRule <- nestedRules ^. #required <> nestedRules ^. #recommended <> nestedRules ^. #optional,
+            Just fieldFormat <- [nestedRule ^. #format]
+          ]
+
     renderFieldPathKey (FieldPath (firstSegment :| remainingSegments)) =
       Text.intercalate "." (map renderSegment (firstSegment : remainingSegments))
     renderSegment (FieldName name) = name
     renderSegment (ArrayIndex elementIndex) = Text.pack (show elementIndex)
+
+-- | The OKF version that introduced the v0.2 frontmatter families and the actor
+-- convention. Written out rather than reusing 'supportedOkfVersion', which
+-- happens to equal it today: one is "what okf implements" and the other is "what
+-- introduced these keys", and they will diverge at the next minor bump.
+okfVersion02 :: OkfVersion
+okfVersion02 = OkfVersion {okfVersionMajor = 0, okfVersionMinor = 2}
+
+-- | The OKF version a profile's rules are checked against, or why okf cannot
+-- tell.
+--
+-- A higher /minor/ within a known major is clamped, mirroring
+-- 'Okf.Validation.versionGate': specification §12 defines a minor bump as
+-- backward-compatible additions, so every rule a v0.3 profile can express is one
+-- okf already understands.
+--
+-- An unknown /major/ is deliberately an error, where the bundle side reads
+-- best-effort — this is a considered divergence, not an oversight. §12's
+-- best-effort instruction is about bundles, which may come from a third party
+-- okf cannot ask. A profile is not a document okf is asked to read; it is an
+-- instruction to okf about what to check, written by an author who is present.
+-- Silently ignoring an instruction okf cannot interpret is worse than saying so.
+-- See @docs\/adr\/10-okf-version-declaration-and-best-effort-reading.md@.
+effectiveProfileVersion :: Text -> Either ProfileDefinitionError OkfVersion
+effectiveProfileVersion rawVersion =
+  case parseOkfVersion rawVersion of
+    Nothing -> Left (InvalidProfileOkfVersion rawVersion)
+    Just declared
+      | okfVersionMajor declared == okfVersionMajor supportedOkfVersion ->
+          Right (min declared supportedOkfVersion)
+      | otherwise -> Left (ProfileOkfVersionNotUnderstood rawVersion)
 
 compileRules :: FrontmatterRules -> Map Text EffectiveFieldRule
 compileRules FrontmatterRules {required, recommended, optional} =

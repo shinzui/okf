@@ -125,6 +125,63 @@ reason to split is reviewability, which is a different argument.
 check, a shipped descriptor, or a renderer freezes no generation and adds no
 fixture. Requiring a fixture of such a change would be cargo cult.
 
+**But a compile-time check is a compatibility event of its own kind, and the
+frozen chain cannot help with it.** Everything above protects one property: a
+descriptor pinned at a released version keeps *decoding*. That is not the
+property users have. They need `okf validate --profile <pinned>` to keep
+*working*, and between decoding and working sits `compileProfile`, where every
+`ProfileDefinitionError` is a way for a descriptor that decoded perfectly to stop
+working. There is no generation to freeze and no `upgrade*` to write, because
+nothing about the descriptor's shape changed.
+
+The rule is therefore:
+
+> **A new definition error must be non-retroactive or unambiguous.**
+> *Non-retroactive* means it can only fire on a descriptor feature that did not
+> exist before the change. *Unambiguous* means that where it can fire on a
+> descriptor written before the change, that descriptor is wrong under any
+> reading.
+
+Most definition errors added so far are non-retroactive and were safe without
+anyone noticing why: `ObjectFieldsRequireObjectShape` needs an `objectFields`
+member, and `PathReferenceWithHandleReference` needs a `path` member, so neither
+can fire on a descriptor written before those members existed.
+
+The rule was written because a check violating it was implemented and withdrawn.
+Enforcing the profile-declared `okfVersion` naturally suggests rejecting a
+profile that declares `0.1` and names a key OKF v0.2 introduced. That check
+rejected ten of this repository's own fixtures, and the reason generalises past
+them: **a profile key name does not imply the OKF core key of that name.**
+[ADR 1](1-profile-declared-document-ids.md) makes constraining keys the core
+format does not own the *purpose* of profiles, and `status`, `sources`, and
+`verified` are ordinary words teams were already using — `decisions.dhall`
+declares `status` for an ADR lifecycle of `proposed, accepted, superseded`, which
+has nothing to do with v0.2's `draft, stable, deprecated`. The check was both
+retroactive and ambiguous, so it was dropped rather than narrowed; narrowing to
+"the distinctive names" would only have moved the false positive somewhere
+harder to predict.
+
+The three version checks that survived pass the rule. `InvalidProfileOkfVersion`
+and `ProfileOkfVersionNotUnderstood` are retroactive but unambiguous — the field
+has always been documented as a version, and okf genuinely cannot interpret an
+unknown major. `FieldSupersededInOkfVersion` fires only when the profile declares
+v0.2 or later, which is an opt-in to v0.2 semantics under which the key
+unambiguously means the core one; the same check under a v0.1 declaration would be
+ambiguous and is not performed. `FormatRequiresOkfVersion` keys on a *format*,
+which is an okf descriptor feature with no house-convention reading:
+`FieldFormat.Actor` **is** specification §7.
+
+**A frozen fixture must compile, not merely decode.** This follows from the rule
+above and is how it is enforced. Eight of the nine generation tests stopped at
+`loadProfileFile`, which is why a retroactive definition error could be
+introduced without the compatibility suite objecting — the failures surfaced in
+unrelated documentation and optional-field tests instead, a far worse signal. The
+same gap had already let a fixture ship that decoded and could never compile.
+`testFrozenFixturesCompile` now asserts the stronger property over every
+generation fixture. A fixture that cannot compile is not representative of the
+pinned descriptor it stands for, and repairing it — as with the union-import
+repair above — discharges the never-edit rule rather than excepting it.
+
 **A new nested rule kind is a distinct field, not a relaxation of an existing
 one.** Object rules were introduced as `objectFields` rather than by relaxing
 `elementFields` to accept scalar cardinality. Relaxing was cheaper — it needed no
@@ -182,6 +239,19 @@ Because a fixture proves a claim only if it would fail without the decoder, the
 way to check a new link is a negative control: remove the fallback and confirm
 the test fails. A fixture that passes with the fallback removed is testing the
 current decoder and guarantees nothing.
+
+A contributor adding a `ProfileDefinitionError` has a second, shorter checklist:
+decide whether the check is non-retroactive or unambiguous, and run
+`testFrozenFixturesCompile`. If it rejects a frozen fixture, the check is
+retroactive and the question is whether it is nevertheless unambiguous — which
+is a judgment about what a descriptor could legitimately have meant, not about
+how many fixtures happen to be affected.
+
+`document-references-ep3.dhall` is currently excluded from that test: it declares
+a profile-scope `when` condition on `status` while declaring `status` only at
+type scope, so it decodes and has never compiled. It is the same latent defect,
+predating the test, and repairing it changes which rules the fixture declares —
+which its own test asserts. It is recorded rather than fixed speculatively.
 
 Frozen fixtures that still import `Cardinality.dhall` by relative path are the
 same latent defect as the `FieldFormat.dhall` imports that the OKF v0.2 value

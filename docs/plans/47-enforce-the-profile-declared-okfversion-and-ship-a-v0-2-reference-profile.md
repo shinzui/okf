@@ -74,8 +74,9 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] Milestone 1: reproduce the drift transcript and add the version-metadata tables to `Okf.Document`.
-- [ ] Milestone 2: parse and check the declared `okfVersion` at compile time, with four new definition errors and their CLI rendering.
+- [x] Milestone 1: reproduce the drift transcript and add the version-metadata tables to `Okf.Document` (2026-08-01).
+- [x] Milestone 2: parse and check the declared `okfVersion` at compile time, with **four** new definition errors and their CLI rendering (2026-08-01). The plan specified five; `FieldRequiresOkfVersion` was implemented, found to be a false positive on house-convention key names, and withdrawn — see Surprises & Discoveries and the Decision Log.
+- [x] Milestone 2a (added): harden the frozen-fixture suite to assert compilation, not merely decoding, and repair the EP-3 fixture that gap had let through (2026-08-01).
 - [ ] Milestone 3: migrate the shipped `docs/profiles/postgresql.dhall` to v0.2 and regenerate its committed documentation example.
 - [ ] Milestone 4: write and ship `docs/profiles/okf-v0-2.dhall`, proved against `examples/ddd-ordering`.
 - [ ] Milestone 5: document version enforcement and the reference profile, and close out the MasterPlan's ADR obligations.
@@ -85,6 +86,53 @@ This section must always reflect the actual current state of the work.
 
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
+
+**The plan's fifth check was a false positive, and finding out why exposed a hole in
+`docs/adr/11-growing-the-profile-descriptor-language.md`.** `FieldRequiresOkfVersion` —
+"a profile declaring v0.1 names a key OKF v0.2 introduced" — was implemented as specified and
+rejected ten of this repository's own fixtures, failing 31 tests. The cause is not fixable by
+adjusting the fixtures, because the fixtures are right:
+
+```dhall
+field.documented "status" "One of: proposed, accepted, superseded."
+```
+
+That is `decisions.dhall` declaring an ADR lifecycle. It has nothing to do with OKF v0.2's
+`status` (§5.4, `draft`/`stable`/`deprecated`) beyond spelling.
+`conditional-fields.dhall` does the same with `["active", "superseded"]`. **A profile key name
+does not imply the OKF core key of that name**, and `docs/adr/1-profile-declared-document-ids.md`
+makes constraining keys the core format does not own the *purpose* of profiles. `sources` and
+`verified` carry identical exposure. The check was withdrawn rather than narrowed to "the
+distinctive names", which would only have moved the false positive somewhere harder to predict.
+
+The deeper finding is that **ADR 11 protected the wrong property.** Its whole discipline —
+freeze a generation, write an `upgrade*`, add a fixture — guarantees that a pinned descriptor
+keeps *decoding*. Users need it to keep *working*, and between decoding and working sits
+`compileProfile`, where every `ProfileDefinitionError` is a way for a descriptor that decoded
+perfectly to stop working. The frozen chain cannot help: nothing about the descriptor's shape
+changed. ADR 11 now carries the rule that follows — a new definition error must be
+**non-retroactive or unambiguous** — and notes that the definition errors added by this
+MasterPlan's EP-1 and EP-3 were safe by being non-retroactive rather than by anyone checking.
+
+**The frozen fixtures were under-testing, which is why nothing caught it earlier.** Eight of
+the nine generation tests stopped at `loadProfileFile` and never called `compileProfile`. The
+31 failures surfaced in documentation and optional-field tests instead of in the compatibility
+suite, which is a far worse signal. The same gap had already let EP-3's own
+`path-references-mp8-ep3.dhall` ship in a state where it decoded and could never compile — it
+declared a `reference` rule with no profile `idField`, and declared `okfVersion = "0.1"` while
+using the v0.2 actor formats. `testFrozenFixturesCompile` now asserts the stronger property,
+and was verified by negative control: adding `document-references-ep3.dhall` to its list
+reproduces
+
+```text
+FAIL every frozen generation fixture compiles, not merely decodes: document-references-ep3.dhall loads but does not compile: [ConditionFieldNotDeclared Nothing (FieldPath …"supersededBy") (FieldPath …"status")]
+```
+
+**One pre-existing fixture defect is recorded rather than repaired.**
+`document-references-ep3.dhall` declares a profile-scope `when` condition on `status` while
+declaring `status` only at type scope, so it decodes and has never compiled. Repairing it means
+adding a rule the fixture does not currently declare, and its own test asserts the rule counts.
+It is excluded from `testFrozenFixturesCompile` with a comment naming the defect.
 
 One finding predates implementation: the drift between `docs/profiles/postgresql.dhall` and
 `examples/postgresql-sample/` quoted in *Purpose / Big Picture*. It is worth dwelling on,
@@ -118,6 +166,44 @@ Record every decision made while working on the plan.
   profile is not a bundle: it is an instruction to okf about what to check, and silently
   ignoring an instruction okf cannot interpret is worse than saying so. A profile author is
   present and can fix their file; a bundle author may be a third party.
+  Date: 2026-08-01
+
+- Decision: Withdraw `FieldRequiresOkfVersion`. okf does not reject a profile for naming a
+  frontmatter key that a later OKF version introduced. Four definition errors ship, not five.
+  Rationale: implemented as specified, it rejected ten fixtures and failed 31 tests, and the
+  fixtures were right — `decisions.dhall` declares `status` for an ADR lifecycle of
+  `proposed, accepted, superseded`, which shares only a spelling with v0.2's §5.4 key.
+  `docs/adr/1-profile-declared-document-ids.md` makes constraining keys the core format does
+  not own the purpose of profiles, so a name collision proves nothing; `sources` and `verified`
+  carry the same exposure. Narrowing the list to the "distinctive" names was rejected as moving
+  the false positive somewhere harder to predict rather than removing it. The three surviving
+  version checks each pass the rule this produced: an unreadable or unknown-major declaration is
+  unambiguous, a superseded key fires only under a v0.2 declaration that has opted into v0.2
+  semantics, and a format is an okf descriptor feature with no house-convention reading.
+  Date: 2026-08-01
+
+- Decision: Record the general rule in `docs/adr/11-growing-the-profile-descriptor-language.md`
+  — a new `ProfileDefinitionError` must be non-retroactive or unambiguous — and add
+  `testFrozenFixturesCompile` to enforce it.
+  Rationale: ADR 11 guaranteed that a pinned descriptor keeps *decoding*, which is not the
+  property users have; they need it to keep *working*, and `compileProfile` sits between. The
+  frozen chain structurally cannot protect that, because a retroactive definition error changes
+  nothing about the descriptor's shape. The definition errors this MasterPlan's EP-1 and EP-3
+  added were safe by being non-retroactive — they need members that did not previously exist —
+  which nobody had noticed was the reason. Enforcing it needs the fixtures to compile rather
+  than merely decode, which eight of nine were not doing.
+  Date: 2026-08-01
+
+- Decision: Repair `okf-core/test/fixtures/profiles/path-references-mp8-ep3.dhall`, and record
+  rather than repair `document-references-ep3.dhall`.
+  Rationale: both decode and neither compiles, which the new test exists to prevent. The first
+  is this MasterPlan's own, written the same day and depended on by no release; its two defects
+  — a `reference` rule with no profile `idField`, and `okfVersion = "0.1"` beside the v0.2 actor
+  formats — made it unrepresentative of the pinned descriptor it stands for, so repairing it
+  restores an assertion it was always meant to make, exactly as EP-2's union-import repair did.
+  The second predates this MasterPlan and its repair means adding a rule it does not declare,
+  which its own test asserts the count of; a speculative edit to another plan's frozen artifact
+  is worse than an exclusion with a comment naming the defect.
   Date: 2026-08-01
 
 - Decision: The version consistency check reads two small tables of frontmatter keys —

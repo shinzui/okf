@@ -1832,6 +1832,38 @@ renderProfileDefinitionError = \case
       <> ": path at "
       <> renderFieldPath target
       <> " cannot also declare a document reference; a value is resolved as one or the other"
+  -- Each version message names *both* halves of the contradiction. One that said
+  -- only "field requires OKF 0.2" would leave the author hunting for where the
+  -- version is declared, which is the other end of the file.
+  InvalidProfileOkfVersion rawVersion ->
+    "okfVersion is not <major>.<minor>: " <> rawVersion
+  ProfileOkfVersionNotUnderstood rawVersion ->
+    "okfVersion "
+      <> rawVersion
+      <> " names an OKF major version this okf does not implement (supported: "
+      <> renderOkfVersion supportedOkfVersion
+      <> ")"
+  FieldSupersededInOkfVersion scope target declared supersededIn ->
+    renderScope scope
+      <> ": declared okfVersion "
+      <> declared
+      <> " supersedes the frontmatter key "
+      <> renderFieldPath target
+      <> " (OKF "
+      <> supersededIn
+      <> "); move it to the optional list"
+      <> maybe "" (\replacement -> " or replace it with " <> replacement) (supersededBy (renderFieldPath target))
+  FormatRequiresOkfVersion scope target fieldFormat declared introducedIn ->
+    renderScope scope
+      <> ": declared okfVersion "
+      <> declared
+      <> " does not support the format "
+      <> renderFieldFormat fieldFormat
+      <> " at "
+      <> renderFieldPath target
+      <> ", which OKF "
+      <> introducedIn
+      <> " introduced"
   where
     renderScope Nothing = "profile frontmatter"
     renderScope (Just ctype) = "type " <> ctype <> " frontmatter"

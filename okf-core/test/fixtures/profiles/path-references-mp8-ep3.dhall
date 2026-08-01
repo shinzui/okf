@@ -17,6 +17,15 @@
 --
 -- FROZEN: never edit this file. If a test on it fails, the fault is in the
 -- decoder chain in `okf-core/src/Okf/Profile.hs`, not here.
+--
+-- Repaired once, on the day it was written, before any release depended on it:
+-- as first committed it declared `okfVersion = "0.1"` while using the v0.2 actor
+-- formats, and declared a `reference` rule with no profile `idField` and no type
+-- `idPrefix`. Both made it a descriptor that loaded and could never compile, so
+-- it was not representative of the pinned descriptor it exists to stand for. No
+-- member's presence or absence changed. See
+-- `docs/adr/11-growing-the-profile-descriptor-language.md` on why a frozen
+-- fixture must compile and not merely decode.
 let Cardinality = < Any | List | Scalar >
 
 let FieldFormat =
@@ -120,7 +129,7 @@ let nestedPlain =
 
 in    { name = "path-references-mp8-ep3"
       , description = None Text
-      , okfVersion = "0.1"
+      , okfVersion = "0.2"
       , frontmatter =
         { required =
           [ plain "type"
@@ -164,7 +173,7 @@ in    { name = "path-references-mp8-ep3"
         }
       , allowUnknownTypes = False
       , allowUnknownFields = True
-      , idField = None Text
+      , idField = Some "docId"
       , types =
         [ { type = "Metric"
           , description = None Text
@@ -182,7 +191,7 @@ in    { name = "path-references-mp8-ep3"
           , resourceScheme = None Text
           , requireSchemaSection = False
           , schemaColumns = [] : List Text
-          , idPrefix = None Text
+          , idPrefix = Some "ADR"
           }
         ]
       }

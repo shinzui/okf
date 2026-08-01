@@ -7,6 +7,7 @@ import Data.Foldable (for_, toList)
 import Data.List qualified as List
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
+import Data.Set qualified as Set
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text.IO
 import Data.Time (fromGregorian)
@@ -106,6 +107,7 @@ main = do
         test "rendered concept link round-trips through extractConceptLinks" testConceptLinkRoundTrip,
         test "over-escaping relative links do not resolve inside bundle" testRejectOverEscapingRelativeLink,
         test "classifyPathReference implements the specification section 6.2 grammar" testClassifyPathReference,
+        test "every versioned field name is a core frontmatter field" testVersionedFieldsAreCoreFields,
         test "versionGate applies specification section 12 best-effort reading" testVersionGate,
         test "declared v0.2 reports a legacy timestamp that an undeclared bundle tolerates" testLegacyFieldInDeclaredV2,
         test "an unreadable or unknown declaration is a strict lint, never a refusal" testVersionDeclarationLints,
@@ -140,6 +142,7 @@ main = do
         testIO "loadProfileFile decodes same-scope conditions" testLoadConditionalFieldsProfileFixture,
         testIO "loadProfileFile preserves the frozen condition-aware schema" testLoadConditionalCompatibilityFixture,
         testIO "loadProfileFile preserves the frozen reference-aware schema" testLoadReferenceCompatibilityFixture,
+        testIO "every frozen generation fixture compiles, not merely decodes" testFrozenFixturesCompile,
         testIO "loadProfileFile preserves the frozen pre-path schema" testLoadPrePathCompatibilityFixture,
         testIO "loadProfileFile preserves the frozen five-alternative format union" testLoadPreActorCompatibilityFixture,
         testIO "loadProfileFile preserves the frozen optional-presence schema" testLoadPreObjectCompatibilityFixture,
@@ -195,6 +198,11 @@ main = do
         test "compileProfile normalizes a path rule at top-level and nested scope" testCompilePathRule,
         test "a type-scope path rule narrows the profile-scope one" testMergePathRule,
         test "compileProfile rejects incoherent path rules" testPathDefinitionErrors,
+        test "compileProfile rejects an unreadable or unknown-major okfVersion" testProfileVersionParsing,
+        test "compileProfile clamps a higher okfVersion minor to the supported one" testProfileVersionMinorClamp,
+        test "compileProfile rejects a superseded field outside the optional list" testProfileVersionSupersededField,
+        test "compileProfile rejects the actor formats in a v0.1 profile" testProfileVersionActorFormat,
+        test "compileProfile does not judge a profile by its key names" testProfileVersionDoesNotJudgeKeyNames,
         test "validateProfile checks a top-level path-valued field" testValidatePathTopLevel,
         test "validateProfile checks sources[].resource with element indexes" testValidatePathNested,
         test "validateProfile checks a path inside an object-valued field" testValidatePathObjectScope,
@@ -1115,6 +1123,17 @@ testClassifyPathReference = do
   assertEqual (Just "policy.md") (collapseBundlePath "references/../policy.md")
   assertEqual Nothing (collapseBundlePath "../policy.md")
 
+-- | The version-metadata lists name keys okf actually owns. Nothing else would
+-- catch a typo in one of those string literals: a misspelled entry simply never
+-- matches a rule, so the check it drives goes quietly missing.
+testVersionedFieldsAreCoreFields :: Either Text ()
+testVersionedFieldsAreCoreFields = do
+  assertEqual [] (filter (`Set.notMember` coreFrontmatterFields) fieldsIntroducedInV02)
+  assertEqual [] (filter (`Set.notMember` coreFrontmatterFields) fieldsSupersededInV02)
+  -- The two lists are about different versions of the same key set and must not
+  -- overlap: a key cannot be both introduced and superseded by v0.2.
+  assertEqual [] (filter (`elem` fieldsSupersededInV02) fieldsIntroducedInV02)
+
 -- | Specification §12: a known major with a higher minor is read as the highest
 -- version okf understands within that major, because a minor bump is defined as
 -- backward-compatible additions. An unknown major is read with no
@@ -1899,6 +1918,64 @@ testLoadReferenceCompatibilityFixture = do
               assertEqual [] (map (^. #field) nestedOptional)
             _ -> Left "expected the frozen nested rules to survive with an empty optional list"
         _ -> Left "expected three frozen reference-aware recommended rules"
+
+-- | Every frozen generation fixture must both decode /and/ compile.
+--
+-- Decoding alone is the weaker property and was, until this test, the only one
+-- asserted: eight of the nine generation tests stopped at 'loadProfileFile'. But
+-- the guarantee the frozen chain exists to provide is that a descriptor pinned
+-- at any released version keeps /working/, and between decoding and working sits
+-- 'compileProfile' — where every 'ProfileDefinitionError' is a way for a
+-- descriptor that decoded perfectly to stop working.
+--
+-- The gap was not theoretical. A compile-time version check written for this
+-- plan rejected ten fixtures at once, and the failures surfaced in unrelated
+-- documentation and optional-field tests rather than here, which is a far worse
+-- signal. It also let @path-references-mp8-ep3.dhall@ ship in a state where it
+-- decoded and could never compile. See
+-- @docs\/adr\/11-growing-the-profile-descriptor-language.md@.
+testFrozenFixturesCompile :: IO (Either Text ())
+testFrozenFixturesCompile = do
+  results <- traverse loadAndCompile frozenGenerationFixtures
+  pure (sequence_ results)
+  where
+    loadAndCompile name = do
+      path <- fixtureFilePath ("profiles/" <> name)
+      result <- loadProfileFile path
+      pure $ case result of
+        Left err -> Left (Text.pack name <> " failed to load: " <> err)
+        Right spec ->
+          case compileProfile spec of
+            Left definitionErrors ->
+              Left (Text.pack name <> " loads but does not compile: " <> Text.pack (show (toList definitionErrors)))
+            Right _ -> Right ()
+
+-- | The fixtures that stand for a released descriptor generation, and so must
+-- represent something a real pinned descriptor could be.
+--
+-- The @*-invalid.dhall@ fixtures are deliberately excluded: they exist to prove
+-- a definition error fires. @document-references-ep3.dhall@ is excluded for a
+-- different and less happy reason — it declares a profile-scope @when@ condition
+-- on @status@ while declaring @status@ only at type scope, so it decodes and has
+-- never compiled. That is the same latent defect this test exists to prevent,
+-- predating it, and repairing it means changing which rules the fixture declares,
+-- which its own test asserts. It is recorded in
+-- @docs\/plans\/47-enforce-the-profile-declared-okfversion-and-ship-a-v0-2-reference-profile.md@
+-- rather than fixed speculatively here.
+frozenGenerationFixtures :: [FilePath]
+frozenGenerationFixtures =
+  [ "legacy-0.2.dhall",
+    "described.dhall",
+    "type-aware-ep1.dhall",
+    "vocabulary-ep2.dhall",
+    "cardinality-ep3.dhall",
+    "formats-ep4.dhall",
+    "nested-reviews-ep1.dhall",
+    "conditional-fields-ep2.dhall",
+    "object-fields-mp8-ep1.dhall",
+    "formats-mp8-ep2.dhall",
+    "path-references-mp8-ep3.dhall"
+  ]
 
 -- | The generation frozen immediately before path-valued reference rules: a
 -- descriptor with no @path@ member on 'FieldRule' or 'NestedFieldRule' still
@@ -2851,7 +2928,10 @@ testNewFormatsNarrowAcrossScopes = do
   let baseType = firstTypeRule typeAwareProfileSpec
       profileWith profileFormat typeFormat =
         typeAwareProfileSpec
-          { frontmatter =
+          { -- v0.2, for the same reason 'singleFormatProfile' is: the narrowing
+            -- pairs under test include the actor formats.
+            okfVersion = "0.2",
+            frontmatter =
               FrontmatterRules
                 { required =
                     [ fieldRule "type" Nothing [] Any Nothing Nothing Nothing Nothing,
@@ -2889,10 +2969,15 @@ testNewFormatsNarrowAcrossScopes = do
     (Left (ConflictingFieldFormat (fieldPath "value") Actor Integer :| []))
     (compileProfile (profileWith Actor Integer))
 
+-- | Declares @okfVersion = "0.2"@ rather than inheriting 'typeAwareProfileSpec'\'s
+-- @"0.1"@, because the formats under test include the OKF v0.2 actor
+-- convention, and 'compileProfile' rejects a v0.2 format under a v0.1
+-- declaration.
 singleFormatProfile :: Cardinality -> FieldFormat -> ProfileSpec
 singleFormatProfile cardinality fieldFormat =
   typeAwareProfileSpec
-    { frontmatter =
+    { okfVersion = "0.2",
+      frontmatter =
         FrontmatterRules
           { required = [fieldRule "type" Nothing [] Any Nothing Nothing Nothing Nothing],
             recommended = [fieldRule "value" Nothing [] cardinality (Just fieldFormat) Nothing Nothing Nothing],
@@ -3438,6 +3523,114 @@ testValidatePathObjectScope = do
 nestedTestPathIn :: Text -> Int -> Text -> FieldPath
 nestedTestPathIn parent elementIndex key =
   FieldPath (FieldName parent :| [ArrayIndex elementIndex, FieldName key])
+
+-- | A profile declaring the given @okfVersion@, with the given rules in the
+-- given presence list, so the version checks can be exercised in one shape.
+versionProfileWith :: Text -> Text -> [FieldRule] -> ProfileSpec
+versionProfileWith declaredVersion listName rules =
+  ProfileSpec
+    { name = "versioned",
+      description = Nothing,
+      okfVersion = declaredVersion,
+      frontmatter =
+        FrontmatterRules
+          { required = [requiredField "type"] <> [rule | rule <- rules, listName == "required"],
+            recommended = [rule | rule <- rules, listName == "recommended"],
+            optional = [rule | rule <- rules, listName == "optional"]
+          },
+      allowUnknownTypes = True,
+      allowUnknownFields = True,
+      idField = Nothing,
+      types = []
+    }
+
+-- | An @okfVersion@ okf cannot read at all, and one naming a major version okf
+-- does not implement. The second deliberately diverges from the bundle-side rule
+-- of specification §12: a bundle may come from a third party and is read
+-- best-effort, while a profile is an instruction to okf whose author is present.
+testProfileVersionParsing :: Either Text ()
+testProfileVersionParsing = do
+  assertEqual
+    (Left (InvalidProfileOkfVersion "banana" :| []))
+    (compileProfile (versionProfileWith "banana" "optional" []))
+  assertEqual
+    (Left (ProfileOkfVersionNotUnderstood "1.0" :| []))
+    (compileProfile (versionProfileWith "1.0" "optional" []))
+
+-- | A higher /minor/ within a known major is clamped rather than rejected,
+-- mirroring 'Okf.Validation.versionGate': §12 defines a minor bump as
+-- backward-compatible additions, so a v0.9 profile expresses only rules okf
+-- already understands. The clamp is observable through the diagnostic, which
+-- names the effective version rather than the declared one.
+testProfileVersionMinorClamp :: Either Text ()
+testProfileVersionMinorClamp = do
+  let timestampRule = fieldRule "timestamp" Nothing [] Any (Just Rfc3339Utc) Nothing Nothing Nothing
+  assertEqual
+    (Left (FieldSupersededInOkfVersion Nothing (fieldPath "timestamp") "0.2" "0.2" :| []))
+    (compileProfile (versionProfileWith "0.9" "recommended" [timestampRule]))
+  -- And a v0.9 profile that names nothing version-specific simply compiles.
+  case compileProfile (versionProfileWith "0.9" "optional" []) of
+    Left errs -> Left ("expected a v0.9 profile to compile, got " <> Text.pack (show (toList errs)))
+    Right _ -> Right ()
+
+-- | A key the declared version supersedes is an error where it is /demanded/ and
+-- legal where it is merely documented. The optional list is how a team migrating
+-- a corpus says "tolerated but not demanded", and making it an error everywhere
+-- would leave no way to describe a migration.
+testProfileVersionSupersededField :: Either Text ()
+testProfileVersionSupersededField = do
+  let timestampRule = fieldRule "timestamp" Nothing [] Any (Just Rfc3339Utc) Nothing Nothing Nothing
+      superseded = FieldSupersededInOkfVersion Nothing (fieldPath "timestamp") "0.2" "0.2"
+  assertEqual
+    (Left (superseded :| []))
+    (compileProfile (versionProfileWith "0.2" "required" [timestampRule]))
+  assertEqual
+    (Left (superseded :| []))
+    (compileProfile (versionProfileWith "0.2" "recommended" [timestampRule]))
+  -- The migration shape, and the v0.1 profile that has no reason to be told
+  -- anything at all.
+  for_ [versionProfileWith "0.2" "optional" [timestampRule], versionProfileWith "0.1" "required" [timestampRule]] $ \spec ->
+    case compileProfile spec of
+      Left errs -> Left ("expected a clean compile, got " <> Text.pack (show (toList errs)))
+      Right _ -> Right ()
+
+-- | The actor formats encode the specification §7 convention v0.2 introduced, so
+-- naming one under a v0.1 declaration is incoherent. A format is an okf
+-- descriptor feature rather than a key name, which is exactly why this check is
+-- safe where the mirror check on key names is not — see
+-- 'testProfileVersionDoesNotJudgeKeyNames'.
+testProfileVersionActorFormat :: Either Text ()
+testProfileVersionActorFormat = do
+  let actorRule = fieldRule "author" Nothing [] Any (Just Actor) Nothing Nothing Nothing
+      humanRule = fieldRule "author" Nothing [] Any (Just Profile.HumanActor) Nothing Nothing Nothing
+  assertEqual
+    (Left (FormatRequiresOkfVersion Nothing (fieldPath "author") Actor "0.1" "0.2" :| []))
+    (compileProfile (versionProfileWith "0.1" "optional" [actorRule]))
+  assertEqual
+    (Left (FormatRequiresOkfVersion Nothing (fieldPath "author") Profile.HumanActor "0.1" "0.2" :| []))
+    (compileProfile (versionProfileWith "0.1" "optional" [humanRule]))
+  -- The same rule under a v0.2 declaration is exactly what the format is for.
+  case compileProfile (versionProfileWith "0.2" "optional" [actorRule]) of
+    Left errs -> Left ("expected a v0.2 actor rule to compile, got " <> Text.pack (show (toList errs)))
+    Right _ -> Right ()
+
+-- | The check okf deliberately does /not/ perform, asserted so it is not added
+-- back by someone who thinks it was forgotten.
+--
+-- A v0.1 profile constraining its own @status@, @sources@, or @verified@ key is
+-- coherent: per @docs\/adr\/1-profile-declared-document-ids.md@ constraining keys
+-- the core format does not own is what profiles are /for/, and these are ordinary
+-- words teams were already using before v0.2 claimed them. Rejecting
+-- @field.enum "status" ["proposed", "accepted"]@ for naming an ADR lifecycle
+-- would be a false positive on a descriptor okf cannot see.
+testProfileVersionDoesNotJudgeKeyNames :: Either Text ()
+testProfileVersionDoesNotJudgeKeyNames =
+  for_ ["status", "sources", "verified", "generated", "stale_after", "usage_window"] $ \key ->
+    let houseRule = fieldRule key Nothing ["proposed", "accepted"] Any Nothing Nothing Nothing Nothing
+     in case compileProfile (versionProfileWith "0.1" "optional" [houseRule]) of
+          Left errs ->
+            Left ("a v0.1 profile naming " <> key <> " should compile, got " <> Text.pack (show (toList errs)))
+          Right _ -> Right ()
 
 lookupBaseRule :: CompiledProfile -> Text -> Either Text EffectiveFieldRule
 lookupBaseRule compiled key =

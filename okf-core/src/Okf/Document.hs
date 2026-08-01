@@ -7,6 +7,8 @@ module Okf.Document
     frontmatterLookup,
     frontmatterKeys,
     coreFrontmatterFields,
+    fieldsIntroducedInV02,
+    fieldsSupersededInV02,
     parseDocument,
     serializeDocument,
 
@@ -569,6 +571,53 @@ coreFrontmatterFieldOrder =
     "usage_window",
     "timestamp"
   ]
+
+-- | Concept-level frontmatter keys that OKF v0.2 introduced (specification
+-- §13.2), as reference data.
+--
+-- __Deliberately not used as a compile-time profile check.__ It is tempting to
+-- reject a profile that declares @okfVersion = "0.1"@ and names one of these,
+-- and that check was written and then removed. A profile key /name/ does not
+-- imply the OKF core key of that name: per
+-- @docs\/adr\/1-profile-declared-document-ids.md@, constraining keys the core
+-- format does not own is what profiles are /for/, and @status@, @sources@, and
+-- @verified@ are ordinary words that teams were already using as house
+-- conventions before v0.2 claimed them. Rejecting
+-- @field.documented "status" "One of: proposed, accepted, superseded."@ for
+-- naming an ADR lifecycle would be a false positive on a pinned descriptor okf
+-- cannot see. See @docs\/adr\/11-growing-the-profile-descriptor-language.md@ on
+-- retroactive definition errors.
+--
+-- 'fieldsSupersededInV02' is checked, because it is the asymmetric case: it
+-- fires only when the profile has declared v0.2 or later, which is an opt-in to
+-- v0.2 semantics under which the key unambiguously means the core one.
+--
+-- Deliberately kept beside 'coreFrontmatterFieldOrder' and deliberately not
+-- merged into it. That list answers "which keys does okf own", which is a
+-- different question with different consumers — serialization order, and the set
+-- of keys a closed profile always permits, per
+-- [ADR 7](docs/adr/7-okf-v0-1-legacy-fallback-policy.md). Merging the two would
+-- couple a version question to a permission question.
+--
+-- A plain @[Text]@ rather than a map to 'Okf.Index.OkfVersion' because
+-- @Okf.Index@ imports this module; pairing a key with a version happens in
+-- @Okf.Profile@, which imports both.
+fieldsIntroducedInV02 :: [Text]
+fieldsIntroducedInV02 =
+  [ "status",
+    "generated",
+    "verified",
+    "stale_after",
+    "sources",
+    "usage_window"
+  ]
+
+-- | Concept-level frontmatter keys OKF v0.2 superseded (specification §13.1).
+-- @timestamp@ is superseded by @generated.at@. okf still /reads/ it, per
+-- [ADR 7](docs/adr/7-okf-v0-1-legacy-fallback-policy.md); a profile that
+-- /demands/ it while declaring v0.2 is asking authors to write a retired key.
+fieldsSupersededInV02 :: [Text]
+fieldsSupersededInV02 = ["timestamp"]
 
 parseFrontmatterDocument :: ByteString.ByteString -> Either DocumentParseError OKFDocument
 parseFrontmatterDocument inputBytes =
