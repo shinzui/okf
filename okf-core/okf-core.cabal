@@ -54,6 +54,7 @@ library
     Okf.Index
     Okf.Log
     Okf.Markdown
+    Okf.Path
     Okf.Prelude
     Okf.Profile
     Okf.Profile.Documentation

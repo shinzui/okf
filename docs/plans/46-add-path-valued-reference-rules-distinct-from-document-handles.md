@@ -77,8 +77,9 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] Milestone 1: reproduce the "a dangling frontmatter path is invisible" transcript and freeze the current descriptor generation behind a compatibility decoder and fixture.
-- [ ] Milestone 2: extract the OKF v0.2 §6.2 path grammar into a new exported `Okf.Path` module that `Okf.Graph` also uses.
+- [x] Milestone 1 (part): reproduced the "a dangling frontmatter path is invisible" transcript, verbatim as the plan predicted (2026-08-01).
+- [ ] Milestone 1 (remaining): freeze the current descriptor generation behind a compatibility decoder and fixture. Deferred into the same commit as Milestone 3 per the MasterPlan's "one commit per schema event" decision — `upgradePrePathProfile` constructs a current-shape record and does not compile before `path` exists.
+- [x] Milestone 2: extract the OKF v0.2 §6.2 path grammar into a new exported `Okf.Path` module that `Okf.Graph` also uses (2026-08-01).
 - [ ] Milestone 3: add `path` to the published `FieldRule` and `NestedFieldRule`, with its own rule type, defaults, and `mk` constructors.
 - [ ] Milestone 4: compile path rules, including the definition error for combining one with a handle reference, and wire reference checking into nested and object scopes.
 - [ ] Milestone 5: validate path values and report the four distinct failures.
@@ -90,6 +91,30 @@ This section must always reflect the actual current state of the work.
 
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
+
+**The problem transcript reproduces verbatim.** Against a document declaring
+`sources[].resource: /references/deleted-three-commits-ago.md`, `okf validate --strict`
+prints one line and it is about something else entirely:
+
+```text
+metric: missing generated field (or legacy timestamp)
+```
+
+**`isExternalUrl` could not simply be reused, but it also could not simply be dropped.**
+Milestone 2's refactor left it in `Okf.Graph` as the plan required, and the reason is now
+stated in a comment on `resolveLink` rather than only in this plan: for a *body* link, an
+unrecognized scheme should fall through and be silently dropped, because §6.1 says a broken
+body link may be knowledge not yet written; for a path *field*, every scheme is recognized and
+an unpermitted one is reported. The two functions want opposite defaults, so `Okf.Path` accepts
+any scheme with a URI scheme at all and `Okf.Graph` keeps its three-scheme heuristic.
+
+**One behavioural difference the refactor does introduce, and it is invisible in practice.**
+`classifyPathReference` strips leading and trailing whitespace before classifying; the old
+`resolveLink` did not. A Markdown link destination cannot carry surrounding whitespace — the
+CommonMark parser strips it — so no graph behaviour changes, which the byte-identical
+before/after images confirm. Trimming lives in `Okf.Path` because a frontmatter value written
+as `resource: "  /x.md  "` is a real thing an author can write, and the profile layer is the
+caller that will see it.
 
 One finding predates implementation. `Okf.Profile.validateProfile` receives only
 `[Concept]` — no bundle root, no filesystem handle — and a `Concept` corresponds to a

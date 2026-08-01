@@ -19,6 +19,7 @@ import Okf.Graph
 import Okf.Index
 import Okf.Log
 import Okf.Markdown
+import Okf.Path
 -- 'List' and 'Object' are 'Cardinality' constructors; aeson's same-named
 -- 'Value' constructors are reached as 'Aeson.Object' and friends.
 import Okf.Prelude hiding (List, Object, setField, (.=))
@@ -104,6 +105,7 @@ main = do
         test "extractFootnoteLabels keeps labels the parser erases and never ordinals" testExtractFootnoteLabelsKeepsErasedLabels,
         test "rendered concept link round-trips through extractConceptLinks" testConceptLinkRoundTrip,
         test "over-escaping relative links do not resolve inside bundle" testRejectOverEscapingRelativeLink,
+        test "classifyPathReference implements the specification section 6.2 grammar" testClassifyPathReference,
         test "versionGate applies specification section 12 best-effort reading" testVersionGate,
         test "declared v0.2 reports a legacy timestamp that an undeclared bundle tolerates" testLegacyFieldInDeclaredV2,
         test "an unreadable or unknown declaration is a strict lint, never a refusal" testVersionDeclarationLints,
@@ -1058,6 +1060,53 @@ testRejectOverEscapingRelativeLink = do
       conceptFromDocument
         targetId
         (OKFDocument (setType "Test" emptyFrontmatter) "# Orders\n")
+
+-- | Specification §6.2: each path-valued field accepts an absolute URL, a
+-- bundle-relative path beginning with @/@, or an ordinary relative path.
+-- Classification is total, so a value that is none of the three lands on a named
+-- alternative rather than being dropped.
+testClassifyPathReference :: Either Text ()
+testClassifyPathReference = do
+  deep <- parseTestConceptId "metrics/finance/revenue"
+  shallow <- parseTestConceptId "revenue"
+  -- An absolute URL yields its case-folded scheme, whatever the scheme is: §6.2
+  -- names no allowed set, so deciding that is the profile's job.
+  assertEqual (ExternalUrl "https") (classifyPathReference deep "https://wiki.acme/revenue")
+  assertEqual (ExternalUrl "mori") (classifyPathReference deep "mori://shinzui/okf")
+  assertEqual (ExternalUrl "https") (classifyPathReference deep "HTTPS://wiki.acme/revenue")
+  -- A leading slash resolves from the bundle root regardless of where the
+  -- concept carrying the value lives.
+  assertEqual (BundlePath "references/policy.md") (classifyPathReference deep "/references/policy.md")
+  assertEqual (BundlePath "references/policy.md") (classifyPathReference shallow "/references/policy.md")
+  -- A relative path resolves against the source concept's own directory.
+  assertEqual
+    (BundlePath "metrics/finance/policy.md")
+    (classifyPathReference deep "policy.md")
+  assertEqual
+    (BundlePath "metrics/computations/revenue.md")
+    (classifyPathReference deep "../computations/revenue.md")
+  assertEqual (BundlePath "policy.md") (classifyPathReference shallow "./policy.md")
+  -- A fragment or query suffix names the same target as the bare path.
+  assertEqual (BundlePath "references/policy.md") (classifyPathReference deep "/references/policy.md#recognition")
+  assertEqual (BundlePath "references/policy.md") (classifyPathReference deep "/references/policy.md?v=2")
+  -- Non-Markdown targets classify identically; only the caller cares about the
+  -- extension.
+  assertEqual
+    (BundlePath "references/attesters/revenue.py")
+    (classifyPathReference deep "/references/attesters/revenue.py")
+  -- Climbing above the bundle root is its own outcome, distinct from malformed:
+  -- the author wrote a well-formed relative path that points outside.
+  assertEqual EscapesBundle (classifyPathReference shallow "../../etc/passwd")
+  assertEqual EscapesBundle (classifyPathReference deep "../../../../elsewhere.md")
+  -- Text that names nothing at all.
+  assertEqual MalformedPath (classifyPathReference deep "")
+  assertEqual MalformedPath (classifyPathReference deep "   ")
+  assertEqual MalformedPath (classifyPathReference deep "#recognition")
+  -- 'collapseBundlePath' is exported for the same reason it is shared: one
+  -- spelling of "does this climb out of the bundle".
+  assertEqual (Just "references/policy.md") (collapseBundlePath "references/./policy.md")
+  assertEqual (Just "policy.md") (collapseBundlePath "references/../policy.md")
+  assertEqual Nothing (collapseBundlePath "../policy.md")
 
 -- | Specification §12: a known major with a higher minor is read as the highest
 -- version okf understands within that major, because a minor bump is defined as

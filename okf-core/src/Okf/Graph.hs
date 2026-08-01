@@ -11,7 +11,6 @@ module Okf.Graph
 where
 
 import CMarkGFM qualified
-import Control.Monad (foldM)
 import Data.Aeson (ToJSON (..), object, (.=))
 import Data.List qualified as List
 import Data.Map.Strict qualified as Map
@@ -21,8 +20,8 @@ import Okf.Bundle
 import Okf.ConceptId
 import Okf.Document (body)
 import Okf.Markdown (markdownOptions)
+import Okf.Path (PathReference (..), classifyPathReference)
 import Okf.Prelude hiding ((.=))
-import System.FilePath ((</>))
 import System.FilePath qualified as FilePath
 
 -- | A graph node for one concept.
@@ -143,21 +142,26 @@ extractMarkdownLinks markdown =
         CMarkGFM.LINK url _title -> [url]
         _ -> foldMap walk childNodes
 
+-- | Resolve one Markdown link destination to the concept it names, if any.
+--
+-- The §6.2 grammar lives in 'Okf.Path' and is shared with the profile layer, but
+-- this function deliberately differs from it in one place, and the difference is
+-- the point of keeping 'isExternalUrl' here. A body link is a heuristic over
+-- prose, so only the three schemes a Markdown author plausibly writes are
+-- treated as external, and anything that resolves to no concept is dropped in
+-- silence — OKF v0.2 §6.1 says a broken body link may be knowledge not yet
+-- written. A path-valued /field/ is read the other way round: every scheme is
+-- recognized, and one the profile did not permit is reported rather than
+-- ignored.
 resolveLink :: Concept -> Text -> [ConceptId]
 resolveLink concept rawUrl
   | isExternalUrl rawUrl = []
-  | FilePath.takeExtension cleanPath /= ".md" = []
-  | otherwise = maybe [] (either (const []) pure . conceptIdFromFilePath) bundleRelativePath
-  where
-    cleanPath = Text.unpack (stripUrlSuffix rawUrl)
-    sourceDirectory = FilePath.takeDirectory (conceptIdToFilePath (conceptIdOf concept))
-    bundleRelativePath
-      | "/" `Text.isPrefixOf` rawUrl = collapseBundlePath (dropWhile (== '/') cleanPath)
-      | otherwise = collapseBundlePath (sourceDirectory </> cleanPath)
-
-stripUrlSuffix :: Text -> Text
-stripUrlSuffix =
-  Text.takeWhile (\char -> char /= '#' && char /= '?')
+  | otherwise =
+      case classifyPathReference (conceptIdOf concept) rawUrl of
+        BundlePath resolved
+          | FilePath.takeExtension resolved == ".md" ->
+              either (const []) pure (conceptIdFromFilePath resolved)
+        _ -> []
 
 isExternalUrl :: Text -> Bool
 isExternalUrl rawUrl =
@@ -165,13 +169,3 @@ isExternalUrl rawUrl =
    in "http://" `Text.isPrefixOf` lower
         || "https://" `Text.isPrefixOf` lower
         || "mailto:" `Text.isPrefixOf` lower
-
-collapseBundlePath :: FilePath -> Maybe FilePath
-collapseBundlePath =
-  fmap FilePath.joinPath . foldM step [] . FilePath.splitDirectories
-  where
-    step [] "." = Just []
-    step acc "." = Just acc
-    step [] ".." = Nothing
-    step acc ".." = Just (init acc)
-    step acc segment = Just (acc <> [segment])
