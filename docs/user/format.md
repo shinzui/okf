@@ -399,12 +399,16 @@ description: Sanctioned computation of an order's total from its lines.
 tags: ddd, ordering, attested-computation
 runtime: postgres
 parameters: order_id (uuid, required)
+computation: inline (3 lines)
 executor: /references/skills/run-on-postgres.md, receipt: statement_id, executed_sql, result
 attester: /references/attesters/order-total.py
 generated: human:nadeem at 2026-08-01T00:00:00Z
 trust: unverified
 status: stable
 ```
+
+The `computation:` line names where the computation lives: a path when the
+concept names a file, and `inline (N lines)` when it carries one in its body.
 
 `okf validate --strict` reports a concept of this type that declares no
 `runtime`:
@@ -414,14 +418,14 @@ $ okf validate ./bundle --strict
 computations/margin: Attested Computation concepts must declare runtime
 ```
 
-That check is strict-only, and it is the *only* contract check okf performs. §11
-lists three conformance requirements and none is a computation field, and it
-separately forbids rejecting a bundle over an unknown `type` value — so "REQUIRED
-for this type" binds the producer rather than licensing a consumer to refuse. It
-matches the exact string `Attested Computation`, case-sensitively, and no other
-type is affected. A team that wants more — that every parameter carry a `type`,
-that every executor name a resource — writes a house profile, where a `TypeRule`
-scopes rules to one type; see the [Profile Guide](profiles.md).
+That check is strict-only. §11 lists three conformance requirements and none is
+a computation field, and it separately forbids rejecting a bundle over an
+unknown `type` value — so "REQUIRED for this type" binds the producer rather
+than licensing a consumer to refuse. It matches the exact string
+`Attested Computation`, case-sensitively, and no other type is affected. A team
+that wants more — that every parameter carry a `type`, that every executor name
+a resource — writes a house profile, where a `TypeRule` scopes rules to one
+type; see the [Profile Guide](profiles.md).
 
 The three path-valued contract fields are resolved against the bundle under
 `--strict`, described under [path-valued frontmatter
@@ -433,20 +437,82 @@ and `references/skills/run-on-postgres.md` and
 `references/attesters/order-total.py` are what its `executor` and `attester`
 name.
 
-**Two things okf does not do, and one is not a gap.** okf does not read the
-`# Computation` body section yet, so nothing enforces the rule that a computation
-is provided *either* as an inline fence *or* as a file named by `computation`,
-never both and never neither. That is a real gap and the work is
-`docs/masterplans/9-support-okf-v0-2-attested-computations.md`.
-
-And okf never executes a computation and never attests anything. That is not a
+**okf never executes a computation and never attests anything.** That is not a
 limitation of the tool but OKF's own position: the format "records the
 computation and the means to check it; it does not execute anything itself", and
 the execute-and-attest workflow is marked informative with its runtime artifacts
 explicitly not stored in the bundle. A receipt is something okf will never see; a
 verdict is something consumer-side code produces. okf is a static, offline tool
 with no network access and no language model in it, and reading this concept type
-does not change that.
+does not change that. Printing a computation, below, is not running one.
+
+
+#### The computation itself
+
+OKF provides the computation in exactly one of two ways.
+
+**Inline**, as a single code block in the body under a `# Computation` heading:
+
+````markdown
+# Computation
+
+```sql
+SELECT SUM(amount) AS revenue
+FROM finance.recognized_revenue
+WHERE fiscal_year = @year
+```
+````
+
+**By file**, by setting `computation` to a [path](#path-valued-frontmatter-fields)
+and omitting the body block:
+
+```yaml
+computation: /references/queries/revenue.sql
+```
+
+Both spellings of a code block count as inline: the fenced form above, and the
+four-space-indented form OKF's own worked example writes. The specification's
+prose says "fenced" and its example is indented, so okf accepts either rather
+than reporting the specification's own example as carrying no computation.
+
+The `# Computation` section ends at the next heading of the same or a shallower
+level. A code block under a later heading is not a second computation. The
+shipped `examples/ddd-ordering/computations/order-total.md` is the illustration:
+it has an indented block under `# Computation` and a fenced region under a later
+`# Notes` heading, and only the first is its computation. A block under a nested
+`## Subsection` inside the computation section still belongs to it.
+
+`okf show --computation` prints the computation and nothing else, in whichever
+form the producer chose — so a caller does not have to know which one that was:
+
+```text
+$ okf show examples/ddd-ordering computations/order-total --computation
+SELECT SUM(quantity * unit_amount_minor) AS total_minor
+FROM order_lines
+WHERE order_id = :order_id
+```
+
+When the concept names a file, okf resolves the path against the bundle and
+prints the file's contents. A concept offering no computation, or more than one,
+exits non-zero with a message rather than guessing which one to print.
+
+`okf validate --strict` reports all three ways of getting the exactly-one rule
+wrong:
+
+```text
+$ okf validate ./bundle --strict
+computations/both: Attested Computation declares a computation both inline and by path; exactly one is permitted
+computations/neither: Attested Computation declares no computation: add a code block under a # Computation heading, or a computation path
+computations/twoblocks: Attested Computation has 2 code blocks under # Computation; exactly one is permitted
+```
+
+At most one of the three is reported per concept, ambiguity first: a concept
+with a `computation` path and two body blocks has one thing to fix, not two.
+
+Like every other check on this contract, all three are strict-only and fire only
+on the exact type string `Attested Computation`, for the same reason the
+`runtime` check does. A `# Computation` section on a `Metric` is read but never
+reported.
 
 
 ## Links

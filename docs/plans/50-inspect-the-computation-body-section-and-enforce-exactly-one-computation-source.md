@@ -87,7 +87,8 @@ This section must always reflect the actual current state of the work.
 - [x] Milestone 3 (2026-08-01): no other `type` is affected, and permissive validation reports none of the three
 - [x] Milestone 4 (2026-08-01): `okf show BUNDLE CONCEPT --computation` prints the computation, reading the file named by `computation` when the concept uses that form
 - [x] Milestone 4 (2026-08-01): `okf show` without the flag names where the computation lives
-- [ ] Milestone 5: `docs/user/format.md` documents §10.3 and its "okf does not read the `# Computation` body section yet" paragraph is retired, and every `okf` transcript in `docs/` that this plan perturbs is re-run and corrected
+- [x] Milestone 5 (2026-08-01): `docs/user/format.md` documents §10.3 and its "okf does not read the `# Computation` body section yet" paragraph is retired, and every `okf` transcript in `docs/` that this plan perturbs is re-run and corrected
+- [x] Milestone 5 (2026-08-01, added during implementation): `docs/user/cli.md`'s `show` section documents `--computation`, which the plan's original scope left to no one
 
 
 ## Surprises & Discoveries
@@ -261,6 +262,28 @@ Record every decision made while working on the plan.
   opening files.
   Date: 2026-08-01
 
+- Decision: `showConceptByIdentifier` takes the renderer as a parameter rather than growing a
+  `Bool` or duplicating the resolution.
+  Rationale: `docs/adr/1-profile-declared-document-ids.md` fixes the resolution order — canonical
+  concept path first, then a profile-declared document ID — and that function's own haddock says
+  it is "unchanged from the previous implementation of `runShow`, so the resolution order fixed by
+  ADR 1 cannot drift". Threading a flag into it would put a second concern inside the function
+  whose whole purpose is that one. Passing the renderer means `--computation` resolves an
+  identifier by exactly the same rules as `okf show`, including the document-ID and ambiguity
+  paths, with no second copy to keep in step. The choice is made once in `runShow`, so the flag
+  also works with interactive selection.
+  Date: 2026-08-01
+
+- Decision: `docs/user/cli.md` documents `--computation`, even though this plan's Milestone 5
+  named only `docs/user/format.md`.
+  Rationale: `cli.md` is the command reference and its `show` section spells out the synopsis and
+  every other option. A new flag absent from it makes that document wrong rather than merely
+  incomplete, and the sibling plan
+  `docs/plans/52-surface-attested-computations-across-the-cli-and-documentation.md` owns
+  *coherence across every command*, not the reference entry for a flag this plan shipped. The
+  entry cross-links to the Format Guide for the exactly-one rule rather than restating it.
+  Date: 2026-08-01
+
 
 ## Outcomes & Retrospective
 
@@ -269,7 +292,63 @@ Compare the result against the original purpose. Before marking the plan complet
 distill durable project context from the Decision Log, Surprises & Discoveries, and
 this section into docs/adr/. Keep task-local execution details here.
 
-(To be filled during and after implementation.)
+**Complete, 2026-08-01, in five commits, one per milestone, with `cabal test all` green on both
+packages after each.** Every acceptance criterion in Validation and Acceptance was run and holds.
+The plan delivered exactly what its Purpose promised: `okf validate --strict` reports all three
+ways of getting §10.3 wrong, and `okf show --computation` prints the computation in either of the
+two forms — including reading the file when the concept names one, which is the half of §10.5's
+consumer workflow a caller would otherwise reimplement.
+
+Three things went better than the plan expected. **Nothing in the design changed under contact.**
+The three pre-implementation findings — accepting both code-block spellings, bounding the section,
+following `schemaSectionColumns`' traversal but not its placement — were each verified against the
+working tree before a line was written, and each held. Section bounding in particular was
+exercised twice by real documents rather than only by unit tests:
+`examples/ddd-ordering/computations/order-total.md`'s fenced `# Notes` region and the scratch
+bundle's `computations/inline`, both of which would have been miscounted by an unbounded scan.
+
+**`Okf.Document` importing `Okf.Markdown` created no cycle**, as the plan predicted and as
+`cabal build all` confirmed rather than assumed. `Okf.Markdown` depends only on `CMarkGFM`,
+`bytestring`, `text`, and `Okf.Prelude`.
+
+**The exhaustiveness check earned its warning in Concrete Steps.** Adding three `ValidationError`
+constructors produced exactly the `-Wincomplete-patterns` failure that check exists to catch, in
+`renderValidationErrorText`, on the first `cabal build all`. The `grep -i atterns` habit turned a
+silent gap into a compile-time list of what was missing.
+
+Two things cost time and are worth naming. **The fixture bundle's concept count was seven, not
+eight** — a one-line test failure from forgetting that `references/attesters/revenue.py` was never
+a concept. The lesson is narrow but real: in a bundle that deliberately mixes concepts and
+non-concept files, the count assertion is the thing most likely to be wrong, and the fix is a
+comment beside it saying which files are and are not concepts, which is now there.
+
+**The `okf show` transcript in `docs/user/format.md` was written from memory of the field order
+and had `computation:` in the wrong place** — after `attester` rather than between `parameters`
+and `executor`, which is §10.2's own order and what `renderConcept` emits. It was caught by
+diffing the documented block against the real command rather than by reading it. Every transcript
+this plan touched was verified that way afterwards, including the `okf trust` and `okf sources`
+listings in `docs/user/cli.md` that the sibling plan's retrospective warned about — those turned
+out unchanged, because this plan added no concept to `examples/ddd-ordering`.
+
+One scope addition, recorded in the Decision Log: `docs/user/cli.md`'s `show` section documents
+`--computation`. The plan's Milestone 5 named only `docs/user/format.md`, which would have left
+the command reference wrong about a flag this plan shipped.
+
+**No ADR was created or amended**, which is what the Context and Orientation section predicted.
+The parent MasterPlan schedules two ADRs for this initiative — `docs/adr/12-frontmatter-path-resolution.md`,
+written, and one on the `references/` convention, which belongs to
+`docs/plans/51-adopt-the-references-convention-for-executors-and-attesters.md`. The section-bounding
+rule is the one candidate for a third, and it is deliberately left in this plan: it is a single
+rule with one call site, and the place to promote it would be a new ADR on conventional body
+headings covering `# Schema` as well, not a paragraph buried in ADR 9.
+
+What this plan hands the two remaining sibling plans. `Okf.Markdown.computationBlocks`,
+`Okf.Document.readComputationSources`, and `Okf.Bundle.conceptComputationSources` are the reading
+half of §10.3 and are type-agnostic, so any command may use them.
+`Okf.Validation.ValidationError` carries three more constructors, which is a change a downstream
+exhaustive matcher must handle — Mori (`mori://shinzui/mori`) matches `ProfileViolation` and not
+`ValidationError`, so it should be unaffected, but that is the position recorded on this date and
+must be checked before moving its okf pin rather than assumed.
 
 
 ## Context and Orientation

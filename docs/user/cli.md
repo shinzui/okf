@@ -281,6 +281,7 @@ Inspect one concept by its canonical path ID or a short document ID.
 ```bash
 cabal run okf -- show [BUNDLE] [CONCEPT_ID]
 cabal run okf -- show BUNDLE DOCUMENT_ID [--profile PROFILE.dhall]
+cabal run okf -- show BUNDLE CONCEPT_ID --computation
 ```
 
 Example:
@@ -324,6 +325,37 @@ cabal run okf -- show okf-core/test/fixtures/doc-ids ADR-2
 Duplicate handles are rejected as ambiguous and every matching concept ID is
 listed. An invalid or missing concept ID also exits non-zero and names the
 problem.
+
+
+### Printing just the computation
+
+`--computation` prints an `Attested Computation` concept's computation and
+nothing else — no metadata, no heading, no body prose:
+
+```bash
+cabal run okf -- show examples/ddd-ordering computations/order-total --computation
+```
+
+```text
+SELECT SUM(quantity * unit_amount_minor) AS total_minor
+FROM order_lines
+WHERE order_id = :order_id
+```
+
+OKF provides the computation either as a code block in the body under
+`# Computation` or as a file named by the `computation` frontmatter key, and this
+flag prints it either way: when the concept names a file, okf resolves the path
+against the bundle and prints the file's contents. A caller does not have to know
+which of the two forms the producer chose. See the [Format
+Guide](format.md#the-computation-itself) for the rule that exactly one of them is
+permitted.
+
+A concept offering no computation, or more than one, exits non-zero with a
+message on stderr rather than guessing which one to print. The flag works with
+interactive selection too, and resolves a document ID by the same rules as `show`
+without it.
+
+okf never runs a computation. Printing one is not executing it.
 
 
 ### Interactive selection
