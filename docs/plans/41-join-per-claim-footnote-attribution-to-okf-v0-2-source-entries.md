@@ -268,6 +268,14 @@ extension, in this binding: `optFootnotes` is exported at line 20 of `CMarkGFM.h
 Three candidate approaches survive the binding's limitation, and Milestone 1 chooses among
 them. They are listed in the order the research above recommends trying them.
 
+This limitation is tracked as an upstream issue in okf's mori catalog, so it is not lost if
+this plan is paused. See `mori/upstream-issues.dhall`, entry key
+`cmark-gfm-hs-drops-footnote-labels`, or run `mori extension query upstream-issues`. Its
+`revisitTrigger` records what would make the issue go away: `kivikakk/cmark-gfm-hs` carrying
+the label on both node constructors. If the spike below chooses Approach A and lands a
+patch, update that entry's `status` from `Active` to `Workaround` (or `Resolved`, if the
+change is merged upstream rather than carried locally) in the same change.
+
 **Approach A — patch the binding to carry the label.** Change `CMarkGFM.hsc` so
 `FOOTNOTE_REFERENCE` and `FOOTNOTE_DEFINITION` carry `Text`, read from the C accessor
 `cmark_node_get_literal`, which the vendored C already supports for both types (see
