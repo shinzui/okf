@@ -85,8 +85,8 @@ This section must always reflect the actual current state of the work.
 - [x] Milestone 2 (2026-08-01): `Okf.Document.ComputationSource` and `readComputationSources` report every computation a document offers, and `Okf.Bundle.Concept` projects it
 - [x] Milestone 3 (2026-08-01): `okf validate --strict` reports a concept of this type that declares no computation, one that declares two, and one whose `# Computation` section holds more than one block
 - [x] Milestone 3 (2026-08-01): no other `type` is affected, and permissive validation reports none of the three
-- [ ] Milestone 4: `okf show BUNDLE CONCEPT --computation` prints the computation, reading the file named by `computation` when the concept uses that form
-- [ ] Milestone 4: `okf show` without the flag names where the computation lives
+- [x] Milestone 4 (2026-08-01): `okf show BUNDLE CONCEPT --computation` prints the computation, reading the file named by `computation` when the concept uses that form
+- [x] Milestone 4 (2026-08-01): `okf show` without the flag names where the computation lives
 - [ ] Milestone 5: `docs/user/format.md` documents §10.3 and its "okf does not read the `# Computation` body section yet" paragraph is retired, and every `okf` transcript in `docs/` that this plan perturbs is re-run and corrected
 
 

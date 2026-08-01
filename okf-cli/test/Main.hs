@@ -107,24 +107,51 @@ main = do
             ShowOptions
               { bundlePath = Just "bundle",
                 conceptIdText = Just "tables/orders",
-                profilePath = Nothing
+                profilePath = Nothing,
+                computationOnly = False
               },
           parseShowMatches
             ["show", "b", "ADR-2", "--profile", "p.dhall"]
             ShowOptions
               { bundlePath = Just "b",
                 conceptIdText = Just "ADR-2",
-                profilePath = Just "p.dhall"
+                profilePath = Just "p.dhall",
+                computationOnly = False
               },
           parseShowMatches
             ["show"]
-            ShowOptions {bundlePath = Nothing, conceptIdText = Nothing, profilePath = Nothing},
+            ShowOptions
+              { bundlePath = Nothing,
+                conceptIdText = Nothing,
+                profilePath = Nothing,
+                computationOnly = False
+              },
           parseShowMatches
             ["show", "bundle"]
-            ShowOptions {bundlePath = Just "bundle", conceptIdText = Nothing, profilePath = Nothing},
+            ShowOptions
+              { bundlePath = Just "bundle",
+                conceptIdText = Nothing,
+                profilePath = Nothing,
+                computationOnly = False
+              },
           parseShowMatches
             ["show", "--profile", "p.dhall"]
-            ShowOptions {bundlePath = Nothing, conceptIdText = Nothing, profilePath = Just "p.dhall"},
+            ShowOptions
+              { bundlePath = Nothing,
+                conceptIdText = Nothing,
+                profilePath = Just "p.dhall",
+                computationOnly = False
+              },
+          -- §10.3's two forms are both reachable through one flag, so a caller
+          -- does not have to know which one the producer chose.
+          parseShowMatches
+            ["show", "bundle", "computations/revenue", "--computation"]
+            ShowOptions
+              { bundlePath = Just "bundle",
+                conceptIdText = Just "computations/revenue",
+                profilePath = Nothing,
+                computationOnly = True
+              },
           parseIdMatches
             ["id", "next", "b", "ADR", "--profile", "p.dhall"]
             IdOptions

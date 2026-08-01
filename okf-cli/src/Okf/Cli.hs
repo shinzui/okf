@@ -58,6 +58,7 @@ import Okf.Cli.Version (appVersionWithGit)
 import Okf.ConceptId
 import Okf.Document
   ( Attester (..),
+    ComputationSource (..),
     DocumentParseError (..),
     Executor (..),
     Frontmatter (..),
@@ -74,6 +75,7 @@ import Okf.Document
 import Okf.Graph (buildGraph)
 import Okf.Index
 import Okf.Log qualified as Log
+import Okf.Path (PathReference (..), classifyPathReference)
 -- 'List' and 'Object' are 'Okf.Profile.Cardinality' constructors here; aeson's
 -- same-named 'Value' constructors are reached as 'Aeson.Object' and friends.
 import Okf.Prelude hiding (List, Object)
@@ -203,7 +205,8 @@ data GraphOptions = GraphOptions
 data ShowOptions = ShowOptions
   { bundlePath :: !(Maybe FilePath),
     conceptIdText :: !(Maybe Text),
-    profilePath :: !(Maybe FilePath)
+    profilePath :: !(Maybe FilePath),
+    computationOnly :: !Bool
   }
   deriving stock (Show, Eq)
 
@@ -439,6 +442,10 @@ showOptionsParser =
               <> metavar "PROFILE"
               <> help "Narrow document ID lookup to a profile's idField"
           )
+      )
+    <*> switch
+      ( long "computation"
+          <> help "Print only the computation and nothing else"
       )
 
 idOptionsParser :: Parser IdOptions
@@ -1265,16 +1272,20 @@ runGraph GraphOptions {bundlePath} = do
   LazyByteString.putStrLn (Aeson.encode (buildGraph concepts))
 
 runShow :: ShowOptions -> IO ()
-runShow ShowOptions {bundlePath, conceptIdText, profilePath} = do
+runShow ShowOptions {bundlePath, conceptIdText, profilePath, computationOnly} = do
   fzfConfig <- detectFzfConfig
   resolvedBundle <- resolveBundlePath fzfConfig bundlePath
   concepts <- loadBundleOrExit resolvedBundle
+  -- Which renderer runs is decided once, here, so that @--computation@ behaves
+  -- identically whether the concept was named on the command line or picked
+  -- interactively.
+  let render = if computationOnly then renderComputation resolvedBundle else renderConcept
   case conceptIdText of
-    Just rawIdentifier -> showConceptByIdentifier profilePath concepts rawIdentifier
+    Just rawIdentifier -> showConceptByIdentifier render profilePath concepts rawIdentifier
     Nothing -> do
       selection <- selectConcept fzfConfig resolvedBundle concepts
       case selection of
-        ConceptChosen concept -> renderConcept concept
+        ConceptChosen concept -> render concept
         ConceptNoCandidates ->
           dieText ("No concepts found in " <> Text.pack resolvedBundle)
         ConceptSelectionCancelled -> exitWith (ExitFailure 130)
@@ -1418,10 +1429,14 @@ dieFzf message =
 -- first, then a profile-declared document ID. Unchanged from the previous
 -- implementation of 'runShow', so the resolution order fixed by ADR 1 cannot
 -- drift.
-showConceptByIdentifier :: Maybe FilePath -> [Concept] -> Text -> IO ()
-showConceptByIdentifier profilePath concepts conceptIdText =
+--
+-- The renderer is a parameter rather than 'renderConcept' directly, so that
+-- @okf show --computation@ resolves an identifier by exactly the same rules as
+-- @okf show@.
+showConceptByIdentifier :: (Concept -> IO ()) -> Maybe FilePath -> [Concept] -> Text -> IO ()
+showConceptByIdentifier renderChosen profilePath concepts conceptIdText =
   case either (const Nothing) (`findConcept` concepts) (parseConceptId conceptIdText) of
-    Just concept -> renderConcept concept
+    Just concept -> renderChosen concept
     Nothing ->
       case parseDocumentId conceptIdText of
         Nothing ->
@@ -1445,7 +1460,7 @@ showConceptByIdentifier profilePath concepts conceptIdText =
                     <> conceptIdText
                     <> " (no document carries that document ID)"
                 )
-            [concept] -> renderConcept concept
+            [concept] -> renderChosen concept
             matches ->
               dieText
                 ( "Ambiguous document ID "
@@ -2039,7 +2054,15 @@ renderConcept concept = do
   unless
     (null (conceptParameters concept))
     (Text.IO.putStrLn ("parameters: " <> Text.intercalate ", " (renderParameter <$> conceptParameters concept)))
-  traverse_ (Text.IO.putStrLn . ("computation: " <>)) (conceptComputation concept)
+  -- Where the computation lives, in both of §10.3's forms. Without the inline
+  -- line a reader cannot tell "carries a computation in its body" from "carries
+  -- none at all". Exactly one line is printed: a concept somehow offering both
+  -- is `okf validate --strict`'s diagnostic, and `okf show` is not a validator.
+  case conceptComputationSources concept of
+    ComputationFile rawPath : _ -> Text.IO.putStrLn ("computation: " <> rawPath)
+    ComputationInline literal : _ ->
+      Text.IO.putStrLn ("computation: inline (" <> countPhrase (length (Text.lines literal)) "line" <> ")")
+    [] -> pure ()
   traverse_ (Text.IO.putStrLn . ("executor: " <>) . renderExecutor) (conceptExecutor concept)
   traverse_ (Text.IO.putStrLn . ("attester: " <>)) (attesterResource =<< conceptAttester concept)
   traverse_ (Text.IO.putStrLn . ("generated: " <>) . renderGenerated) (conceptGenerated concept)
@@ -2060,6 +2083,68 @@ renderConcept concept = do
         ("sources: " <> countPhrase sourceCount "source" <> " (see `okf sources`)")
   Text.IO.putStrLn ""
   Text.IO.putStr (bodyText concept)
+
+-- | Print a concept's computation and nothing else, in whichever of
+-- specification §10.3's two forms the producer chose.
+--
+-- This is the half of §10.5's consumer workflow a caller would otherwise
+-- reimplement: "Load the contract from frontmatter and the computation from the
+-- body (or the file named by @computation@)". The parenthesis is the expensive
+-- part, because it drags in §6.2's path grammar — where a bare
+-- @references\/x.sql@ resolves against the concept's own directory rather than
+-- the bundle root — and okf already owns that grammar in "Okf.Path".
+--
+-- Reading a file the bundle holds is not executing anything. §10's boundary is
+-- that OKF "records the computation and the means to check it; it does not
+-- execute anything itself", which is about running computations rather than
+-- about opening files. The IO is CLI-side because @okf-core@ validation is
+-- offline by design; see
+-- @docs\/adr\/5-compile-profile-rules-before-validation.md@.
+--
+-- Offering no computation, or more than one, exits non-zero rather than
+-- guessing. Printing an arbitrary one of two would answer a question the bundle
+-- has not settled.
+renderComputation :: FilePath -> Concept -> IO ()
+renderComputation bundleRoot concept =
+  case conceptComputationSources concept of
+    [ComputationInline literal] -> Text.IO.putStr literal
+    [ComputationFile rawPath] ->
+      case classifyPathReference (conceptIdOf concept) rawPath of
+        BundlePath target -> do
+          let absolutePath = bundleRoot </> target
+          exists <- doesFileExist absolutePath
+          unless exists $
+            dieText (conceptPrefix <> "computation names " <> Text.pack target <> ", which the bundle does not hold")
+          Text.IO.putStr =<< Text.IO.readFile absolutePath
+        ExternalUrl scheme ->
+          dieText
+            ( conceptPrefix
+                <> "computation is a "
+                <> scheme
+                <> " URL; okf has no network access and never fetches a computation"
+            )
+        EscapesBundle ->
+          dieText (conceptPrefix <> "computation names a path that climbs above the bundle root")
+        MalformedPath ->
+          dieText (conceptPrefix <> "computation is not a usable path")
+    [] ->
+      dieText
+        ( conceptPrefix
+            <> "offers no computation: it names no computation path and carries no code block under a # Computation heading"
+        )
+    sources ->
+      dieText
+        ( conceptPrefix
+            <> "offers more than one computation, so okf cannot say which one to run: "
+            <> Text.intercalate " and " (describeSource <$> sources)
+            <> "\nRun okf validate --strict to see this as a diagnostic."
+        )
+  where
+    conceptPrefix = renderConceptId (conceptIdOf concept) <> ": "
+    describeSource = \case
+      ComputationFile rawPath -> "the file " <> rawPath
+      ComputationInline literal ->
+        "an inline block of " <> countPhrase (length (Text.lines literal)) "line"
 
 -- | Render one attested-computation parameter as @\<name\> (\<type\>,
 -- required)@, dropping whichever of the two optional members the concept omits
