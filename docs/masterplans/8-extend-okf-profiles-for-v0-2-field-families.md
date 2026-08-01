@@ -218,7 +218,7 @@ upgrade shims.
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
 | 1 | Validate nested rules on scalar object fields | docs/plans/44-validate-nested-rules-on-scalar-object-fields.md | None | None | Complete |
-| 2 | Add the actor field format and non-textual value constraints | docs/plans/45-add-the-actor-field-format-and-non-textual-value-constraints.md | EP-1 | None | In Progress |
+| 2 | Add the actor field format and non-textual value constraints | docs/plans/45-add-the-actor-field-format-and-non-textual-value-constraints.md | EP-1 | None | Complete |
 | 3 | Add path valued reference rules distinct from document handles | docs/plans/46-add-path-valued-reference-rules-distinct-from-document-handles.md | EP-1 | EP-2 | Not Started |
 | 4 | Enforce the profile declared okfVersion and ship a v0.2 reference profile | docs/plans/47-enforce-the-profile-declared-okfversion-and-ship-a-v0-2-reference-profile.md | EP-1, EP-2, EP-3 | None | Not Started |
 
@@ -380,9 +380,9 @@ section carries the granular work; this list tracks the story.
 - [x] EP-1: a profile can attach required, recommended, and optional rules to the members of that mapping, reported at paths such as `generated.by` (2026-08-01)
 - [x] EP-1: `verified` written as a bare mapping is validated identically to a one-element list (2026-08-01)
 - [x] EP-1: the frozen pre-object descriptor shape still loads, and generated documentation shows the new rule kind (2026-08-01)
-- [ ] EP-2: a profile can require a value to be a well-formed specification §7 actor, or specifically a `human:` actor
-- [ ] EP-2: a profile can constrain a numeric or boolean value, and can require such a key at all
-- [ ] EP-2: the frozen five-alternative `FieldFormat` union still loads through every earlier generation
+- [x] EP-2: a profile can require a value to be a well-formed specification §7 actor, or specifically a `human:` actor (2026-08-01)
+- [x] EP-2: a profile can constrain a numeric or boolean value, and can require such a key at all (2026-08-01)
+- [x] EP-2: the frozen five-alternative `FieldFormat` union still loads through every earlier generation (2026-08-01)
 - [ ] EP-3: a profile can require a path-valued field to resolve inside the bundle or to an allowed external scheme, at top-level, nested, and object scope
 - [ ] EP-3: `Okf.Path` exports the specification §6.2 grammar and `Okf.Graph` behaviour is unchanged
 - [ ] EP-4: a profile whose declared `okfVersion` contradicts the rules it uses is rejected at compile time, in both directions
@@ -498,6 +498,49 @@ required it for `generated.by`, and emitting it for object members but not list-
 would have made the two kinds of nested rule gratuitously different. It is additive — nothing
 is emitted where a member declares no description — and the full suite passed with no
 expectation edits, which shows nothing depended on the prose being absent.
+
+**EP-2 delivered, and its central finding changes what a frozen fixture means for every plan
+that follows.** Freezing the union and rebinding every generation worked exactly as this
+MasterPlan's Decomposition Strategy predicted — for descriptors *outside* this repository. What
+neither this MasterPlan nor EP-2 anticipated is that five of this repository's own frozen
+fixtures were never frozen against the union at all: `conditional-fields-ep2.dhall`,
+`document-references-ep3.dhall`, `formats-ep4.dhall`, `nested-reviews-ep1.dhall`, and
+`object-fields-mp8-ep1.dhall` spell out every *record* type by hand and then write
+`let FieldFormat = ../../../dhall/FieldFormat.dhall`. Widening that file changed the type each
+was annotated against, and all five stopped loading at once:
+
+```text
+Failed to load profile okf-core/test/fixtures/profiles/object-fields-mp8-ep1.dhall:
+Error: Expression doesn't match annotation
+```
+
+This is the first occasion under this MasterPlan on which the answer to a failing frozen
+fixture has been anything other than "the fault is in the decoder chain". Each was repaired by
+replacing that one import with the five-alternative union literal — no declared value changed —
+and each was then verified by negative control to still require its fallback decoder.
+`docs/adr/11-growing-the-profile-descriptor-language.md` now states that "spells out its types
+inline" covers the published unions and not only the records, and records that the fixtures
+still importing `Cardinality.dhall` are the same latent defect, harmless only for as long as
+that union stays at three alternatives. **EP-3 and EP-4 must write out any published union
+their fixtures name.**
+
+Three EP-2 findings are smaller but concrete. **Rebinding reaches further than the records
+carrying a `format` member**: a frozen record referring to the *current* `NestedRules` drags
+the current union in with it, so `PreObjectProfile*` needed frozen nested types as well;
+changing the type first and reading GHC's errors found this, and working from a list would not
+have. **The `HumanActor` collision the plan anticipated inside `Okf.Profile` also hit
+`okf-core/test/Main.hs`**, which names the actor constructor about fifteen times and now
+imports `Okf.Profile hiding (HumanActor)` beside `Okf.Profile qualified as Profile` — the same
+device it already used for `List` and `Object`, and the second instance of the naming-collision
+class EP-1 recorded. **Presence and value checks are independent**: a numeric value under a
+textual format and `Any` cardinality produces both `MissingProfileField` and
+`ValueFormatMismatch`, which is pre-existing behaviour that is now asserted.
+
+EP-1's "one commit per schema event" correction generalised further than stated. EP-2 committed
+Milestones 2, 3, and 4 together, because publishing union alternatives without implementing
+their match leaves a non-exhaustive `textMatchesFormat` — a state worth passing through and not
+worth committing. Milestone 1 stayed separate because it is green on its own. **EP-3 should
+expect two commits, not five.**
 
 **Three lessons inherited from MasterPlan 7 are written into every child plan rather than
 left to be rediscovered.** A projection nobody renders is not a user-visible outcome, which
@@ -672,6 +715,32 @@ which is why EP-4's reference profile ships with a test that validates it agains
   Date: 2026-08-01
 
 
+- Decision: A frozen fixture that names a published Dhall *union* by importing its schema file
+  may be repaired in place, replacing the import with the union literal, and this is a
+  discharge of the never-edit rule rather than an exception to it.
+  Rationale: discovered while implementing EP-2, which broke five such fixtures at once.
+  `docs/adr/11-growing-the-profile-descriptor-language.md` already required a frozen fixture to
+  spell its types out inline *and* forbade editing one; these fixtures satisfied the first rule
+  for records and violated it for unions, so the first union widening forced the contradiction.
+  The repair changes no declared value, restores the assertion each fixture was written to
+  make, and was verified per fixture by negative control. The alternative — supporting old
+  records paired with the new union — would mean a second parallel chain of frozen generations
+  forever, for a shape no released schema has ever published, since a descriptor pinned by URL
+  and hash carries the old records and the old union together.
+  Date: 2026-08-01
+
+- Decision: EP-2 publishes five `FieldFormat` alternatives and adds no `ProfileViolation` or
+  `ProfileDefinitionError` constructor at all.
+  Rationale: an unsatisfied format is already `ValueFormatMismatch`, and a numeric format
+  paired with an explicit cardinality is coherent rather than contradictory, so the discipline
+  this MasterPlan's Integration Points states — add a constructor only when no existing one
+  says exactly the right thing — bites cleanly. The `FieldFormat` constructors are still the
+  wider kind of change for Mori, for the same reason `Cardinality`'s `Object` was: the type
+  appears in four error and violation payloads, so a consumer that renders a format must gain
+  cases even though it declares no actor or numeric rules.
+  Date: 2026-08-01
+
+
 ## Outcomes & Retrospective
 
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
@@ -700,6 +769,28 @@ One decomposition assumption needs adjusting for the plans that follow. The Mast
 EP-1 both treated "freeze a generation" as a step separable from "add the field". It is not:
 the upgrade function constructs a current-shape record and does not compile without the member
 it is frozen against. EP-2 and EP-3 should plan on one commit for the pair, not two.
+
+**EP-2 complete, 2026-08-01, in three commits (`29b842b` through `57c0679`).** Two more of the
+four expressiveness gaps are closed together: a profile can demand a well-formed specification
+§7 actor, can demand specifically a `human:` actor — the check that makes §5.3's human-reviewed
+trust tier enforceable as a house convention — and can both demand and constrain a numeric or
+boolean key. Every acceptance criterion the plan named was run and holds, core validation
+output is byte-identical to the capture taken before any edit, and `cabal test all` is green at
+184 tests including the byte-comparison drift test against `examples/postgresql-profile/`.
+
+Three coordination judgments this MasterPlan made were tested by EP-2. **Pairing the actor
+format and the non-textual constraints in one plan was right, and for the reason the amended
+Decision Log gave rather than the original one**: the union change carried five alternatives,
+one frozen generation, one fixture, and one rebinding pass, so splitting would have doubled all
+four. **The record-versus-union distinction was correct as far as it went and incomplete in one
+respect** — it accounted for pinned external descriptors and not for this repository's own
+fixtures, which turned out to be the thing that actually broke. **The ordering constraint held**:
+EP-2 extended the chain EP-1 left and needed no rework of it.
+
+The predicted "EP-2 needs no renderer change" was confirmed rather than assumed, by reading
+both render sites and by generating documentation for a profile that uses the new formats and
+validating it against the meta-profile under `--profile-enforce`. That prediction is the one
+place this MasterPlan told a plan to verify rather than trust, and it paid for itself cheaply.
 
 
 ## Revision note — 2026-08-01
@@ -769,3 +860,35 @@ definition error unless the walk deduplicates, for which EP-1 left two helpers i
 One deliberate scope extension is recorded as a decision: a missing member of a nested record
 now renders the member's `description` prose, for list-element members as well as object
 members, which `renderProfileViolation` previously did for top-level keys only.
+
+
+## Revision note — 2026-08-01 (EP-2 complete)
+
+`docs/plans/45-add-the-actor-field-format-and-non-textual-value-constraints.md` is Complete, in
+three commits from `29b842b` to `57c0679`. The Exec-Plan Registry, the Progress list, Surprises
+& Discoveries, the Decision Log, and Outcomes & Retrospective are all updated;
+`docs/adr/5-compile-profile-rules-before-validation.md` and
+`docs/adr/11-growing-the-profile-descriptor-language.md` are both amended.
+
+One thing changed in this document beyond marking progress, and it changes what EP-3 and EP-4
+must do rather than only what they should expect.
+
+Freezing a Dhall union protects descriptors outside this repository and does nothing for the
+frozen fixtures inside it, because five of them named the union by importing its live schema
+file. All five broke the moment `FieldFormat` gained an alternative, and the fix was in the
+fixtures rather than in the decoder chain — the first time that has been the right answer under
+this MasterPlan. ADR 11 now states that a frozen fixture must write out the published unions
+and not only the records, and that repairing one this way discharges the never-edit rule rather
+than excepting it. **EP-3 and EP-4 must write out any published union a fixture of theirs
+names**, and should note that the fixtures still importing `Cardinality.dhall` are the same
+latent defect, harmless only while that union stays at three alternatives.
+
+Three smaller EP-2 findings are recorded in Surprises & Discoveries: rebinding a frozen
+generation reaches records that merely *refer* to current nested types, so GHC's errors rather
+than a list should drive it; the `HumanActor` naming collision hit `okf-core/test/Main.hs` as
+well as `Okf.Profile`, which is the second instance of the collision class EP-1 recorded; and
+presence and value checks are independent, so a numeric value under a textual format produces
+two violations rather than one. EP-1's "one commit per schema event" correction also
+generalised — EP-2 committed three milestones together because publishing union alternatives
+without implementing their match leaves a non-exhaustive case expression, so **EP-3 should
+expect two commits, not five.**
