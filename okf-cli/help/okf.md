@@ -45,18 +45,31 @@ CORE IDEAS
 
 WHAT THE okf TOOL DOES
 
-  validate    Check frontmatter conformance and, as an authoring aid, that
-              links between concepts resolve and log.md files are structured.
-  index       Generate progressive-disclosure index.md files per directory.
-  log         Preview log.md files, check stale concepts, and append entries.
-  graph       Extract a JSON node/edge graph from links between concepts.
-  show        Print one concept's metadata and body.
+  validate      Check frontmatter conformance and, as an authoring aid, that
+                links resolve and log.md files are well structured.
+  index         Generate progressive-disclosure index.md files per directory.
+  log           Preview log.md files, check stale concepts, append entries.
+  graph         Extract a JSON node/edge graph from links between concepts.
+  show          Print one concept's metadata and body.
+  trust         Report each concept's trust tier, status, and staleness.
+  sources       List the provenance each concept records.
+  computations  List the attested computations a bundle declares.
+  id            Allocate and list profile-declared document IDs.
+  profile       List and inspect profiles published by a registry.
+  config        Show and manage okf configuration.
+  kit           Install and manage agent skills and subagents.
+  assist        Launch an interactive agent session with installed okf skills.
+  completions   Generate a shell completion script.
 
 STANDALONE BY DESIGN
 
   The okf CLI works on plain files only. It does not require Mori, Mina, an
   LLM, PostgreSQL, or network access. It tracks Google's Open Knowledge Format
-  v0.1 specification (the knowledge-catalog okf SPEC.md).
+  v0.2 specification (the knowledge-catalog okf SPEC.md).
+
+  It reads a v0.1 bundle unchanged. A bundle that declares nothing is read
+  with v0.1 fallbacks and is never penalized for it; declaring
+  okf_version: "0.2" in the root index.md opts into the stricter reading.
 
 SEE ALSO
 

@@ -85,7 +85,7 @@ This section must always reflect the actual current state of the work.
 - [x] Milestone 2 (2026-08-01): `okf computations BUNDLE` lists every attested computation in a bundle, one aligned row each, in the house style of `okf trust` and `okf sources`
 - [x] Milestone 3 (2026-08-01): `okf profile show` renders `objectFields`, so a profile constraining `executor.resource` displays the rule it enforces
 - [x] Milestone 3 (2026-08-01): any further gap Milestone 1 scheduled is closed — the audit scheduled none into this milestone; `okf profile document` already renders object fields
-- [ ] Milestone 4: the embedded `okf help format`, `okf help validation`, and `okf help okf` topics describe OKF v0.2 rather than v0.1, including the attested computation type
+- [x] Milestone 4 (2026-08-01): the embedded `okf help format`, `okf help validation`, and `okf help okf` topics describe OKF v0.2 rather than v0.1, including the attested computation type
 - [ ] Milestone 5: `docs/user/cli.md` documents the new command, and `docs/user/profiles.md` carries a worked §10 house-convention descriptor with a fixture proving it compiles and validates
 - [ ] Milestone 5: every `okf` transcript in `docs/` that this plan perturbs is re-run and corrected
 - [ ] Milestone 5: the parent MasterPlan's Outcomes & Retrospective is filled in and its ADR distillation pass is run
@@ -503,6 +503,30 @@ Record every decision made while working on the plan.
   `receipt` — the §10 house convention in miniature, and exactly the shape this plan's Milestone 5
   documents. The rendered block, including `path: external-uri-schemes([]), allow-self(false)` on
   a nested member, is now pinned.
+  Date: 2026-08-01
+
+- Decision: No ninth help topic. Attested computations live inside `okf help format`.
+  Rationale: the plan asked for this to be decided with the audit's evidence rather than by
+  preference, and the evidence points one way. The material fits in one thirty-line section that
+  cross-references `okf computations` and `okf show --computation`, so a reader who runs
+  `okf help format` — the topic they would reach for anyway when asking what a frontmatter key
+  means — finds it without knowing to ask. The argument against is stronger than "eight topics is
+  a lot": a topic per concept type is a precedent okf cannot honour, because §4.1 keeps no
+  taxonomy and the tool must tolerate types it has never heard of. Giving one type its own topic
+  would say the opposite of what the format says.
+  Date: 2026-08-01
+
+- Decision: `okf-cli/help/validation.md` gained two sections the plan did not ask for — a
+  VERSION DECLARATION section and the frontmatter-path paragraph under REFERENTIAL INTEGRITY.
+  Rationale: the plan asked that this topic "state, once, the rule that makes them
+  comprehensible", which is ADR 7's placement policy. Writing that sentence made two omissions
+  visible that the same reader would trip on immediately. The strict-only diagnostics list now
+  includes "a superseded v0.1 field in a bundle that declares okf_version 0.2", which is
+  unintelligible without knowing that a bundle can declare a version at all — a concept that
+  appeared nowhere in any help topic. And REFERENTIAL INTEGRITY said "external URLs and non-.md
+  links are not checked" while three sibling plans had made frontmatter paths checked, including
+  the asymmetry where `sources[].resource` is deliberately exempt. Both are one paragraph each and
+  both are the difference between a topic that is current and one that is merely not wrong.
   Date: 2026-08-01
 
 - Decision: This plan does not write an ADR of its own, but it does run the parent MasterPlan's
