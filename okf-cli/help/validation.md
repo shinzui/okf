@@ -120,5 +120,8 @@ OUTPUT
 
 SEE ALSO
 
-  okf help profiles   Checking a bundle against house conventions.
-  okf help format     Concept IDs, frontmatter, and links.
+  okf help profiles      Checking a bundle against house conventions.
+  okf help format        Concept IDs, frontmatter, and links.
+  okf help computations  The attested computation checks, in context.
+  okf help log           Log advisories and --log-enforce.
+  okf help index         Declaring okf_version with okf index.

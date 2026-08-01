@@ -73,8 +73,18 @@ STANDALONE BY DESIGN
 
 SEE ALSO
 
-  okf help format       Bundle layout, concept IDs, frontmatter, and links.
-  okf help validation   What "conformant" means and how the tool checks it.
-  okf help profiles     Checking a bundle against house conventions.
+  okf help format        Bundle layout, concept IDs, frontmatter, and links.
+  okf help validation    What "conformant" means and how the tool checks it.
+  okf help profiles      Checking a bundle against house conventions.
+  okf help index         Generated index.md files and the version declaration.
+  okf help log           log.md upkeep and the two staleness checks.
+  okf help graph         The concept graph and what becomes an edge.
+  okf help trust         Trust tiers, staleness, and recorded provenance.
+  okf help computations  Listing and printing attested computations.
+  okf help ids           Profile-declared document IDs such as ADR-7.
+  okf help interactive   Picking a bundle and concept with fzf.
+  okf help config        Config files, defaults, and agent settings.
+  okf help kit           Installing and publishing agent skills and subagents.
+  okf help agents        Installing agent skills and launching assist.
 
   The full user guide lives under docs/user/ in the okf repository.

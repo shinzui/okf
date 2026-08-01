@@ -48,6 +48,12 @@ helpTopics =
     HelpTopic "format" "Bundle layout, concept IDs, frontmatter, and links" formatTopicContent,
     HelpTopic "validation" "How bundles are validated and referential integrity" validationTopicContent,
     HelpTopic "profiles" "Checking a bundle against house conventions" profilesTopicContent,
+    HelpTopic "computations" "Listing and printing attested computations" computationsTopicContent,
+    HelpTopic "trust" "Trust tiers, staleness, and recorded provenance" trustTopicContent,
+    HelpTopic "index" "Generated index.md files and the version declaration" indexTopicContent,
+    HelpTopic "log" "log.md upkeep and the two staleness checks" logTopicContent,
+    HelpTopic "graph" "The concept graph and what becomes an edge" graphTopicContent,
+    HelpTopic "ids" "Profile-declared document IDs such as ADR-7" idsTopicContent,
     HelpTopic "interactive" "Picking a bundle and concept with fzf" interactiveTopicContent,
     HelpTopic "config" "Config files, defaults, and agent settings" configTopicContent,
     HelpTopic "kit" "Installing and publishing agent skills and subagents" kitTopicContent,
@@ -65,6 +71,24 @@ validationTopicContent = $(embedStringFile "help/validation.md")
 
 profilesTopicContent :: Text
 profilesTopicContent = $(embedStringFile "help/profiles.md")
+
+computationsTopicContent :: Text
+computationsTopicContent = $(embedStringFile "help/computations.md")
+
+trustTopicContent :: Text
+trustTopicContent = $(embedStringFile "help/trust.md")
+
+indexTopicContent :: Text
+indexTopicContent = $(embedStringFile "help/index.md")
+
+logTopicContent :: Text
+logTopicContent = $(embedStringFile "help/log.md")
+
+graphTopicContent :: Text
+graphTopicContent = $(embedStringFile "help/graph.md")
+
+idsTopicContent :: Text
+idsTopicContent = $(embedStringFile "help/ids.md")
 
 interactiveTopicContent :: Text
 interactiveTopicContent = $(embedStringFile "help/interactive.md")
@@ -101,9 +125,10 @@ listTopics :: IO ()
 listTopics = do
   Text.IO.putStrLn "HELP TOPICS\n"
   forM_ helpTopics $ \t ->
-    Text.IO.putStrLn ("  " <> padRight 12 (topicName t) <> topicDescription t)
+    Text.IO.putStrLn ("  " <> padRight 14 (topicName t) <> topicDescription t)
   Text.IO.putStrLn "\nUse 'okf help <topic>' for details."
   where
+    -- 14, so the longest topic name ("computations") still gets two spaces.
     padRight n t = t <> Text.replicate (max 0 (n - Text.length t)) " "
 
 showTopic :: Text -> IO ()

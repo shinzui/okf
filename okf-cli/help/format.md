@@ -139,5 +139,9 @@ LINKS
 
 SEE ALSO
 
-  okf help validation   How bundles are checked.
-  okf help okf          What OKF is, end to end.
+  okf help validation    How bundles are checked.
+  okf help computations  Listing and printing attested computations.
+  okf help trust         Trust tiers, staleness, and recorded provenance.
+  okf help index         Generated index.md files, including the # Files section.
+  okf help log           log.md upkeep and the two staleness checks.
+  okf help okf           What OKF is, end to end.

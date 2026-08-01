@@ -392,6 +392,8 @@ UPGRADING FROM 0.1.x
 SEE ALSO
 
   okf help validation   Structural validation and referential integrity.
+  okf help ids          Document IDs: idField, idPrefix, and okf id.
+  okf help index        Declaring okf_version to satisfy requireBundleVersion.
 
   The full descriptor schema, and the upgrade steps above in detail, are
   documented in docs/user/profiles.md, whose "Generating profile

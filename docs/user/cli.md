@@ -43,9 +43,14 @@ cabal run okf -- help okf      # what the Open Knowledge Format is
 cabal run okf -- help format   # bundle layout, concept IDs, frontmatter, links
 ```
 
-Available topics: `okf`, `format`, `validation`, `profiles`, `interactive`,
-`config`, `kit`, `agents`. Topic lookup is case-insensitive. An unknown topic
-name prints the list of valid topics, and the command still succeeds (exit 0).
+Available topics: `okf`, `format`, `validation`, `profiles`, `computations`,
+`trust`, `index`, `log`, `graph`, `ids`, `interactive`, `config`, `kit`,
+`agents`. Topic lookup is case-insensitive. An unknown topic name prints the
+list of valid topics, and the command still succeeds (exit 0).
+
+The first four cover the format and how a bundle is checked; `computations`,
+`trust`, `index`, `log`, `graph`, and `ids` are the command-level guides for
+the reports and generators documented below.
 
 
 ## validate
@@ -188,6 +193,21 @@ the bundle.
 
 The generated index groups immediate concept documents by their `type` field and
 lists immediate subdirectories in a `Subdirectories` section.
+
+A `Files` section, between the subdirectory section and the concept sections,
+lists the directory's immediate non-Markdown files:
+
+```markdown
+# Files
+
+- [order-total.py](order-total.py)
+```
+
+Specification section 8 says an index enumerates a directory's contents, and a
+`references/attesters/` directory holding only an executor script has no
+concepts and no subdirectories to enumerate. Names beginning with a dot are
+skipped, so a stray `.DS_Store` never reaches a committed index, and every `.md`
+file is left to its own typed concept section.
 
 | Option | Effect |
 |--------|--------|
