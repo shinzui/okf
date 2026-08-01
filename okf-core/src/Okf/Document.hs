@@ -24,6 +24,7 @@ module Okf.Document
     setTitle,
     setDescription,
     setTimestamp,
+    setGenerated,
     setResource,
     setTags,
   )
@@ -174,9 +175,25 @@ setTitle value = setField "title" (String value)
 setDescription :: Text -> Frontmatter -> Frontmatter
 setDescription value = setField "description" (String value)
 
--- | Set the @timestamp@ field.
+-- | Set the OKF v0.1 @timestamp@ field.
+--
+-- OKF v0.2 supersedes @timestamp@ with @generated.at@ (specification §13.1);
+-- 'setGenerated' writes the v0.2 form. This is kept for producers deliberately
+-- writing v0.1 bundles, which okf continues to read and write. See
+-- @docs\/adr\/7-okf-v0-1-legacy-fallback-policy.md@.
 setTimestamp :: Text -> Frontmatter -> Frontmatter
 setTimestamp value = setField "timestamp" (String value)
+
+-- | Set the OKF v0.2 @generated@ field as a YAML mapping with @by@ and, when
+-- present, @at@ (specification §5.2). This is the single place that knows
+-- @generated@ is a mapping of an actor and a datetime.
+setGenerated :: Generated -> Frontmatter -> Frontmatter
+setGenerated Generated {generatedBy, generatedAt} =
+  setField "generated" (Object (KeyMap.fromList mappingFields))
+  where
+    mappingFields =
+      (AesonKey.fromText "by", String (renderActor generatedBy))
+        : [(AesonKey.fromText "at", String at) | Just at <- [generatedAt]]
 
 -- | Set the @resource@ field.
 setResource :: Text -> Frontmatter -> Frontmatter

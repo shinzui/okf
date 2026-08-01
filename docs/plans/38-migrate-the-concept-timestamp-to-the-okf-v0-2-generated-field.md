@@ -81,7 +81,7 @@ rather than inventing their own.
 - [x] Milestone 3 (added): `okf show` renders the generating actor, delivering the user-visible outcome the Purpose section promises (2026-07-31)
 - [x] Milestone 4: strict validation accepts `generated`, falls back to `timestamp`, and reports a v0.2-shaped message (2026-07-31)
 - [x] Milestone 5: log staleness reads `generated.at` first; CLI wording no longer says "timestamp" (2026-07-31)
-- [ ] Milestone 6: authoring API can write `generated`; round-trip test proves it survives serialize-then-parse
+- [x] Milestone 6: authoring API can write `generated`; round-trip test proves it survives serialize-then-parse (2026-07-31)
 - [ ] Milestone 7: ADR written on the version 0.1 legacy-fallback policy
 
 

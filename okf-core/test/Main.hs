@@ -707,10 +707,12 @@ testFixtureMissingType = do
 
 testFrontmatterBuilderRoundTrip :: Either Text ()
 testFrontmatterBuilderRoundTrip = do
-  let frontmatterValue =
+  let generatedValue = Generated (parseActor "reference_agent/gemini-2.5-pro") (Just "2026-06-20T22:53:05Z")
+      frontmatterValue =
         setField "version" (String "0.2.0")
           . setTags ["orders", "sales"]
           . setResource "bigquery://analytics.tables.orders"
+          . setGenerated generatedValue
           $ okfCommon
             OkfCommon
               { commonType = "BigQuery Table",
@@ -722,6 +724,14 @@ testFrontmatterBuilderRoundTrip = do
   reparsed <- firstShow (parseDocument (serializeDocument original))
   assertEqual (original ^. #frontmatter) (reparsed ^. #frontmatter)
   assertEqual (body original) (body reparsed)
+  -- The v0.2 family survives serialize-then-parse as a typed value, not merely
+  -- as equal frontmatter, and a `generated` without `at` round-trips too.
+  assertEqual (Just generatedValue) (readGenerated (reparsed ^. #frontmatter))
+  let withoutAt = setGenerated (Generated (HumanActor "ahormati") Nothing) emptyFrontmatter
+  reparsedWithoutAt <- firstShow (parseDocument (serializeDocument (OKFDocument withoutAt "# Orders\n")))
+  assertEqual
+    (Just (Generated (HumanActor "ahormati") Nothing))
+    (readGenerated (reparsedWithoutAt ^. #frontmatter))
 
 testSerializeDeterministicKeyOrder :: Either Text ()
 testSerializeDeterministicKeyOrder = do
