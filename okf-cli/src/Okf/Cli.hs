@@ -33,6 +33,8 @@ import Data.Aeson.KeyMap qualified as KeyMap
 import Data.ByteString.Lazy.Char8 qualified as LazyByteString
 import Data.Foldable (toList, traverse_)
 import Data.List qualified as List
+import Data.List.NonEmpty qualified as NonEmpty
+import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text.IO
@@ -88,7 +90,11 @@ import Okf.Profile
     ProfileViolation (..),
     TypeRule (..),
     compileProfile,
+    compiledProfileRulesForType,
     documentIdsInBundle,
+    fieldRuleDescription,
+    fieldRuleElementFields,
+    fieldRuleObjectFields,
     loadProfileFile,
     nextDocumentId,
     parseDocumentId,
@@ -1564,11 +1570,13 @@ renderProfileViolation compiled concepts = \case
       <> ": missing profile-required field: "
       <> renderFieldPath fieldPath
       <> renderConditionContext condition
+      <> renderNestedDescription cid fieldPath
   MissingRecommendedNestedProfileField cid fieldPath condition ->
     renderConceptId cid
       <> ": missing profile-recommended field: "
       <> renderFieldPath fieldPath
       <> renderConditionContext condition
+      <> renderNestedDescription cid fieldPath
   ValueNotInVocabulary cid fieldPath allowed actual ->
     renderConceptId cid
       <> ": frontmatter value at "
@@ -1665,6 +1673,24 @@ renderProfileViolation compiled concepts = \case
       maybe "" (\prose -> " (" <> prose <> ")") $ do
         ctype <- lookup cid [(conceptIdOf concept, conceptType concept) | concept <- concepts]
         profileFieldDescriptionForType compiled ctype key
+    -- The prose a profile attached to a member of a record, so that a nested
+    -- key explains itself exactly as a top-level one does. The path is
+    -- @parent.member@ for an object-valued key and @parent[index].member@ for a
+    -- list element; both name the same member rule, so the index is skipped.
+    renderNestedDescription cid fieldPath =
+      maybe "" (\prose -> " (" <> prose <> ")") $ do
+        ctype <- lookup cid [(conceptIdOf concept, conceptType concept) | concept <- concepts]
+        (parentKey, memberKey) <- nestedPathKeys fieldPath
+        parentRule <- Map.lookup parentKey (compiledProfileRulesForType compiled ctype)
+        memberRule <-
+          Map.lookup memberKey
+            =<< (fieldRuleObjectFields parentRule <|> fieldRuleElementFields parentRule)
+        fieldRuleDescription memberRule
+    nestedPathKeys (FieldPath segments) =
+      case NonEmpty.toList segments of
+        [FieldName parentKey, FieldName memberKey] -> Just (parentKey, memberKey)
+        [FieldName parentKey, ArrayIndex _, FieldName memberKey] -> Just (parentKey, memberKey)
+        _ -> Nothing
     renderConditionContext = maybe "" renderCondition
     renderCondition FieldCondition {field = sourceField, hasValue = [expected]} =
       " (when " <> sourceField <> " is " <> expected <> ")"

@@ -180,6 +180,10 @@ main = do
         test "compileProfile rejects objectFields with an explicit scalar or list cardinality" testObjectFieldsRequireObjectShape,
         test "compileProfile refines an object rule to object cardinality" testCompileObjectRule,
         test "compileProfile keeps a rule declaring both shapes at any cardinality" testCompileRecordOrListRule,
+        test "validateProfile requires a member of an object field" testValidateObjectMember,
+        test "validateProfile checks a bare mapping and a list against the same member rules" testValidateRecordOrList,
+        test "validateProfile reports an object value where only a list is declared" testValidateObjectWrongShape,
+        test "an object field with no member rules still requires a mapping" testValidateEmptyObjectRules,
         test "compileProfile rejects invalid same-scope field conditions" testConditionDefinitionErrors,
         test "top-level conditions gate presence without gating value checks" testTopLevelConditionalPresence,
         test "nested conditions use siblings and avoid cascading diagnostics" testNestedConditionalPresence,
@@ -2181,9 +2185,9 @@ fieldRule ::
   Maybe HandleReferenceRule ->
   Maybe FieldCondition ->
   FieldRule
-fieldRule field description allowedValues cardinality format elementFields reference when =
+fieldRule key description allowedValues cardinality format elementFields reference condition =
   FieldRule
-    { field,
+    { field = key,
       description,
       allowedValues,
       cardinality,
@@ -2191,7 +2195,7 @@ fieldRule field description allowedValues cardinality format elementFields refer
       elementFields,
       objectFields = Nothing,
       reference,
-      when
+      when = condition
     }
 
 -- | A standalone profile literal so the validation tests do not depend on the
@@ -3453,6 +3457,156 @@ testClosedFieldValidation = do
   assertEqual
     [MissingProfileField cid "status" Nothing]
     (validateProfile PermissiveConformance reopenedCompiled [typo])
+
+-- | The behavior this plan exists to deliver: a profile can require a
+-- mapping-valued key and can demand a member of that mapping, reported at a path
+-- such as @generated.by@.
+testValidateObjectMember :: Either Text ()
+testValidateObjectMember = do
+  compiled <-
+    firstShow
+      (compileProfile (objectProfileWithRules "generated" Any (Just provenanceMemberRules) Nothing))
+  cid <- parseTestConceptId "thing"
+  -- A well-formed mapping satisfies the rule and reports nothing at all, which
+  -- is the half of the fix that the old `missing profile-required field:
+  -- generated` transcript got wrong.
+  wellFormed <-
+    profileConcept
+      "thing"
+      [ ("type", String "Thing"),
+        ("generated", object ["by" .= ("human:nadeem" :: Text), "at" .= ("2026-06-18T00:00:00Z" :: Text)])
+      ]
+      "# Thing\n"
+  assertEqual [] (validateProfile StrictAuthoring compiled [wellFormed])
+  -- A mapping missing the demanded member reports that member, not the parent.
+  missingMember <-
+    profileConcept
+      "thing"
+      [ ("type", String "Thing"),
+        ("generated", object ["at" .= ("2026-06-18T00:00:00Z" :: Text)])
+      ]
+      "# Thing\n"
+  assertEqual
+    [MissingNestedProfileField cid (objectMemberPath "generated" "by") Nothing]
+    (validateProfile PermissiveConformance compiled [missingMember])
+  -- Members are value-checked exactly as list-element members are, and the
+  -- recommended member is reported only under strict authoring.
+  badTimestamp <-
+    profileConcept
+      "thing"
+      [("type", String "Thing"), ("generated", object ["by" .= ("human:nadeem" :: Text), "at" .= ("not-a-time" :: Text)])]
+      "# Thing\n"
+  assertEqual
+    [ValueFormatMismatch cid (objectMemberPath "generated" "at") Rfc3339Utc (String "not-a-time")]
+    (validateProfile PermissiveConformance compiled [badTimestamp])
+  onlyBy <-
+    profileConcept
+      "thing"
+      [("type", String "Thing"), ("generated", object ["by" .= ("human:nadeem" :: Text)])]
+      "# Thing\n"
+  assertEqual [] (validateProfile PermissiveConformance compiled [onlyBy])
+  assertEqual
+    [MissingRecommendedNestedProfileField cid (objectMemberPath "generated" "at") Nothing]
+    (validateProfile StrictAuthoring compiled [onlyBy])
+  -- The key itself is still demanded when it is absent entirely, and an empty
+  -- mapping counts as absent for the same reason an empty list does.
+  absent <- profileConcept "thing" [("type", String "Thing")] "# Thing\n"
+  assertEqual
+    [MissingProfileField cid "generated" Nothing]
+    (validateProfile PermissiveConformance compiled [absent])
+  emptyMapping <-
+    profileConcept "thing" [("type", String "Thing"), ("generated", object [])] "# Thing\n"
+  assertEqual
+    [MissingProfileField cid "generated" Nothing]
+    (validateProfile PermissiveConformance compiled [emptyMapping])
+
+-- | OKF v0.2 specification §5.2 permits @verified@ as a list of mappings or as
+-- one bare mapping and requires a consumer to treat the bare mapping as a
+-- one-element list. A rule declaring both shapes checks them against the same
+-- member rules, and neither spelling is a cardinality mismatch.
+testValidateRecordOrList :: Either Text ()
+testValidateRecordOrList = do
+  compiled <-
+    firstShow
+      ( compileProfile
+          (objectProfileWithRules "verified" Any (Just provenanceMemberRules) (Just provenanceMemberRules))
+      )
+  cid <- parseTestConceptId "thing"
+  bareMapping <-
+    profileConcept
+      "thing"
+      [("type", String "Thing"), ("verified", object ["at" .= ("2026-06-20T00:00:00Z" :: Text)])]
+      "# Thing\n"
+  assertEqual
+    [MissingNestedProfileField cid (objectMemberPath "verified" "by") Nothing]
+    (validateProfile PermissiveConformance compiled [bareMapping])
+  oneElementList <-
+    profileConcept
+      "thing"
+      [("type", String "Thing"), ("verified", toJSON [object ["at" .= ("2026-06-20T00:00:00Z" :: Text)]])]
+      "# Thing\n"
+  assertEqual
+    [ MissingNestedProfileField
+        cid
+        (FieldPath (FieldName "verified" :| [ArrayIndex 0, FieldName "by"]))
+        Nothing
+    ]
+    (validateProfile PermissiveConformance compiled [oneElementList])
+  -- Both spellings are satisfiable, and neither reports a shape error.
+  goodMapping <-
+    profileConcept
+      "thing"
+      [("type", String "Thing"), ("verified", object ["by" .= ("human:nadeem" :: Text), "at" .= ("2026-06-20T00:00:00Z" :: Text)])]
+      "# Thing\n"
+  assertEqual [] (validateProfile StrictAuthoring compiled [goodMapping])
+
+-- | A shape error does not cascade: a value of the wrong shape produces exactly
+-- one 'CardinalityMismatch' naming the expected shape, and no member violations
+-- from walking a record that is not there.
+testValidateObjectWrongShape :: Either Text ()
+testValidateObjectWrongShape = do
+  compiled <-
+    firstShow
+      (compileProfile (objectProfileWithRules "generated" Any (Just provenanceMemberRules) Nothing))
+  cid <- parseTestConceptId "thing"
+  let listValue = toJSON [object ["by" .= ("human:nadeem" :: Text)]]
+  concept <-
+    profileConcept "thing" [("type", String "Thing"), ("generated", listValue)] "# Thing\n"
+  assertEqual
+    [CardinalityMismatch cid (fieldPath "generated") Object listValue]
+    (validateProfile StrictAuthoring compiled [concept])
+
+-- | Declaring no member rules at all still demands that the value be a mapping.
+-- This is how an author says "this key must be an object" and nothing more,
+-- which is the alternative to adding an @Object@ alternative to the published
+-- Dhall union.
+testValidateEmptyObjectRules :: Either Text ()
+testValidateEmptyObjectRules = do
+  compiled <-
+    firstShow
+      ( compileProfile
+          ( objectProfileWithRules
+              "generated"
+              Any
+              (Just (NestedRules {required = [], recommended = [], optional = []}))
+              Nothing
+          )
+      )
+  cid <- parseTestConceptId "thing"
+  mapping <-
+    profileConcept
+      "thing"
+      [("type", String "Thing"), ("generated", object ["anything" .= ("at all" :: Text)])]
+      "# Thing\n"
+  assertEqual [] (validateProfile StrictAuthoring compiled [mapping])
+  scalarValue <-
+    profileConcept "thing" [("type", String "Thing"), ("generated", String "nope")] "# Thing\n"
+  assertEqual
+    [CardinalityMismatch cid (fieldPath "generated") Object (String "nope")]
+    (validateProfile PermissiveConformance compiled [scalarValue])
+
+objectMemberPath :: Text -> Text -> FieldPath
+objectMemberPath parent key = FieldPath (FieldName parent :| [FieldName key])
 
 firstTypeRule :: ProfileSpec -> TypeRule
 firstTypeRule spec =

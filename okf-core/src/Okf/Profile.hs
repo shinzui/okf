@@ -2478,7 +2478,7 @@ validateProfile validationProfile compiled concepts =
       concatMap checkField (Map.toAscList (effectiveRulesForType compiled ctype))
       where
         checkField (key, rule) =
-          case evaluateFieldValue (rule ^. #cardinality) (frontmatterLookup key (conceptFrontmatter concept)) of
+          case evaluateFieldValue rule (frontmatterLookup key (conceptFrontmatter concept)) of
             FieldAbsent actual ->
               presenceViolations key rule
                 <> maybe [] (vocabularyViolations key rule) actual
@@ -2489,6 +2489,7 @@ validateProfile validationProfile compiled concepts =
                 <> formatViolations key rule actual
                 <> referenceViolations key rule actual
                 <> nestedViolations key rule actual
+                <> objectViolations key rule actual
             FieldWrongShape actual -> [CardinalityMismatch cid (topLevelFieldPath key) (rule ^. #cardinality) actual]
 
         presenceViolations key rule =
@@ -2519,21 +2520,36 @@ validateProfile validationProfile compiled concepts =
             | Just nestedRules <- parentRule ^. #elementFields ->
                 concat
                   [ case elementValue of
-                      Aeson.Object objectFields ->
+                      Aeson.Object members ->
                         concatMap
-                          (checkNestedField parentKey elementIndex objectFields)
+                          (checkRecordMember (nestedValuePath parentKey elementIndex) members)
                           (Map.toAscList nestedRules)
                       _ -> [NestedElementNotRecord cid (nestedElementPath parentKey elementIndex) elementValue]
                   | (elementIndex, elementValue) <- zip [0 ..] (Vector.toList elementValues)
                   ]
           _ -> []
 
-        checkNestedField parentKey elementIndex objectFields (key, rule) =
-          let path = nestedValuePath parentKey elementIndex key
-              actualValue = Aeson.KeyMap.lookup (Aeson.Key.fromText key) objectFields
-           in case evaluateFieldValue (rule ^. #cardinality) actualValue of
+        -- The mapping spelling of the same idea. The value /is/ the record, so
+        -- there is no index in the path: a member is reported as
+        -- @generated.by@ rather than @generated[0].by@.
+        objectViolations parentKey parentRule = \case
+          Aeson.Object members
+            | Just objectRules <- parentRule ^. #objectFields ->
+                concatMap
+                  (checkRecordMember (nestedDefinitionPath parentKey) members)
+                  (Map.toAscList objectRules)
+          _ -> []
+
+        -- Check one member of one record. Shared by the list-element and
+        -- object-value walks, which differ only in how they name the member;
+        -- the sibling lookup that resolves a @when@ condition stays scoped to
+        -- the record the member lives in either way.
+        checkRecordMember buildPath members (key, rule) =
+          let path = buildPath key
+              actualValue = Aeson.KeyMap.lookup (Aeson.Key.fromText key) members
+           in case evaluateFieldValue rule actualValue of
                 FieldAbsent actual ->
-                  nestedPresenceViolations objectFields path rule
+                  nestedPresenceViolations members path rule
                     <> maybe [] (nestedVocabularyViolations path rule) actual
                     <> maybe [] (nestedFormatViolations path rule) actual
                 FieldPresent actual ->
@@ -2715,25 +2731,56 @@ data FieldValueEvaluation
   | FieldPresent Value
   | FieldWrongShape Value
 
-evaluateFieldValue :: Cardinality -> Maybe Value -> FieldValueEvaluation
+-- | Decide whether a frontmatter value counts as present for one rule. Takes the
+-- whole rule rather than just its cardinality because the 'Any' case has to know
+-- whether the rule declares object members: a rule accepting both spellings of
+-- the OKF v0.2 @verified@ key stays at 'Any' cardinality and must still count a
+-- mapping as present.
+--
+-- This is the single point at which okf decides presence, so a change here
+-- affects every profile check.
+evaluateFieldValue :: EffectiveFieldRule -> Maybe Value -> FieldValueEvaluation
 evaluateFieldValue _ Nothing = FieldAbsent Nothing
-evaluateFieldValue Any (Just actual)
-  | legacyValueIsPresent actual = FieldPresent actual
-  | otherwise = FieldAbsent (Just actual)
-evaluateFieldValue Scalar (Just actual) =
-  case actual of
-    String value
-      | Text.null (Text.strip value) -> FieldAbsent (Just actual)
-      | otherwise -> FieldPresent actual
-    Number _ -> FieldPresent actual
-    Bool _ -> FieldPresent actual
-    _ -> FieldWrongShape actual
-evaluateFieldValue List (Just actual) =
-  case actual of
-    Array values
-      | null values -> FieldAbsent (Just actual)
-      | otherwise -> FieldPresent actual
-    _ -> FieldWrongShape actual
+evaluateFieldValue rule (Just actual) =
+  case rule ^. #cardinality of
+    Any
+      | legacyValueIsPresent actual -> FieldPresent actual
+      -- A rule that also accepts a mapping counts a non-empty one as present.
+      -- Without this a profile declaring both shapes would report `verified`
+      -- missing on a document that writes it as a bare mapping.
+      | isJust (rule ^. #objectFields), nonEmptyObject actual -> FieldPresent actual
+      | otherwise -> FieldAbsent (Just actual)
+    Scalar ->
+      case actual of
+        String value
+          | Text.null (Text.strip value) -> FieldAbsent (Just actual)
+          | otherwise -> FieldPresent actual
+        Number _ -> FieldPresent actual
+        Bool _ -> FieldPresent actual
+        _ -> FieldWrongShape actual
+    List ->
+      case actual of
+        Array values
+          | null values -> FieldAbsent (Just actual)
+          | otherwise -> FieldPresent actual
+        _ -> FieldWrongShape actual
+    Object
+      -- An empty mapping is treated as absent for the same reason an empty list
+      -- is: a key written with no content is the author saying nothing, and
+      -- reporting it missing is more useful than reporting it present and empty.
+      | nonEmptyObject actual -> FieldPresent actual
+      | isObject actual -> FieldAbsent (Just actual)
+      | otherwise -> FieldWrongShape actual
+
+isObject :: Value -> Bool
+isObject = \case
+  Aeson.Object _ -> True
+  _ -> False
+
+nonEmptyObject :: Value -> Bool
+nonEmptyObject = \case
+  Aeson.Object members -> not (Aeson.KeyMap.null members)
+  _ -> False
 
 legacyValueIsPresent :: Value -> Bool
 legacyValueIsPresent = \case

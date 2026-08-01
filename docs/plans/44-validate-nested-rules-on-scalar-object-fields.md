@@ -77,7 +77,7 @@ This section must always reflect the actual current state of the work.
 - [x] Milestone 1: reproduce the three "cannot describe an object" transcripts and freeze the current descriptor generation behind a compatibility decoder and fixture. (2026-08-01)
 - [x] Milestone 2: add `objectFields` to the published Dhall schema, its record-completion default, and the `mk` constructors. (2026-08-01)
 - [x] Milestone 3: compile `objectFields` into the effective rule, with the compiled-only `Object` cardinality and the new definition error. (2026-08-01)
-- [ ] Milestone 4: validate an object value's members and report a `FieldPath` such as `generated.by`.
+- [x] Milestone 4: validate an object value's members and report a `FieldPath` such as `generated.by`. (2026-08-01)
 - [ ] Milestone 5: render the new rule kind in generated profile documentation, regenerate the committed example, and extend the CLI diagnostic vocabulary.
 - [ ] Milestone 6: document the feature in `docs/user/profiles.md` and write the descriptor-growth ADR.
 
@@ -154,6 +154,30 @@ identical errors. Both new helpers (`declaredNestedRuleSets` and `pairedNestedRu
 the nested arm of `conditionErrors` therefore deduplicate, in the manner
 `referenceDefinitionErrors` already used.
 
+**The plan's Milestone 4 and its acceptance criterion contradicted each other about member
+prose, and the acceptance criterion was right.** Milestone 4 says to reuse
+`MissingNestedProfileField` "unchanged", while Validation and Acceptance requires
+`generated.by (Who or what produced this content.)` — "with the member's `description` prose
+in parentheses if it declares any". The violation constructor did not need changing, but the
+CLI renderer did: `renderProfileViolation` attached prose only to the two *top-level* missing
+cases, so no nested member has ever explained itself, for list elements either. Adding
+`renderNestedDescription` resolves both spellings of a nested path to the same member rule and
+is additive — it emits nothing where no description exists. The full test suite passed
+unchanged after it, which shows no existing assertion depended on the prose being absent, and
+`grep` over `docs/user/` and `examples/` found no transcript of a nested missing-field
+diagnostic to update.
+
+**Core validation is byte-identical before and after, which is the guard the plan asked for on
+the `evaluateFieldValue` signature change.**
+
+```text
+$ diff before.txt after.txt && echo IDENTICAL
+IDENTICAL
+```
+
+Both captures are `OK: 4 concepts (okf_version 0.2)` from
+`okf validate okf-core/test/fixtures/valid-bundle --strict`.
+
 One discovery predates implementation and is the reason this plan is written the way it is.
 The blocker is **not** only the `ElementFieldsRequireList` definition error that
 `docs/masterplans/8-extend-okf-profiles-for-v0-2-field-families.md` names. That error blocks
@@ -224,6 +248,18 @@ Record every decision made while working on the plan.
   one function whose only job is to fill in `objectFields = Nothing`, and a test that does
   exercise object rules builds its rule with record syntax where the member is visible.
   `okf-cli/test/Main.hs` has only a handful of sites and was edited directly.
+  Date: 2026-08-01
+
+- Decision: Render a nested member's `description` prose on a missing-member diagnostic, for
+  object members and list-element members alike, rather than only for object members or for
+  neither.
+  Rationale: this plan's acceptance criterion demands the prose for `generated.by`, and
+  `docs/adr/4-self-documenting-profiles.md` establishes that a rule's prose exists so the
+  profile can explain a key where the key is declared — which argues for it wherever a rule
+  lives. Emitting it for object members but not list-element members would make the two kinds
+  of nested rule gratuitously different, and the shared `checkRecordMember` body makes them
+  the same rule from one map either way. The change is additive: a member with no description
+  renders exactly as before, which is why the whole suite passed with no expectation edits.
   Date: 2026-08-01
 
 - Decision: Do not extend nested rules to a second level, so a profile still cannot constrain
