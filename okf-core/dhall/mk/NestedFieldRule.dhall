@@ -34,6 +34,19 @@ in  { plain = \(field : Text) -> NestedFieldRule::{ field }
         \(field : Text) ->
         \(prefix : Text) ->
           NestedFieldRule::{ field, format = Some (FieldFormat.DocumentHandle prefix) }
+    , actor =
+        \(field : Text) -> NestedFieldRule::{ field, format = Some FieldFormat.Actor }
+    , humanActor =
+        \(field : Text) ->
+          NestedFieldRule::{ field, format = Some FieldFormat.HumanActor }
+    , integer =
+        \(field : Text) -> NestedFieldRule::{ field, format = Some FieldFormat.Integer }
+    , nonNegativeInteger =
+        \(field : Text) ->
+          NestedFieldRule::{ field, format = Some FieldFormat.NonNegativeInteger }
+    , boolean =
+        \(field : Text) ->
+          NestedFieldRule::{ field, format = Some FieldFormat.Boolean }
     , conditional =
         \(rule : NestedFieldRule.Type) ->
         \(condition : FieldCondition) ->

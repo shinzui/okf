@@ -51,6 +51,16 @@ in  { plain = \(field : Text) -> FieldRule::{ field }
         \(field : Text) ->
         \(prefix : Text) ->
           FieldRule::{ field, format = Some (FieldFormat.DocumentHandle prefix) }
+    , actor = \(field : Text) -> FieldRule::{ field, format = Some FieldFormat.Actor }
+    , humanActor =
+        \(field : Text) -> FieldRule::{ field, format = Some FieldFormat.HumanActor }
+    , integer =
+        \(field : Text) -> FieldRule::{ field, format = Some FieldFormat.Integer }
+    , nonNegativeInteger =
+        \(field : Text) ->
+          FieldRule::{ field, format = Some FieldFormat.NonNegativeInteger }
+    , boolean =
+        \(field : Text) -> FieldRule::{ field, format = Some FieldFormat.Boolean }
     , recordList =
         \(field : Text) ->
         \(elementFields : NestedRules) ->

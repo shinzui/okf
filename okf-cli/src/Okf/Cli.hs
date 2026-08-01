@@ -1825,6 +1825,11 @@ renderFieldFormat = \case
   Uri -> "uri"
   UriWithScheme scheme -> "uri-with-scheme(" <> scheme <> ")"
   DocumentHandle prefix -> "document-handle(" <> prefix <> ")"
+  Actor -> "actor"
+  HumanActor -> "human-actor"
+  Integer -> "integer"
+  NonNegativeInteger -> "non-negative-integer"
+  Boolean -> "boolean"
 
 renderHandleReferenceRule :: HandleReferenceRule -> Text
 renderHandleReferenceRule HandleReferenceRule {localPrefix, externalUriSchemes, allowSelf} =

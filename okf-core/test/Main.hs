@@ -22,7 +22,11 @@ import Okf.Markdown
 -- 'List' and 'Object' are 'Cardinality' constructors; aeson's same-named
 -- 'Value' constructors are reached as 'Aeson.Object' and friends.
 import Okf.Prelude hiding (List, Object, setField, (.=))
-import Okf.Profile
+-- 'HumanActor' is both an 'Okf.Actor' constructor and a 'FieldFormat'
+-- alternative. This module names the actor far more often, so the format is
+-- reached as 'Profile.HumanActor'.
+import Okf.Profile hiding (HumanActor)
+import Okf.Profile qualified as Profile
 import Okf.Profile.Documentation
 import Okf.Profile.Registry
 import Okf.Trust
@@ -177,6 +181,10 @@ main = do
         test "compiled formats refine Uri and reject contradictions" testCompiledFieldFormats,
         test "compileProfile rejects invalid format parameters" testInvalidFormatParameters,
         test "named formats validate parser boundaries, lists, and shapes" testNamedFormatValidation,
+        test "the actor formats accept the three specification section 7 shapes" testActorFormatValidation,
+        test "the numeric and boolean formats reject text and non-integers" testNonTextualFormatValidation,
+        test "a non-textual format refines an unspecified cardinality to scalar" testNonTextualFormatRefinesCardinality,
+        test "actor and integer narrow across scopes" testNewFormatsNarrowAcrossScopes,
         test "compiled nested rules merge and reject impossible outer cardinality" testCompiledNestedRules,
         test "nested record validation reports indexed paths and strict recommendations" testNestedRecordValidation,
         test "compileProfile rejects objectFields with an explicit scalar or list cardinality" testObjectFieldsRequireObjectShape,
@@ -2625,6 +2633,152 @@ testNamedFormatValidation = do
     >>= assertEqual [CardinalityMismatch cid (fieldPath "value") Scalar validUris]
   check Uri Any (Just (Number 1)) >>= assertEqual (mismatch Uri (Number 1))
   check Uri Any Nothing >>= assertEqual []
+
+-- | The OKF v0.2 actor formats. Specification §7 defines exactly three shapes
+-- and 'parseActor' classifies them, so @actor@ accepts those three and reports
+-- everything else — including the specification's own illustrative
+-- @author: team:ga4-docs@ from §5.1, which §7's convention does not define. The
+-- case-sensitivity and empty-component cases come from 'Okf.Actor'.
+testActorFormatValidation :: Either Text ()
+testActorFormatValidation = do
+  cid <- parseTestConceptId "format"
+  let check fieldFormat value = do
+        compiled <- firstShow (compileProfile (singleFormatProfile Any fieldFormat))
+        concept <-
+          profileConcept "format" [("type", String "Extension"), ("value", String value)] "# Format\n"
+        pure (validateProfile PermissiveConformance compiled [concept])
+      mismatch fieldFormat value = [ValueFormatMismatch cid (fieldPath "value") fieldFormat (String value)]
+  for_ ["human:ahormati", "process:finance-nightly", "reference_agent/gemini-2.5-pro"] $ \value ->
+    check Actor value >>= assertEqual []
+  for_ ["nadeem", "team:ga4-docs", "Human:ahormati", "human:", "/version", "producer/"] $ \value ->
+    check Actor value >>= assertEqual (mismatch Actor value)
+  check Profile.HumanActor "human:ahormati" >>= assertEqual []
+  for_ ["process:finance-nightly", "reference_agent/gemini-2.5-pro", "nadeem"] $ \value ->
+    check Profile.HumanActor value >>= assertEqual (mismatch Profile.HumanActor value)
+
+-- | The non-textual formats. A numeric /string/ is reported rather than
+-- coerced, which is the point of being able to declare the format at all.
+testNonTextualFormatValidation :: Either Text ()
+testNonTextualFormatValidation = do
+  cid <- parseTestConceptId "format"
+  let checkWith cardinality fieldFormat actual = do
+        compiled <- firstShow (compileProfile (singleFormatProfile cardinality fieldFormat))
+        concept <-
+          profileConcept "format" [("type", String "Extension"), ("value", actual)] "# Format\n"
+        pure (validateProfile PermissiveConformance compiled [concept])
+      check = checkWith Any
+      mismatch fieldFormat actual = [ValueFormatMismatch cid (fieldPath "value") fieldFormat actual]
+  for_ [Number 5000, Number 0, Number (-3)] $ \actual ->
+    check Integer actual >>= assertEqual []
+  for_ [Number 5000, Number 0] $ \actual ->
+    check NonNegativeInteger actual >>= assertEqual []
+  check NonNegativeInteger (Number (-3)) >>= assertEqual (mismatch NonNegativeInteger (Number (-3)))
+  for_ [Integer, NonNegativeInteger] $ \fieldFormat ->
+    for_ [String "5000", Number 5.5, Bool True] $ \actual ->
+      check fieldFormat actual >>= assertEqual (mismatch fieldFormat actual)
+  for_ [Bool True, Bool False] $ \actual ->
+    check Boolean actual >>= assertEqual []
+  for_ [String "true", Number 1] $ \actual ->
+    check Boolean actual >>= assertEqual (mismatch Boolean actual)
+  -- A list is a list of values, so a format constrains each element. The
+  -- cardinality has to be declared, because a numeric format alone refines an
+  -- unspecified one to scalar.
+  let integers = toJSON ([1, 2, 3] :: [Int])
+      mixed = toJSON ([Number 1, String "2"] :: [Value])
+  checkWith List Integer integers >>= assertEqual []
+  checkWith List Integer mixed >>= assertEqual (mismatch Integer mixed)
+
+-- | Declaring a non-textual format and no cardinality refines the rule to
+-- 'Scalar'. Without the refinement the 'Any' cardinality routes presence through
+-- the legacy predicate, which counts only non-empty text and non-empty arrays,
+-- so a present @usage_count: 5000@ is reported /missing/ before its value is
+-- ever examined. An explicitly declared cardinality still wins.
+testNonTextualFormatRefinesCardinality :: Either Text ()
+testNonTextualFormatRefinesCardinality = do
+  cid <- parseTestConceptId "counted"
+  let specWith cardinality fieldFormat =
+        typeAwareProfileSpec
+          { frontmatter =
+              FrontmatterRules
+                { required =
+                    [ fieldRule "type" Nothing [] Any Nothing Nothing Nothing Nothing,
+                      fieldRule "usage_count" Nothing [] cardinality (Just fieldFormat) Nothing Nothing Nothing
+                    ],
+                  recommended = [],
+                  optional = []
+                },
+            allowUnknownTypes = True,
+            types = []
+          }
+      check cardinality fieldFormat actual = do
+        compiled <- firstShow (compileProfile (specWith cardinality fieldFormat))
+        concept <-
+          profileConcept "counted" [("type", String "Extension"), ("usage_count", actual)] "# Counted\n"
+        pure (validateProfile PermissiveConformance compiled [concept])
+  for_ [NonNegativeInteger, Integer] $ \fieldFormat ->
+    check Any fieldFormat (Number 5000) >>= assertEqual []
+  check Any Boolean (Bool False) >>= assertEqual []
+  -- The gap this closes: a textual format leaves the rule at 'Any', where a
+  -- number still does not count as present. The value check runs regardless of
+  -- the presence verdict, so both violations are reported.
+  check Any Rfc3339Utc (Number 5000)
+    >>= assertEqual
+      [ MissingProfileField cid "usage_count" Nothing,
+        ValueFormatMismatch cid (fieldPath "usage_count") Rfc3339Utc (Number 5000)
+      ]
+  -- An explicit cardinality wins, and a list of integers stays coherent rather
+  -- than becoming an error.
+  let integers = toJSON ([1, 2] :: [Int])
+  check List NonNegativeInteger integers >>= assertEqual []
+  check Scalar NonNegativeInteger integers
+    >>= assertEqual [CardinalityMismatch cid (fieldPath "usage_count") Scalar integers]
+
+-- | The two new narrowing pairs, checked the way the 'Uri'/'UriWithScheme' pair
+-- is: a profile-scope format and a narrower type-scope one compile to the
+-- narrower rule rather than to a 'ConflictingFieldFormat'.
+testNewFormatsNarrowAcrossScopes :: Either Text ()
+testNewFormatsNarrowAcrossScopes = do
+  cid <- parseTestConceptId "narrowing"
+  let baseType = firstTypeRule typeAwareProfileSpec
+      profileWith profileFormat typeFormat =
+        typeAwareProfileSpec
+          { frontmatter =
+              FrontmatterRules
+                { required =
+                    [ fieldRule "type" Nothing [] Any Nothing Nothing Nothing Nothing,
+                      fieldRule "value" Nothing [] Any (Just profileFormat) Nothing Nothing Nothing
+                    ],
+                  recommended = [],
+                  optional = []
+                },
+            types =
+              [ withTypeFrontmatter
+                  FrontmatterRules
+                    { required = [fieldRule "value" Nothing [] Any (Just typeFormat) Nothing Nothing Nothing],
+                      recommended = [],
+                      optional = []
+                    }
+                  baseType
+              ]
+          }
+      check profileFormat typeFormat actual = do
+        compiled <- firstShow (compileProfile (profileWith profileFormat typeFormat))
+        concept <-
+          profileConcept "narrowing" [("type", String "Owned Concept"), ("value", actual)] "# Narrowing\n"
+        pure (validateProfile PermissiveConformance compiled [concept])
+  for_ [(Actor, Profile.HumanActor), (Profile.HumanActor, Actor)] $ \(wide, narrow) -> do
+    check wide narrow (String "human:ahormati") >>= assertEqual []
+    check wide narrow (String "process:nightly")
+      >>= assertEqual
+        [ValueFormatMismatch cid (fieldPath "value") Profile.HumanActor (String "process:nightly")]
+  for_ [(Integer, NonNegativeInteger), (NonNegativeInteger, Integer)] $ \(wide, narrow) -> do
+    check wide narrow (Number 5000) >>= assertEqual []
+    check wide narrow (Number (-3))
+      >>= assertEqual
+        [ValueFormatMismatch cid (fieldPath "value") NonNegativeInteger (Number (-3))]
+  assertEqual
+    (Left (ConflictingFieldFormat (fieldPath "value") Actor Integer :| []))
+    (compileProfile (profileWith Actor Integer))
 
 singleFormatProfile :: Cardinality -> FieldFormat -> ProfileSpec
 singleFormatProfile cardinality fieldFormat =

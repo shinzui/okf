@@ -101,6 +101,10 @@ import Dhall.Core (Expr)
 import Dhall.Src (Src)
 import Network.URI (parseURI, uriScheme)
 import Numeric.Natural (Natural)
+-- Imported qualified: 'Okf.Actor.HumanActor' is a constructor of 'Actor.Actor'
+-- and 'HumanActor' is a constructor of 'FieldFormat', so an unqualified import
+-- makes the two ambiguous.
+import Okf.Actor qualified as Actor
 import Okf.Bundle
   ( Concept,
     conceptDocument,
@@ -235,14 +239,30 @@ instance FromDhall Cardinality where
           <> (List <$ Dhall.constructor "List" Dhall.unit)
       )
 
--- | A named textual format. Formats constrain present text values but do not
--- imply that a field must be present.
+-- | A named value format. Formats constrain present values but do not imply
+-- that a field must be present.
+--
+-- The first five constrain text. 'Actor' and 'HumanActor' constrain text against
+-- the OKF v0.2 actor convention of specification §7, classified by
+-- 'Okf.Actor.parseActor'. 'Integer', 'NonNegativeInteger', and 'Boolean'
+-- constrain a value that is not text at all; declaring one of them refines an
+-- unspecified cardinality to 'Scalar', because otherwise a numeric or boolean
+-- key is reported missing before its value is ever examined.
+--
+-- The OKF v0.2 alternatives are appended after 'DocumentHandle' so the derived
+-- 'Ord' keeps the relative order of the original five, which the
+-- definition-error sort key relies on.
 data FieldFormat
   = Rfc3339Utc
   | Date
   | Uri
   | UriWithScheme Text
   | DocumentHandle Text
+  | Actor
+  | HumanActor
+  | Integer
+  | NonNegativeInteger
+  | Boolean
   deriving stock (Generic, Eq, Ord, Show)
   deriving anyclass (FromDhall)
 
@@ -363,6 +383,11 @@ instance ToJSON FieldFormat where
     Uri -> String "uri"
     UriWithScheme scheme -> object ["uriWithScheme" .= scheme]
     DocumentHandle prefix -> object ["documentHandle" .= prefix]
+    Actor -> String "actor"
+    HumanActor -> String "human-actor"
+    Integer -> String "integer"
+    NonNegativeInteger -> String "non-negative-integer"
+    Boolean -> String "boolean"
 
 instance ToJSON TypeRule where
   toJSON
@@ -1819,7 +1844,8 @@ renderCardinalityName = \case
   Object -> "object"
 
 -- | The stable display name for a named format: @rfc3339-utc@, @date@, @uri@,
--- @uri-with-scheme(SCHEME)@, or @document-handle(PREFIX)@. As with
+-- @uri-with-scheme(SCHEME)@, @document-handle(PREFIX)@, @actor@,
+-- @human-actor@, @integer@, @non-negative-integer@, or @boolean@. As with
 -- 'renderCardinalityName', this vocabulary is shared between the CLI and
 -- generated documentation and must not drift between them.
 renderFieldFormatName :: FieldFormat -> Text
@@ -1829,6 +1855,11 @@ renderFieldFormatName = \case
   Uri -> "uri"
   UriWithScheme scheme -> "uri-with-scheme(" <> scheme <> ")"
   DocumentHandle prefix -> "document-handle(" <> prefix <> ")"
+  Actor -> "actor"
+  HumanActor -> "human-actor"
+  Integer -> "integer"
+  NonNegativeInteger -> "non-negative-integer"
+  Boolean -> "boolean"
 
 -- | The presence clauses that govern whether this key must be present, in the
 -- order the profile declared them. An __empty list means the key is optional__:
@@ -2321,12 +2352,33 @@ compileOptionalFieldRule rule =
           (Just _, Just _, Any) -> Any
           (Just _, Nothing, Any) -> Object
           (Nothing, Just _, Any) -> List
+          (_, _, Any) -> refineCardinalityForFormat (rule ^. #format)
           (_, _, declared) -> declared,
       format = rule ^. #format,
       elementFields = compileNestedRules <$> rule ^. #elementFields,
       objectFields = compileNestedRules <$> rule ^. #objectFields,
       reference = compileReferenceRule <$> rule ^. #reference
     }
+
+-- | The cardinality a rule with no declared one takes from its format.
+--
+-- A non-textual format implies a scalar, and without this the rule would be
+-- useless: the 'Any' cardinality routes presence through 'legacyValueIsPresent',
+-- which counts only non-empty text and non-empty arrays, so a @usage_count:
+-- 5000@ is reported /missing/ before its value is ever examined. Refining here
+-- rather than widening 'legacyValueIsPresent' keeps the meaning of every
+-- descriptor that already exists — in particular a key whose value is @false@
+-- keeps being reported as missing when no rule says otherwise.
+--
+-- An explicitly declared cardinality always wins, including @list@: a list of
+-- integers is a coherent thing to demand, so pairing a numeric format with
+-- 'List' is left alone rather than made an error.
+refineCardinalityForFormat :: Maybe FieldFormat -> Cardinality
+refineCardinalityForFormat = \case
+  Just Integer -> Scalar
+  Just NonNegativeInteger -> Scalar
+  Just Boolean -> Scalar
+  _ -> Any
 
 compileFieldRule :: FieldRequirement -> FieldRule -> EffectiveFieldRule
 compileFieldRule requirement rule =
@@ -2355,7 +2407,10 @@ compileOptionalNestedFieldRule rule =
     { presenceClauses = [],
       description = rule ^. #description,
       allowedValues = deduplicate (rule ^. #allowedValues),
-      cardinality = rule ^. #cardinality,
+      cardinality =
+        case rule ^. #cardinality of
+          Any -> refineCardinalityForFormat (rule ^. #format)
+          declared -> declared,
       format = rule ^. #format,
       elementFields = Nothing,
       -- Nested rules stay depth-bounded: 'NestedFieldRule' has no object member,
@@ -2434,6 +2489,10 @@ mergeFieldFormat Nothing typeFormat = Just typeFormat
 mergeFieldFormat profileFormat Nothing = Just profileFormat
 mergeFieldFormat (Just Uri) (Just typeFormat@(UriWithScheme _)) = Just (Just typeFormat)
 mergeFieldFormat (Just profileFormat@(UriWithScheme _)) (Just Uri) = Just (Just profileFormat)
+mergeFieldFormat (Just Actor) (Just HumanActor) = Just (Just HumanActor)
+mergeFieldFormat (Just HumanActor) (Just Actor) = Just (Just HumanActor)
+mergeFieldFormat (Just Integer) (Just NonNegativeInteger) = Just (Just NonNegativeInteger)
+mergeFieldFormat (Just NonNegativeInteger) (Just Integer) = Just (Just NonNegativeInteger)
 mergeFieldFormat profileFormat typeFormat
   | profileFormat == typeFormat = Just profileFormat
   | otherwise = Nothing
@@ -2900,14 +2959,20 @@ valueMatchesVocabulary allowed = \case
     elementMatches (String value) = value `elem` allowed
     elementMatches _ = False
 
+-- | Whether a present value satisfies a format. Each format declares which
+-- value shapes it can match at all: the textual formats match a string, the
+-- numeric ones a YAML number, and 'Boolean' a YAML boolean. A list is matched
+-- by recursing, so a list of integers satisfies an @integer@ format for the
+-- same reason a list of timestamps satisfies @rfc3339-utc@ — a format
+-- constrains a value, and a list is a list of values.
 valueMatchesFormat :: FieldFormat -> Value -> Bool
-valueMatchesFormat fieldFormat = \case
-  String value -> textMatchesFormat fieldFormat value
-  Array values -> all elementMatches (Vector.toList values)
-  _ -> False
-  where
-    elementMatches (String value) = textMatchesFormat fieldFormat value
-    elementMatches _ = False
+valueMatchesFormat fieldFormat actual =
+  case actual of
+    String value -> textMatchesFormat fieldFormat value
+    Array values -> all (valueMatchesFormat fieldFormat) (Vector.toList values)
+    Number _ -> numberMatchesFormat fieldFormat actual
+    Bool _ -> fieldFormat == Boolean
+    _ -> False
 
 textMatchesFormat :: FieldFormat -> Text -> Bool
 textMatchesFormat fieldFormat value =
@@ -2929,6 +2994,37 @@ textMatchesFormat fieldFormat value =
       case parseDocumentId value of
         Just documentId -> documentId ^. #prefix == expectedPrefix
         Nothing -> False
+    -- Specification §7 defines exactly three actor shapes, and
+    -- 'Actor.parseActor' classifies them, so the format is a case match on its
+    -- result rather than a second parser. A value the convention does not
+    -- define — the specification's own illustrative @team:ga4-docs@ among them —
+    -- is 'Actor.UnclassifiedActor' and is reported.
+    Actor ->
+      case Actor.parseActor value of
+        Actor.UnclassifiedActor _ -> False
+        _ -> True
+    HumanActor -> Actor.isHumanActor (Actor.parseActor value)
+    -- A numeric or boolean format never matches text. A @usage_count: "5000"@
+    -- is a quoted string in YAML and is reported rather than coerced, which is
+    -- the whole point of being able to declare the format.
+    Integer -> False
+    NonNegativeInteger -> False
+    Boolean -> False
+
+-- | Whether a YAML number satisfies a numeric format. Uses aeson's own
+-- 'Integer' decoder, which already rejects a non-integral number, rather than
+-- reaching for @scientific@: that package is a dependency of @aeson@ but not of
+-- @okf-core@, so it is importable in a scratch experiment and not from here.
+-- 'Okf.Document.objectInteger' takes the same route.
+numberMatchesFormat :: FieldFormat -> Value -> Bool
+numberMatchesFormat fieldFormat actual =
+  case Aeson.fromJSON actual :: Aeson.Result Integer of
+    Aeson.Error _ -> False
+    Aeson.Success parsed ->
+      case fieldFormat of
+        Integer -> True
+        NonNegativeInteger -> parsed >= 0
+        _ -> False
 
 hasExtendedDateShape :: Text -> Bool
 hasExtendedDateShape value =

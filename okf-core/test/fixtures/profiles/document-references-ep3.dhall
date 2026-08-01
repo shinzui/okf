@@ -8,7 +8,19 @@
 -- keeps typechecking after the published schema moves on.
 let Cardinality = ../../../dhall/Cardinality.dhall
 
-let FieldFormat = ../../../dhall/FieldFormat.dhall
+-- The format union is written out rather than imported from
+-- `../../../dhall/FieldFormat.dhall`. A Dhall union value carries its full
+-- alternative set in its type, so importing the live file would give this
+-- frozen fixture whatever alternatives that file later gains and would leave
+-- it exercising no frozen decoder at all. These are the five alternatives the
+-- published union had when this fixture was frozen.
+let FieldFormat =
+      < Rfc3339Utc
+      | Date
+      | Uri
+      | UriWithScheme : Text
+      | DocumentHandle : Text
+      >
 
 let FieldCondition = { field : Text, hasValue : List Text }
 
