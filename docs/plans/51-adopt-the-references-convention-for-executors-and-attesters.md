@@ -97,7 +97,7 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] Milestone 1: what okf does today with a `references/` directory is surveyed against the shipped bundles and recorded in Surprises & Discoveries with real transcripts, and the Decision Log's first four decisions are each confirmed or revised against that evidence
+- [x] Milestone 1 (2026-08-01): what okf does today with a `references/` directory is surveyed against the shipped bundles and recorded in Surprises & Discoveries with real transcripts, and the Decision Log's first four decisions are each confirmed or revised against that evidence — all four hold; the plan's list of non-Markdown files was short by one (`references/queries/revenue.sql`)
 - [ ] Milestone 2: a dangling relative frontmatter path that *would* resolve read from the bundle root says so in the diagnostic, and the resolution rule itself is unchanged
 - [ ] Milestone 3: `okf validate --profile` resolves a path-valued rule against every file in the bundle, not only against `.md` concepts, and the existing `validateProfile` entry point keeps its current meaning
 - [ ] Milestone 4: `okf index` lists a directory's non-Markdown files, so a directory holding only an attester no longer generates a one-byte index
@@ -181,6 +181,103 @@ it — but §8 says an index "enumerates the directory's contents to support pro
 disclosure", and a directory whose contents are one Python file discloses nothing. This is the
 `references/` convention's own shape, which is why it belongs to this plan.
 
+### Milestone 1 survey — 2026-08-01
+
+All four provisional findings above were re-run against the working tree and **all four hold**.
+The transcripts are below. One thing this plan got wrong is corrected at the end.
+
+**A `.md` file under `references/` is an ordinary concept in every command.** It validates, it
+shows, and it is a graph node like any other:
+
+```text
+$ cabal run -v0 okf -- show examples/ddd-ordering references/skills/run-on-postgres
+id: references/skills/run-on-postgres
+type: Reference
+title: Run on PostgreSQL
+description: Run instructions an executor follows to bind and run a statement.
+tags: ddd, ordering, reference
+generated: human:nadeem at 2026-08-01T00:00:00Z
+trust: unverified
+status: stable
+...
+
+$ cabal run -v0 okf -- graph examples/ddd-ordering | grep -o '"id":"references/skills/run-on-postgres"'
+"id":"references/skills/run-on-postgres"
+
+$ cabal run -v0 okf -- validate examples/ddd-ordering --strict
+...
+OK: 22 concepts (okf_version 0.2)
+log: 22 stale concept advisory/advisories (use --log-enforce to fail)
+```
+
+The concept count of 22 includes it, and `okf validate --strict` reports no path diagnostic on
+the bundle at all — the only advisories are the pre-existing stale-log ones.
+
+**The `.py` file appears nowhere.** `okf graph` has no node and no edge naming it:
+
+```text
+$ cabal run -v0 okf -- graph examples/ddd-ordering | grep -c attesters
+0
+```
+
+It is reachable in exactly one place, the inventory that
+`examples/ddd-ordering/computations/order-total.md`'s `attester.resource` resolves against,
+which is why that concept validates rather than reporting a dangling path.
+
+**The generated index for `references/attesters/` is one byte.** Confirmed unchanged:
+
+```text
+$ xxd examples/ddd-ordering/references/attesters/index.md
+00000000: 0a                                       .
+
+$ cabal run -v0 okf -- index examples/ddd-ordering | grep -A2 'references/attesters'
+--- references/attesters/index.md
+
+--- references/skills/index.md
+```
+
+**The `type` requirement really does reach `references/`.** Removing the `type` line from
+`examples/ddd-ordering/references/skills/run-on-postgres.md` and running plain `okf validate`
+— not `--strict` — fails:
+
+```text
+references/skills/run-on-postgres: missing required field: type
+...
+exit=1
+```
+
+The line was restored and `git status --porcelain` showed only this MasterPlan's registry edit.
+This is the behaviour the ADR endorses: it is `PermissiveConformance`, so it is §11 conformance
+rather than an authoring preference.
+
+**The bare-`references/` diagnostic reads exactly as the Purpose section claims.** The scratch
+bundle built from §10.2 and §10.4 reports:
+
+```text
+$ cabal run -v0 okf -- validate /tmp/okf-r --strict
+computations/revenue: executor.resource names computations/references/skills/run-on-bq.md, which does not exist in this bundle
+```
+
+**One correction: this plan's list of non-Markdown files in bundles was short by one.** Context
+and Orientation names three, all attesters. There are four, and the fourth is not an attester:
+
+```text
+$ find examples okf-core/test/fixtures -type f ! -name '*.md' | sort
+examples/ddd-ordering/references/attesters/order-total.py
+okf-core/test/fixtures/attested-computation/references/attesters/revenue.py
+okf-core/test/fixtures/attested-computation/references/queries/revenue.sql
+okf-core/test/fixtures/dangling-frontmatter-path/references/attesters/revenue.py
+okf-core/test/fixtures/profiles/*.dhall          (26 files, not a bundle)
+okf-core/test/fixtures/registry/package.dhall    (not a bundle)
+```
+
+`okf-core/test/fixtures/attested-computation/references/queries/revenue.sql` is the target of
+that fixture's `computation` key — the §10.3 "computation in a file" form — and it will gain an
+index entry under Milestone 4 exactly as the attesters do. `okf-core/test/fixtures/profiles/`
+and `okf-core/test/fixtures/registry/` hold no `index.md` and no concept, so index generation
+never walks them; that was confirmed by listing both directories. The blast radius of
+Milestone 4 is therefore **four files in three bundles**, not three in three.
+
 
 ## Decision Log
 
@@ -206,6 +303,10 @@ rule cost it a withdrawn check and thirty-one failing tests. Confirm before buil
   convention, not a requirement", and because a bundle would then behave differently depending
   on a directory name the specification says is optional.
   Date: 2026-08-01
+  Confirmed 2026-08-01 by Milestone 1: removing `type` from
+  `examples/ddd-ordering/references/skills/run-on-postgres.md` fails plain `okf validate` with
+  `missing required field: type`, and that concept is a graph node and a `show` target like any
+  other. Nothing to change; the decision is to endorse.
 
 - Decision: A non-Markdown file in a bundle is a *file*, never a concept. It appears in
   `Okf.Bundle.BundleInventory` and in generated indexes, and nowhere else — not in `okf graph`,
@@ -216,6 +317,11 @@ rule cost it a withdrawn check and thirty-one failing tests. Confirm before buil
   would mean inventing a type for it, which §4.1 forbids okf from doing ("Type values are
   **not** registered centrally").
   Date: 2026-08-01
+  Confirmed 2026-08-01 by Milestone 1: `okf graph examples/ddd-ordering | grep -c attesters`
+  prints `0`, and the bundle's concept count of 22 excludes the `.py` file. One amendment of
+  fact rather than of decision: a non-Markdown file in a bundle need not be an attester —
+  `okf-core/test/fixtures/attested-computation/references/queries/revenue.sql` is a
+  §10.3 computation-in-a-file target, and it is a file on exactly the same terms.
 
 - Decision: A bare `references/…` path does **not** anchor at the bundle root. §6.2 resolution
   is unchanged. Instead, the dangling-path diagnostic gains a hint naming the bundle-relative
@@ -231,6 +337,9 @@ rule cost it a withdrawn check and thirty-one failing tests. Confirm before buil
   alternative: anchoring a bare `references/` at the root, which would fix the specification's
   example and break every bundle that has a genuine `references/` subdirectory beside a concept.
   Date: 2026-08-01
+  Confirmed 2026-08-01 by Milestone 1: the scratch bundle built from §10.2 and §10.4 reports
+  `executor.resource names computations/references/skills/run-on-bq.md, which does not exist in
+  this bundle`, with no hint, which is the diagnostic this milestone improves.
 
 - Decision: Profile validation is given the bundle inventory, so a `path` rule resolves a
   non-Markdown target. The existing `validateProfile` keeps its exact current signature and
@@ -248,6 +357,10 @@ rule cost it a withdrawn check and thirty-one failing tests. Confirm before buil
   buys nothing and costs a large mechanical diff that would hide the one behavioural change
   inside it.
   Date: 2026-08-01
+  Confirmed 2026-08-01 by Milestone 1: `grep -c validateProfile okf-core/test/Main.hs` prints
+  `98`, the `.md`-only early return is still at `okf-core/src/Okf/Profile.hs:3428`, and
+  `docs/user/profiles.md:1343` still carries the subsection documenting the limitation. The
+  additive shape is therefore worth its keep exactly as reasoned.
 
 - Decision: A generated `index.md` lists the directory's non-Markdown files under a `# Files`
   heading, rather than the empty index being suppressed.
