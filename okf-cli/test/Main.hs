@@ -726,15 +726,46 @@ parseShowMatches args expected =
     _ -> False
 
 -- | A repository-relative path, resolved whether the test runs from the package
--- directory (what @cabal test@ does) or from the repository root.
-repositoryPath :: FilePath -> IO FilePath
+-- directory (what @cabal test@ does) or from the repository root, and 'Nothing'
+-- when neither exists.
+repositoryPath :: FilePath -> IO (Maybe FilePath)
 repositoryPath relative = findExisting [relative, ".." </> relative]
   where
-    findExisting [] = fail ("repository path not found: " <> relative)
+    findExisting [] = pure Nothing
     findExisting (candidate : rest) = do
       isFile <- doesFileExist candidate
       isDirectory <- doesDirectoryExist candidate
-      if isFile || isDirectory then pure candidate else findExisting rest
+      if isFile || isDirectory then pure (Just candidate) else findExisting rest
+
+-- | Run a test that asserts against artifacts committed to this repository —
+-- @docs\/profiles@, @examples\/@, and @okf-core@'s fixtures. None of those can
+-- ship inside @okf-cli@'s sdist, because cabal refuses to package a path outside
+-- the package tree, so a build from the Hackage tarball (which is what nixpkgs
+-- does, with tests enabled by default) has no repository tree to read. There the
+-- test reports SKIP and passes rather than failing on a missing file. Inside the
+-- repository every one of them runs, which is where they are meant to catch
+-- drift.
+withRepositoryPath :: String -> FilePath -> (FilePath -> IO Bool) -> IO Bool
+withRepositoryPath name relative body = do
+  resolved <- repositoryPath relative
+  case resolved of
+    Nothing -> skipWithoutRepository name
+    Just path -> body path
+
+-- | 'withRepositoryPath' for a test that needs two repository artifacts.
+withRepositoryPath2 ::
+  String -> FilePath -> FilePath -> (FilePath -> FilePath -> IO Bool) -> IO Bool
+withRepositoryPath2 name firstRelative secondRelative body = do
+  resolvedFirst <- repositoryPath firstRelative
+  resolvedSecond <- repositoryPath secondRelative
+  case (resolvedFirst, resolvedSecond) of
+    (Just firstPath, Just secondPath) -> body firstPath secondPath
+    _ -> skipWithoutRepository name
+
+skipWithoutRepository :: String -> IO Bool
+skipWithoutRepository name = do
+  putStrLn ("SKIP " <> name <> ": requires the okf repository tree")
+  pure True
 
 -- | Every @.md@ file under a bundle, as (bundle-relative path, contents), sorted
 -- so two trees compare deterministically.
@@ -773,50 +804,56 @@ exampleDocumentOptions descriptor destination stamp =
 -- generator produces today. A failure means either the generator changed or the
 -- example is stale; the message names the files so the reader knows which.
 testProfileDocumentationMatchesCommittedExample :: IO Bool
-testProfileDocumentationMatchesCommittedExample = do
-  descriptor <- repositoryPath ("docs" </> "profiles" </> "postgresql.dhall")
-  committedRoot <- repositoryPath ("examples" </> "postgresql-profile")
-  committed <- readMarkdownTree committedRoot
-  temporaryDirectory <- getTemporaryDirectory
-  scratch <- createTempDirectory temporaryDirectory "okf-cli-profile-doc-drift"
-  bracket (pure scratch) removeDirectoryRecursive $ \root -> do
-    let destination = root </> "regenerated"
-    runCommand (Profile (ProfileDocument (exampleDocumentOptions descriptor destination Nothing)))
-    regenerated <- readMarkdownTree destination
-    let changed = [path | (path, content) <- committed, lookup path regenerated /= Just content]
-        added = [path | (path, _) <- regenerated, path `notElem` map fst committed]
-        differing = changed <> added
-    unless (null differing) $
-      putStrLn
-        ( "examples/postgresql-profile is stale or the generator changed; differing files: "
-            <> unwords differing
-            <> "\nregenerate with: okf profile document --profile docs/profiles/postgresql.dhall --out examples/postgresql-profile --write"
-        )
-    pure (null differing)
+testProfileDocumentationMatchesCommittedExample =
+  withRepositoryPath2
+    "generated documentation matches examples/postgresql-profile"
+    ("docs" </> "profiles" </> "postgresql.dhall")
+    ("examples" </> "postgresql-profile")
+    $ \descriptor committedRoot -> do
+      committed <- readMarkdownTree committedRoot
+      temporaryDirectory <- getTemporaryDirectory
+      scratch <- createTempDirectory temporaryDirectory "okf-cli-profile-doc-drift"
+      bracket (pure scratch) removeDirectoryRecursive $ \root -> do
+        let destination = root </> "regenerated"
+        runCommand (Profile (ProfileDocument (exampleDocumentOptions descriptor destination Nothing)))
+        regenerated <- readMarkdownTree destination
+        let changed = [path | (path, content) <- committed, lookup path regenerated /= Just content]
+            added = [path | (path, _) <- regenerated, path `notElem` map fst committed]
+            differing = changed <> added
+        unless (null differing) $
+          putStrLn
+            ( "examples/postgresql-profile is stale or the generator changed; differing files: "
+                <> unwords differing
+                <> "\nregenerate with: okf profile document --profile docs/profiles/postgresql.dhall --out examples/postgresql-profile --write"
+            )
+        pure (null differing)
 
 -- | The committed example must satisfy the meta-profile with deviations
 -- enforced. An empty violation list is exactly what @--profile-enforce@ turns
 -- into exit code 0, so asserting on the list is stronger than shelling out.
 testProfileDocumentationConformsToMetaProfile :: IO Bool
-testProfileDocumentationConformsToMetaProfile = do
-  metaProfilePath <- repositoryPath ("docs" </> "profiles" </> "profile-documentation.dhall")
-  committedRoot <- repositoryPath ("examples" </> "postgresql-profile")
-  loaded <- loadProfileFile metaProfilePath
-  walked <- walkBundle committedRoot
-  case (loaded, walked) of
-    (Left err, _) -> reportFailure ("failed to load the meta-profile: " <> Text.unpack err)
-    (_, Left bundleError) -> reportFailure ("failed to walk the committed example: " <> show bundleError)
-    (Right spec, Right concepts) ->
-      case compileProfile spec of
-        Left definitionErrors -> reportFailure ("meta-profile does not compile: " <> show definitionErrors)
-        Right compiled -> do
-          let profileViolations = validateProfile PermissiveConformance compiled concepts
-              structuralErrors = validateBundle PermissiveConformance VersionUndeclared (bundleInventoryOfConcepts concepts) concepts
-          unless (null profileViolations) $
-            putStrLn ("committed example deviates from the meta-profile: " <> show profileViolations)
-          unless (null structuralErrors) $
-            putStrLn ("committed example is not structurally valid: " <> show structuralErrors)
-          pure (null profileViolations && null structuralErrors)
+testProfileDocumentationConformsToMetaProfile =
+  withRepositoryPath2
+    "examples/postgresql-profile conforms to the meta-profile"
+    ("docs" </> "profiles" </> "profile-documentation.dhall")
+    ("examples" </> "postgresql-profile")
+    $ \metaProfilePath committedRoot -> do
+      loaded <- loadProfileFile metaProfilePath
+      walked <- walkBundle committedRoot
+      case (loaded, walked) of
+        (Left err, _) -> reportFailure ("failed to load the meta-profile: " <> Text.unpack err)
+        (_, Left bundleError) -> reportFailure ("failed to walk the committed example: " <> show bundleError)
+        (Right spec, Right concepts) ->
+          case compileProfile spec of
+            Left definitionErrors -> reportFailure ("meta-profile does not compile: " <> show definitionErrors)
+            Right compiled -> do
+              let profileViolations = validateProfile PermissiveConformance compiled concepts
+                  structuralErrors = validateBundle PermissiveConformance VersionUndeclared (bundleInventoryOfConcepts concepts) concepts
+              unless (null profileViolations) $
+                putStrLn ("committed example deviates from the meta-profile: " <> show profileViolations)
+              unless (null structuralErrors) $
+                putStrLn ("committed example is not structurally valid: " <> show structuralErrors)
+              pure (null profileViolations && null structuralErrors)
   where
     reportFailure message = putStrLn message >> pure False
 
@@ -828,16 +865,19 @@ testProfileDocumentationConformsToMetaProfile = do
 -- formats, and both §5.2 spellings of @verified@ — so a schema change that
 -- breaks it breaks it here rather than in a user's bundle.
 testReferenceProfileCompiles :: IO Bool
-testReferenceProfileCompiles = do
-  descriptor <- repositoryPath ("docs" </> "profiles" </> "okf-v0-2.dhall")
-  loaded <- loadProfileFile descriptor
-  case loaded of
-    Left err -> reportFailure ("failed to load the v0.2 reference profile: " <> Text.unpack err)
-    Right spec ->
-      case compileProfile spec of
-        Left definitionErrors ->
-          reportFailure ("the v0.2 reference profile does not compile: " <> show definitionErrors)
-        Right _ -> pure True
+testReferenceProfileCompiles =
+  withRepositoryPath
+    "the v0.2 reference profile compiles"
+    ("docs" </> "profiles" </> "okf-v0-2.dhall")
+    $ \descriptor -> do
+      loaded <- loadProfileFile descriptor
+      case loaded of
+        Left err -> reportFailure ("failed to load the v0.2 reference profile: " <> Text.unpack err)
+        Right spec ->
+          case compileProfile spec of
+            Left definitionErrors ->
+              reportFailure ("the v0.2 reference profile does not compile: " <> show definitionErrors)
+            Right _ -> pure True
   where
     reportFailure message = putStrLn message >> pure False
 
@@ -850,27 +890,30 @@ testReferenceProfileCompiles = do
 -- violation list rather than shelling out, because an empty list is exactly what
 -- @--profile-enforce@ turns into exit code 0.
 testReferenceProfileAcceptsDddOrdering :: IO Bool
-testReferenceProfileAcceptsDddOrdering = do
-  descriptor <- repositoryPath ("docs" </> "profiles" </> "okf-v0-2.dhall")
-  bundleRoot <- repositoryPath ("examples" </> "ddd-ordering")
-  loaded <- loadProfileFile descriptor
-  walked <- walkBundle bundleRoot
-  case (loaded, walked) of
-    (Left err, _) -> reportFailure ("failed to load the v0.2 reference profile: " <> Text.unpack err)
-    (_, Left bundleError) -> reportFailure ("failed to walk examples/ddd-ordering: " <> show bundleError)
-    (Right spec, Right concepts) ->
-      case compileProfile spec of
-        Left definitionErrors ->
-          reportFailure ("the v0.2 reference profile does not compile: " <> show definitionErrors)
-        Right compiled -> do
-          let profileViolations = validateProfile StrictAuthoring compiled concepts
-          unless (null profileViolations) $
-            putStrLn ("examples/ddd-ordering deviates from the v0.2 reference profile: " <> show profileViolations)
-          -- A non-empty bundle, so an empty violation list cannot come from
-          -- having checked nothing.
-          unless (length concepts == 22) $
-            putStrLn ("expected 22 concepts in examples/ddd-ordering, found " <> show (length concepts))
-          pure (null profileViolations && length concepts == 22)
+testReferenceProfileAcceptsDddOrdering =
+  withRepositoryPath2
+    "the v0.2 reference profile accepts examples/ddd-ordering"
+    ("docs" </> "profiles" </> "okf-v0-2.dhall")
+    ("examples" </> "ddd-ordering")
+    $ \descriptor bundleRoot -> do
+      loaded <- loadProfileFile descriptor
+      walked <- walkBundle bundleRoot
+      case (loaded, walked) of
+        (Left err, _) -> reportFailure ("failed to load the v0.2 reference profile: " <> Text.unpack err)
+        (_, Left bundleError) -> reportFailure ("failed to walk examples/ddd-ordering: " <> show bundleError)
+        (Right spec, Right concepts) ->
+          case compileProfile spec of
+            Left definitionErrors ->
+              reportFailure ("the v0.2 reference profile does not compile: " <> show definitionErrors)
+            Right compiled -> do
+              let profileViolations = validateProfile StrictAuthoring compiled concepts
+              unless (null profileViolations) $
+                putStrLn ("examples/ddd-ordering deviates from the v0.2 reference profile: " <> show profileViolations)
+              -- A non-empty bundle, so an empty violation list cannot come from
+              -- having checked nothing.
+              unless (length concepts == 22) $
+                putStrLn ("expected 22 concepts in examples/ddd-ordering, found " <> show (length concepts))
+              pure (null profileViolations && length concepts == 22)
   where
     reportFailure message = putStrLn message >> pure False
 
@@ -887,40 +930,43 @@ testReferenceProfileAcceptsDddOrdering = do
 -- inventory records every file rather than only the concepts, which is the one
 -- thing about this example a reader is most likely to assume is broken.
 testExampleAttestedComputationValidates :: IO Bool
-testExampleAttestedComputationValidates = do
-  bundleRoot <- repositoryPath ("examples" </> "ddd-ordering")
-  walked <- walkBundle bundleRoot
-  inventoryResult <- walkBundleInventory bundleRoot
-  case (walked, inventoryResult) of
-    (Left bundleError, _) -> reportFailure ("failed to walk examples/ddd-ordering: " <> show bundleError)
-    (_, Left bundleError) -> reportFailure ("failed to inventory examples/ddd-ordering: " <> show bundleError)
-    (Right concepts, Right inventory) -> do
-      let bundleErrors =
-            validateBundle StrictAuthoring (VersionDeclared (OkfVersion 0 2)) inventory concepts
-          computation =
-            List.find ((== "computations/order-total") . renderConceptId . conceptIdOf) concepts
-      unless (null bundleErrors) $
-        putStrLn ("examples/ddd-ordering does not validate strictly: " <> show bundleErrors)
-      case computation of
-        Nothing -> reportFailure "examples/ddd-ordering has no computations/order-total concept"
-        Just concept -> do
-          let contract =
-                ( conceptType concept,
-                  conceptRuntime concept,
-                  parameterName <$> conceptParameters concept,
-                  executorResource =<< conceptExecutor concept,
-                  attesterResource =<< conceptAttester concept
-                )
-              expected =
-                ( "Attested Computation",
-                  Just "postgres",
-                  ["order_id"],
-                  Just "/references/skills/run-on-postgres.md",
-                  Just "/references/attesters/order-total.py"
-                )
-          unless (contract == expected) $
-            putStrLn ("unexpected contract on computations/order-total: " <> show contract)
-          pure (null bundleErrors && contract == expected)
+testExampleAttestedComputationValidates =
+  withRepositoryPath
+    "the examples/ddd-ordering attested computation validates"
+    ("examples" </> "ddd-ordering")
+    $ \bundleRoot -> do
+      walked <- walkBundle bundleRoot
+      inventoryResult <- walkBundleInventory bundleRoot
+      case (walked, inventoryResult) of
+        (Left bundleError, _) -> reportFailure ("failed to walk examples/ddd-ordering: " <> show bundleError)
+        (_, Left bundleError) -> reportFailure ("failed to inventory examples/ddd-ordering: " <> show bundleError)
+        (Right concepts, Right inventory) -> do
+          let bundleErrors =
+                validateBundle StrictAuthoring (VersionDeclared (OkfVersion 0 2)) inventory concepts
+              computation =
+                List.find ((== "computations/order-total") . renderConceptId . conceptIdOf) concepts
+          unless (null bundleErrors) $
+            putStrLn ("examples/ddd-ordering does not validate strictly: " <> show bundleErrors)
+          case computation of
+            Nothing -> reportFailure "examples/ddd-ordering has no computations/order-total concept"
+            Just concept -> do
+              let contract =
+                    ( conceptType concept,
+                      conceptRuntime concept,
+                      parameterName <$> conceptParameters concept,
+                      executorResource =<< conceptExecutor concept,
+                      attesterResource =<< conceptAttester concept
+                    )
+                  expected =
+                    ( "Attested Computation",
+                      Just "postgres",
+                      ["order_id"],
+                      Just "/references/skills/run-on-postgres.md",
+                      Just "/references/attesters/order-total.py"
+                    )
+              unless (contract == expected) $
+                putStrLn ("unexpected contract on computations/order-total: " <> show contract)
+              pure (null bundleErrors && contract == expected)
   where
     reportFailure message = putStrLn message >> pure False
 
@@ -956,113 +1002,107 @@ testComputationsReportsExampleBundle =
     ["computations/order-total  postgres  order_id (uuid, required)  inline  executor + attester"]
 
 assertComputationReport :: FilePath -> [Text.Text] -> IO Bool
-assertComputationReport relativeBundle expected = do
-  bundleRoot <- repositoryPath relativeBundle
-  walked <- walkBundle bundleRoot
-  case walked of
-    Left bundleError -> do
-      putStrLn ("failed to walk " <> relativeBundle <> ": " <> show bundleError)
-      pure False
-    Right concepts -> do
-      let actual = computationReport concepts
-      unless (actual == expected) $
-        putStrLn
-          ( "unexpected okf computations report for "
-              <> relativeBundle
-              <> ":\n"
-              <> unlines (map Text.unpack actual)
-          )
-      pure (actual == expected)
+assertComputationReport relativeBundle expected =
+  withRepositoryPath ("okf computations over " <> relativeBundle) relativeBundle $ \bundleRoot -> do
+    walked <- walkBundle bundleRoot
+    case walked of
+      Left bundleError -> do
+        putStrLn ("failed to walk " <> relativeBundle <> ": " <> show bundleError)
+        pure False
+      Right concepts -> do
+        let actual = computationReport concepts
+        unless (actual == expected) $
+          putStrLn
+            ( "unexpected okf computations report for "
+                <> relativeBundle
+                <> ":\n"
+                <> unlines (map Text.unpack actual)
+            )
+        pure (actual == expected)
 
 -- | Generated output can satisfy strict OKF authoring once a timestamp is
 -- supplied, and the meta-profile's @optional@ classification for @timestamp@
 -- does not turn into a strict-mode complaint when the key is present.
 testProfileDocumentationStrictWithTimestamp :: IO Bool
-testProfileDocumentationStrictWithTimestamp = do
-  descriptor <- repositoryPath ("docs" </> "profiles" </> "postgresql.dhall")
-  metaProfilePath <- repositoryPath ("docs" </> "profiles" </> "profile-documentation.dhall")
-  loaded <- loadProfileFile metaProfilePath
-  temporaryDirectory <- getTemporaryDirectory
-  scratch <- createTempDirectory temporaryDirectory "okf-cli-profile-doc-strict"
-  bracket (pure scratch) removeDirectoryRecursive $ \root -> do
-    let destination = root </> "stamped"
-    runCommand
-      ( Profile
-          ( ProfileDocument
-              (exampleDocumentOptions descriptor destination (Just "2026-07-31T00:00:00Z"))
+testProfileDocumentationStrictWithTimestamp =
+  withRepositoryPath2
+    "stamped generated documentation satisfies strict authoring"
+    ("docs" </> "profiles" </> "postgresql.dhall")
+    ("docs" </> "profiles" </> "profile-documentation.dhall")
+    $ \descriptor metaProfilePath -> do
+      loaded <- loadProfileFile metaProfilePath
+      temporaryDirectory <- getTemporaryDirectory
+      scratch <- createTempDirectory temporaryDirectory "okf-cli-profile-doc-strict"
+      bracket (pure scratch) removeDirectoryRecursive $ \root -> do
+        let destination = root </> "stamped"
+        runCommand
+          ( Profile
+              ( ProfileDocument
+                  (exampleDocumentOptions descriptor destination (Just "2026-07-31T00:00:00Z"))
+              )
           )
-      )
-    walked <- walkBundle destination
-    case (loaded, walked) of
-      (Right spec, Right concepts) ->
-        case compileProfile spec of
-          Left definitionErrors -> do
-            putStrLn ("meta-profile does not compile: " <> show definitionErrors)
+        walked <- walkBundle destination
+        case (loaded, walked) of
+          (Right spec, Right concepts) ->
+            case compileProfile spec of
+              Left definitionErrors -> do
+                putStrLn ("meta-profile does not compile: " <> show definitionErrors)
+                pure False
+              Right compiled -> do
+                let structuralErrors = validateBundle StrictAuthoring VersionUndeclared (bundleInventoryOfConcepts concepts) concepts
+                    profileViolations = validateProfile StrictAuthoring compiled concepts
+                unless (null structuralErrors) $
+                  putStrLn ("stamped output is not strict-clean: " <> show structuralErrors)
+                unless (null profileViolations) $
+                  putStrLn ("stamped output deviates from the meta-profile under --strict: " <> show profileViolations)
+                pure (null structuralErrors && null profileViolations)
+          _ -> do
+            putStrLn "failed to load the meta-profile or walk the stamped output"
             pure False
-          Right compiled -> do
-            let structuralErrors = validateBundle StrictAuthoring VersionUndeclared (bundleInventoryOfConcepts concepts) concepts
-                profileViolations = validateProfile StrictAuthoring compiled concepts
-            unless (null structuralErrors) $
-              putStrLn ("stamped output is not strict-clean: " <> show structuralErrors)
-            unless (null profileViolations) $
-              putStrLn ("stamped output deviates from the meta-profile under --strict: " <> show profileViolations)
-            pure (null structuralErrors && null profileViolations)
-      _ -> do
-        putStrLn "failed to load the meta-profile or walk the stamped output"
-        pure False
 
--- | @cabal test@ runs with the package directory as the working directory, but
--- a developer running the binary from the repository root should get the same
--- answer, so try both.
-profileFixturePath :: IO FilePath
-profileFixturePath = findExisting candidates
-  where
-    candidates =
-      [ "okf-core" </> "test" </> "fixtures" </> "profiles" </> "optional-fields.dhall",
-        ".." </> "okf-core" </> "test" </> "fixtures" </> "profiles" </> "optional-fields.dhall"
-      ]
-    findExisting [] = fail "profile fixture not found: optional-fields.dhall"
-    findExisting (candidate : rest) = do
-      exists <- doesFileExist candidate
-      if exists then pure candidate else findExisting rest
+-- | A descriptor that lives in @okf-core@'s fixture tree, so it resolves only
+-- inside the repository — see 'withRepositoryPath'.
+profileFixture :: FilePath
+profileFixture =
+  "okf-core" </> "test" </> "fixtures" </> "profiles" </> "optional-fields.dhall"
 
 -- | @okf profile document --out DIR --write@ writes a real bundle, generates
 -- its index files, and is idempotent: the second run leaves every byte alone.
 testProfileDocumentWritesBundle :: IO Bool
-testProfileDocumentWritesBundle = do
-  descriptorPath <- profileFixturePath
-  temporaryDirectory <- getTemporaryDirectory
-  root <- createTempDirectory temporaryDirectory "okf-cli-profile-document"
-  bracket (pure root) removeDirectoryRecursive $ \scratch -> do
-    let destination = scratch </> "bundle"
-        options =
-          ProfileDocumentOptions
-            { registryRef = Nothing,
-              export = Nothing,
-              profilePath = Just descriptorPath,
-              outputPath = Just destination,
-              write = True,
-              timestamp = Nothing
-            }
-    runCommand (Profile (ProfileDocument options))
-    firstProfile <- Text.IO.readFile (destination </> "profile.md")
-    typeWritten <- doesFileExist (destination </> "types" </> "decision-record.md")
-    rootIndexWritten <- doesFileExist (destination </> "index.md")
-    typeIndexWritten <- doesFileExist (destination </> "types" </> "index.md")
-    -- Second run: same inputs, same destination, must change nothing.
-    runCommand (Profile (ProfileDocument options))
-    secondProfile <- Text.IO.readFile (destination </> "profile.md")
-    walked <- walkBundle destination
-    let walkedIds = case walked of
-          Left _ -> []
-          Right concepts -> map (renderConceptId . conceptIdOf) concepts
-    pure
-      ( typeWritten
-          && rootIndexWritten
-          && typeIndexWritten
-          && firstProfile == secondProfile
-          && walkedIds == ["profile", "types/decision-record"]
-      )
+testProfileDocumentWritesBundle =
+  withRepositoryPath "okf profile document --write writes a bundle" profileFixture $ \descriptorPath -> do
+    temporaryDirectory <- getTemporaryDirectory
+    root <- createTempDirectory temporaryDirectory "okf-cli-profile-document"
+    bracket (pure root) removeDirectoryRecursive $ \scratch -> do
+      let destination = scratch </> "bundle"
+          options =
+            ProfileDocumentOptions
+              { registryRef = Nothing,
+                export = Nothing,
+                profilePath = Just descriptorPath,
+                outputPath = Just destination,
+                write = True,
+                timestamp = Nothing
+              }
+      runCommand (Profile (ProfileDocument options))
+      firstProfile <- Text.IO.readFile (destination </> "profile.md")
+      typeWritten <- doesFileExist (destination </> "types" </> "decision-record.md")
+      rootIndexWritten <- doesFileExist (destination </> "index.md")
+      typeIndexWritten <- doesFileExist (destination </> "types" </> "index.md")
+      -- Second run: same inputs, same destination, must change nothing.
+      runCommand (Profile (ProfileDocument options))
+      secondProfile <- Text.IO.readFile (destination </> "profile.md")
+      walked <- walkBundle destination
+      let walkedIds = case walked of
+            Left _ -> []
+            Right concepts -> map (renderConceptId . conceptIdOf) concepts
+      pure
+        ( typeWritten
+            && rootIndexWritten
+            && typeIndexWritten
+            && firstProfile == secondProfile
+            && walkedIds == ["profile", "types/decision-record"]
+        )
 
 testLogAddWritesFile :: IO Bool
 testLogAddWritesFile = do

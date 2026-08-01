@@ -7,6 +7,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.5.0.0] - 2026-08-01
+
 ### Added
 
 - `okf trust BUNDLE` reports every concept's derived trust tier, `status`, and
@@ -100,7 +102,18 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - **`okf log --check-stale` and `okf validate --log-enforce` read `generated.at`
   first**, falling back to `timestamp`, and the advisory says `generated date`
   rather than `timestamp date`.
-- Requires `okf-core ^>=0.4.0.0` with the OKF v0.2 core semantics.
+- Requires `okf-core ^>=0.5.0.0` with the OKF v0.2 core semantics, the attested
+  computation contract, and the path-valued frontmatter rules.
+
+### Fixed
+
+- `okf-cli-test` passes from the released sdist. Nine tests assert against
+  artifacts committed to the okf repository — `docs/profiles/`, `examples/`, and
+  `okf-core`'s fixtures — none of which cabal will package into `okf-cli`'s
+  tarball, because they sit outside the package tree. They previously aborted the
+  whole suite on the first missing file, so `cabal test` failed for anyone
+  building from Hackage, nixpkgs included. Each now reports `SKIP` when the
+  repository tree is absent and runs unchanged inside it.
 
 ## [0.4.0.0] - 2026-07-30
 

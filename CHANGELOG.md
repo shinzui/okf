@@ -7,6 +7,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.5.0.0] - 2026-08-01
+
 ### Added
 
 - **okf implements OKF v0.2.** Version 0.2 assumes a corpus written and
@@ -134,6 +136,16 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   `timestamp` still asks for it, which is the core-versus-profile split working
   as intended; extending the descriptor language is
   `docs/masterplans/8-extend-okf-profiles-for-v0-2-field-families.md`.
+
+### Fixed
+
+- Both packages now build and test from their released tarballs. `okf-core` was
+  omitting `test/fixtures/**/*.sql`, which a `computation` field points at, and
+  nine `okf-cli` tests read repository artifacts — `docs/profiles/`, `examples/`,
+  and `okf-core`'s fixtures — that cabal cannot package into `okf-cli`, aborting
+  the suite on the first missing file. Neither is visible in a repository build;
+  both would have failed anyone installing from Hackage with tests enabled,
+  nixpkgs included.
 
 ## [0.4.0.0] - 2026-07-30
 

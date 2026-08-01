@@ -7,6 +7,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.5.0.0] - 2026-08-01
+
 ### Added
 
 - **OKF v0.2 core semantics.** okf now tracks version 0.2 of the Open Knowledge
@@ -190,6 +192,13 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   a link reference definition, producing a phantom dangling link.
 - `setTimestamp`, `OkfCommon`'s `commonTimestamp`, and reading a v0.1
   `timestamp` are all retained. Writing v0.1 on purpose stays supported.
+
+### Fixed
+
+- The sdist ships `test/fixtures/**/*.sql`. The `attested-computation` fixture
+  points a `computation` field at a `.sql` file, so without it `cabal test` on
+  the released tarball reported that path as dangling — a failure only someone
+  building from Hackage with tests enabled would ever have seen.
 
 ## [0.4.0.0] - 2026-07-30
 

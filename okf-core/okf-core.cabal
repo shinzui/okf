@@ -1,6 +1,6 @@
 cabal-version:      3.4
 name:               okf-core
-version:            0.4.0.0
+version:            0.5.0.0
 synopsis:
   Read, validate, index, and traverse Open Knowledge Format bundles
 
@@ -22,14 +22,15 @@ extra-doc-files:    CHANGELOG.md
 -- The canonical profile schema, plus the fixtures okf-core-test reads. The
 -- fixture descriptors import the schema through ../../../dhall, so both trees
 -- must ship for `cabal test` to work from the sdist.
--- The .py file is not a mistake: the dangling-frontmatter-path fixture needs a
--- non-Markdown file in the bundle, because resolving a path to one is the whole
--- point of the check it exercises.
+-- The .py and .sql files are not a mistake: the dangling-frontmatter-path and
+-- attested-computation fixtures need non-Markdown files in the bundle, because
+-- resolving a path to one is the whole point of the checks they exercise.
 extra-source-files:
   dhall/**/*.dhall
   test/fixtures/**/*.dhall
   test/fixtures/**/*.md
   test/fixtures/**/*.py
+  test/fixtures/**/*.sql
 
 common common-options
   ghc-options:
