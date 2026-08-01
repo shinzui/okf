@@ -214,7 +214,7 @@ is green (`cabal test all`, 2026-08-01).
 |---|-------|------|-----------|-----------|--------|
 | 1 | Resolve path valued frontmatter fields against the bundle | docs/plans/48-resolve-path-valued-frontmatter-fields-against-the-bundle.md | None | None | Complete |
 | 2 | Read the Attested Computation contract fields | docs/plans/49-read-the-attested-computation-contract-fields.md | None | EP-1 | Complete |
-| 3 | Inspect the Computation body section and enforce exactly one computation source | docs/plans/50-inspect-the-computation-body-section-and-enforce-exactly-one-computation-source.md | EP-2 | None | In Progress |
+| 3 | Inspect the Computation body section and enforce exactly one computation source | docs/plans/50-inspect-the-computation-body-section-and-enforce-exactly-one-computation-source.md | EP-2 | None | Complete |
 | 4 | Adopt the references convention for executors and attesters | docs/plans/51-adopt-the-references-convention-for-executors-and-attesters.md | EP-1 | EP-2 | Not Started |
 | 5 | Surface attested computations across the CLI and documentation | docs/plans/52-surface-attested-computations-across-the-cli-and-documentation.md | EP-2, EP-3 | EP-4 | Not Started |
 
@@ -287,11 +287,11 @@ report until both the contract and the computation itself are readable.
 
 The critical path is EP-2, then EP-3, then EP-5, with EP-1 and EP-4 running alongside.
 
-As of 2026-08-01, with EP-1 and EP-2 Complete and all three remaining plans written, **EP-3 and
-EP-4 are both implementable now and are independent of each other.** The only file they both
-touch is `okf-cli/src/Okf/Cli.hs`, in different functions — EP-3 in `runShow` and
-`renderValidationErrorText`, EP-4 in `runValidate` and `renderBundleValidationError`. EP-5 waits
-on EP-3, which is the sole remaining serialization.
+As of 2026-08-01, with EP-1, EP-2, and EP-3 Complete, **EP-4 and EP-5 are both implementable now
+and are independent of each other.** EP-3 was the sole remaining serialization and it has landed,
+so EP-5's hard dependencies are satisfied. EP-4 and EP-5 both touch `okf-cli/src/Okf/Cli.hs` —
+EP-4 in `runValidate` and `renderBundleValidationError`, EP-5 across the command set — so whichever
+runs second should rebase rather than assume the file is where it was.
 
 
 ## Integration Points
@@ -458,9 +458,9 @@ coherent across the tool rather than the plan that first makes it visible.
 - [x] EP-2 (2026-08-01): whether the five contract keys join `Okf.Document.coreFrontmatterFieldOrder` is decided — they join it, between `status` and `generated` — and serialization round-trips a §10.2 concept unchanged
 - [x] EP-2 (2026-08-01): a contract missing `runtime` is reported for that type only, leaving other types untouched, and `okf show` renders the contract
 - [x] EP-2 (2026-08-01): `computation`, `executor.resource`, and `attester.resource` are wired into EP-1's core path check, discharging the obligation the Decision Log assigned to this plan
-- [ ] EP-3: the `# Computation` body section and its code block are extracted, bounded at the next heading of the same or shallower level, accepting the indented spelling §10.2's own example uses as well as the fenced one §10.3's prose names
-- [ ] EP-3: providing both an inline block and a `computation` path, neither, or more than one block, is reported per §10.3 under `StrictAuthoring` and for that `type` alone
-- [ ] EP-3: the computation is reachable from the CLI in both of §10.3's forms — `okf show --computation` reads the file named by `computation` rather than printing its path
+- [x] EP-3 (2026-08-01): the `# Computation` body section and its code block are extracted, bounded at the next heading of the same or shallower level, accepting the indented spelling §10.2's own example uses as well as the fenced one §10.3's prose names
+- [x] EP-3 (2026-08-01): providing both an inline block and a `computation` path, neither, or more than one block, is reported per §10.3 under `StrictAuthoring` and for that `type` alone
+- [x] EP-3 (2026-08-01): the computation is reachable from the CLI in both of §10.3's forms — `okf show --computation` reads the file named by `computation` rather than printing its path
 - [ ] EP-4: what okf does today with a `references/` directory is surveyed against the shipped bundles, and the four provisional decisions are confirmed or revised against that evidence before any code is written
 - [ ] EP-4: a dangling relative frontmatter path that would resolve read from the bundle root says so, and §6.2 resolution itself is unchanged — this is EP-4's answer to the question EP-2 handed it
 - [ ] EP-4: `okf validate --profile` resolves a path rule against every file in the bundle rather than only `.md` concepts, closing the core-versus-profile divergence EP-1 left open, additively via `validateProfileWith`
@@ -748,6 +748,48 @@ CLI switches by passing the inventory it already loads. EP-4 owns it and the est
 here so the plan is not weighed against a cost that was never real.
 
 
+**EP-3 is complete, and it leaves EP-4 untouched and EP-5 slightly smaller.** Landed 2026-08-01 in
+commits `e190105`, `a848679`, `bca0afb`, `f6848db`, and `5592a4e`, one per milestone, with
+`cabal test all` green after each. Four things the remaining plans should know.
+
+First, **the §10.3 rule landed in core validation and not on a `TypeRule`**, which is the
+correction this document's Integration Points made before EP-3 started and which held under
+contact. `Okf.Validation.requireOneComputation` sits beside `requireComputationRuntime` in the
+`StrictAuthoring` branch of `validateDocument`, and `ValidationError` gained
+`AttestedComputationHasNoComputation`, `AttestedComputationHasBothComputations`, and
+`AttestedComputationHasManyBlocks Int`. **That is three new constructors on a type downstream
+consumers match exhaustively** — the same release hazard EP-1's `DanglingFrontmatterPath` and
+EP-4's planned arity change carry, and the same answer applies: Mori (`mori://shinzui/mori`)
+matches `ProfileViolation` rather than `ValidationError` as of this date, which must be checked
+before moving its okf pin rather than assumed.
+
+Second, **the reading half is type-agnostic and any command may use it.**
+`Okf.Markdown.computationBlocks`, `Okf.Document.readComputationSources`, and
+`Okf.Bundle.conceptComputationSources` restate what a document says and never report; only
+`Okf.Validation` scopes to the type. EP-5 should reach for `conceptComputationSources` rather than
+re-inspecting a body.
+
+Third, **the pre-implementation findings all held, which is the deferral decision paying off a
+third time.** Both code-block spellings, the bounded section, and the `schemaSectionColumns`
+traversal-but-not-placement split were each verified against the working tree while EP-3 was
+*written* — after EP-2 had landed — and none needed revising while it was implemented. The bounding
+rule was exercised by two real documents rather than only by unit tests.
+
+Fourth, **a transcript in `docs/` was wrong in a way only re-running caught.** EP-3's `okf show`
+block in `docs/user/format.md` was written with `computation:` after `attester` rather than between
+`parameters` and `executor`, which is §10.2's order and what `renderConcept` emits. Reading the
+block did not catch it; diffing it against the command did. This is the same lesson EP-2 recorded
+from the other direction — a shipped example is a transcript dependency — and it generalises:
+**a documented transcript is verified by running it, never by reading it.** EP-4 and EP-5 both
+touch documented output.
+
+One scope addition worth noting because it sets a boundary for EP-5: EP-3 documented
+`--computation` in `docs/user/cli.md` as well as in `docs/user/format.md`, on the ground that the
+command reference is *wrong* rather than merely incomplete when it omits a flag that ships.
+EP-5 owns coherence across every command; it does not own the reference entry for a flag a sibling
+plan shipped.
+
+
 ## Decision Log
 
 - Decision: Scope this MasterPlan to recording and checking attested computations, and
@@ -970,6 +1012,31 @@ here so the plan is not weighed against a cost that was never real.
   made and withdrew. Demanding `runtime` there would duplicate EP-2's core check and double-report.
   Shipping the descriptor as a fixture inside `testFrozenFixturesCompile` is what stops the
   documented transcript from rotting.
+  Date: 2026-08-01
+
+- Decision: The accumulated breaking changes to `okf-core`'s exported vocabulary are one release
+  check performed once, before the next okf release, rather than a check each plan repeats.
+  Rationale: three plans have now changed something a downstream exhaustive matcher sees. EP-1
+  made `Okf.Validation.validateBundle` take a required `BundleInventory` and added
+  `DanglingFrontmatterPath`; EP-3 added three `ValidationError` constructors; EP-4 plans a fourth
+  field on `DanglingFrontmatterPath`, which is the harder break of the three because an arity
+  change breaks a matcher that a new constructor might not. Each plan has recorded the same caveat
+  about Mori (`mori://shinzui/mori`) matching `ProfileViolation` rather than `ValidationError`,
+  which is a position recorded on 2026-08-01 rather than a guarantee. Repeating the check per plan
+  wastes it; performing it once against the final surface is what actually protects the pin. This
+  belongs to EP-5, which is the plan that closes the initiative. `okf-cli` is itself the first
+  consumer that must handle every one of them, which the `-Wincomplete-patterns` habit in each
+  plan's Concrete Steps already enforces at compile time.
+  Date: 2026-08-01
+
+- Decision: A documented transcript is verified by running it and diffing, never by reading it.
+  Rationale: EP-3 wrote an `okf show` block into `docs/user/format.md` with the `computation:`
+  line in the wrong position — after `attester` rather than between `parameters` and `executor`,
+  which is §10.2's order and what `renderConcept` emits. It read correctly and was wrong. EP-2
+  learned the adjacent half of this from the other direction: adding two directories to
+  `examples/ddd-ordering` re-padded an `okf trust` listing in a document about an unrelated
+  command. Both failures are invisible to review and both are caught by one `diff` against the
+  real command. EP-4 and EP-5 each touch documented output and inherit this.
   Date: 2026-08-01
 
 - Decision: EP-2 delivered three of EP-5's Progress items — index verification, the shipped
@@ -1210,3 +1277,48 @@ only if something durable is left without a home.
 
 The working tree was confirmed green before the plans were written (`cabal test all`, 1 of 1 test
 suites passed), so a future failure during implementation is attributable to that implementation.
+
+
+## Revision note — 2026-08-01 (EP-3 complete)
+
+`docs/plans/50-inspect-the-computation-body-section-and-enforce-exactly-one-computation-source.md`
+is Complete, in commits `e190105`, `a848679`, `bca0afb`, `f6848db`, and `5592a4e` — one per
+milestone — with `cabal test all` green on both packages after each. The registry, the Progress
+list, Surprises & Discoveries, and the Decision Log are updated.
+
+**The decomposition did not change and no child plan needed cascading.** EP-3 delivered exactly its
+five milestones plus one scope addition it recorded in its own Decision Log: `docs/user/cli.md`
+documents `--computation`, because a command reference that omits a shipped flag is wrong rather
+than merely incomplete, and EP-5 owns coherence across commands rather than the reference entry for
+a sibling's flag.
+
+**The Integration Points correction of the previous revision was the right call and is now
+evidenced.** That revision overrode this document's original instruction to implement §10.3's
+exactly-one rule as a profile `TypeRule`, and routed it into core validation beside
+`AttestedComputationMissingRuntime` instead. Implementing it confirmed the reasoning: the check
+reads `readComputationSources`, which needs both halves of the document, and lands in
+`validateDocument`'s `StrictAuthoring` branch in three lines. A `TypeRule` route would have needed
+a descriptor knob, a `ProfileViolation` constructor, and a profile before okf enforced any of it.
+
+**Three findings are in Surprises & Discoveries, and one of them generalises.** The pre-implementation
+findings all held under contact, which is the deferral decision earning its place a third time. The
+reading half of §10.3 is type-agnostic, so EP-5 should reach for `Okf.Bundle.conceptComputationSources`
+rather than re-inspecting a body. And a documented transcript is verified by running it and diffing:
+EP-3's `okf show` block was written with `computation:` in the wrong position, read correctly, and was
+wrong — the same class of failure EP-2 met from the other direction. That is now a Decision Log entry
+because EP-4 and EP-5 both touch documented output.
+
+**Two Decision Log entries are new and both are addressed to EP-5.** The accumulated breaking changes
+to `okf-core`'s exported vocabulary — EP-1's required `BundleInventory` parameter and
+`DanglingFrontmatterPath`, EP-3's three `ValidationError` constructors, and EP-4's planned fourth
+field on that constructor — are one release check performed once against the final surface, not a
+check each plan repeats against a moving one. And the transcript rule above.
+
+No ADR was created or amended. EP-3's Context and Orientation predicted this and gave the reason:
+the two ADRs this initiative owes are ADR 12, written, and ADR 13 on the `references/` convention,
+which belongs to EP-4. EP-3's section-bounding rule is the one candidate for a third and is
+deliberately left in the plan — promoting it would mean a new ADR on conventional body headings
+covering `# Schema` as well, which is not this initiative's to write.
+
+EP-4 and EP-5 are both implementable now and are independent of each other. EP-3 was the sole
+remaining serialization.
