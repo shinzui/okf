@@ -1560,13 +1560,14 @@ renderBundleValidationError = \case
     renderConceptId conceptId <> ": " <> renderValidationErrorText error_
   DanglingReference source target ->
     renderConceptId source <> ": link to missing concept: " <> renderConceptId target
-  DanglingFrontmatterPath source fieldName target ->
+  DanglingFrontmatterPath source fieldName target alternative ->
     renderConceptId source
       <> ": "
       <> fieldName
       <> " names "
       <> Text.pack target
       <> ", which does not exist in this bundle"
+      <> foldMap renderPathAlternative alternative
   DuplicateConceptId conceptId ->
     "duplicate concept ID: " <> renderConceptId conceptId
   LogInvalid path error_ ->
@@ -1577,6 +1578,25 @@ renderBundleValidationError = \case
     "index.md: okf_version "
       <> version
       <> " has a major version okf does not understand; reading the bundle permissively"
+
+-- | The trailing hint on a dangling frontmatter path, naming the bundle-relative
+-- spelling that would have resolved.
+--
+-- Specification §10.2's own worked example writes a bare @references\/@ path
+-- while §10.4 puts computations in their own folder, so an author copying the
+-- specification is told about a path they never wrote. The hint says what to
+-- write instead; §6.2 resolution itself is unchanged.
+--
+-- The leading @\/@ is added here rather than carried in the diagnostic, because
+-- 'DanglingFrontmatterPath' holds both of its paths as resolved bundle-relative
+-- targets and they should mean the same thing. What an author must /write/ to
+-- get that target is §6.2's bundle-relative form, and writing the bare text back
+-- would name exactly what they wrote already.
+renderPathAlternative :: FilePath -> Text
+renderPathAlternative alternative =
+  " (/"
+    <> Text.pack alternative
+    <> " does — a path with no leading slash resolves against the concept's own directory)"
 
 bundleValidationErrorIsFailure :: BundleValidationError -> Bool
 bundleValidationErrorIsFailure = \case

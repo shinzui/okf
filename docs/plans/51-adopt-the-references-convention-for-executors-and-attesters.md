@@ -98,7 +98,7 @@ even if it requires splitting a partially completed task into two ("done" vs. "r
 This section must always reflect the actual current state of the work.
 
 - [x] Milestone 1 (2026-08-01): what okf does today with a `references/` directory is surveyed against the shipped bundles and recorded in Surprises & Discoveries with real transcripts, and the Decision Log's first four decisions are each confirmed or revised against that evidence — all four hold; the plan's list of non-Markdown files was short by one (`references/queries/revenue.sql`)
-- [ ] Milestone 2: a dangling relative frontmatter path that *would* resolve read from the bundle root says so in the diagnostic, and the resolution rule itself is unchanged
+- [x] Milestone 2 (2026-08-01): a dangling relative frontmatter path that *would* resolve read from the bundle root says so in the diagnostic, and the resolution rule itself is unchanged
 - [ ] Milestone 3: `okf validate --profile` resolves a path-valued rule against every file in the bundle, not only against `.md` concepts, and the existing `validateProfile` entry point keeps its current meaning
 - [ ] Milestone 4: `okf index` lists a directory's non-Markdown files, so a directory holding only an attester no longer generates a one-byte index
 - [ ] Milestone 5: `docs/adr/13-the-references-convention-and-non-markdown-files.md` records the durable decisions, and `docs/user/format.md` and `docs/user/profiles.md` are corrected, including the profile limitation this plan retires
@@ -372,6 +372,18 @@ rule cost it a withdrawn check and thirty-one failing tests. Confirm before buil
   `examples/ddd-ordering/references/index.md`'s bullet `- [attesters/](attesters/index.md)`
   pointing at a file that no longer exists, and it discloses less rather than more. Files whose
   name begins with `.` are skipped, so a stray `.DS_Store` never lands in a committed index.
+  Date: 2026-08-01
+
+- Decision: The fourth field of `DanglingFrontmatterPath` carries the *resolved bundle-relative
+  target*, without a leading slash, and the CLI renderer adds the `/` when it prints the hint.
+  Rationale: the constructor's third and fourth fields are both paths and they should mean the
+  same thing — what §6.2 resolution produced — so a reader matching on the constructor does not
+  have to remember that one is spelled differently from the other. But the hint exists to tell an
+  author what to *write*, and the bundle-relative form §6.2 defines carries a leading `/`.
+  Printing the bare text back would name a spelling identical to the one already on the line,
+  which is precisely the confusion the hint exists to prevent. This was found by running the
+  acceptance transcript rather than by reading it: the first implementation emitted
+  `(references/skills/run-on-bq.md does — ...)`, which is true and useless.
   Date: 2026-08-01
 
 - Decision: This plan writes `docs/adr/13-the-references-convention-and-non-markdown-files.md`,

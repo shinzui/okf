@@ -118,6 +118,7 @@ main = do
         test "validateBundle reports a dangling reference" testValidateBundleDanglingReference,
         test "validateBundle accepts a bundle whose links all resolve" testValidateBundleAcceptsResolved,
         test "validateBundle reports a dangling frontmatter path under strict only" testValidateBundleDanglingFrontmatterPath,
+        test "a dangling relative path names the bundle-relative spelling that resolves" testDanglingFrontmatterPathAlternative,
         test "duplicateConceptIds finds repeated ids" testDuplicateConceptIds,
         test "conceptFromDocument derives typed fields from frontmatter" testConceptFromDocumentDerivesFields,
         test "conceptGenerated projects the v0.2 generated family" testConceptGeneratedProjection,
@@ -1409,7 +1410,7 @@ testValidateBundleDanglingFrontmatterPath = do
   externalResource <- withResource "bigquery://analytics.tables.orders"
   escapingResource <- withResource "../../elsewhere.md"
   assertEqual
-    [DanglingFrontmatterPath aId "resource" "references/deleted.md"]
+    [DanglingFrontmatterPath aId "resource" "references/deleted.md" Nothing]
     (strict [danglingResource, conceptB])
   -- §11 forbids rejecting a bundle over a broken cross-link, so nothing is
   -- reported outside strict authoring.
@@ -1434,6 +1435,64 @@ testValidateBundleDanglingFrontmatterPath = do
           <> "  - resource: all order-domain terms agreed in the ordering team's glossary reviews\n"
       )
   assertEqual [] (strict [scopeDescriptor, conceptB])
+
+-- | The bundle-relative hint of specification §10.2's own worked example: a
+-- relative path that resolves to nothing, where the same text read from the
+-- bundle root names a file that is there.
+--
+-- §6.2 resolution is unchanged — the diagnostic still names what the value
+-- actually resolved to. The fourth field only says what the author probably
+-- meant.
+testDanglingFrontmatterPathAlternative :: Either Text ()
+testDanglingFrontmatterPathAlternative = do
+  computationId <- parseTestConceptId "computations/revenue"
+  rootId <- parseTestConceptId "revenue"
+  skill <- testConcept "references/skills/run-on-bq" "Run instructions.\n"
+  let withResource rawId value =
+        testConceptWithFrontmatter
+          rawId
+          ( "type: Test\ntitle: Title\ndescription: Description\n"
+              <> "generated:\n  by: okf/0.4\n  at: \"2026-06-16T00:00:00Z\"\n"
+              <> "resource: "
+              <> value
+              <> "\n"
+          )
+      strict concepts = validateInMemoryBundle StrictAuthoring VersionUndeclared concepts
+  -- The specification's own spelling, from a concept in a subdirectory.
+  bareReference <- withResource "computations/revenue" "references/skills/run-on-bq.md"
+  assertEqual
+    [ DanglingFrontmatterPath
+        computationId
+        "resource"
+        "computations/references/skills/run-on-bq.md"
+        (Just "references/skills/run-on-bq.md")
+    ]
+    (strict [bareReference, skill])
+  -- No root-anchored reading resolves either, so there is nothing to suggest.
+  noTwin <- withResource "computations/revenue" "references/skills/nonexistent.md"
+  assertEqual
+    [ DanglingFrontmatterPath
+        computationId
+        "resource"
+        "computations/references/skills/nonexistent.md"
+        Nothing
+    ]
+    (strict [noTwin, skill])
+  -- A value already written from the bundle root has no alternative reading.
+  alreadyAnchored <- withResource "computations/revenue" "/references/skills/deleted.md"
+  assertEqual
+    [DanglingFrontmatterPath computationId "resource" "references/skills/deleted.md" Nothing]
+    (strict [alreadyAnchored, skill])
+  -- A concept at the bundle root resolves both readings to the same path, so
+  -- there is never a hint: either the file is there and nothing is reported, or
+  -- it is not and the alternative names the same missing path. The guard in
+  -- 'bundleRelativeAlternative' is what keeps the second case from suggesting
+  -- exactly what it just rejected.
+  atRoot <- withResource "revenue" "references/skills/run-on-bq.md"
+  assertEqual
+    [DanglingFrontmatterPath rootId "resource" "references/skills/run-on-bq.md" Nothing]
+    (strict [atRoot])
+  assertEqual [] (strict [atRoot, skill])
 
 testDuplicateConceptIds :: Either Text ()
 testDuplicateConceptIds = do
@@ -2225,6 +2284,10 @@ testFixtureDanglingLink = do
 -- bundle, which is the only way to exercise the half that needs a filesystem:
 -- @non-markdown.md@ names @references\/attesters\/revenue.py@, and that resolves
 -- only because 'walkBundleInventory' sees files 'walkBundle' filters out.
+--
+-- @computations\/spec-spelling.md@ is the same text written from a
+-- subdirectory, which is specification §10.2's own spelling and the one shape
+-- that carries a bundle-relative hint.
 testFixtureDanglingFrontmatterPath :: IO (Either Text ())
 testFixtureDanglingFrontmatterPath = do
   root <- fixturePath "dangling-frontmatter-path"
@@ -2233,9 +2296,16 @@ testFixtureDanglingFrontmatterPath = do
   pure
     ( do
         danglingId <- firstShow (parseConceptId "dangling")
-        assertEqual 3 (length concepts)
+        specSpellingId <- firstShow (parseConceptId "computations/spec-spelling")
+        assertEqual 4 (length concepts)
         assertEqual
-          [DanglingFrontmatterPath danglingId "resource" "references/deleted.txt"]
+          [ DanglingFrontmatterPath
+              specSpellingId
+              "resource"
+              "computations/references/attesters/revenue.py"
+              (Just "references/attesters/revenue.py"),
+            DanglingFrontmatterPath danglingId "resource" "references/deleted.txt" Nothing
+          ]
           (validateBundle StrictAuthoring (VersionDeclared (OkfVersion 0 2)) inventory concepts)
         assertEqual
           []

@@ -140,8 +140,18 @@ data BundleValidationError
     DanglingReference ConceptId ConceptId
   | -- | A path-valued frontmatter field (specification §6.2) names a bundle path
     -- that no file in the bundle matches. Carries the concept, the frontmatter
-    -- field path as written (@resource@, or later @executor.resource@), and the
-    -- resolved bundle-relative target.
+    -- field path as written (@resource@, or @executor.resource@), the resolved
+    -- bundle-relative target, and — when the value was relative and the same text
+    -- read as bundle-relative /would/ resolve — that alternative target.
+    --
+    -- The fourth field exists because specification §10.2's own worked example
+    -- writes @executor.resource: references\/skills\/run-on-bq.md@ while §10.4
+    -- puts computations under @computations\/@, so an author copying the
+    -- specification writes a relative path that names
+    -- @computations\/references\/...@ and is told about a path they did not
+    -- write. §6.2 resolution is correct and unchanged; the diagnostic simply says
+    -- what the author almost certainly meant. See
+    -- @docs\/adr\/13-the-references-convention-and-non-markdown-files.md@.
     --
     -- Distinct from 'DanglingReference', which reports a Markdown link in a
     -- concept /body/ naming a missing /concept/. A frontmatter path may name a
@@ -151,7 +161,7 @@ data BundleValidationError
     -- Like 'DanglingReference' this is an authoring-time lint that goes beyond
     -- conformance: §11 says a consumer MUST NOT reject a bundle over a broken
     -- cross-link, because §6.1 permits a link to knowledge not yet written.
-    DanglingFrontmatterPath ConceptId Text FilePath
+    DanglingFrontmatterPath ConceptId Text FilePath (Maybe FilePath)
   | -- | The same concept ID was assembled more than once.
     DuplicateConceptId ConceptId
   | -- | A reserved log file does not match the required log structure.
@@ -304,7 +314,11 @@ validateBundle profile declaration inventory concepts =
 -- * 'ResolvedExternal' is resolved: okf has no network access and never fetches.
 danglingFrontmatterPaths :: BundleInventory -> [Concept] -> [BundleValidationError]
 danglingFrontmatterPaths inventory concepts =
-  [ DanglingFrontmatterPath (conceptIdOf concept) fieldName target
+  [ DanglingFrontmatterPath
+      (conceptIdOf concept)
+      fieldName
+      target
+      (bundleRelativeAlternative existsInBundle (conceptIdOf concept) rawValue target)
   | concept <- concepts,
     (fieldName, rawValue) <- pathValuedFields concept,
     DanglingInBundle target <-
@@ -312,6 +326,30 @@ danglingFrontmatterPaths inventory concepts =
   ]
   where
     existsInBundle = flip bundleInventoryMember inventory
+
+-- | For a relative value that resolved to nothing, the bundle-relative target
+-- the same text /would/ have named had it been written with a leading @\/@ —
+-- when that target is a file the bundle actually holds.
+--
+-- Specification §10.2's worked example writes
+-- @executor.resource: references\/skills\/run-on-bq.md@ and §10.4 puts
+-- computations under @computations\/@, so a bundle assembled from the
+-- specification's own text names @computations\/references\/skills\/run-on-bq.md@
+-- and is told about a path nobody wrote. §6.2 defines exactly three forms and
+-- resolution is unchanged; this only lets the diagnostic name the spelling that
+-- works.
+--
+-- Silent in three cases, each on purpose. A value already written with a leading
+-- @\/@ was read from the bundle root already, so there is no alternative reading
+-- to offer. A concept at the bundle root resolves both readings to the same path,
+-- so the hint would suggest exactly what was just rejected. And a root-anchored
+-- reading that also names nothing is no more use to the author than the original.
+bundleRelativeAlternative :: (FilePath -> Bool) -> ConceptId -> Text -> FilePath -> Maybe FilePath
+bundleRelativeAlternative exists sourceConcept rawValue target
+  | "/" `Text.isPrefixOf` Text.strip rawValue = Nothing
+  | otherwise = case resolvePathReference exists sourceConcept ("/" <> Text.strip rawValue) of
+      ResolvedInBundle alternative | alternative /= target -> Just alternative
+      _ -> Nothing
 
 -- | The path-valued frontmatter fields okf resolves without being asked, paired
 -- with the field name a diagnostic names so the author knows which line to fix.
