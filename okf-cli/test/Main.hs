@@ -38,6 +38,8 @@ main = do
   profileDocumentWrites <- testProfileDocumentWritesBundle
   profileDocMatchesExample <- testProfileDocumentationMatchesCommittedExample
   profileDocConformsToMeta <- testProfileDocumentationConformsToMetaProfile
+  referenceProfileCompiles <- testReferenceProfileCompiles
+  referenceProfileAcceptsExample <- testReferenceProfileAcceptsDddOrdering
   profileDocStrictWithTimestamp <- testProfileDocumentationStrictWithTimestamp
   let results =
         [ parseSucceeds ["validate", "bundle"],
@@ -253,6 +255,8 @@ main = do
           profileDocumentWrites,
           profileDocMatchesExample,
           profileDocConformsToMeta,
+          referenceProfileCompiles,
+          referenceProfileAcceptsExample,
           profileDocStrictWithTimestamp,
           configDefaults,
           configProjectPrecedence,
@@ -721,6 +725,60 @@ testProfileDocumentationConformsToMetaProfile = do
           unless (null structuralErrors) $
             putStrLn ("committed example is not structurally valid: " <> show structuralErrors)
           pure (null profileViolations && null structuralErrors)
+  where
+    reportFailure message = putStrLn message >> pure False
+
+-- | The shipped OKF v0.2 reference profile compiles.
+--
+-- This is the guard that keeps a shipped descriptor honest as the descriptor
+-- language grows: it is the one profile in this repository that uses every
+-- primitive MasterPlan 8 added — object rules, the actor and non-negative-integer
+-- formats, and both §5.2 spellings of @verified@ — so a schema change that
+-- breaks it breaks it here rather than in a user's bundle.
+testReferenceProfileCompiles :: IO Bool
+testReferenceProfileCompiles = do
+  descriptor <- repositoryPath ("docs" </> "profiles" </> "okf-v0-2.dhall")
+  loaded <- loadProfileFile descriptor
+  case loaded of
+    Left err -> reportFailure ("failed to load the v0.2 reference profile: " <> Text.unpack err)
+    Right spec ->
+      case compileProfile spec of
+        Left definitionErrors ->
+          reportFailure ("the v0.2 reference profile does not compile: " <> show definitionErrors)
+        Right _ -> pure True
+  where
+    reportFailure message = putStrLn message >> pure False
+
+-- | The shipped reference profile accepts the shipped @examples/ddd-ordering@
+-- bundle under strict authoring, with no deviations at all.
+--
+-- @docs\/masterplans\/7-adopt-okf-v0-2-core-semantics.md@ records that shipped
+-- examples are user-facing surface that had no test behind them, and that two of
+-- them had never passed @--strict@. This is that test: it asserts on the
+-- violation list rather than shelling out, because an empty list is exactly what
+-- @--profile-enforce@ turns into exit code 0.
+testReferenceProfileAcceptsDddOrdering :: IO Bool
+testReferenceProfileAcceptsDddOrdering = do
+  descriptor <- repositoryPath ("docs" </> "profiles" </> "okf-v0-2.dhall")
+  bundleRoot <- repositoryPath ("examples" </> "ddd-ordering")
+  loaded <- loadProfileFile descriptor
+  walked <- walkBundle bundleRoot
+  case (loaded, walked) of
+    (Left err, _) -> reportFailure ("failed to load the v0.2 reference profile: " <> Text.unpack err)
+    (_, Left bundleError) -> reportFailure ("failed to walk examples/ddd-ordering: " <> show bundleError)
+    (Right spec, Right concepts) ->
+      case compileProfile spec of
+        Left definitionErrors ->
+          reportFailure ("the v0.2 reference profile does not compile: " <> show definitionErrors)
+        Right compiled -> do
+          let profileViolations = validateProfile StrictAuthoring compiled concepts
+          unless (null profileViolations) $
+            putStrLn ("examples/ddd-ordering deviates from the v0.2 reference profile: " <> show profileViolations)
+          -- A non-empty bundle, so an empty violation list cannot come from
+          -- having checked nothing.
+          unless (length concepts == 19) $
+            putStrLn ("expected 19 concepts in examples/ddd-ordering, found " <> show (length concepts))
+          pure (null profileViolations && length concepts == 19)
   where
     reportFailure message = putStrLn message >> pure False
 

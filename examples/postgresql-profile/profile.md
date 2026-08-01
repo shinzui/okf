@@ -10,7 +10,7 @@ Conventions for documenting a PostgreSQL database as an OKF bundle.
 
 ## Settings
 
-- OKF version: `0.1`
+- OKF version: `0.2`
 - Unknown concept types: rejected
 - Unknown frontmatter keys: allowed
 - Document ID field: none
@@ -35,6 +35,22 @@ One or two sentences on what this object is for.
 - Element fields: none
 - Checked only under `--strict`
 
+### `generated` — recommended
+
+Provenance for this description, superseding the v0.1 `timestamp` key (OKF v0.2 section 13.1).
+
+- Allowed values: any
+- Cardinality: object
+- Format: none
+- Reference: none
+- Path: none
+- Condition: none
+- Object fields:
+    - `at` — recommended; allowed values: any; cardinality: any; format: rfc3339-utc — UTC RFC3339 timestamp when the description was last confirmed accurate.
+    - `by` — required; allowed values: any; cardinality: any; format: actor — Who or what produced this description, as an OKF v0.2 actor: `<producer>/<version>`, `human:<id>`, or `process:<id>`.
+- Element fields: none
+- Checked only under `--strict`
+
 ### `owner` — optional
 
 Team accountable for the object, when one is named.
@@ -55,20 +71,6 @@ postgresql:// URI locating the live object.
 - Allowed values: any
 - Cardinality: any
 - Format: uri-with-scheme(postgresql)
-- Reference: none
-- Path: none
-- Condition: none
-- Object fields: none
-- Element fields: none
-- Checked only under `--strict`
-
-### `timestamp` — recommended
-
-UTC RFC3339 timestamp when the description was last confirmed accurate.
-
-- Allowed values: any
-- Cardinality: any
-- Format: rfc3339-utc
 - Reference: none
 - Path: none
 - Condition: none

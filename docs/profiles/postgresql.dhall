@@ -19,10 +19,14 @@ let FieldRule = ../../okf-core/dhall/defaults/FieldRule.dhall
 
 let FieldFormat = ../../okf-core/dhall/FieldFormat.dhall
 
+let NestedRules = ../../okf-core/dhall/defaults/NestedRules.dhall
+
+let nested = ../../okf-core/dhall/mk/NestedFieldRule.dhall
+
 in    { name = "shinzui-postgresql"
       , description = Some
           "Conventions for documenting a PostgreSQL database as an OKF bundle."
-      , okfVersion = "0.1"
+      , okfVersion = "0.2"
       , frontmatter =
         { required =
           [ field.documented
@@ -36,12 +40,25 @@ in    { name = "shinzui-postgresql"
           [ field.documented
               "description"
               "One or two sentences on what this object is for."
-          , FieldRule::{
-            , field = "timestamp"
-            , description = Some
-                "UTC RFC3339 timestamp when the description was last confirmed accurate."
-            , format = Some FieldFormat.Rfc3339Utc
-            }
+          ,     field.record
+                  "generated"
+                  NestedRules::{
+                  , required =
+                    [     nested.documented
+                            "by"
+                            "Who or what produced this description, as an OKF v0.2 actor: `<producer>/<version>`, `human:<id>`, or `process:<id>`."
+                      //  { format = Some FieldFormat.Actor }
+                    ]
+                  , recommended =
+                    [     nested.documented
+                            "at"
+                            "UTC RFC3339 timestamp when the description was last confirmed accurate."
+                      //  { format = Some FieldFormat.Rfc3339Utc }
+                    ]
+                  }
+            //  { description = Some
+                    "Provenance for this description, superseding the v0.1 `timestamp` key (OKF v0.2 section 13.1)."
+                }
           , FieldRule::{
             , field = "resource"
             , description = Some "postgresql:// URI locating the live object."

@@ -77,8 +77,8 @@ This section must always reflect the actual current state of the work.
 - [x] Milestone 1: reproduce the drift transcript and add the version-metadata tables to `Okf.Document` (2026-08-01).
 - [x] Milestone 2: parse and check the declared `okfVersion` at compile time, with **four** new definition errors and their CLI rendering (2026-08-01). The plan specified five; `FieldRequiresOkfVersion` was implemented, found to be a false positive on house-convention key names, and withdrawn — see Surprises & Discoveries and the Decision Log.
 - [x] Milestone 2a (added): harden the frozen-fixture suite to assert compilation, not merely decoding, and repair the EP-3 fixture that gap had let through (2026-08-01).
-- [ ] Milestone 3: migrate the shipped `docs/profiles/postgresql.dhall` to v0.2 and regenerate its committed documentation example.
-- [ ] Milestone 4: write and ship `docs/profiles/okf-v0-2.dhall`, proved against `examples/ddd-ordering`.
+- [x] Milestone 3: migrate the shipped `docs/profiles/postgresql.dhall` to v0.2 and regenerate its committed documentation example (2026-08-01).
+- [x] Milestone 4: write and ship `docs/profiles/okf-v0-2.dhall`, proved against `examples/ddd-ordering` (2026-08-01).
 - [ ] Milestone 5: document version enforcement and the reference profile, and close out the MasterPlan's ADR obligations.
 
 
