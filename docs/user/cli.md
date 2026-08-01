@@ -18,6 +18,8 @@ index
 log
 graph
 show
+trust
+sources
 id
 config
 profile
@@ -63,8 +65,21 @@ Strict validation also requires these recommended authoring fields:
 ```text
 title
 description
-timestamp
+generated
 ```
+
+A concept satisfies `generated` with either the OKF v0.2 `generated` family or
+the v0.1 `timestamp` it supersedes. A concept with neither reports:
+
+```text
+tables/orders: missing generated field (or legacy timestamp)
+```
+
+Strict mode also checks the shape of any v0.2 family a concept *does* carry —
+a `generated` with no `by` actor, a `sources` entry with no `resource`, two
+`sources` entries sharing an `id`, and the footnote-to-`sources` join in both
+directions. None of these fire for a concept that simply omits the family:
+okf never rejects a bundle for a missing optional field.
 
 Validation also checks referential integrity across the whole bundle: a Markdown
 link from one concept to another `.md` concept that does not exist in the bundle
@@ -74,15 +89,44 @@ reported. These checks run in both the permissive and strict profiles.
 
 If a bundle contains `log.md` files, validation checks their structure. A bad
 date heading or an empty date group is a hard error. Out-of-order date groups
-are advisory. Validation also reports concepts whose `timestamp` date is newer
-than the newest entry in the nearest enclosing `log.md`; those stale-log
-advisories exit `0` by default and exit non-zero with `--log-enforce`.
+are advisory. Validation also reports concepts whose date — `generated.at`, or
+`timestamp` when there is no `generated` — is newer than the newest entry in the
+nearest enclosing `log.md`; those stale-log advisories exit `0` by default and
+exit non-zero with `--log-enforce`.
 
-Successful validation prints a concept count:
+Successful validation prints a concept count, and names the OKF version when the
+bundle's root `index.md` declares one:
 
 ```text
-OK: 4 concepts
+OK: 4 concepts (okf_version 0.2)
 ```
+
+A bundle that declares nothing prints exactly `OK: N concepts`, unchanged.
+
+### The version declaration
+
+Declaring `okf_version: "0.2"` changes one thing about validation: a concept
+still carrying the v0.1 `timestamp` and no `generated` becomes a strict-mode
+diagnostic instead of an accepted compatibility case.
+
+```text
+tables/orders: legacy v0.1 field in a bundle declaring okf_version 0.2 or later: timestamp (use generated)
+```
+
+That is the whole purpose of declaring — it turns "okf tolerates this" into a
+list of files to finish migrating. An undeclared bundle is never warned about a
+v0.1 construct.
+
+Two declarations okf cannot use are reported under `--strict` and never stop it
+reading the bundle:
+
+```text
+index.md: okf_version is not of the form MAJOR.MINOR: zero point two
+index.md: okf_version 1.0 has a major version okf does not understand; reading the bundle permissively
+```
+
+A declared `0.3` is neither: okf reads a higher minor within a major it knows as
+the highest version it knows, and says nothing.
 
 Invalid bundles exit non-zero and print deterministic errors to stderr. For
 example, a concept `orders` whose body links to `/customers.md` when no
@@ -134,6 +178,7 @@ Preview or write generated `index.md` files.
 ```bash
 cabal run okf -- index BUNDLE
 cabal run okf -- index BUNDLE --write
+cabal run okf -- index BUNDLE --write --okf-version 0.2
 ```
 
 Without `--write`, `okf` prints every generated index to stdout and does not
@@ -142,6 +187,19 @@ the bundle.
 
 The generated index groups immediate concept documents by their `type` field and
 lists immediate subdirectories in a `Subdirectories` section.
+
+| Option | Effect |
+|--------|--------|
+| `--write` | Write the generated files instead of previewing them. |
+| `--okf-version MAJOR.MINOR` | Declare that OKF version in the bundle root index, overriding any existing declaration. |
+
+Without `--okf-version`, an existing declaration in the root `index.md` is
+preserved and an absent one stays absent — regenerating indexes never destroys
+a bundle's declared version, and never invents one.
+
+`--write` replaces the *body* of every `index.md` in the bundle, which is what
+it is for. Point it at a bundle whose index files someone wrote by hand and that
+prose is gone; only the version declaration is carried across.
 
 
 ## log
@@ -231,6 +289,24 @@ Example:
 cabal run okf -- show okf-core/test/fixtures/valid-bundle tables/orders
 ```
 
+Metadata output includes whichever OKF v0.2 families the concept carries, and
+the trust tier derived from `verified`:
+
+```text
+id: tables/orders
+type: BigQuery Table
+title: Orders
+description: Order fact table.
+resource: bigquery://analytics.tables.orders
+tags: orders, sales
+generated: human:nadeem at 2026-06-16T00:00:00Z
+trust: unverified
+status: stable
+```
+
+A concept that carries none of them prints none of those lines except `trust`
+and `status`, which are derived and defaulted rather than read.
+
 Path lookup runs first because the path is the canonical OKF identity. If no
 path matches and the argument has document-ID form, `show` searches frontmatter
 for that exact handle. `--profile` narrows the search to the profile's
@@ -303,6 +379,79 @@ Exit status when a menu is involved:
 
 Exit `2` names the argument you should pass instead, so a non-interactive
 environment always tells you how to proceed.
+
+
+## trust
+
+Report every concept's trust tier, `status`, and staleness, one aligned row per
+concept. Nothing is read that the bundle does not say, and nothing is stored:
+the tier is derived from `verified` on each run.
+
+```bash
+cabal run okf -- trust BUNDLE
+```
+
+```text
+cabal run okf -- trust examples/ddd-ordering
+aggregates/invoice               human-reviewed     stable  ok
+aggregates/order                 machine-confirmed  stable  ok
+commands/issue-invoice           unverified         stable  ok
+mappings/ordering-to-billing     machine-confirmed  stable  stale since 2026-07-01
+policies/reserve-stock           unverified         draft   ok
+value-objects/money              unverified         stable  ok
+```
+
+(Rows for the other thirteen concepts of that bundle are omitted here; the
+command prints every concept.)
+
+The four columns are the concept ID, the derived tier, the `status` field, and
+staleness. The tier is one of `unverified`, `machine-confirmed`, or
+`human-reviewed`, and the only thing separating the last two is whether some
+`verified[].by` uses the `human:` prefix. `status` shows `stable` for a concept
+that declares none, because an absent `status` means `stable`.
+
+The staleness column reads `ok` both for a concept with no `stale_after` and for
+one whose deadline has not arrived — okf does not claim a concept is fresh, only
+that nothing says otherwise. A passed deadline prints `stale since DATE`, and a
+`stale_after` that is not a `YYYY-MM-DD` date prints
+`unparseable stale_after VALUE` rather than being silently treated as fresh.
+
+Staleness is computed against today, so this command's output changes with the
+date even when the bundle does not.
+
+
+## sources
+
+List the provenance each concept records, with the credibility signals that
+frame it.
+
+```bash
+cabal run okf -- sources BUNDLE
+```
+
+```text
+cabal run okf -- sources examples/ddd-ordering
+aggregates/order
+  ddd-schema           mori://shinzui/mori
+                       author human:nadeem, used 40 times in 2026-01-01..2026-06-18, modified 2026-05-02
+  ubiquitous-language  all order-domain terms agreed in the ordering team's glossary reviews
+                       author human:nadeem, used 6 times in 2026-03-01..2026-06-10, modified 2026-06-10
+```
+
+Concepts with no `sources` are skipped entirely, so the report shows only what
+has provenance. Concepts are ordered by ID, so the output is stable and
+diffable in a pipeline.
+
+Entries print in the order the document declares them and are never sorted or
+ranked by `usage_count`. A count is a coarse signal — read it as liveness and
+trend, not as a score — and a ranked listing would imply a precision it does not
+carry. The window shown after a count is the *effective* one: an entry's own
+`usage_window` where it has one, the document-scope window otherwise, which is
+why the two entries above show different ranges.
+
+A second line is printed only for the signals an entry actually has. An entry
+with no `id` prints `(no id)` in the label column, because an id is optional and
+matters only when the body cites the entry with a footnote.
 
 
 ## id

@@ -56,8 +56,8 @@ something documented does not actually work.
 ## Progress
 
 - [x] Milestone 1: README and the user guide describe OKF v0.2 (2026-08-01)
-- [ ] Milestone 2: `docs/user/format.md` documents every v0.2 family with worked examples
-- [ ] Milestone 3: `docs/user/cli.md` and `docs/user/authoring.md` cover the new commands and setters
+- [x] Milestone 2: `docs/user/format.md` documents every v0.2 family with worked examples (2026-08-01)
+- [x] Milestone 3: `docs/user/cli.md` and `docs/user/authoring.md` cover the new commands and setters (2026-08-01)
 - [x] Milestone 4: the example bundles migrate to v0.2 and declare `okf_version` (2026-08-01)
 - [x] Milestone 5: test fixtures migrate, with a designated v0.1 fixture retained and labelled (2026-08-01)
 - [ ] Milestone 6: CHANGELOG entries written for both packages
@@ -98,6 +98,31 @@ index instead. The sibling plan
 destruction of the *declaration*, which was silent and unrecoverable; replacing the body is
 the documented purpose of `index --write` and is visible in `git diff`. Worth knowing
 before pointing that command at a bundle whose indexes someone wrote by hand.
+
+
+Two more from Milestones 2 and 3, both of them documentation that had already gone stale.
+
+*Three transcripts in `docs/user/profiles.md` no longer reproduced.* Two were EP-1's doing:
+strict validation now reports `missing generated field (or legacy timestamp)` rather than
+`missing recommended field: timestamp`, and the log advisory says `generated date` rather
+than `timestamp date`. Both were confirmed by re-running
+`okf profile document --profile docs/profiles/postgresql.dhall --out /tmp/pg-profile --write`
+with and without `--timestamp` and validating the result. The third was this plan's own
+doing: `examples/postgresql-sample` now declares a version, so
+`okf validate examples/postgresql-sample --profile docs/profiles/postgresql.dhall` prints
+`OK: 2 concepts (okf_version 0.2)`. A plan that adds transcripts is also the plan best
+placed to notice the ones that broke.
+
+*Migrating `examples/postgresql-sample` leaves a profile advisory that only MasterPlan 8 can
+clear.* `docs/profiles/postgresql.dhall` lists `timestamp` among its recommended fields with
+an `Rfc3339Utc` format, so `okf validate examples/postgresql-sample --profile … --strict`
+now reports `missing profile-recommended field: timestamp` for both concepts. This is not a
+regression — those concepts carried no date at all before, so the same advisory already
+fired — and it is the core-versus-profile split working exactly as
+`docs/adr/1-profile-declared-document-ids.md` describes: okf's core is satisfied by
+`generated`, while the house profile still asks for the v0.1 key until
+`docs/masterplans/8-extend-okf-profiles-for-v0-2-field-families.md` teaches the descriptor
+language the v0.2 families. It is advisory and exits `0`.
 
 
 ## Decision Log

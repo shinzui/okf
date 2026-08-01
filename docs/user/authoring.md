@@ -39,6 +39,12 @@ fm =
 separate because they are optional and have distinct shapes — `setTags` is the
 single place that knows `tags` is a YAML list of strings.
 
+`commonTimestamp` writes the OKF **v0.1** `timestamp` key, which v0.2 supersedes
+with `generated.at`. It is retained because a producer deliberately targeting
+v0.1 is a legitimate caller, but a new generator should pass
+`commonTimestamp = Nothing` and use `setGenerated` instead — see
+[the v0.2 families](#the-okf-v02-families) below.
+
 For producer-defined extension keys, use `setField` (the `Value`/`String`
 constructors come from `Data.Aeson`, re-exported by `Okf.Prelude`) or build from
 a raw list with `frontmatterFromFields`:
@@ -56,13 +62,92 @@ raw = frontmatterFromFields [("type", String "Recipe"), ("version", String "0.2.
 
 You can also `removeField :: Text -> Frontmatter -> Frontmatter` to drop a key.
 
+### The OKF v0.2 families
+
+Six setters write the v0.2 provenance, trust, and lifecycle families. Each takes
+a typed value rather than raw YAML, so a generator cannot emit a shape okf
+cannot read back:
+
+```haskell
+setGenerated  :: Generated    -> Frontmatter -> Frontmatter
+setVerified   :: [Verification] -> Frontmatter -> Frontmatter
+setStatus     :: Status       -> Frontmatter -> Frontmatter
+setStaleAfter :: Text         -> Frontmatter -> Frontmatter
+setSources    :: [Source]     -> Frontmatter -> Frontmatter
+setUsageWindow :: UsageWindow -> Frontmatter -> Frontmatter
+setTimestamp  :: Text         -> Frontmatter -> Frontmatter  -- superseded v0.1 key, retained
+```
+
+A v0.2 concept built end to end:
+
+```haskell
+import Okf.Actor (Actor (..))
+import Okf.Document
+
+v02 :: Frontmatter
+v02 =
+  setSources
+    [ Source
+        { sourceId = Just "ddd-schema"
+        , sourceResource = "mori://shinzui/mori"
+        , sourceTitle = Just "The Mori DDD schema at mori/ddd.dhall"
+        , sourceAuthor = Just (HumanActor "nadeem")
+        , sourceUsageCount = Just 40
+        , sourceLastModified = Just "2026-05-02"
+        , sourceUsageWindow = Nothing
+        }
+    ]
+    . setUsageWindow UsageWindow {usageWindowFrom = Just "2026-01-01", usageWindowTo = Just "2026-06-18"}
+    . setStaleAfter "2026-12-31"
+    . setStatus Draft
+    . setVerified [Verification {verificationBy = HumanActor "nadeem", verificationAt = Just "2026-06-21T00:00:00Z"}]
+    . setGenerated Generated {generatedBy = ProducerActor "okf-authoring-agent" "1.4", generatedAt = Just "2026-06-18T00:00:00Z"}
+    . setTags ["orders", "sales"]
+    . setResource "bigquery://analytics.tables.orders"
+    $ okfCommon
+        OkfCommon
+          { commonType = "BigQuery Table"
+          , commonTitle = Just "Orders"
+          , commonDescription = Just "Order fact table."
+          , commonTimestamp = Nothing
+          }
+```
+
+Three things a producer should know.
+
+`setVerified` always writes a YAML **list**, even for one entry. The reader
+accepts a bare mapping as a one-element list, but writing the list form keeps
+appending a second confirmation a one-line change.
+
+An `Actor` is one of `HumanActor id`, `ProcessActor id`,
+`ProducerActor producer version`, or `UnclassifiedActor raw` (from `Okf.Actor`).
+The `human:`/`process:` prefixes and the `producer/version` slash are rendered
+for you; do not build the string by hand. `parseActor :: Text -> Actor` goes the
+other way and never fails.
+
+`sourceUsageCount` is an `Integer`, and okf writes it as a YAML number. A count
+written as a string is not read back.
+
+Nothing writes a trust tier or a staleness verdict, because neither is a
+frontmatter fact. Both are derived on read by `Okf.Trust` — see
+[ADR 8](../adr/8-derived-not-stored-trust-and-credibility.md).
+
 ### Deterministic serialization
 
 `serializeDocument :: OKFDocument -> Text` renders a document (frontmatter + body)
-to a Markdown string. It emits frontmatter keys in a **deterministic order**: the
-six common fields first — `type`, `title`, `description`, `timestamp`, `resource`,
-`tags` — then any extension keys in ascending alphabetical order. Regenerating a
-bundle therefore produces minimal, reviewable diffs.
+to a Markdown string. It emits frontmatter keys in a **deterministic order** —
+
+```text
+type, title, description, resource, tags,
+status, generated, verified, stale_after, sources, usage_window,
+timestamp
+```
+
+— then any extension keys in ascending alphabetical order. Regenerating a bundle
+therefore produces minimal, reviewable diffs. The superseded `timestamp` sorts
+last so that a document carrying both keys reads current-first, and a document
+that arrives carrying both leaves carrying both: okf never drops a key it did
+not write.
 
 
 ## Writing links that become edges
@@ -130,18 +215,44 @@ concept's document.
 ## Validating the result
 
 Validate a whole bundle in memory with
-`validateBundle :: ValidationProfile -> [Concept] -> [BundleValidationError]`. It
-combines per-document field checks (the same ones `validateDocument` runs) with
-two bundle-level checks: **dangling references** (a link to a `.md` concept that
-is not in the bundle) and **duplicate concept IDs**. An empty list means the
+
+```haskell
+validateBundle :: ValidationProfile -> VersionDeclaration -> [Concept] -> [BundleValidationError]
+```
+
+It combines per-document field checks (the same ones `validateDocument` runs)
+with two bundle-level checks: **dangling references** (a link to a `.md` concept
+that is not in the bundle) and **duplicate concept IDs**. An empty list means the
 bundle is valid under the profile.
 
 ```haskell
+import Okf.Index (VersionDeclaration (..))
 import Okf.Validation
 
 problems :: [BundleValidationError]
-problems = validateBundle PermissiveConformance concepts
+problems = validateBundle PermissiveConformance VersionUndeclared concepts
 ```
+
+The `VersionDeclaration` is what the bundle's root `index.md` says about the OKF
+version it targets, read from disk with
+`readBundleVersion :: FilePath -> IO (Either BundleError VersionDeclaration)`.
+Passing `VersionUndeclared` is always safe and applies no version-specific
+rules; it is the reading almost every bundle gets. Pass the real declaration
+when you want a bundle that has declared v0.2 to be told about concepts still
+carrying the v0.1 `timestamp`.
+
+A generator that wants its output to declare a version writes it through index
+generation:
+
+```haskell
+import Okf.Index
+
+-- writeBundleIndexesWith :: Maybe OkfVersion -> FilePath -> IO (Either BundleError ())
+writeBundleIndexesWith (Just (OkfVersion 0 2)) "out/my-bundle"
+```
+
+Passing `Nothing` — which is what plain `writeBundleIndexes` does — preserves
+whatever the root index already declares.
 
 From the command line, `okf validate <bundle>` runs the same checks and exits
 non-zero on any problem, including dangling references — see the
