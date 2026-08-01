@@ -1327,7 +1327,7 @@ else.
 
 Against a bundle whose `metric` concept lists six sources — one resolving, one
 deleted, one `https`, one `ftp`, one climbing out of the bundle, and one naming
-a Python file — that descriptor reports:
+a Python file that *is* in the bundle — that descriptor reports:
 
 ```text
 profile: metric: sources[1].resource references /references/deleted-three-commits-ago.md, which does not exist in this bundle
@@ -1340,26 +1340,32 @@ computed from it, so the message points at something you can find in the file.
 List failures carry the exact index. A value that is not text, and text that is
 none of the three shapes, are malformed paths.
 
-### okf checks the existence only of `.md` targets
+### `okf validate --profile` resolves every file in the bundle
 
 `sources[5]` above names `references/attesters/revenue.py`, which is §6.3's own
-example of the `references/` convention, and it produces **no line**. That is a
-deliberate limitation rather than an oversight. Profile validation is entirely
-offline and is handed a list of concepts — non-reserved `.md` files — and no
-filesystem handle, so okf can decide whether a path names a concept and cannot
-decide whether it names a Python script. Reporting the second as dangling would
-be a claim okf never checked. A path resolving inside the bundle to anything
-other than `.md` is therefore accepted without a check; the scheme, shape, and
-bundle-escape checks still apply to it.
+example of the `references/` convention, and it produces no line because that
+file is there. A path rule reaches it: `okf validate --profile` walks the
+directory, records every file it passes, and reports the target when it is
+missing. Delete the script and re-run the same descriptor:
 
-This limitation is the *profile* layer's, not okf's as a whole. Core validation
-does resolve non-Markdown targets, because `okf validate` walks the directory and
-can record every file it passes; it applies that to the top-level `resource`
-field and to the three attested-computation fields `computation`,
-`executor.resource`, and `attester.resource`, under `--strict`, and the details
-are in [Path-valued frontmatter
-fields](format.md#path-valued-frontmatter-fields). Profile validation is handed
-concepts and no directory, so it cannot borrow that answer.
+```text
+profile: metric: sources[5].resource references references/attesters/revenue.py, which does not exist in this bundle
+```
+
+So a house convention demanding a followable `attester.resource` actually checks
+that the attester exists.
+
+There is one honest caveat left, and it applies to the library rather than to the
+command. A caller using `Okf.Profile.validateProfile` directly, with a list of
+concepts and no directory to walk, still sees concepts only. It cannot decide
+whether a path names a Python script, so it says nothing about one rather than
+reporting a target it never checked. Reach for `validateProfileWith` when you
+have a real directory; `okf validate --profile` already does.
+
+The reasoning is in
+[ADR 13](../adr/13-the-references-convention-and-non-markdown-files.md), and the
+core `--strict` check on the same fields is described under [Path-valued
+frontmatter fields](format.md#path-valued-frontmatter-fields).
 
 ### A path rule and a document reference cannot be combined
 

@@ -101,8 +101,8 @@ This section must always reflect the actual current state of the work.
 - [x] Milestone 2 (2026-08-01): a dangling relative frontmatter path that *would* resolve read from the bundle root says so in the diagnostic, and the resolution rule itself is unchanged
 - [x] Milestone 3 (2026-08-01): `okf validate --profile` resolves a path-valued rule against every file in the bundle, not only against `.md` concepts, and the existing `validateProfile` entry point keeps its current meaning
 - [x] Milestone 4 (2026-08-01): `okf index` lists a directory's non-Markdown files, so a directory holding only an attester no longer generates a one-byte index
-- [ ] Milestone 5: `docs/adr/13-the-references-convention-and-non-markdown-files.md` records the durable decisions, and `docs/user/format.md` and `docs/user/profiles.md` are corrected, including the profile limitation this plan retires
-- [ ] Milestone 5: every `okf` transcript in `docs/` that this plan perturbs is re-run and corrected
+- [x] Milestone 5 (2026-08-01): `docs/adr/13-the-references-convention-and-non-markdown-files.md` records the durable decisions, and `docs/user/format.md` and `docs/user/profiles.md` are corrected, including the profile limitation this plan retires
+- [x] Milestone 5 (2026-08-01): every `okf` transcript in `docs/` that this plan perturbs is re-run and corrected
 
 
 ## Surprises & Discoveries
@@ -467,7 +467,58 @@ Compare the result against the original purpose. Before marking the plan complet
 distill durable project context from the Decision Log, Surprises & Discoveries, and
 this section into docs/adr/. Keep task-local execution details here.
 
-(To be filled during and after implementation.)
+All five milestones are complete and `cabal test all` is green on both packages. The three
+defects the Purpose section named are fixed and the decision the plan existed to make is written
+down in `docs/adr/13-the-references-convention-and-non-markdown-files.md`.
+
+**What the plan got right.** The decomposition held exactly: Milestone 1 measured, three
+milestones each fixed one thing, and none of them depended on the others. Every one of the four
+provisional decisions survived contact with the evidence, which is the deferral discipline of the
+parent MasterPlan paying off a fourth time — these plans were written after EP-1 and EP-2 had
+landed, and they quote the working tree rather than reasoning from the specification.
+
+**What the plan got wrong, and it is the interesting part.** Milestone 3's instructions were
+precise, followed exactly, and produced a defect. The plan said to swap `Set ConceptId` for a
+`FilePath -> Bool` predicate and "delete the `takeExtension resolved /= ".md"` early return along
+with the comment explaining it", while promising in the same breath that `validateProfile` would
+keep "its exact current signature and meaning". Those two instructions are incompatible and the
+plan did not notice: the deleted early return *was* the meaning being preserved. Two tests failed
+within a minute of building, and they were right to.
+
+The lesson generalises past this plan. A boolean is the wrong shape for a question whose honest
+answer is sometimes "I did not look". `docs/adr/11-growing-the-profile-descriptor-language.md`
+requires a new rejection to be non-retroactive or unambiguous; this one was retroactive *and*
+ambiguous, and it arrived through the entry point the plan had singled out to protect. The fix —
+a third `TargetUnknown` state — is smaller than the bug it prevents, and it is now the load-bearing
+part of ADR 13's profile section rather than an implementation note.
+
+**Two things the plan's own rules caught before they shipped.** The plan wrote the diagnostic hint
+as `/references/skills/run-on-bq.md` in its Purpose section and as the bare
+`references/skills/run-on-bq.md` in the constructor's haddock. The first implementation emitted the
+bare form, which is true and useless — it names the spelling already on the line. Running the
+acceptance transcript and diffing it caught that; reading the code did not, and would not have,
+because both spellings look correct in isolation. This is the Decision Log rule inherited from
+`docs/plans/50-inspect-the-computation-body-section-and-enforce-exactly-one-computation-source.md`
+working exactly as intended.
+
+And the transcript sweep found a documented block that had become *ambiguous* rather than wrong.
+`docs/user/profiles.md`'s six-source example ends with a `.py` target and said it "produces no
+line"; after Milestone 3 that depends on whether the file is in the bundle, which the prose never
+said. Both readings were built as real bundles and run. The fix is one clause — "a Python file that
+*is* in the bundle" — plus the deleted-file case as the new subsection's illustration.
+
+**One correction of fact, from Milestone 1.** This plan claimed the complete list of non-Markdown
+files inside bundles was three, all attesters. It is four: `references/queries/revenue.sql` in the
+attested-computation fixture is a §10.3 computation-in-a-file target. Nothing turned on the number,
+but the plan told the implementer to confirm the list with a command rather than trust it, and that
+instruction earned its place.
+
+**Deliberately not done.** The two fixture bundles that hold non-Markdown files keep their
+hand-written indexes rather than being regenerated; the Decision Log records why. The accumulated
+breaking changes to `okf-core`'s exported vocabulary — this plan's fourth field on
+`DanglingFrontmatterPath`, which is an arity change and the hardest of the three for a downstream
+matcher — are one release check that belongs to EP-5 against the final surface, per the parent
+MasterPlan's Decision Log, and are not re-checked here against a moving target.
 
 
 ## Context and Orientation

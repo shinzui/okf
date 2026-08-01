@@ -607,18 +607,50 @@ authoring mistake this check exists to catch.
 One thing to watch, because the specification's own worked example walks into it.
 A bare `references/skills/run-on-bq.md` is a *relative* path under §6.2, so on a
 concept at `computations/revenue.md` it names
-`computations/references/skills/run-on-bq.md` and is reported as dangling:
+`computations/references/skills/run-on-bq.md` and is reported as dangling. The
+diagnostic names the spelling that would have worked:
 
 ```text
 $ okf validate ./bundle --strict
-computations/revenue: executor.resource names computations/references/skills/run-on-bq.md, which does not exist in this bundle
+computations/revenue: executor.resource names computations/references/skills/run-on-bq.md, which does not exist in this bundle (/references/skills/run-on-bq.md does — a path with no leading slash resolves against the concept's own directory)
 ```
 
 §6.3 calls `references/` "a naming convention, not a requirement" and never says
 a bare `references/` prefix anchors at the bundle root, so okf follows §6.2's
 grammar as written. Write the leading slash — `/references/skills/run-on-bq.md` —
 whenever the file lives at the bundle root, which is how
-`examples/ddd-ordering/computations/order-total.md` writes it.
+`examples/ddd-ordering/computations/order-total.md` writes it. The parenthetical
+appears only when the root-anchored reading actually resolves; a path that names
+nothing either way gets the plain sentence.
+
+
+### The `references/` convention
+
+§6.3 says a `references/` subdirectory "conventionally mirrors external material,
+run instructions, or code as first-class concepts within the bundle", and that it
+is "a naming convention, not a requirement". okf treats it as exactly that — a
+directory name with no special meaning — and the rules that apply to it are the
+rules that apply everywhere:
+
+- **A `.md` file under `references/` is an ordinary concept and needs a `type`.**
+  §11's conformance list requires a non-empty `type` on every non-reserved `.md`
+  file "in the tree", with no exemption for a directory name. It appears in
+  `okf graph`, in `okf show`, and in the concept count like any other concept.
+- **Anything else is a file, not a concept.** `references/attesters/revenue.py`
+  has no frontmatter and so has no `type`. okf never parses it, never graphs it,
+  and never counts it. What it can do is *find* it, which is what a path-valued
+  field needs.
+- **A generated `index.md` lists those files.** A directory holding only an
+  attester used to generate an empty index; it now enumerates its contents under
+  a `# Files` heading, per §8's progressive disclosure.
+- **Write the leading slash** when the directory sits at the bundle root, as
+  above.
+
+You are free not to use the convention at all. Nothing in okf looks for the name
+`references`.
+
+The reasoning, including the alternatives that were rejected, is in
+[ADR 13](../adr/13-the-references-convention-and-non-markdown-files.md).
 
 
 ## Authoring

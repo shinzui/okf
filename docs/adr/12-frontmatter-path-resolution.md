@@ -143,8 +143,10 @@ diagnostics. Every `resource` in this repository carries a URI scheme
 (`bigquery://`, `postgresql://`, `https://`, `mori://`) and so resolves external.
 That safety is a property of these bundles, not of the field:
 `okf-core/test/fixtures/dangling-frontmatter-path/` exists to keep the behaviour
-pinned, and it is the one bundle in the repository that deliberately contains a
-non-Markdown file.
+pinned, and it was the one bundle in the repository that deliberately contained a
+non-Markdown file. There are now three, holding four such files between them;
+`docs/adr/13-the-references-convention-and-non-markdown-files.md` records what
+they are.
 
 A top-level `resource` written as prose — `all rows in the warehouse` — *is*
 reported, because it carries no scheme and names no file. That asymmetry with
@@ -153,9 +155,20 @@ reported, because it carries no scheme and names no file. That asymmetry with
 `resource` values are prose should move them to a field the format does not
 define as a URI.
 
-Profile validation still checks the existence of `.md` targets only, because
-`Okf.Profile.validateProfile` receives concepts and no inventory. The two layers
-now disagree about non-Markdown targets, and `docs/user/profiles.md` says so
-rather than leaving it to be discovered. Passing the inventory into profile
-validation would close the gap and is not done here; it is a wider change to the
-profile-validation signature than this decision needs.
+Profile validation checked the existence of `.md` targets only when this record
+was written, because `Okf.Profile.validateProfile` receives concepts and no
+inventory, and the two layers disagreed about non-Markdown targets. That gap is
+now closed by
+`docs/adr/13-the-references-convention-and-non-markdown-files.md`:
+`Okf.Profile.validateProfileWith` takes the inventory and `okf validate
+--profile` passes it. This record estimated the change as "a wider change to the
+profile-validation signature than this decision needs", and that estimate was
+wrong — the additive entry point leaves every existing call site untouched.
+`validateProfile` itself still sees concepts alone, which is what a library
+caller with no directory to walk can honestly report.
+
+**What a path may point at, and what a non-Markdown file is to okf, are ADR 13's
+questions rather than this record's.** This record fixes how a path in a
+frontmatter value is *resolved*; ADR 13 fixes what it may name, whether a bare
+`references/` prefix anchors at the bundle root, and what okf does with a file it
+cannot parse.
