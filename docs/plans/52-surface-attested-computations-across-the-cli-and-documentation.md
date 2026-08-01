@@ -86,9 +86,11 @@ This section must always reflect the actual current state of the work.
 - [x] Milestone 3 (2026-08-01): `okf profile show` renders `objectFields`, so a profile constraining `executor.resource` displays the rule it enforces
 - [x] Milestone 3 (2026-08-01): any further gap Milestone 1 scheduled is closed — the audit scheduled none into this milestone; `okf profile document` already renders object fields
 - [x] Milestone 4 (2026-08-01): the embedded `okf help format`, `okf help validation`, and `okf help okf` topics describe OKF v0.2 rather than v0.1, including the attested computation type
-- [ ] Milestone 5: `docs/user/cli.md` documents the new command, and `docs/user/profiles.md` carries a worked §10 house-convention descriptor with a fixture proving it compiles and validates
-- [ ] Milestone 5: every `okf` transcript in `docs/` that this plan perturbs is re-run and corrected
-- [ ] Milestone 5: the parent MasterPlan's Outcomes & Retrospective is filled in and its ADR distillation pass is run
+- [x] Milestone 5 (2026-08-01): `docs/user/cli.md` documents the new command, and `docs/user/profiles.md` carries a worked §10 house-convention descriptor with a fixture proving it compiles and validates
+- [x] Milestone 5 (2026-08-01): every `okf` transcript in `docs/` that this plan perturbs is re-run and corrected
+- [x] Milestone 5 (2026-08-01): the whole initiative is recorded in all three changelogs, including the one-time release check for `okf-core`'s accumulated breaking surface — an item no milestone had, added when the sweep found no plan had touched a changelog
+- [x] Milestone 5 (2026-08-01): the ADR distillation pass is run and produces `docs/adr/14-okf-records-computations-and-never-runs-them.md`
+- [x] Milestone 5 (2026-08-01): the parent MasterPlan's Outcomes & Retrospective is filled in and the MasterPlan is marked Complete
 
 
 ## Surprises & Discoveries
@@ -344,6 +346,53 @@ every concept (`trust`), or reports a different family (`sources`). §10.5 step 
 `index.md` by hand or grepping `okf graph --json`. That is Milestone 2, which was already
 scheduled — the audit confirms the need rather than revising it.
 
+### Milestone 5 — the audit missed a whole surface, and it is the release-facing one
+
+**No plan under this MasterPlan had touched a changelog, and the Milestone 1 audit did not catch
+it because a changelog is not a command.** Five plans landed a concept type, four
+`ValidationError` constructors, a breaking arity change on an exported function, two new
+`Okf.Index` parameters, a new `Okf.Profile` entry point, and a new subcommand:
+
+```bash
+$ git log --oneline -8 -- CHANGELOG.md okf-core/CHANGELOG.md
+6167a5a docs(profile): document object rules and record the descriptor-growth rule
+8f15ad9 docs(changelog): record the OKF v0.2 adoption in all three changelogs
+```
+
+Both predate this MasterPlan. The audit ran every command and asked whether its *output* made
+sense; a document that ships to a consumer rather than printing to a terminal was outside the
+question it asked. A coherence audit scoped to "run every command" has this blind spot
+structurally — the same reasoning would have missed `README.md` and the Haddock, and it is why
+the audit's own framing should have been "every surface a user meets", not "every command".
+
+This turned out to be where the release check the parent MasterPlan assigned to this plan
+belonged. That Decision Log entry asked for the accumulated breaking surface to be verified once,
+against a vocabulary that had stopped moving, rather than per plan against a moving one. Writing
+it into `okf-core/CHANGELOG.md` is that check with an artifact instead of a memory: `validateBundle`'s
+required `BundleInventory` is the one that breaks a caller outright, the four `AttestedComputation*`
+constructors and `DanglingFrontmatterPath` break only an exhaustive `case`, and Mori
+(`mori://shinzui/mori`) matches `ProfileViolation` and so meets the constructors not at all — but
+meets the arity change if it calls `validateBundle`.
+
+**The fixture bundle demonstrated the wrong thing, and one concept fixed it.** The house-profile
+transcript against `okf-core/test/fixtures/attested-computation/` initially showed seven
+`missing profile-required field` lines and nothing else — every concept in that bundle was built
+to break a *core* rule, so all of them were missing whole top-level keys and none exercised
+`objectFields`, `elementFields`, or a nested path. A demonstration of the profile route whose
+transcript never reaches a nested rule teaches the wrong lesson. `computations/churn` is the fix:
+core-clean (it declares its `runtime`, offers exactly one computation, and every path resolves,
+so `okf validate --strict` says nothing about it) and house-deviating in three ways, one of which
+is nested. It is the concept that makes the boundary visible in one bundle rather than in prose.
+
+**The `okf trust` transcript in `docs/user/cli.md` looked stale and was not, which is worth
+recording because the check that would have "fixed" it was wrong.** Re-running it produces
+twenty-two rows against the document's seven. The document says so — "Rows for the other fifteen
+concepts of that bundle are omitted here" — and 22 − 7 = 15 still holds after this initiative
+added two concepts to that bundle, because the omitted count was written as a subtraction rather
+than as a list. Every shown row is byte-identical. A sweep that diffs transcripts mechanically
+reports this as a failure; a deliberate abridgement is not one, and the way to tell is whether the
+prose states the abridgement and whether the shown lines still match.
+
 
 ## Decision Log
 
@@ -541,6 +590,31 @@ Record every decision made while working on the plan.
   performs that review; if it turns up durable content with no home, that is when an ADR gets
   written, and this entry is revised to say which.
   Date: 2026-08-01
+  **Revised 2026-08-01 after running the pass: it did turn up one, and the ADR is
+  `docs/adr/14-okf-records-computations-and-never-runs-them.md`.** See the Decision Log entry
+  below.
+
+- Decision: The distillation pass writes one ADR the initiative had not scheduled —
+  `docs/adr/14-okf-records-computations-and-never-runs-them.md` — and nothing else.
+  Rationale: the pass read the parent MasterPlan and all five child plans and asked of each
+  durable item whether it had a home. Almost everything did. The path-resolution rules are ADR 12,
+  the `references/` convention and the three-valued-presence rule are ADR 13, strict-only
+  placement is ADR 7, house-conventions-live-in-profiles is ADR 1, and derived-not-stored is
+  ADR 8. One thing had none: **okf records computations and never runs or attests them.** It is
+  the first entry in the MasterPlan's Decision Log, it is restated in the Purpose of this plan and
+  of two siblings, it is why `okf computations` has no verdict column, and it is normative rather
+  than a scoping preference — §10 says OKF "does not execute anything itself" and §10.5 marks the
+  execute-and-attest workflow informative with its artifacts outside the bundle. It is also the
+  single most likely thing to be re-litigated: okf now resolves `attester.resource` against the
+  bundle and `okf show --computation` reads and prints the computation, so "why not just run
+  them?" is one apparent step away and is not. A boundary restated in five plans and recorded in
+  none is exactly what the distillation pass exists to catch.
+  Two candidates were considered and rejected. The transcript rule — that a documented transcript
+  is verified by running it and never by reading it — is a contributor practice rather than an
+  architectural constraint, and it earned its place in four plans' Decision Logs where a
+  contributor working on those surfaces will meet it. And the report-hides-no-defect principle
+  behind `(no runtime)` is one command's design, recorded in that command's haddock.
+  Date: 2026-08-01
 
 
 ## Outcomes & Retrospective
@@ -550,7 +624,56 @@ Compare the result against the original purpose. Before marking the plan complet
 distill durable project context from the Decision Log, Surprises & Discoveries, and
 this section into docs/adr/. Keep task-local execution details here.
 
-(To be filled during and after implementation.)
+**Complete on 2026-08-01, in five commits, one per milestone, with `cabal test all` green on both
+packages after each.** The plan's Purpose promised four things and delivered all four:
+`okf computations` exists, `okf profile show` stops hiding half of any profile that constrains a
+mapping-valued key, the shipped help topics describe v0.2, and `docs/user/profiles.md` carries the
+worked house-convention route to the rest of the §10 contract.
+
+**What the plan got right was making Milestone 1 an audit that changes nothing.** It found three
+things the plan had not scheduled and disproved one it had. It found that `okf-cli/help/okf.md`
+asserts the tool tracks OKF v0.1 and lists five of fourteen commands, which widened Milestone 4 by
+a file. It answered all four of the questions the plan flagged as having a wrong default — and one
+of the answers was the opposite of what the plan assumed: `okf profile document` does *not* share
+`okf profile show`'s `objectFields` gap, so Milestone 3 closed one renderer rather than two, and
+closing it made the two commands agree rather than diverge in a new way. And it confirmed the two
+already-delivered milestones rather than redoing them.
+
+**What the plan got wrong is that its audit was scoped to commands rather than to surfaces.** No
+changelog had been touched by any of the five plans in this initiative, and running every command
+in the tool cannot find that, because a changelog does not print. The gap was found later, during
+Milestone 5's sweep, by grepping `docs/` for things this plan perturbed and noticing that
+`CHANGELOG.md` had no hit for a whole concept type. **A coherence audit should ask "what surfaces
+does a user meet", not "what does each command print"** — the second is a proper subset, and the
+surfaces it excludes are precisely the release-facing ones.
+
+**Three findings generalise past this plan.**
+
+The `objectFields` rendering gap was not hypothetical. It was framed as a gap on a construct
+nobody had adopted, and the shipped `docs/profiles/okf-v0-2.dhall` turned out to constrain three
+mapping-valued keys, none of which `okf profile show` displayed. **A rendering omission that
+nothing exercises is a different bug from one the shipped artifact hits every time**, and the way
+to tell them apart is to run the command against the shipped artifact rather than to reason about
+the type.
+
+A demonstration is only as good as the bundle it runs against. The house profile ran cleanly
+against a bundle whose every concept was missing a top-level key, so its transcript exercised no
+nested rule and taught nothing about the constructs the section exists to explain. **A worked
+example needs an input built for it**, and `computations/churn` — core-clean, house-deviating,
+one nested deviation — is the whole of the fix.
+
+The transcript rule the parent MasterPlan records earned its place a fifth time, and once in a new
+direction: a documented block can look stale and be correct. `docs/user/cli.md`'s `okf trust`
+listing shows seven of twenty-two rows and says "the other fifteen", which survived this
+initiative adding two concepts to that bundle only because the count was written as a subtraction.
+The rule is not "re-run and replace" but "re-run and compare, then read the prose around it".
+
+**One deliberate exclusion.** No new contract check was added. §10.2 marks one field REQUIRED and
+§10.3 fixes the exactly-one rule, and sibling plans enforce exactly those; everything a team might
+want beyond them is a house convention, which is what the `docs/user/profiles.md` section and its
+compiled fixture demonstrate. That boundary is now
+`docs/adr/14-okf-records-computations-and-never-runs-them.md`, the one ADR the distillation pass
+found the initiative owed and had not scheduled.
 
 
 ## Context and Orientation
