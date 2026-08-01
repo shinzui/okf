@@ -90,6 +90,8 @@ main = do
         test "conceptFromDocument derives typed fields from frontmatter" testConceptFromDocumentDerivesFields,
         test "conceptGenerated projects the v0.2 generated family" testConceptGeneratedProjection,
         test "readGenerated ignores a generated mapping with no by actor" testReadGeneratedWithoutActor,
+        test "readVerified reads a list and normalises a bare mapping to one element" testReadVerifiedShapes,
+        test "setVerified always writes a list and round-trips" testVerifiedRoundTrip,
         testIO "writeBundle then walkBundle round-trips" testWriteBundleRoundTrip,
         testIO "fixture dangling link reports a bundle validation error" testFixtureDanglingLink,
         testIO "loadProfileFile decodes the postgresql fixture" testLoadProfileFixture,
@@ -517,7 +519,7 @@ testLogStalenessReadsGeneratedAt = do
       "type: Test\ngenerated: { by: human:ahormati, at: 2026-06-23T00:00:00Z }\n"
   -- `generated.at` wins over `timestamp`: the stale date must be the June 24
   -- from `generated`, not the January 1 from the legacy key.
-  both <-
+  bothKeys <-
     testConceptWithFrontmatter
       "both"
       "type: Test\ngenerated: { by: human:ahormati, at: 2026-06-24T00:00:00Z }\ntimestamp: 2026-01-01T00:00:00Z\n"
@@ -526,7 +528,7 @@ testLogStalenessReadsGeneratedAt = do
     [ LogStaleness bothId "2026-06-24" (Just "log.md") (Just "2026-06-01"),
       LogStaleness generatedOnlyId "2026-06-23" (Just "log.md") (Just "2026-06-01")
     ]
-    (logStaleness [both, generatedOnly] logs)
+    (logStaleness [bothKeys, generatedOnly] logs)
 
 testLogStalenessPrefersDeepestLog :: Either Text ()
 testLogStalenessPrefersDeepestLog = do
@@ -888,6 +890,47 @@ testReadGeneratedWithoutActor = do
   assertEqual
     (Just (Generated (ProducerActor "reference_agent" "gemini-2.5-pro") Nothing))
     (readGenerated (withoutAt ^. #frontmatter))
+
+-- | Specification section 5.2 permits `verified` as a list or as a single bare
+-- `{ by, at }` mapping, and section 11 makes normalising the bare form to a
+-- one-element list a consumer MUST.
+testReadVerifiedShapes :: Either Text ()
+testReadVerifiedShapes = do
+  let verifiedIn source = readVerified . (^. #frontmatter) <$> firstShow (parseDocument source)
+  asList <-
+    verifiedIn
+      "---\ntype: Recipe\nverified:\n  - { by: human:ahormati, at: 2026-06-25T09:00:00Z }\n  - { by: process:finance-nightly, at: 2026-06-26T02:00:00Z }\n---\nBody\n"
+  assertEqual
+    [ Verification (HumanActor "ahormati") (Just "2026-06-25T09:00:00Z"),
+      Verification (ProcessActor "finance-nightly") (Just "2026-06-26T02:00:00Z")
+    ]
+    asList
+  bareMapping <- verifiedIn "---\ntype: Recipe\nverified: { by: human:ahormati, at: 2026-06-25T09:00:00Z }\n---\nBody\n"
+  assertEqual [Verification (HumanActor "ahormati") (Just "2026-06-25T09:00:00Z")] bareMapping
+  absent <- verifiedIn "---\ntype: Recipe\n---\nBody\n"
+  assertEqual [] absent
+  -- An entry without the `by` actor is skipped rather than yielding a partial
+  -- Verification, mirroring readGenerated.
+  partial <- verifiedIn "---\ntype: Recipe\nverified:\n  - { at: 2026-06-25T09:00:00Z }\n  - { by: human:ahormati }\n---\nBody\n"
+  assertEqual [Verification (HumanActor "ahormati") Nothing] partial
+  notAMapping <- verifiedIn "---\ntype: Recipe\nverified: human:ahormati\n---\nBody\n"
+  assertEqual [] notAMapping
+
+testVerifiedRoundTrip :: Either Text ()
+testVerifiedRoundTrip = do
+  let verifications =
+        [ Verification (HumanActor "ahormati") (Just "2026-06-25T09:00:00Z"),
+          Verification (ProcessActor "finance-nightly") Nothing
+        ]
+      original = OKFDocument (setVerified verifications (setType "Recipe" emptyFrontmatter)) "# Demo\n"
+      rendered = serializeDocument original
+  reparsed <- firstShow (parseDocument rendered)
+  assertEqual verifications (readVerified (reparsed ^. #frontmatter))
+  -- A single entry is still written as a list, not as the bare-mapping form.
+  let single = OKFDocument (setVerified [Verification (HumanActor "ahormati") Nothing] emptyFrontmatter) "# Demo\n"
+  assertBool
+    ("single entry not written as a list: " <> serializeDocument single)
+    (isJust (substringIndex "- by:" (serializeDocument single)))
 
 testConceptFromDocumentDerivesFields :: Either Text ()
 testConceptFromDocumentDerivesFields = do

@@ -13,6 +13,8 @@ module Okf.Document
     -- * OKF v0.2 trust family
     Generated (..),
     readGenerated,
+    Verification (..),
+    readVerified,
 
     -- * Frontmatter authoring
     frontmatterFromFields,
@@ -25,6 +27,7 @@ module Okf.Document
     setDescription,
     setTimestamp,
     setGenerated,
+    setVerified,
     setResource,
     setTags,
   )
@@ -34,6 +37,7 @@ import Data.Aeson.Key qualified as AesonKey
 import Data.Aeson.KeyMap qualified as KeyMap
 import Data.Attoparsec.ByteString qualified as Attoparsec
 import Data.ByteString qualified as ByteString
+import Data.Foldable (toList)
 import Data.Frontmatter qualified as Frontmatter
 import Data.List qualified as List
 import Data.Ord (comparing)
@@ -115,14 +119,55 @@ readGenerated :: Frontmatter -> Maybe Generated
 readGenerated frontmatterValue =
   case frontmatterLookup "generated" frontmatterValue of
     Just (Object generatedFields) -> do
-      by <- textMember "by" generatedFields
-      pure (Generated (parseActor by) (textMember "at" generatedFields))
+      by <- objectText "by" generatedFields
+      pure (Generated (parseActor by) (objectText "at" generatedFields))
     _ -> Nothing
+
+-- | One entry of the OKF v0.2 @verified@ family (specification §5.2): who or
+-- what independently confirmed the content, and when.
+--
+-- Deliberately distinct from 'Generated'. §5.2: "who /wrote/ a concept need not
+-- be who /confirmed/ it", and the two are independent — "content can change
+-- without re-confirmation, and facts can be re-confirmed without regeneration."
+--
+-- @verificationAt@ stays 'Text' for the same two reasons as 'generatedAt': §5.2
+-- does not mark @at@ required within an entry, and okf preserves frontmatter
+-- values as the producer wrote them so serialization round-trips.
+data Verification = Verification
+  { verificationBy :: !Actor,
+    verificationAt :: !(Maybe Text)
+  }
+  deriving stock (Generic, Eq, Show)
+
+-- | Read the OKF v0.2 @verified@ family from frontmatter.
+--
+-- Handles the two shapes §5.2 permits. A YAML list of mappings yields one
+-- 'Verification' per element. A __bare mapping__ yields a one-element list:
+-- "Consumers MUST treat a bare mapping as a one-element list", restated in §11's
+-- conformance list. Anything else, including an absent key, yields @[]@.
+--
+-- An entry with no textual @by@ is skipped rather than yielding a partial
+-- 'Verification', mirroring 'readGenerated'. An empty result is therefore
+-- indistinguishable from an absent key, which is correct: §5.3 keys the
+-- unverified tier off the absence of usable verification.
+readVerified :: Frontmatter -> [Verification]
+readVerified frontmatterValue =
+  case frontmatterLookup "verified" frontmatterValue of
+    Just (Array entries) -> foldMap (toList . verificationFromValue) entries
+    Just bareMapping -> toList (verificationFromValue bareMapping)
+    Nothing -> []
   where
-    textMember key members =
-      case KeyMap.lookup (AesonKey.fromText key) members of
-        Just (String value) -> Just value
-        _ -> Nothing
+    verificationFromValue = \case
+      Object entryFields -> do
+        by <- objectText "by" entryFields
+        pure (Verification (parseActor by) (objectText "at" entryFields))
+      _ -> Nothing
+
+objectText :: Text -> KeyMap.KeyMap Value -> Maybe Text
+objectText key members =
+  case KeyMap.lookup (AesonKey.fromText key) members of
+    Just (String value) -> Just value
+    _ -> Nothing
 
 -- | Build frontmatter from a list of @(key, value)@ pairs. Later duplicate
 -- keys overwrite earlier ones.
@@ -189,11 +234,31 @@ setTimestamp value = setField "timestamp" (String value)
 -- @generated@ is a mapping of an actor and a datetime.
 setGenerated :: Generated -> Frontmatter -> Frontmatter
 setGenerated Generated {generatedBy, generatedAt} =
-  setField "generated" (Object (KeyMap.fromList mappingFields))
+  setField "generated" (actorMapping generatedBy generatedAt)
+
+-- | Set the OKF v0.2 @verified@ field (specification §5.2).
+--
+-- Always writes a YAML list, even for one entry. §5.2 permits the bare-mapping
+-- form on input and 'readVerified' honours that MUST, but writing it would be
+-- pointlessly ambiguous when the list is the specification's primary form.
+setVerified :: [Verification] -> Frontmatter -> Frontmatter
+setVerified verifications =
+  setField "verified" (Array (Vector.fromList (entryValue <$> verifications)))
   where
-    mappingFields =
-      (AesonKey.fromText "by", String (renderActor generatedBy))
-        : [(AesonKey.fromText "at", String at) | Just at <- [generatedAt]]
+    entryValue Verification {verificationBy, verificationAt} =
+      actorMapping verificationBy verificationAt
+
+-- | A @{ by, at }@ YAML mapping, omitting @at@ when absent. Shared by the
+-- @generated@ and @verified@ families, which specification §5.2 gives the same
+-- shape.
+actorMapping :: Actor -> Maybe Text -> Value
+actorMapping actor occurredAt =
+  Object
+    ( KeyMap.fromList
+        ( (AesonKey.fromText "by", String (renderActor actor))
+            : [(AesonKey.fromText "at", String atValue) | Just atValue <- [occurredAt]]
+        )
+    )
 
 -- | Set the @resource@ field.
 setResource :: Text -> Frontmatter -> Frontmatter

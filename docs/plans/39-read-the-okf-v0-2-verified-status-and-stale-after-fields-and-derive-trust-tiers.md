@@ -64,7 +64,7 @@ the separate "profile" mechanism.
 
 ## Progress
 
-- [ ] Milestone 1: `verified` reads as a list, with a bare mapping normalised to one element
+- [x] Milestone 1: `verified` reads as a list, with a bare mapping normalised to one element (2026-07-31)
 - [ ] Milestone 2: `status` and `stale_after` read, with absent `status` defaulting to stable
 - [ ] Milestone 3: trust tiers derive from `verified` per specification §5.3
 - [ ] Milestone 4: staleness derives from `stale_after` against a caller-supplied date
@@ -84,6 +84,22 @@ the separate "profile" mechanism.
   as the sole authority for this plan.
   Rationale: it is the published specification this project tracks and it is on disk, so
   every requirement can be checked rather than recalled.
+  Date: 2026-07-31
+
+- Decision: `setVerified` always writes a YAML list, even for a single entry.
+  Rationale: §5.2 permits the bare-mapping form on input and `readVerified` honours that MUST,
+  but emitting it would be pointlessly ambiguous when the list is the specification's primary
+  form. A reader of okf's output should not have to handle two shapes okf could have avoided
+  producing.
+  Date: 2026-07-31
+
+- Decision: `generated` and `verified` entries share one `actorMapping` writer and one
+  `objectText` reader in `okf-core/src/Okf/Document.hs`, and `readGenerated` was refactored
+  onto the shared reader in the same change.
+  Rationale: §5.2 gives both families the identical `{ by, at }` entry shape, and the
+  prerequisite plan had written a private `textMember` helper inside `readGenerated` that this
+  plan would otherwise have duplicated verbatim. One shape, one implementation; a future
+  divergence between them would be a specification change, not a local edit.
   Date: 2026-07-31
 
 (Add further decisions as you make them. Milestones 4 and 6 each end with a decision this
