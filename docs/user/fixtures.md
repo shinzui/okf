@@ -20,16 +20,20 @@ tables/customers
 tables/orders
 ```
 
+It is an OKF v0.2 bundle: its root `index.md` declares `okf_version: "0.2"`,
+and every concept dates itself with `generated` rather than the superseded v0.1
+`timestamp`.
+
 Validate it:
 
 ```bash
 cabal run okf -- validate okf-core/test/fixtures/valid-bundle
 ```
 
-Expected output:
+Expected output — the version suffix appears because the bundle declares one:
 
 ```text
-OK: 4 concepts
+OK: 4 concepts (okf_version 0.2)
 ```
 
 Preview generated indexes:
@@ -52,6 +56,38 @@ cabal run okf -- graph okf-core/test/fixtures/valid-bundle --json
 
 The graph includes edges from `tables/orders` to linked known concepts such as
 `tables/customers` and `datasets/sales`.
+
+
+## v0.1 Legacy Bundle
+
+```text
+okf-core/test/fixtures/v01-legacy-bundle
+```
+
+A deliberately unmigrated bundle, and the only one in the repository. Its single
+concept dates itself with the OKF v0.1 `timestamp` that v0.2 supersedes with
+`generated.at`, and it declares no `okf_version`.
+
+It exists because okf reads a v0.1 `timestamp` whenever `generated` is absent,
+and a compatibility path with no fixture rots. Do not migrate it. The policy it
+guards is [ADR 7](../adr/7-okf-v0-1-legacy-fallback-policy.md).
+
+```bash
+cabal run okf -- validate okf-core/test/fixtures/v01-legacy-bundle --strict
+```
+
+Strict validation reports nothing and exits zero:
+
+```text
+OK: 1 concepts
+```
+
+That silence is the point. okf never warns about a v0.1 construct in an
+undeclared bundle — a warning on every pre-v0.2 document would make the tool
+unusable against the corpora it exists to read. Add `okf_version: "0.2"` to a
+bundle's root `index.md` and the same command names every concept still carrying
+`timestamp`, which is how a team ratchets a migration forward.
+
 
 ## Document ID Bundle
 

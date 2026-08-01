@@ -33,7 +33,7 @@ okf validate examples/postgresql-sample --profile docs/profiles/postgresql.dhall
 A conforming bundle prints only the usual concept count and exits `0`:
 
 ```text
-OK: 2 concepts
+OK: 2 concepts (okf_version 0.2)
 ```
 
 A deviating bundle prints per-concept advisories, still exits `0`, and ends with a
@@ -753,18 +753,20 @@ yourself. `rm -rf` the destination first if you want it pristine.
 
 ### Two things that will otherwise look like bugs
 
-**Generated concepts carry no `timestamp` unless you ask for one, and
-`okf validate --strict` requires one.** Straight out of the generator:
+**Generated concepts carry no date unless you ask for one, and
+`okf validate --strict` requires one.** The generator's `--timestamp` flag
+writes the OKF v0.1 `timestamp` key, which okf still reads when the v0.2
+`generated` family is absent. Straight out of the generator:
 
 ```bash
 okf validate /tmp/pg-profile --strict
 ```
 
 ```text
-profile: missing recommended field: timestamp
-types/postgresql-schema: missing recommended field: timestamp
-types/postgresql-table: missing recommended field: timestamp
-types/postgresql-view: missing recommended field: timestamp
+profile: missing generated field (or legacy timestamp)
+types/postgresql-schema: missing generated field (or legacy timestamp)
+types/postgresql-table: missing generated field (or legacy timestamp)
+types/postgresql-view: missing generated field (or legacy timestamp)
 ```
 
 exit code `1`. That is deliberate: a generator that stamped the current time
@@ -778,16 +780,16 @@ okf validate /tmp/pg-profile --strict
 ```
 
 ```text
-log: profile: timestamp date 2026-07-31 has no enclosing log.md
-log: types/postgresql-schema: timestamp date 2026-07-31 has no enclosing log.md
-log: types/postgresql-table: timestamp date 2026-07-31 has no enclosing log.md
-log: types/postgresql-view: timestamp date 2026-07-31 has no enclosing log.md
+log: profile: generated date 2026-07-31 has no enclosing log.md
+log: types/postgresql-schema: generated date 2026-07-31 has no enclosing log.md
+log: types/postgresql-table: generated date 2026-07-31 has no enclosing log.md
+log: types/postgresql-view: generated date 2026-07-31 has no enclosing log.md
 OK: 4 concepts
 log: 4 stale concept advisory/advisories (use --log-enforce to fail)
 ```
 
 exit code `0`. Those `log:` lines are the other side of supplying a timestamp: a
-concept with a timestamp and no enclosing `log.md` is reported as stale. They are
+concept with a date and no enclosing `log.md` is reported as stale. They are
 advisories, so the command still succeeds — but `okf validate --log-enforce`
 would fail. Generated documentation is not a hand-maintained bundle; do not check
 it with `--log-enforce`.
@@ -1234,4 +1236,4 @@ Column / Type / Nullable / Description. Run:
 cabal run okf -- validate examples/postgresql-sample --profile docs/profiles/postgresql.dhall
 ```
 
-and it prints `OK: 2 concepts` with no `profile:` lines.
+and it prints `OK: 2 concepts (okf_version 0.2)` with no `profile:` lines.

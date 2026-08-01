@@ -63,7 +63,7 @@ cabal run okf -- show okf-core/test/fixtures/valid-bundle tables/orders
 Successful validation prints:
 
 ```text
-OK: 4 concepts
+OK: 4 concepts (okf_version 0.2)
 ```
 
 The user guide starts at [docs/user/README.md](./docs/user/README.md).

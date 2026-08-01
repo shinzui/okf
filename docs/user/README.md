@@ -28,7 +28,7 @@ cabal run okf -- show okf-core/test/fixtures/valid-bundle tables/orders
 The validation command should print:
 
 ```text
-OK: 4 concepts
+OK: 4 concepts (okf_version 0.2)
 ```
 
 

@@ -59,7 +59,7 @@ something documented does not actually work.
 - [ ] Milestone 2: `docs/user/format.md` documents every v0.2 family with worked examples
 - [ ] Milestone 3: `docs/user/cli.md` and `docs/user/authoring.md` cover the new commands and setters
 - [x] Milestone 4: the example bundles migrate to v0.2 and declare `okf_version` (2026-08-01)
-- [ ] Milestone 5: test fixtures migrate, with a designated v0.1 fixture retained and labelled
+- [x] Milestone 5: test fixtures migrate, with a designated v0.1 fixture retained and labelled (2026-08-01)
 - [ ] Milestone 6: CHANGELOG entries written for both packages
 
 
@@ -117,6 +117,53 @@ before pointing that command at a bundle whose indexes someone wrote by hand.
   pasting invented output. Milestone 1 keeps its place because the version claim in
   `README.md` is the single most visible wrong statement in the repository and depends on
   nothing.
+  Date: 2026-08-01
+
+- Decision (Milestone 5, required by the plan): keep the v0.1 fallback under test with a
+  **new** fixture, `okf-core/test/fixtures/v01-legacy-bundle`, rather than leaving
+  `valid-bundle` on v0.1.
+  Rationale: the primary fixture is what a reader copies and what most tests exercise, so
+  it should be what okf now recommends — a v0.2 bundle that declares its version. But the
+  fallback is a promise okf has made in `docs/adr/7-okf-v0-1-legacy-fallback-policy.md`,
+  and a promise with no fixture rots quietly: nothing would fail if a later change stopped
+  reading `timestamp`. A separate bundle whose path says what it is keeps the promise
+  tested and tells the next reader not to migrate it. Its test asserts three things: the
+  bundle declares nothing, strict validation reports nothing at all, and the date is still
+  read (`logStaleness` yields `2026-06-16` from `timestamp` alone).
+  Date: 2026-08-01
+
+- Decision: Migrate `valid-bundle` and stop there. The `profile-*` fixtures keep their
+  `timestamp` keys.
+  Rationale: the plan's Concrete Steps predict that after Milestone 5,
+  `grep -rln "timestamp:" okf-core/test/fixtures` returns only the legacy bundle. That
+  prediction cannot hold, and the reason is this MasterPlan's own scope boundary. Several
+  profile descriptors *declare* `timestamp` — `okf-core/test/fixtures/profiles/formats.dhall`
+  gives it an `Rfc3339Utc` format, `formats-ep4.dhall` documents it, `postgresql.dhall`
+  recommends it — and the fixtures they govern exist to pin *profile* behaviour against
+  those declarations. Teaching profiles the v0.2 families is
+  `docs/masterplans/8-extend-okf-profiles-for-v0-2-field-families.md`; migrating the
+  fixtures before the descriptors would break the tests and prove nothing.
+  Date: 2026-08-01
+
+- Decision: Keep `valid-bundle` minimal — the date key and the version declaration, no
+  `verified`, `sources`, `status`, or `stale_after` — and use `examples/ddd-ordering` for
+  the `okf trust` and `okf sources` transcripts in `docs/user/cli.md`.
+  Rationale: a fixture pins behaviour and every field added to it is a field some future
+  assertion must account for; the v0.2 readers already have direct unit tests. An example
+  bundle exists to be read and copied, which is where a demonstration belongs.
+  Date: 2026-08-01
+
+- Decision: Correct the stale transcripts in `docs/user/profiles.md` despite that file
+  being out of scope.
+  Rationale: the exclusion is about the profile *descriptor language* — the
+  `okfVersion = "0.1"` examples and the descriptor compatibility section, all left
+  untouched. Three transcripts in that file had gone stale: two from EP-1's message changes
+  (`missing recommended field: timestamp` is now `missing generated field (or legacy
+  timestamp)`, and the CLI reports `generated date` rather than `timestamp date`), and one
+  from this plan's own migration of `examples/postgresql-sample`, which now prints the
+  `(okf_version 0.2)` suffix. All three were re-run before being edited. This plan is the
+  initiative's last checkpoint for exactly this class of decay, and leaving a transcript
+  that does not reproduce would contradict its own acceptance rule.
   Date: 2026-08-01
 
 (Add further decisions as you make them. Milestone 5 ends with a decision this plan requires

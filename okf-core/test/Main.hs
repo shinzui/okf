@@ -83,6 +83,7 @@ main = do
         testIO "writeBundleIndexes preserves an existing okf_version declaration" testWriteBundleIndexesPreservesVersion,
         testIO "writeBundleIndexesWith declares a version and leaves others alone" testWriteBundleIndexesDeclaresVersion,
         testIO "fixture valid bundle validates and graphs expected edges" testFixtureValidBundle,
+        testIO "fixture v01 legacy bundle validates strictly through the fallback" testFixtureV01LegacyBundle,
         testIO "fixture graph JSON shape is stable" testFixtureGraphJsonShape,
         testIO "fixture unterminated frontmatter reports parse error" testFixtureUnterminatedFrontmatter,
         testIO "fixture missing type reports validation error" testFixtureMissingType,
@@ -753,6 +754,7 @@ testFixtureValidBundle :: IO (Either Text ())
 testFixtureValidBundle = do
   root <- fixturePath "valid-bundle"
   concepts <- readBundle root
+  declaration <- readBundleVersion root
   pure
     ( do
         orders <- firstShow (parseConceptId "tables/orders")
@@ -760,9 +762,39 @@ testFixtureValidBundle = do
         sales <- firstShow (parseConceptId "datasets/sales")
         assertEqual 4 (length concepts)
         assertEqual [] (foldMap (validateDocument PermissiveConformance . conceptDocument) concepts)
+        -- The primary fixture is a v0.2 bundle: it declares the version and
+        -- every concept dates itself with `generated` rather than the
+        -- superseded `timestamp`.
+        assertEqual (Right (VersionDeclared (OkfVersion 0 2))) declaration
+        assertEqual [] (validateBundle StrictAuthoring (VersionDeclared (OkfVersion 0 2)) concepts)
+        assertBool
+          "every concept carries generated"
+          (all (isJust . conceptGenerated) concepts)
         let graph = buildGraph concepts
         assertBool "orders to customers" (Edge {source = orders, target = customers} `List.elem` edges graph)
         assertBool "orders to sales" (Edge {source = orders, target = sales} `List.elem` edges graph)
+    )
+
+-- | The v0.1 fallback of @docs\/adr\/7-okf-v0-1-legacy-fallback-policy.md@ needs
+-- a bundle in the old shape or it will rot. This fixture is that bundle, and is
+-- deliberately never migrated: it dates its concept with the superseded
+-- @timestamp@ and declares no @okf_version@, so strict validation must report
+-- nothing at all.
+testFixtureV01LegacyBundle :: IO (Either Text ())
+testFixtureV01LegacyBundle = do
+  root <- fixturePath "v01-legacy-bundle"
+  concepts <- readBundle root
+  declaration <- readBundleVersion root
+  pure
+    ( do
+        assertEqual 1 (length concepts)
+        assertEqual (Right VersionUndeclared) declaration
+        assertEqual [] (validateBundle StrictAuthoring VersionUndeclared concepts)
+        assertBool
+          "the concept carries no generated family"
+          (all (isNothing . conceptGenerated) concepts)
+        -- The date is still read, which is the whole point of the fallback.
+        assertEqual ["2026-06-16"] (staleConceptDate <$> logStaleness concepts [])
     )
 
 testFixtureGraphJsonShape :: IO (Either Text ())
