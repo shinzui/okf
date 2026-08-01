@@ -21,7 +21,18 @@ import Data.Aeson.KeyMap qualified as KeyMap
 import Data.List qualified as List
 import Data.Text qualified as Text
 import Data.Vector qualified as Vector
-import Okf.Bundle (Concept, LogFile, conceptDocument, conceptIdOf, conceptSourcePath, logContent, logSourcePath)
+import Okf.Bundle
+  ( BundleInventory,
+    Concept,
+    LogFile,
+    bundleInventoryMember,
+    conceptDocument,
+    conceptIdOf,
+    conceptResource,
+    conceptSourcePath,
+    logContent,
+    logSourcePath,
+  )
 import Okf.ConceptId (ConceptId)
 import Okf.Document
 import Okf.Graph (danglingReferences, duplicateConceptIds)
@@ -33,6 +44,7 @@ import Okf.Index
   )
 import Okf.Log (Log (logDays), LogDay (logDate), LogValidationError, validateLog)
 import Okf.Markdown (extractFootnoteLabels, footnoteLabelsUsed)
+import Okf.Path (PathResolution (..), resolvePathReference)
 import Okf.Prelude
 import System.FilePath qualified as FilePath
 
@@ -84,6 +96,20 @@ data BundleValidationError
     DocumentInvalid ConceptId ValidationError
   | -- | A source concept links to a target that is not present in the bundle.
     DanglingReference ConceptId ConceptId
+  | -- | A path-valued frontmatter field (specification §6.2) names a bundle path
+    -- that no file in the bundle matches. Carries the concept, the frontmatter
+    -- field path as written (@resource@, or later @executor.resource@), and the
+    -- resolved bundle-relative target.
+    --
+    -- Distinct from 'DanglingReference', which reports a Markdown link in a
+    -- concept /body/ naming a missing /concept/. A frontmatter path may name a
+    -- file that is not a concept at all — §6.3's @references\/attesters\/
+    -- revenue.py@ — so it cannot be reported as a 'ConceptId' pair.
+    --
+    -- Like 'DanglingReference' this is an authoring-time lint that goes beyond
+    -- conformance: §11 says a consumer MUST NOT reject a bundle over a broken
+    -- cross-link, because §6.1 permits a link to knowledge not yet written.
+    DanglingFrontmatterPath ConceptId Text FilePath
   | -- | The same concept ID was assembled more than once.
     DuplicateConceptId ConceptId
   | -- | A reserved log file does not match the required log structure.
@@ -183,11 +209,21 @@ data LogStaleness = LogStaleness
 -- that is the reading almost every bundle gets, and it applies no
 -- version-specific rules. Everything the declaration implies is decided by
 -- 'versionGate'.
-validateBundle :: ValidationProfile -> VersionDeclaration -> [Concept] -> [BundleValidationError]
-validateBundle profile declaration concepts =
-  perDocument <> dangling <> duplicates <> versionErrors
+--
+-- The 'BundleInventory' is every file the bundle holds, read with
+-- 'Okf.Bundle.walkBundleInventory'. It is what lets a path-valued frontmatter
+-- field be resolved against a target that is not a concept — a @references\/@
+-- script, a CSV — without giving validation a filesystem handle. A caller with
+-- no directory to walk passes 'Okf.Bundle.bundleInventoryOfConcepts', which
+-- reports the concepts' own paths and nothing else.
+validateBundle :: ValidationProfile -> VersionDeclaration -> BundleInventory -> [Concept] -> [BundleValidationError]
+validateBundle profile declaration inventory concepts =
+  perDocument <> dangling <> frontmatterPaths <> duplicates <> versionErrors
   where
     gate = versionGate declaration
+    frontmatterPaths = case profile of
+      PermissiveConformance -> []
+      StrictAuthoring -> danglingFrontmatterPaths inventory concepts
     perDocument =
       [ DocumentInvalid (conceptIdOf concept) err
       | concept <- concepts,
@@ -202,6 +238,60 @@ validateBundle profile declaration concepts =
       StrictAuthoring ->
         [BundleVersionUnparseable rawVersion | VersionUnparseable rawVersion <- [declaration]]
           <> [BundleVersionNotUnderstood version | Just version <- [gateNotUnderstood gate]]
+
+-- | Strict-mode check that a path-valued frontmatter field names a file the
+-- bundle actually holds (specification §6.2).
+--
+-- Strict-mode only, and deliberately not gated on the bundle declaring
+-- @okf_version: "0.2"@. Every other version-sensitive check asks
+-- 'gateDeclaresAtLeast' rather than testing the declaration, and this one is the
+-- exception worth naming: neither @resource@ nor the §6.2 path grammar is a v0.2
+-- addition, so a dangling @resource@ is just as wrong in an undeclared bundle,
+-- which is the shape of almost every bundle in existence.
+--
+-- Only 'DanglingInBundle' is reported. The three other unresolved outcomes are
+-- passed over on purpose, and it is not an oversight:
+--
+-- * 'UnresolvableEscape' and 'UnresolvableMalformed' would fire on correct
+--   documents. §4.1 defines @resource@ as "a URI that uniquely identifies the
+--   underlying asset", and a producer writing a bare @analytics.tables.orders@
+--   is writing a legitimate §4.1 value that carries no scheme and so classifies
+--   as a bundle path. Only the dangling case is safe to report, because it means
+--   the value looks exactly like a bundle path and there is simply no such file.
+--
+-- * 'ResolvedExternal' is resolved: okf has no network access and never fetches.
+danglingFrontmatterPaths :: BundleInventory -> [Concept] -> [BundleValidationError]
+danglingFrontmatterPaths inventory concepts =
+  [ DanglingFrontmatterPath (conceptIdOf concept) fieldName target
+  | concept <- concepts,
+    (fieldName, rawValue) <- pathValuedFields concept,
+    DanglingInBundle target <-
+      [resolvePathReference existsInBundle (conceptIdOf concept) rawValue]
+  ]
+  where
+    existsInBundle = flip bundleInventoryMember inventory
+
+-- | The path-valued frontmatter fields okf resolves without being asked, paired
+-- with the field name a diagnostic names so the author knows which line to fix.
+--
+-- Specification §6.2 names five path-valued fields. Two of them are absent here
+-- for different reasons, and both are decisions rather than gaps.
+--
+-- @sources[].resource@ is excluded because §5.1 sanctions a value that is not a
+-- path: an entry's resource names "either a concrete artifact a consumer can
+-- follow ... or a population or scope descriptor it cannot", and
+-- 'Okf.Document.sourceResource' says in as many words never to treat it as one.
+-- @examples\/ddd-ordering@ carries such a descriptor today, and a check
+-- reporting every unresolvable bundle path would report that correct bundle as
+-- broken. A team whose corpus does use followable paths there opts in by writing
+-- a profile: @path@ on a @NestedFieldRule@ reaches @sources.resource@ already.
+--
+-- @computation@, @executor.resource@, and @attester.resource@ belong to the
+-- Attested Computation concept type, which okf does not read yet. Adding them
+-- here is extending this list, which is why it is a list.
+pathValuedFields :: Concept -> [(Text, Text)]
+pathValuedFields concept =
+  [("resource", value) | Just value <- [conceptResource concept]]
 
 -- | Strict-mode check that a bundle which has declared OKF v0.2 carries no
 -- superseded v0.1 construct.

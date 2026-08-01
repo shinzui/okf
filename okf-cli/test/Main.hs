@@ -5,7 +5,7 @@ import Control.Monad (unless)
 import Data.List qualified as List
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text.IO
-import Okf.Bundle (conceptFromDocument, conceptIdOf, walkBundle)
+import Okf.Bundle (bundleInventoryOfConcepts, conceptFromDocument, conceptIdOf, walkBundle)
 import Okf.Cli
 import Okf.Cli.Assist (AssistOptions (..), buildClaudeCommand)
 import Okf.Cli.Config (AssistSettings (..), ConfigSource (..), KitSettings (..), OkfConfig (..), OkfProvider (..), defaultOkfConfig, exampleConfigText, findConfigSource, loadOkfConfig, okfConfigEnvVar, projectConfigPath)
@@ -719,7 +719,7 @@ testProfileDocumentationConformsToMetaProfile = do
         Left definitionErrors -> reportFailure ("meta-profile does not compile: " <> show definitionErrors)
         Right compiled -> do
           let profileViolations = validateProfile PermissiveConformance compiled concepts
-              structuralErrors = validateBundle PermissiveConformance VersionUndeclared concepts
+              structuralErrors = validateBundle PermissiveConformance VersionUndeclared (bundleInventoryOfConcepts concepts) concepts
           unless (null profileViolations) $
             putStrLn ("committed example deviates from the meta-profile: " <> show profileViolations)
           unless (null structuralErrors) $
@@ -808,7 +808,7 @@ testProfileDocumentationStrictWithTimestamp = do
             putStrLn ("meta-profile does not compile: " <> show definitionErrors)
             pure False
           Right compiled -> do
-            let structuralErrors = validateBundle StrictAuthoring VersionUndeclared concepts
+            let structuralErrors = validateBundle StrictAuthoring VersionUndeclared (bundleInventoryOfConcepts concepts) concepts
                 profileViolations = validateProfile StrictAuthoring compiled concepts
             unless (null structuralErrors) $
               putStrLn ("stamped output is not strict-clean: " <> show structuralErrors)

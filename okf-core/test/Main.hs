@@ -115,6 +115,7 @@ main = do
         test "an unreadable or unknown declaration is a strict lint, never a refusal" testVersionDeclarationLints,
         test "validateBundle reports a dangling reference" testValidateBundleDanglingReference,
         test "validateBundle accepts a bundle whose links all resolve" testValidateBundleAcceptsResolved,
+        test "validateBundle reports a dangling frontmatter path under strict only" testValidateBundleDanglingFrontmatterPath,
         test "duplicateConceptIds finds repeated ids" testDuplicateConceptIds,
         test "conceptFromDocument derives typed fields from frontmatter" testConceptFromDocumentDerivesFields,
         test "conceptGenerated projects the v0.2 generated family" testConceptGeneratedProjection,
@@ -132,6 +133,7 @@ main = do
         test "strict validation reports sources missing resource and duplicate ids" testValidateSources,
         testIO "writeBundle then walkBundle round-trips" testWriteBundleRoundTrip,
         testIO "fixture dangling link reports a bundle validation error" testFixtureDanglingLink,
+        testIO "fixture dangling frontmatter path reports exactly one strict problem" testFixtureDanglingFrontmatterPath,
         testIO "loadProfileFile decodes the postgresql fixture" testLoadProfileFixture,
         testIO "loadProfileFile decodes record-completed document ID rules" testLoadDocumentIdProfileFixture,
         testIO "loadProfileFile accepts the pre-type-frontmatter described schema" testLoadDescribedProfileFixture,
@@ -837,6 +839,7 @@ testFixtureValidBundle :: IO (Either Text ())
 testFixtureValidBundle = do
   root <- fixturePath "valid-bundle"
   concepts <- readBundle root
+  inventory <- readBundleInventory root
   declaration <- readBundleVersion root
   pure
     ( do
@@ -849,7 +852,7 @@ testFixtureValidBundle = do
         -- every concept dates itself with `generated` rather than the
         -- superseded `timestamp`.
         assertEqual (Right (VersionDeclared (OkfVersion 0 2))) declaration
-        assertEqual [] (validateBundle StrictAuthoring (VersionDeclared (OkfVersion 0 2)) concepts)
+        assertEqual [] (validateBundle StrictAuthoring (VersionDeclared (OkfVersion 0 2)) inventory concepts)
         assertBool
           "every concept carries generated"
           (all (isJust . conceptGenerated) concepts)
@@ -867,12 +870,13 @@ testFixtureV01LegacyBundle :: IO (Either Text ())
 testFixtureV01LegacyBundle = do
   root <- fixturePath "v01-legacy-bundle"
   concepts <- readBundle root
+  inventory <- readBundleInventory root
   declaration <- readBundleVersion root
   pure
     ( do
         assertEqual 1 (length concepts)
         assertEqual (Right VersionUndeclared) declaration
-        assertEqual [] (validateBundle StrictAuthoring VersionUndeclared concepts)
+        assertEqual [] (validateBundle StrictAuthoring VersionUndeclared inventory concepts)
         assertBool
           "the concept carries no generated family"
           (all (isNothing . conceptGenerated) concepts)
@@ -1115,7 +1119,7 @@ testRejectOverEscapingRelativeLink = do
           sourceId
           (OKFDocument (setType "Test" emptyFrontmatter) "[Escapes](../../../tables/orders.md)\n")
   assertEqual [] (extractConceptLinks concept)
-  assertEqual [] (validateBundle PermissiveConformance VersionUndeclared [concept, targetConcept targetId])
+  assertEqual [] (validateInMemoryBundle PermissiveConformance VersionUndeclared [concept, targetConcept targetId])
   where
     targetConcept targetId =
       conceptFromDocument
@@ -1251,17 +1255,17 @@ testLegacyFieldInDeclaredV2 = do
       "tables/orders"
       "type: Test\ntitle: Title\ndescription: Description\ngenerated:\n  by: okf/0.4\n  at: \"2026-06-16T00:00:00Z\"\n"
   let declaredV2 = VersionDeclared (OkfVersion 0 2)
-  assertEqual [] (validateBundle StrictAuthoring VersionUndeclared [legacyOnly])
-  assertEqual [] (validateBundle PermissiveConformance declaredV2 [legacyOnly])
+  assertEqual [] (validateInMemoryBundle StrictAuthoring VersionUndeclared [legacyOnly])
+  assertEqual [] (validateInMemoryBundle PermissiveConformance declaredV2 [legacyOnly])
   assertEqual
     [DocumentInvalid conceptId (LegacyFieldInDeclaredV2 "timestamp")]
-    (validateBundle StrictAuthoring declaredV2 [legacyOnly])
-  assertEqual [] (validateBundle StrictAuthoring declaredV2 [migrated])
+    (validateInMemoryBundle StrictAuthoring declaredV2 [legacyOnly])
+  assertEqual [] (validateInMemoryBundle StrictAuthoring declaredV2 [migrated])
   -- An unknown major applies no version-specific rule, so the same document is
   -- read the way an undeclared bundle's would be.
   assertEqual
     [BundleVersionNotUnderstood "1.0"]
-    (validateBundle StrictAuthoring (VersionDeclared (OkfVersion 1 0)) [legacyOnly])
+    (validateInMemoryBundle StrictAuthoring (VersionDeclared (OkfVersion 1 0)) [legacyOnly])
 
 -- | §12: "Consumers that do not understand the declared version SHOULD attempt
 -- best-effort consumption rather than refusing the bundle." Neither an
@@ -1274,30 +1278,78 @@ testVersionDeclarationLints = do
     testConceptWithFrontmatter
       "a"
       "type: Test\ntitle: Title\ndescription: Description\ngenerated:\n  by: okf/0.4\n  at: \"2026-06-16T00:00:00Z\"\n"
-  assertEqual [] (validateBundle PermissiveConformance (VersionUnparseable "0.x") [concept])
-  assertEqual [] (validateBundle PermissiveConformance (VersionDeclared (OkfVersion 1 0)) [concept])
+  assertEqual [] (validateInMemoryBundle PermissiveConformance (VersionUnparseable "0.x") [concept])
+  assertEqual [] (validateInMemoryBundle PermissiveConformance (VersionDeclared (OkfVersion 1 0)) [concept])
   assertEqual
     [BundleVersionUnparseable "0.x"]
-    (validateBundle StrictAuthoring (VersionUnparseable "0.x") [concept])
+    (validateInMemoryBundle StrictAuthoring (VersionUnparseable "0.x") [concept])
   assertEqual
     [BundleVersionNotUnderstood "1.0"]
-    (validateBundle StrictAuthoring (VersionDeclared (OkfVersion 1 0)) [concept])
+    (validateInMemoryBundle StrictAuthoring (VersionDeclared (OkfVersion 1 0)) [concept])
   -- A higher minor within a known major is a supported case, not a problem.
-  assertEqual [] (validateBundle StrictAuthoring (VersionDeclared (OkfVersion 0 3)) [concept])
+  assertEqual [] (validateInMemoryBundle StrictAuthoring (VersionDeclared (OkfVersion 0 3)) [concept])
 
 testValidateBundleDanglingReference :: Either Text ()
 testValidateBundleDanglingReference = do
   aId <- parseTestConceptId "a"
   bId <- parseTestConceptId "b"
   conceptA <- testConcept "a" ("See " <> renderConceptLink bId "b" <> ".\n")
-  assertEqual [DanglingReference aId bId] (validateBundle StrictAuthoring VersionUndeclared [conceptA])
+  assertEqual [DanglingReference aId bId] (validateInMemoryBundle StrictAuthoring VersionUndeclared [conceptA])
 
 testValidateBundleAcceptsResolved :: Either Text ()
 testValidateBundleAcceptsResolved = do
   bId <- parseTestConceptId "b"
   conceptA <- testConcept "a" ("See " <> renderConceptLink bId "b" <> ".\n")
   conceptB <- testConcept "b" "Standalone.\n"
-  assertEqual [] (validateBundle StrictAuthoring VersionUndeclared [conceptA, conceptB])
+  assertEqual [] (validateInMemoryBundle StrictAuthoring VersionUndeclared [conceptA, conceptB])
+
+-- | The §6.2 path check, at the level where its placement decisions live: strict
+-- only, dangling only, and never over @sources[].resource@.
+testValidateBundleDanglingFrontmatterPath :: Either Text ()
+testValidateBundleDanglingFrontmatterPath = do
+  aId <- parseTestConceptId "a"
+  conceptB <- testConcept "b" "Standalone.\n"
+  let withResource value =
+        testConceptWithFrontmatter
+          "a"
+          ( "type: Test\ntitle: Title\ndescription: Description\n"
+              <> "generated:\n  by: okf/0.4\n  at: \"2026-06-16T00:00:00Z\"\n"
+              <> "resource: "
+              <> value
+              <> "\n"
+          )
+      strict concepts = validateInMemoryBundle StrictAuthoring VersionUndeclared concepts
+      permissive concepts = validateInMemoryBundle PermissiveConformance VersionUndeclared concepts
+  danglingResource <- withResource "/references/deleted.md"
+  resolvedResource <- withResource "/b.md"
+  externalResource <- withResource "bigquery://analytics.tables.orders"
+  escapingResource <- withResource "../../elsewhere.md"
+  assertEqual
+    [DanglingFrontmatterPath aId "resource" "references/deleted.md"]
+    (strict [danglingResource, conceptB])
+  -- §11 forbids rejecting a bundle over a broken cross-link, so nothing is
+  -- reported outside strict authoring.
+  assertEqual [] (permissive [danglingResource, conceptB])
+  assertEqual [] (strict [resolvedResource, conceptB])
+  -- okf has no network access and never fetches, so an absolute URL is as
+  -- resolved as it gets — whatever its scheme.
+  assertEqual [] (strict [externalResource, conceptB])
+  -- Escaping is deliberately unreported: a bare §4.1 URI such as
+  -- @analytics.tables.orders@ classifies as a bundle path, so reporting any
+  -- outcome other than dangling would fire on correct documents.
+  assertEqual [] (strict [escapingResource, conceptB])
+  -- The finding that scoped this check: §5.1 sanctions a scope descriptor as a
+  -- @sources[].resource@, and @examples\/ddd-ordering@ carries one. Treating it
+  -- as a path would report a correct bundle as broken.
+  scopeDescriptor <-
+    testConceptWithFrontmatter
+      "a"
+      ( "type: Test\ntitle: Title\ndescription: Description\n"
+          <> "generated:\n  by: okf/0.4\n  at: \"2026-06-16T00:00:00Z\"\n"
+          <> "sources:\n"
+          <> "  - resource: all order-domain terms agreed in the ordering team's glossary reviews\n"
+      )
+  assertEqual [] (strict [scopeDescriptor, conceptB])
 
 testDuplicateConceptIds :: Either Text ()
 testDuplicateConceptIds = do
@@ -1780,8 +1832,9 @@ testFixtureDanglingLink :: IO (Either Text ())
 testFixtureDanglingLink = do
   root <- fixturePath "invalid-dangling-link"
   concepts <- readBundle root
+  inventory <- readBundleInventory root
   pure
-    ( case validateBundle PermissiveConformance VersionUndeclared concepts of
+    ( case validateBundle PermissiveConformance VersionUndeclared inventory concepts of
         errs
           | any isDangling errs -> Right ()
           | otherwise -> Left ("expected a DanglingReference, got: " <> Text.pack (show errs))
@@ -1789,6 +1842,27 @@ testFixtureDanglingLink = do
   where
     isDangling DanglingReference {} = True
     isDangling _ = False
+
+-- | The §6.2 path check against a real directory rather than an in-memory
+-- bundle, which is the only way to exercise the half that needs a filesystem:
+-- @non-markdown.md@ names @references\/attesters\/revenue.py@, and that resolves
+-- only because 'walkBundleInventory' sees files 'walkBundle' filters out.
+testFixtureDanglingFrontmatterPath :: IO (Either Text ())
+testFixtureDanglingFrontmatterPath = do
+  root <- fixturePath "dangling-frontmatter-path"
+  concepts <- readBundle root
+  inventory <- readBundleInventory root
+  pure
+    ( do
+        danglingId <- firstShow (parseConceptId "dangling")
+        assertEqual 3 (length concepts)
+        assertEqual
+          [DanglingFrontmatterPath danglingId "resource" "references/deleted.txt"]
+          (validateBundle StrictAuthoring (VersionDeclared (OkfVersion 0 2)) inventory concepts)
+        assertEqual
+          []
+          (validateBundle PermissiveConformance (VersionDeclared (OkfVersion 0 2)) inventory concepts)
+    )
 
 -- | Resolve a fixture file path regardless of whether tests run from the repo
 -- root or the package directory (mirrors 'fixturePath' for files).
@@ -5076,12 +5150,12 @@ testProfileDocumentationValidates = do
     withRenderedProfileDocumentation
       "profiles/optional-fields.dhall"
       defaultDocumentationOptions
-      (\_compiled concepts -> assertEqual [] (validateBundle PermissiveConformance VersionUndeclared concepts))
+      (\_compiled concepts -> assertEqual [] (validateInMemoryBundle PermissiveConformance VersionUndeclared concepts))
   strictResult <-
     withRenderedProfileDocumentation
       "profiles/optional-fields.dhall"
       defaultDocumentationOptions {timestamp = Just "2026-07-31T00:00:00Z"}
-      (\_compiled concepts -> assertEqual [] (validateBundle StrictAuthoring VersionUndeclared concepts))
+      (\_compiled concepts -> assertEqual [] (validateInMemoryBundle StrictAuthoring VersionUndeclared concepts))
   pure (permissive >> strictResult)
 
 testProfileDocumentationLinksResolve :: IO (Either Text ())
@@ -5362,6 +5436,22 @@ readBundle root = do
   case result of
     Left bundleError -> fail (show bundleError)
     Right concepts -> pure concepts
+
+-- | Every file the bundle holds, for the path-valued frontmatter check.
+readBundleInventory :: FilePath -> IO BundleInventory
+readBundleInventory root = do
+  result <- walkBundleInventory root
+  case result of
+    Left bundleError -> fail (show bundleError)
+    Right inventory -> pure inventory
+
+-- | 'validateBundle' over a bundle assembled in memory, whose inventory is
+-- exactly the concepts' own source paths. Used wherever a test builds concepts
+-- rather than walking a directory; a test that does have a root passes
+-- 'readBundleInventory' instead, so the non-Markdown files are seen.
+validateInMemoryBundle :: ValidationProfile -> VersionDeclaration -> [Concept] -> [BundleValidationError]
+validateInMemoryBundle profile declaration concepts =
+  validateBundle profile declaration (bundleInventoryOfConcepts concepts) concepts
 
 fixturePath :: FilePath -> IO FilePath
 fixturePath name = do

@@ -59,10 +59,10 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] Milestone 1: `Okf.Bundle.walkBundle` records every file in the bundle, not only `.md`, and existing behavior is byte-identical
-- [ ] Milestone 1: a test proves a `.py` file under `references/` is visible to okf without becoming a concept
-- [ ] Milestone 2: `Okf.Path.resolvePathReference` decides whether a classified path exists in a bundle inventory
-- [ ] Milestone 2: unit tests cover external URL, bundle-absolute, relative, escaping, malformed, and non-Markdown targets
+- [x] Milestone 1 (2026-08-01): `Okf.Bundle.walkBundleInventory` records every file in the bundle, not only `.md`, and `walkBundle`'s behavior is unchanged — commit `5248f02`
+- [x] Milestone 1 (2026-08-01): a test proves a `.py` file under `references/` is visible to okf without becoming a concept
+- [x] Milestone 2 (2026-08-01): `Okf.Path.resolvePathReference` decides whether a classified path exists in a bundle inventory — commit `e82e31f`
+- [x] Milestone 2 (2026-08-01): unit tests cover external URL, bundle-absolute, relative, escaping, malformed, and non-Markdown targets
 - [ ] Milestone 3: `okf validate --strict` reports a dangling `resource` path with a new `ValidationError`/`BundleValidationError` constructor
 - [ ] Milestone 3: the check is silent under the default profile, and silent for a `resource` that is an absolute URL
 - [ ] Milestone 4: the check is run against every bundle in this repository and produces zero new diagnostics

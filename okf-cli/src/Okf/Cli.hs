@@ -1055,10 +1055,11 @@ renderProfileUsage ref exportPath =
 runValidate :: ValidateOptions -> IO ()
 runValidate ValidateOptions {bundlePath, strictMode, profilePath, profileEnforce, logEnforce} = do
   concepts <- loadBundleOrExit bundlePath
+  inventory <- loadBundleInventoryOrExit bundlePath
   logs <- loadLogsOrExit bundlePath
   declaration <- loadBundleVersionOrExit bundlePath
   let coreProfile = if strictMode then StrictAuthoring else PermissiveConformance
-      coreErrors = validateBundle coreProfile declaration concepts <> validateBundleLogs logs
+      coreErrors = validateBundle coreProfile declaration inventory concepts <> validateBundleLogs logs
   mapM_ (Text.IO.hPutStrLn stderr . renderBundleValidationError) coreErrors
 
   let logStalenessReport = logStaleness concepts logs
@@ -1494,6 +1495,16 @@ loadBundleOrExit bundlePath = do
     Left bundleError -> dieText (renderBundleError bundleError)
     Right concepts -> pure concepts
 
+-- | Every file the bundle holds, so a path-valued frontmatter field can be
+-- resolved against a target that is not a concept. A second traversal of the
+-- same tree 'loadBundleOrExit' walks; see 'walkBundleInventory'.
+loadBundleInventoryOrExit :: FilePath -> IO BundleInventory
+loadBundleInventoryOrExit bundlePath = do
+  result <- walkBundleInventory bundlePath
+  case result of
+    Left bundleError -> dieText (renderBundleError bundleError)
+    Right inventory -> pure inventory
+
 loadIndexesOrExit :: Maybe OkfVersion -> FilePath -> IO [(FilePath, Text)]
 loadIndexesOrExit override bundlePath = do
   result <- renderBundleIndexesWith override bundlePath
@@ -1530,6 +1541,13 @@ renderBundleValidationError = \case
     renderConceptId conceptId <> ": " <> renderValidationErrorText error_
   DanglingReference source target ->
     renderConceptId source <> ": link to missing concept: " <> renderConceptId target
+  DanglingFrontmatterPath source fieldName target ->
+    renderConceptId source
+      <> ": "
+      <> fieldName
+      <> " names "
+      <> Text.pack target
+      <> ", which does not exist in this bundle"
   DuplicateConceptId conceptId ->
     "duplicate concept ID: " <> renderConceptId conceptId
   LogInvalid path error_ ->
