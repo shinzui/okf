@@ -152,6 +152,11 @@ Child ExecPlans for this MasterPlan have not been created yet. They are deferred
 `docs/masterplans/8-extend-okf-profiles-for-v0-2-field-families.md` has settled its
 descriptor primitives, for the reasons in the Dependency Graph and Decision Log below.
 
+As of 2026-08-01 the first of those is discharged — MasterPlan 7 completed in full — and the
+second is settled on paper but not yet implemented: MasterPlan 8's four child plans are
+written and its descriptor decisions are recorded, but no code has landed. See the Dependency
+Graph for which of this MasterPlan's plans that unblocks and which it does not.
+
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
 | 1 | Resolve path valued frontmatter fields against the bundle | (not yet created) | None | None | Not Started |
@@ -168,7 +173,9 @@ Hard Deps and Soft Deps reference other rows by their # prefix (e.g., EP-1, EP-3
 
 This MasterPlan has two external hard dependencies and one soft one.
 
-It hard-depends on `docs/masterplans/7-adopt-okf-v0-2-core-semantics.md` being complete.
+It hard-depended on `docs/masterplans/7-adopt-okf-v0-2-core-semantics.md` being complete,
+and **that dependency is now satisfied**: MasterPlan 7 completed on 2026-08-01 with all six
+of its child plans marked Complete.
 The specification's own worked example of an Attested Computation carries `status`,
 `generated`, `verified`, `stale_after`, and `sources` in the same frontmatter block as the
 contract fields, and its §10.6 explains that `verified` and attestation are distinct and
@@ -177,13 +184,26 @@ contract fields before MasterPlan 7 reads the trust families would either duplic
 work or ship a concept type that cannot express its own trust state.
 
 It hard-depends on `docs/masterplans/8-extend-okf-profiles-for-v0-2-field-families.md` for
-its EP-1 (scalar-object rules) and EP-3 (path-valued references). `executor` and `attester`
-are scalar objects, and `computation`, `executor.resource`, and `attester.resource` are
-path-valued fields. Without those two primitives, a profile could require an
-`Attested Computation` concept to *have* an executor and could say nothing about whether
-the executor names anything real. That said, the dependency binds the *profile-facing* half
-of this work only: EP-1 and EP-2 here are core-library work that can proceed on MasterPlan
-7 alone.
+its EP-1, now `docs/plans/44-validate-nested-rules-on-scalar-object-fields.md` (object rules),
+and its EP-3, now
+`docs/plans/46-add-path-valued-reference-rules-distinct-from-document-handles.md`
+(path-valued references). `executor` and `attester` are scalar objects, and `computation`,
+`executor.resource`, and `attester.resource` are path-valued fields. Without those two
+primitives, a profile could require an `Attested Computation` concept to *have* an executor
+and could say nothing about whether the executor names anything real. That said, the
+dependency binds the *profile-facing* half of this work only: EP-1 and EP-2 here are
+core-library work that can proceed on MasterPlan 7 alone.
+
+Two things settled while MasterPlan 8's plans were written bear directly on this MasterPlan's
+EP-1 and are recorded here so it is not planned against stale assumptions. First, MasterPlan 8
+EP-3 owns the extraction of the specification §6.2 path grammar into a new exported
+`okf-core/src/Okf/Path.hs` — `classifyPathReference` and `collapseBundlePath` — which this
+MasterPlan's EP-1 must extend rather than copy, discharging the reconciliation the Integration
+Points section below asks for. Second, MasterPlan 8 EP-3 deliberately checks the existence
+only of `.md` targets, because `Okf.Profile.validateProfile` receives concepts and no
+filesystem handle. Deciding what okf does with a non-Markdown target such as
+`references/attesters/revenue.py` is left wholly to this MasterPlan's EP-1 and EP-4, which is
+where it belongs.
 
 It formerly soft-depended on `docs/masterplans/6-make-okf-profiles-self-documenting.md`
 through MasterPlan 8. That MasterPlan completed on 2026-07-31 (commit `333e259`), so the
