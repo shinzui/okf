@@ -600,7 +600,7 @@ which concept types a team has. A house profile adds those; this one would be
 wrong to.
 
 It is checked against a real bundle by a test rather than by a command in a
-document — `examples/ddd-ordering`, all nineteen concepts, under strict
+document — `examples/ddd-ordering`, all twenty-two concepts, under strict
 authoring, with no deviations.
 
 Two omissions are deliberate, and are commented in the descriptor so a reader
@@ -1355,10 +1355,11 @@ bundle-escape checks still apply to it.
 This limitation is the *profile* layer's, not okf's as a whole. Core validation
 does resolve non-Markdown targets, because `okf validate` walks the directory and
 can record every file it passes; it applies that to the top-level `resource`
-field only, under `--strict`, and the details are in
-[Path-valued frontmatter fields](format.md#path-valued-frontmatter-fields).
-Profile validation is handed concepts and no directory, so it cannot borrow that
-answer.
+field and to the three attested-computation fields `computation`,
+`executor.resource`, and `attester.resource`, under `--strict`, and the details
+are in [Path-valued frontmatter
+fields](format.md#path-valued-frontmatter-fields). Profile validation is handed
+concepts and no directory, so it cannot borrow that answer.
 
 ### A path rule and a document reference cannot be combined
 

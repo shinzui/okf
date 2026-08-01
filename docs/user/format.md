@@ -339,10 +339,114 @@ v0.2 also supersedes a body `# Citations` list with the `sources` family. okf
 never implemented `# Citations`, so for users of this tool there is nothing to
 migrate there.
 
-One v0.2 addition okf does not implement: the `Attested Computation` concept
-type, which records a computation and the means to check it. That work is
-`docs/masterplans/9-support-okf-v0-2-attested-computations.md`. Its absence here
-is a gap in okf, not in the specification.
+The remaining v0.2 addition is the `Attested Computation` concept type, covered
+next.
+
+
+### Attested computations
+
+An `Attested Computation` is a concept that carries not just what a value
+*means* but a sanctioned way to *compute* it, so a consumer can confirm a number
+was produced by running the blessed computation rather than by an agent
+improvising its own SQL. Provenance answers "where did this claim come from";
+attestation answers "was this number produced the way we said it must be".
+
+It is a standalone concept. A concept that *needs* the value — a `Metric`, a
+`BigQuery Table` — links to it with an ordinary Markdown link. That is what lets
+revenue be fresh while profit is past its `stale_after`, each attesting on its
+own run.
+
+Five frontmatter keys make up the contract:
+
+```yaml
+type: Attested Computation
+title: Revenue for fiscal year
+description: Recognized revenue for a fiscal year, per Finance's definition.
+status: stable
+runtime: bigquery
+parameters:
+  - name: year
+    type: integer
+    required: true
+executor:
+  resource: /references/skills/run-on-bq.md
+  receipt: [job_id, executed_sql, result]
+attester:
+  resource: /references/attesters/revenue.py
+generated:
+  by: reference_agent/gemini-2.5-pro
+  at: 2026-06-20T22:53:05Z
+```
+
+`runtime` says how to run the computation, and therefore what a parameter
+*means*: the same entry is a SQL bind variable under `bigquery`, a var under
+`dbt`, and a function argument under `python`. It is the one key OKF marks
+REQUIRED for this type. `parameters` lists the typed, named holes an agent may
+fill — and only fill; an agent may not author or edit the computation itself.
+`computation` optionally names a file holding the computation, used instead of an
+inline fenced block in the body. `executor` names run instructions plus the
+`receipt` fields a run must return. `attester` names deterministic code, with no
+language model in it, that inspects a receipt and returns a verdict.
+
+`okf show` renders the contract:
+
+```text
+$ okf show examples/ddd-ordering computations/order-total
+id: computations/order-total
+type: Attested Computation
+title: Order total for a placed order
+description: Sanctioned computation of an order's total from its lines.
+tags: ddd, ordering, attested-computation
+runtime: postgres
+parameters: order_id (uuid, required)
+executor: /references/skills/run-on-postgres.md, receipt: statement_id, executed_sql, result
+attester: /references/attesters/order-total.py
+generated: human:nadeem at 2026-08-01T00:00:00Z
+trust: unverified
+status: stable
+```
+
+`okf validate --strict` reports a concept of this type that declares no
+`runtime`:
+
+```text
+$ okf validate ./bundle --strict
+computations/margin: Attested Computation concepts must declare runtime
+```
+
+That check is strict-only, and it is the *only* contract check okf performs. §11
+lists three conformance requirements and none is a computation field, and it
+separately forbids rejecting a bundle over an unknown `type` value — so "REQUIRED
+for this type" binds the producer rather than licensing a consumer to refuse. It
+matches the exact string `Attested Computation`, case-sensitively, and no other
+type is affected. A team that wants more — that every parameter carry a `type`,
+that every executor name a resource — writes a house profile, where a `TypeRule`
+scopes rules to one type; see the [Profile Guide](profiles.md).
+
+The three path-valued contract fields are resolved against the bundle under
+`--strict`, described under [path-valued frontmatter
+fields](#path-valued-frontmatter-fields) below.
+
+`examples/ddd-ordering` ships a worked example: `computations/order-total.md` is
+the computation, `metrics/order-total-value.md` is a `Metric` that links to it,
+and `references/skills/run-on-postgres.md` and
+`references/attesters/order-total.py` are what its `executor` and `attester`
+name.
+
+**Two things okf does not do, and one is not a gap.** okf does not read the
+`# Computation` body section yet, so nothing enforces the rule that a computation
+is provided *either* as an inline fence *or* as a file named by `computation`,
+never both and never neither. That is a real gap and the work is
+`docs/masterplans/9-support-okf-v0-2-attested-computations.md`.
+
+And okf never executes a computation and never attests anything. That is not a
+limitation of the tool but OKF's own position: the format "records the
+computation and the means to check it; it does not execute anything itself", and
+the execute-and-attest workflow is marked informative with its runtime artifacts
+explicitly not stored in the bundle. A receipt is something okf will never see; a
+verdict is something consumer-side code produces. okf is a static, offline tool
+with no network access and no language model in it, and reading this concept type
+does not change that.
 
 
 ## Links
@@ -426,9 +530,29 @@ corpus does use followable paths there opts in by writing a profile — see
 [path-valued fields](profiles.md#path-valued-fields), which reaches
 `sources[].resource` through a nested rule.
 
-The `computation`, `executor.resource`, and `attester.resource` fields are not
-checked either, because okf does not yet read the Attested Computation concept
-type that carries them.
+The `computation`, `executor.resource`, and `attester.resource` fields **are**
+checked, on the same terms as `resource`. Nothing in §10 sanctions a non-path
+value for them the way §5.1 does for `sources[].resource`: §10.2 defines
+`computation` as "a path (§6.2) to a file holding the computation", and defines
+both `resource` members as naming code or run instructions that a runner follows.
+Their whole purpose is to be followed, so a value naming nothing is exactly the
+authoring mistake this check exists to catch.
+
+One thing to watch, because the specification's own worked example walks into it.
+A bare `references/skills/run-on-bq.md` is a *relative* path under §6.2, so on a
+concept at `computations/revenue.md` it names
+`computations/references/skills/run-on-bq.md` and is reported as dangling:
+
+```text
+$ okf validate ./bundle --strict
+computations/revenue: executor.resource names computations/references/skills/run-on-bq.md, which does not exist in this bundle
+```
+
+§6.3 calls `references/` "a naming convention, not a requirement" and never says
+a bare `references/` prefix anchors at the bundle root, so okf follows §6.2's
+grammar as written. Write the leading slash — `/references/skills/run-on-bq.md` —
+whenever the file lives at the bundle root, which is how
+`examples/ddd-ordering/computations/order-total.md` writes it.
 
 
 ## Authoring

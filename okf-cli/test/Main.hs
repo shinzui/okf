@@ -5,7 +5,7 @@ import Control.Monad (unless)
 import Data.List qualified as List
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text.IO
-import Okf.Bundle (bundleInventoryOfConcepts, conceptFromDocument, conceptIdOf, walkBundle)
+import Okf.Bundle (bundleInventoryOfConcepts, conceptAttester, conceptExecutor, conceptFromDocument, conceptIdOf, conceptParameters, conceptRuntime, conceptType, walkBundle, walkBundleInventory)
 import Okf.Cli
 import Okf.Cli.Assist (AssistOptions (..), buildClaudeCommand)
 import Okf.Cli.Config (AssistSettings (..), ConfigSource (..), KitSettings (..), OkfConfig (..), OkfProvider (..), defaultOkfConfig, exampleConfigText, findConfigSource, loadOkfConfig, okfConfigEnvVar, projectConfigPath)
@@ -13,8 +13,8 @@ import Okf.Cli.Fzf (Candidate (..), FzfOpts (..), optsToArgs, parseSelectionInde
 import Okf.Cli.Fzf.Selector (conceptCandidates, conceptPreviewCommand, parseBundleSearchRoots)
 import Okf.Cli.Help (HelpTopic (..), helpTopics)
 import Okf.ConceptId (parseConceptId, renderConceptId)
-import Okf.Document (parseDocument)
-import Okf.Index (VersionDeclaration (..))
+import Okf.Document (Attester (..), Executor (..), Parameter (..), parseDocument)
+import Okf.Index (OkfVersion (..), VersionDeclaration (..))
 import Okf.Profile (Cardinality (..), FieldCondition (..), FieldFormat (..), FieldRule (..), FrontmatterRules (..), HandleReferenceRule (..), NestedFieldRule (..), NestedRules (..), ProfileSpec (..), TypeRule (..), compileProfile, loadProfileFile, validateProfile)
 import Okf.Profile.Registry (RegistryEntry (..))
 import Okf.Validation (ValidationProfile (..), validateBundle)
@@ -40,6 +40,7 @@ main = do
   profileDocConformsToMeta <- testProfileDocumentationConformsToMetaProfile
   referenceProfileCompiles <- testReferenceProfileCompiles
   referenceProfileAcceptsExample <- testReferenceProfileAcceptsDddOrdering
+  exampleAttestedComputation <- testExampleAttestedComputationValidates
   profileDocStrictWithTimestamp <- testProfileDocumentationStrictWithTimestamp
   let results =
         [ parseSucceeds ["validate", "bundle"],
@@ -257,6 +258,7 @@ main = do
           profileDocConformsToMeta,
           referenceProfileCompiles,
           referenceProfileAcceptsExample,
+          exampleAttestedComputation,
           profileDocStrictWithTimestamp,
           configDefaults,
           configProjectPrecedence,
@@ -776,9 +778,59 @@ testReferenceProfileAcceptsDddOrdering = do
             putStrLn ("examples/ddd-ordering deviates from the v0.2 reference profile: " <> show profileViolations)
           -- A non-empty bundle, so an empty violation list cannot come from
           -- having checked nothing.
-          unless (length concepts == 19) $
-            putStrLn ("expected 19 concepts in examples/ddd-ordering, found " <> show (length concepts))
-          pure (null profileViolations && length concepts == 19)
+          unless (length concepts == 22) $
+            putStrLn ("expected 22 concepts in examples/ddd-ordering, found " <> show (length concepts))
+          pure (null profileViolations && length concepts == 22)
+  where
+    reportFailure message = putStrLn message >> pure False
+
+-- | The attested computation shipped in @examples/ddd-ordering@ carries a
+-- complete specification §10.2 contract and validates strictly, with both of its
+-- path-valued contract fields resolving against files the bundle really holds.
+--
+-- @docs\/masterplans\/7-adopt-okf-v0-2-core-semantics.md@ records that shipped
+-- examples are user-facing surface with no test behind them, and two of them had
+-- never passed @--strict@. This asserts on the validation result rather than
+-- putting a command in a document, so the example cannot rot quietly.
+--
+-- The @attester@ names a @.py@ file. That resolves only because the bundle
+-- inventory records every file rather than only the concepts, which is the one
+-- thing about this example a reader is most likely to assume is broken.
+testExampleAttestedComputationValidates :: IO Bool
+testExampleAttestedComputationValidates = do
+  bundleRoot <- repositoryPath ("examples" </> "ddd-ordering")
+  walked <- walkBundle bundleRoot
+  inventoryResult <- walkBundleInventory bundleRoot
+  case (walked, inventoryResult) of
+    (Left bundleError, _) -> reportFailure ("failed to walk examples/ddd-ordering: " <> show bundleError)
+    (_, Left bundleError) -> reportFailure ("failed to inventory examples/ddd-ordering: " <> show bundleError)
+    (Right concepts, Right inventory) -> do
+      let bundleErrors =
+            validateBundle StrictAuthoring (VersionDeclared (OkfVersion 0 2)) inventory concepts
+          computation =
+            List.find ((== "computations/order-total") . renderConceptId . conceptIdOf) concepts
+      unless (null bundleErrors) $
+        putStrLn ("examples/ddd-ordering does not validate strictly: " <> show bundleErrors)
+      case computation of
+        Nothing -> reportFailure "examples/ddd-ordering has no computations/order-total concept"
+        Just concept -> do
+          let contract =
+                ( conceptType concept,
+                  conceptRuntime concept,
+                  parameterName <$> conceptParameters concept,
+                  executorResource =<< conceptExecutor concept,
+                  attesterResource =<< conceptAttester concept
+                )
+              expected =
+                ( "Attested Computation",
+                  Just "postgres",
+                  ["order_id"],
+                  Just "/references/skills/run-on-postgres.md",
+                  Just "/references/attesters/order-total.py"
+                )
+          unless (contract == expected) $
+            putStrLn ("unexpected contract on computations/order-total: " <> show contract)
+          pure (null bundleErrors && contract == expected)
   where
     reportFailure message = putStrLn message >> pure False
 

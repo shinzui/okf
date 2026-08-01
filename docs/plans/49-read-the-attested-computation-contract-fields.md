@@ -80,13 +80,14 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] Milestone 1: `Okf.Document` reads `runtime`, `parameters`, `computation`, `executor`, and `attester` into typed values
-- [ ] Milestone 1: a malformed contract field is not read rather than rejected, matching how every other v0.2 family behaves
-- [ ] Milestone 2: the decision on whether the five contract keys join `coreFrontmatterFieldOrder` is made, recorded, and implemented
-- [ ] Milestone 2: a §10.2 worked-example concept round-trips through `serializeDocument` byte-identically
-- [ ] Milestone 3: `Okf.Bundle.Concept` projects the contract, and `okf show` renders it
-- [ ] Milestone 3: `okf show` on a concept that is not an Attested Computation is byte-identical to before
-- [ ] Milestone 4: `okf validate --strict` reports an `Attested Computation` with no `runtime`, and reports nothing for any other type
+- [x] Milestone 1 (2026-08-01): `Okf.Document` reads `runtime`, `parameters`, `computation`, `executor`, and `attester` into typed values
+- [x] Milestone 1 (2026-08-01): a malformed contract field is not read rather than rejected, matching how every other v0.2 family behaves
+- [x] Milestone 2 (2026-08-01): the decision on whether the five contract keys join `coreFrontmatterFieldOrder` is made, recorded, and implemented — they join it, between `status` and `generated`
+- [x] Milestone 2 (2026-08-01): a §10.2 worked-example concept round-trips through `serializeDocument` byte-identically — against the normalized form, for the reason in Surprises & Discoveries
+- [x] Milestone 3 (2026-08-01): `Okf.Bundle.Concept` projects the contract, and `okf show` renders it
+- [x] Milestone 3 (2026-08-01): `okf show` on a concept that is not an Attested Computation is byte-identical to before
+- [x] Milestone 4 (2026-08-01): `okf validate --strict` reports an `Attested Computation` with no `runtime`, and reports nothing for any other type
+- [x] Milestone 4 (2026-08-01, added during implementation): `computation`, `executor.resource`, and `attester.resource` are wired into `Okf.Validation.pathValuedFields`, which the parent MasterPlan assigned to this plan after it was written
 - [ ] Milestone 5: a shipped example bundle contains an attested computation, and `docs/user/format.md` no longer says the type is unimplemented
 
 
@@ -119,6 +120,52 @@ for this type in the specification itself, which makes it exactly what core vali
 
 Keep this distinction in view while implementing. If you find yourself adding a check a
 `FieldRule` could express just as well, it probably belongs in a profile instead.
+
+**Byte-identity against §10.2's own text is not achievable, and asking for it was this plan's
+mistake rather than the code's.** Milestone 2 asked for a test that "parses the §10.2 worked
+example, runs it through `serializeDocument`, and asserts the output is byte-identical to the
+input". The specification writes flow-style YAML — `parameters: - { name: year, type: integer,
+required: true }`, `receipt: [job_id, executed_sql, result]`, `generated: { by: ..., at: ... }`
+— and `serializeDocument` expands every mapping and list to block style through
+`Data.Yaml.Pretty`. That is true of the `generated` and `sources` families too, and it is why
+`testSourcesRoundTrip` compares *read values* rather than bytes. The test as written asserts
+three things instead, which is what the milestone actually wanted to catch: that serializing is
+a fixed point (`serialize (parse (serialize d)) == serialize d`, so a bundle regenerated twice
+yields no diff), that every contract reader returns the same value either side of the
+round-trip, and that the normalized key order is exactly
+
+```text
+type, title, description, status, runtime, parameters, executor, attester,
+generated, verified, stale_after, sources
+```
+
+which is §10.2's own ordering and pins the `coreFrontmatterFieldOrder` decision concretely.
+The test is `testAttestedComputationRoundTrip` in `okf-core/test/Main.hs`.
+
+**A `references/` path written the way §10.2's worked example writes it does not resolve to the
+bundle root, and this is EP-4's problem rather than a bug here.** §6.2 says a path-valued field
+accepts "a relative path", and `Okf.Path.classifyPathReference` resolves one against the
+concept's own directory — the same way a Markdown link in that concept's body resolves. §10.2's
+example carries `executor.resource: references/skills/run-on-bq.md`, and §10.4 puts computations
+in a `computations/` folder. Put those two together and the path resolves to
+`computations/references/skills/run-on-bq.md`:
+
+```text
+$ cabal run -v0 okf -- validate /tmp/okf-ac --strict
+computations/revenue: executor.resource names computations/references/skills/run-on-bq.md, which does not exist in this bundle
+```
+
+Nothing is wrong. §6.3 calls `references/` "a naming convention, not a requirement" and never
+says a bare `references/…` anchors at the bundle root, so okf follows §6.2's grammar literally,
+which is what `docs/adr/12-frontmatter-path-resolution.md` fixed. The unambiguous spelling is
+§6.2's second form, a leading slash: `/references/skills/run-on-bq.md`. Every fixture and
+example this plan ships uses it, and `docs/user/format.md` now says why. But the specification's
+own worked example is the shape an author will copy, so **whether a bare `references/` prefix
+should anchor at the bundle root is a real question, and it belongs to the plan that owns the
+`references/` convention** — EP-4 of `docs/masterplans/9-support-okf-v0-2-attested-computations.md`.
+Changing the anchoring here would have meant changing §6.2 resolution for every path-valued
+field, days after EP-1 fixed it in an ADR, on the strength of one example whose concept location
+the specification never states.
 
 
 ## Decision Log
@@ -163,6 +210,71 @@ Record every decision made while working on the plan.
   dependency on this one. Beyond ordering, body inspection has a different regression surface:
   it parses Markdown, where this plan only reads YAML. Merging them would put two unrelated
   failure modes in one review.
+  Date: 2026-08-01
+
+- Decision: The five contract keys **do** join `Okf.Document.coreFrontmatterFieldOrder`,
+  placed between `status` and `generated`, and also join
+  `Okf.Document.fieldsIntroducedInV02`.
+  Rationale: this is Milestone 2's reserved decision. `docs/adr/7-okf-v0-1-legacy-fallback-policy.md`'s
+  argument for the six v0.2 concept keys reaches these five unchanged — the list "exists to name
+  the keys the format itself defines", §13.2 names `runtime`, `parameters`, `computation`,
+  `executor`, and `attester` among v0.2's additive changes in as many words, and leaving them out
+  would make a closed profile (`allowUnknownFields = False`) reject a conformant Attested
+  Computation until its author redeclared five keys they did not choose, which that ADR calls "a
+  tax that grows with every specification revision". The argument against — that all twelve
+  existing keys apply to every concept while these five are meaningful for one `type` — is real
+  but not decisive: closure governs *unknown* keys, and a key §13.2 names is not unknown. A
+  profile that wants to reject `runtime` on a `Metric` says so with a `TypeRule`, which is the
+  layer that knows about types. The position between `status` and `generated` is §10.2's own
+  worked-example ordering, so a concept copied out of the specification and regenerated by okf
+  comes back in the order its author wrote. `fieldsIntroducedInV02` follows because
+  `testVersionedFieldsAreCoreFields` requires every entry in it to be a core field, and because
+  §13.2 is exactly what that list records. No ADR amendment was needed: ADR 7's reasoning was
+  applied, not extended.
+  Date: 2026-08-01
+
+- Decision: Milestone 2's byte-identity test asserts identity of the *normalized* serialization
+  rather than of §10.2's text.
+  Rationale: §10.2 writes flow-style YAML and `serializeDocument` emits block style through
+  `Data.Yaml.Pretty`, so no document written the way the specification writes it can survive
+  byte-identically — the same is true of `generated` and `sources`, which is why
+  `testSourcesRoundTrip` compares read values. The three properties the test does assert are what
+  the milestone wanted: serialization is a fixed point, every reader returns the same value
+  either side of the round-trip, and the normalized key order is §10.2's own. See Surprises &
+  Discoveries.
+  Date: 2026-08-01
+
+- Decision: This plan wires `computation`, `executor.resource`, and `attester.resource` into
+  `Okf.Validation.pathValuedFields`, adding a Milestone 4 progress item for work this plan did
+  not originally scope.
+  Rationale: the parent MasterPlan's Decision Log entry of 2026-08-01 assigns it here, after
+  `docs/plans/48-resolve-path-valued-frontmatter-fields-against-the-bundle.md` landed and left
+  the list extensible: "a field nothing reads cannot be checked, and EP-2 is the plan that makes
+  those three readable." It is three list entries and a fixture, not a mechanism. Unlike
+  `sources[].resource` — which §5.1 explicitly allows to be a scope descriptor, and which EP-1
+  therefore excluded — nothing in §10 sanctions a non-path value for these three: §10.2 defines
+  `computation` as "a path (§6.2) to a file" and both `resource` members as naming code a runner
+  follows.
+  Date: 2026-08-01
+
+- Decision: An empty or whitespace-only `runtime` counts as absent.
+  Rationale: §10.2's `runtime` exists so that "the executor and attester interpret it and what
+  `parameters` mean" is determinate; a value of `"   "` determines nothing. This matches
+  `requireNonEmptyText`, which every other presence check in `Okf.Validation` already uses.
+  Date: 2026-08-01
+
+- Decision: Every path-valued contract field in a shipped fixture or example is written in §6.2's
+  bundle-relative form with a leading slash, rather than as the bare `references/…` §10.2's
+  worked example uses.
+  Rationale: §6.2's third form is a relative path resolved against the concept's own directory,
+  per `docs/adr/12-frontmatter-path-resolution.md`, so a bare `references/skills/run-on-bq.md` on
+  a concept under `computations/` names `computations/references/skills/run-on-bq.md` and is
+  reported as dangling. §6.3 calls `references/` "a naming convention, not a requirement" and
+  never anchors it at the root, so okf is following §6.2 literally and the leading slash is the
+  unambiguous spelling. Whether a bare `references/` prefix *should* anchor at the bundle root is
+  left to EP-4 of the parent MasterPlan, which owns the `references/` convention; deciding it
+  here would mean changing §6.2 resolution for every path-valued field on the strength of one
+  example whose concept location the specification never states.
   Date: 2026-08-01
 
 - Decision: `okf show` renders the contract in this plan rather than in the later CLI plan.

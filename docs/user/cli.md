@@ -393,16 +393,18 @@ cabal run okf -- trust BUNDLE
 
 ```text
 cabal run okf -- trust examples/ddd-ordering
-aggregates/invoice               human-reviewed     stable  ok
-aggregates/order                 machine-confirmed  stable  ok
-commands/issue-invoice           unverified         stable  ok
-mappings/ordering-to-billing     machine-confirmed  stable  stale since 2026-07-01
-policies/reserve-stock           unverified         draft   ok
-value-objects/money              unverified         stable  ok
+aggregates/invoice                 human-reviewed     stable  ok
+aggregates/order                   machine-confirmed  stable  ok
+commands/issue-invoice             unverified         stable  ok
+computations/order-total           unverified         stable  ok
+mappings/ordering-to-billing       machine-confirmed  stable  stale since 2026-07-01
+policies/reserve-stock             unverified         draft   ok
+value-objects/money                unverified         stable  ok
 ```
 
-(Rows for the other thirteen concepts of that bundle are omitted here; the
-command prints every concept.)
+(Rows for the other fifteen concepts of that bundle are omitted here; the command
+prints every concept. The ID column is padded to the longest ID in the bundle, so
+the width shifts when a bundle gains a deeper concept.)
 
 The four columns are the concept ID, the derived tier, the `status` field, and
 staleness. The tier is one of `unverified`, `machine-confirmed`, or
