@@ -220,6 +220,7 @@ main = do
         test "validateProfile checks sources[].resource with element indexes" testValidatePathNested,
         test "validateProfile checks a path inside an object-valued field" testValidatePathObjectScope,
         testIO "validateProfileWith resolves a non-Markdown path target" testValidateProfileWithInventory,
+        testIO "the documented house profile reports the section 10 contract deviations" testAttestedComputationHouseProfile,
         test "compileProfile keeps a rule declaring both shapes at any cardinality" testCompileRecordOrListRule,
         test "validateProfile requires a member of an object field" testValidateObjectMember,
         test "validateProfile checks a bare mapping and a list against the same member rules" testValidateRecordOrList,
@@ -2345,10 +2346,15 @@ testFixtureAttestedComputation = do
         bothId <- firstShow (parseConceptId "computations/both-computations")
         noneId <- firstShow (parseConceptId "computations/no-computation")
         twoBlocksId <- firstShow (parseConceptId "computations/two-blocks")
-        -- Five computations, one metric, and the one `references/` file that
+        -- Six computations, one metric, and the one `references/` file that
         -- `walkBundle` treats as a concept because it is non-reserved Markdown.
         -- The `.py` and `.sql` under `references/` are files and not concepts.
-        assertEqual 7 (length concepts)
+        --
+        -- The sixth computation, `computations/churn`, deliberately produces no
+        -- diagnostic here. It is core-clean and deviates only from the house
+        -- profile in `profiles/attested-computation-house.dhall`, which is what
+        -- makes this bundle exercise both layers rather than only this one.
+        assertEqual 8 (length concepts)
         assertEqual
           [ DocumentInvalid bothId AttestedComputationHasBothComputations,
             DocumentInvalid marginId AttestedComputationMissingRuntime,
@@ -2648,7 +2654,12 @@ frozenGenerationFixtures =
     "conditional-fields-ep2.dhall",
     "object-fields-mp8-ep1.dhall",
     "formats-mp8-ep2.dhall",
-    "path-references-mp8-ep3.dhall"
+    "path-references-mp8-ep3.dhall",
+    -- Not a frozen generation but a *documented* one: this is the descriptor
+    -- @docs\/user\/profiles.md@ shows for the specification §10 contract as a
+    -- house convention. It is listed here so the documented descriptor cannot
+    -- rot into something that no longer compiles.
+    "attested-computation-house.dhall"
   ]
 
 -- | The generation frozen immediately before path-valued reference rules: a
@@ -4169,6 +4180,78 @@ testValidateProfileWithInventory = do
         -- is Markdown, so a concepts-only caller has not looked at either.
         assertEqual [] (validateProfile PermissiveConformance compiled concepts)
     )
+
+-- | The specification §10 contract expressed as a house convention, run against
+-- the bundle it was written for.
+--
+-- This is the descriptor @docs\/user\/profiles.md@ shows, and this test is what
+-- stops that document's transcript from rotting: the descriptor must keep
+-- compiling ('testFrozenFixturesCompile' lists it) and must keep reporting these
+-- deviations and no others.
+--
+-- What it demonstrates is the boundary this whole initiative rests on. okf's core
+-- enforces exactly §10.2's one REQUIRED field and §10.3's exactly-one rule;
+-- everything below — that a parameter carry a @type@, that an executor be
+-- declared at all — is a team's own policy, reached with @objectFields@ for the
+-- mapping-valued keys and @elementFields@ for the list-valued one, and scoped to
+-- one @type@ with a 'TypeRule' so no @Metric@ in the bundle is asked for a
+-- @runtime@.
+--
+-- @computations\/churn@ is the concept that makes the point: it produces no core
+-- diagnostic at all and one deviation here.
+testAttestedComputationHouseProfile :: IO (Either Text ())
+testAttestedComputationHouseProfile = do
+  descriptorPath <- fixtureFilePath "profiles/attested-computation-house.dhall"
+  loaded <- loadProfileFile descriptorPath
+  root <- fixturePath "attested-computation"
+  concepts <- readBundle root
+  inventory <- readBundleInventory root
+  pure $ case loaded of
+    Left err -> Left ("failed to load the house attested computation profile: " <> err)
+    Right spec -> do
+      compiled <- firstShow (compileProfile spec)
+      bothId <- firstShow (parseConceptId "computations/both-computations")
+      churnId <- firstShow (parseConceptId "computations/churn")
+      marginId <- firstShow (parseConceptId "computations/margin")
+      noneId <- firstShow (parseConceptId "computations/no-computation")
+      twoBlocksId <- firstShow (parseConceptId "computations/two-blocks")
+      -- Only the required rules fire in permissive mode. `computations/revenue`
+      -- carries the whole contract and is absent from both lists.
+      assertEqual
+        [ MissingProfileField bothId "executor" Nothing,
+          MissingProfileField bothId "parameters" Nothing,
+          MissingNestedProfileField churnId parameterTypePath Nothing,
+          MissingProfileField marginId "executor" Nothing,
+          MissingProfileField noneId "executor" Nothing,
+          MissingProfileField noneId "parameters" Nothing,
+          MissingProfileField twoBlocksId "executor" Nothing,
+          MissingProfileField twoBlocksId "parameters" Nothing
+        ]
+        (validateProfileWith inventory PermissiveConformance compiled concepts)
+      -- Under strict the recommended rules join them, including the nested
+      -- `executor.receipt` on the one concept that declares an executor without
+      -- one. No path deviation appears in either list: every path-valued field in
+      -- this bundle resolves.
+      assertEqual
+        [ MissingRecommendedProfileField bothId "attester" Nothing,
+          MissingProfileField bothId "executor" Nothing,
+          MissingProfileField bothId "parameters" Nothing,
+          MissingRecommendedProfileField churnId "attester" Nothing,
+          MissingRecommendedNestedProfileField churnId executorReceiptPath Nothing,
+          MissingNestedProfileField churnId parameterTypePath Nothing,
+          MissingRecommendedProfileField marginId "attester" Nothing,
+          MissingProfileField marginId "executor" Nothing,
+          MissingRecommendedProfileField noneId "attester" Nothing,
+          MissingProfileField noneId "executor" Nothing,
+          MissingProfileField noneId "parameters" Nothing,
+          MissingRecommendedProfileField twoBlocksId "attester" Nothing,
+          MissingProfileField twoBlocksId "executor" Nothing,
+          MissingProfileField twoBlocksId "parameters" Nothing
+        ]
+        (validateProfileWith inventory StrictAuthoring compiled concepts)
+  where
+    parameterTypePath = FieldPath (FieldName "parameters" :| [ArrayIndex 0, FieldName "type"])
+    executorReceiptPath = FieldPath (FieldName "executor" :| [FieldName "receipt"])
 
 -- | The motivating case: a path rule on @sources[].resource@, reported with the
 -- element index so the author can find the entry. Nested path checking did not

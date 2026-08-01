@@ -20,6 +20,7 @@ graph
 show
 trust
 sources
+computations
 id
 config
 profile
@@ -452,6 +453,77 @@ that nothing says otherwise. A passed deadline prints `stale since DATE`, and a
 
 Staleness is computed against today, so this command's output changes with the
 date even when the bundle does not.
+
+
+## computations
+
+List every attested computation a bundle declares, one aligned row each. This is
+the whole-bundle half of discovery: a consumer reaches one computation by
+following a link from the `Metric` that uses it, and reaches all of them with
+this command.
+
+```bash
+cabal run okf -- computations BUNDLE
+```
+
+```text
+cabal run okf -- computations examples/ddd-ordering
+computations/order-total  postgres  order_id (uuid, required)  inline  executor + attester
+```
+
+That bundle has twenty-two concepts and one attested computation, which is the
+point of the command: selection is on the `type` frontmatter value being exactly
+`Attested Computation`, and nothing else. A `Metric` that happens to carry a
+`runtime` key does not appear, and a computation that declares no contract field
+at all still does.
+
+The five columns are the concept ID, the `runtime`, the `parameters`, where the
+computation lives, and which of the two run-and-check halves the concept
+declares. Every one restates frontmatter.
+
+An absent value prints as a parenthesised phrase rather than as an empty cell,
+so the report hides nothing that `okf validate --strict` would report:
+
+```text
+cabal run okf -- computations okf-core/test/fixtures/attested-computation
+computations/both-computations  bigquery      (no parameters)           (2 computations)  (neither)
+computations/churn              bigquery      year                      inline            executor
+computations/margin             (no runtime)  year (integer, required)  inline            (neither)
+computations/no-computation     bigquery      (no parameters)           (no computation)  (neither)
+computations/revenue            bigquery      year (integer, required)  inline            executor + attester
+computations/two-blocks         bigquery      (no parameters)           (2 computations)  (neither)
+```
+
+`(no runtime)` is the one field the specification marks REQUIRED for this type
+missing. `(no computation)` and `(2 computations)` are the two ways the
+exactly-one rule breaks — a concept must provide its computation either as one
+code block under `# Computation` or as a `computation` path, never both and
+never neither.
+
+The last column reads `executor + attester`, `executor`, `attester`, or
+`(neither)`. All four are legitimate: §10.2 marks neither half REQUIRED, so
+`computations/churn` naming an executor and no attester is a complete concept
+that this bundle's own house profile happens to object to, and okf does not.
+A parameter with no declared type prints as its bare name, which is what the
+`year` in that row is.
+
+The computation column shows `inline` for the body form and the path as written
+for the file form. Use `okf show CONCEPT --computation` to read the computation
+itself in either case.
+
+**No column says anything about whether a computation would attest cleanly, and
+none can.** A receipt is what a run returns and a verdict is what an attester
+produces from it; both are runtime artifacts that live outside the bundle, and
+okf never executes a computation and never attests one. `executor + attester`
+means the concept names the two things a consumer would need in order to run and
+check it — not that either has ever been run. The trust and staleness reported by
+`okf trust` are a different question again: they say whether the *definition*
+still matches policy, which a computation can pass while any individual run
+fails, and the reverse.
+
+Concepts are ordered by ID, so the output is stable and diffable in a pipeline.
+Column widths are computed over the listed rows only. A bundle with no attested
+computations prints nothing and exits 0 — an empty report is not an error.
 
 
 ## sources

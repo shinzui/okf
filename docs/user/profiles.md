@@ -619,6 +619,153 @@ it cannot", and `examples/ddd-ordering` uses the second form
 reviews`). Demanding a followable path is a legitimate house convention and is
 not a v0.2 rule; see [path-valued fields](#path-valued-fields) for how to add it.
 
+A third omission belongs on the same list and gets its own section below: the
+reference profile says nothing about attested computations.
+
+
+## The §10 attested computation contract as a house convention
+
+An **Attested Computation** is a concept carrying a sanctioned way to compute a
+value. §10.2 gives it five contract keys — `runtime`, `parameters`,
+`computation`, `executor`, `attester` — and marks exactly one of them, `runtime`,
+REQUIRED. okf's core enforces that one, plus §10.3's rule that the computation is
+provided either as one code block under `# Computation` or as a `computation`
+path and never both. Both are reported under `--strict`, for that `type` alone,
+with no profile involved.
+
+Everything past that line is a house convention. A team that wants every
+parameter to carry a `type`, or every computation to name an executor, is not
+describing OKF — it is describing its own policy, and §11 forbids a consumer from
+rejecting a bundle over an optional field or an unrecognized `type` regardless.
+That is why `docs/profiles/okf-v0-2.dhall` carries no rule about this type: it is
+the *format's* rules, and adding a house convention to it would misrepresent the
+format to every team that adopts it.
+
+The descriptor below is what such a policy looks like. It ships as
+`okf-core/test/fixtures/profiles/attested-computation-house.dhall`, with a test
+that compiles it and runs it, so this section cannot rot.
+
+```dhall
+let Profile = ../../../dhall/Profile.dhall
+let TypeRule = ../../../dhall/defaults/TypeRule.dhall
+let FieldRule = ../../../dhall/defaults/FieldRule.dhall
+let NestedRules = ../../../dhall/defaults/NestedRules.dhall
+let Cardinality = ../../../dhall/Cardinality.dhall
+let field = ../../../dhall/mk/FieldRule.dhall
+let nested = ../../../dhall/mk/NestedFieldRule.dhall
+
+let parameterMembers =
+      NestedRules::{
+      , required =
+        [ nested.documented "name" "The bind name the computation uses."
+        ,     nested.documented "type" "What kind of value the parameter takes."
+          //  { cardinality = Cardinality.Scalar }
+        ]
+      , optional = [ nested.boolean "required" ]
+      }
+
+let executorMembers =
+      NestedRules::{
+      , required = [ nested.bundlePath "resource" ]
+      , recommended = [ nested.list "receipt" ]
+      }
+
+let attesterMembers =
+      NestedRules::{ required = [ nested.bundlePath "resource" ] }
+
+in  { name = "attested-computation-house"
+    , okfVersion = "0.2"
+    , frontmatter = { required = [ field.plain "type" ], recommended = [] : List FieldRule.Type, optional = [] : List FieldRule.Type }
+    , allowUnknownTypes = True
+    , allowUnknownFields = True
+    , idField = None Text
+    , types =
+      [ TypeRule::{
+        , type = "Attested Computation"
+        , frontmatter =
+          { required =
+            [ field.recordList "parameters" parameterMembers
+            , field.record "executor" executorMembers
+            ]
+          , recommended = [ field.record "attester" attesterMembers ]
+          , optional = [ field.bundlePath "computation" ]
+          }
+        }
+      ]
+    }
+  : Profile
+```
+
+Three structural points, each of which is easy to get wrong.
+
+**The whole contract sits inside a `TypeRule`.** Putting these rules at profile
+scope would demand a `runtime` of every `Metric`, every table, and every glossary
+term in the bundle. Scoping to `type = "Attested Computation"` is what makes a
+policy about one kind of concept expressible at all.
+
+**`executor` and `attester` take `objectFields`; `parameters` takes
+`elementFields`.** §10.2 makes the first two mappings and the third a list of
+mappings, and the two profile constructs are not interchangeable:
+`objectFields` constrains the record that *is* the value, `elementFields`
+constrains the record inside each element of a list. Using the wrong one is the
+single most common mistake here, and it fails quietly — a rule that reaches
+nothing reports nothing.
+
+**A path rule on `executor.resource` overlaps a core check.** okf already
+resolves `computation`, `executor.resource`, and `attester.resource` against the
+bundle under `--strict`, so a `path` rule on those three reports the same
+dangling target twice when both run. It is still worth writing, for one reason:
+the profile rule fires in permissive mode too, so a team that runs
+`okf validate BUNDLE --profile house.dhall` without `--strict` gets path checking
+it would otherwise not have. Drop the `path` rules if you always run `--strict`.
+
+Run against the bundle it was written for:
+
+```bash
+okf validate okf-core/test/fixtures/attested-computation \
+  --profile okf-core/test/fixtures/profiles/attested-computation-house.dhall \
+  --profile-enforce
+```
+
+```text
+profile: computations/both-computations: missing profile-required field: executor (How a run is performed and what it must return.)
+profile: computations/both-computations: missing profile-required field: parameters (The typed named holes an agent may fill. This team requires at least the declaration, so a computation taking none says so with an empty list.)
+profile: computations/churn: missing profile-required field: parameters[0].type (What kind of value the parameter takes. This team requires one so an agent never has to guess.)
+profile: computations/margin: missing profile-required field: executor (How a run is performed and what it must return.)
+profile: computations/no-computation: missing profile-required field: executor (How a run is performed and what it must return.)
+profile: computations/no-computation: missing profile-required field: parameters (The typed named holes an agent may fill. This team requires at least the declaration, so a computation taking none says so with an empty list.)
+profile: computations/two-blocks: missing profile-required field: executor (How a run is performed and what it must return.)
+profile: computations/two-blocks: missing profile-required field: parameters (The typed named holes an agent may fill. This team requires at least the declaration, so a computation taking none says so with an empty list.)
+```
+
+(`log:` advisory lines are omitted here; that bundle carries no `log.md`.)
+
+The concept to look at is `computations/churn`. Run the same bundle through
+`okf validate --strict` with no profile and it is reported *nowhere*: it declares
+its `runtime`, offers exactly one computation, and every path it carries
+resolves. The format has nothing to say about it. The house profile has one
+thing to say — its single parameter carries no `type` — and that difference is
+the whole of what a profile is for.
+
+`parameters[0].type` is how a nested deviation names itself: the key, the
+zero-based index of the element, then the member. `computations/revenue` carries
+the entire contract and appears in neither list.
+
+Adding `--strict` keeps every line above and adds the recommended rules,
+including the nested one. The two new lines for `computations/churn`:
+
+```text
+profile: computations/churn: missing profile-recommended field: attester (Deterministic code that inspects a receipt and returns a verdict.)
+profile: computations/churn: missing profile-recommended field: executor.receipt (The fields a run must return, so an attester knows what to inspect.)
+```
+
+Note what does **not** appear in either transcript: nothing about whether any of
+these computations would attest cleanly. A receipt and a verdict are runtime
+artifacts that live outside the bundle. okf records the computation and the means
+to check it, and a profile can demand that the means be named and be findable —
+neither can say a run succeeded.
+
+
 ## Profile registries
 
 Writing a descriptor from scratch is not the only way to get one. A **registry**

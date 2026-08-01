@@ -32,9 +32,56 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   `okf profile document` renders the new rule kind as an `- Object fields:`
   bullet, which changes generated output for every profile; the committed
   `examples/postgresql-profile/` bundle is regenerated accordingly.
+- `okf computations BUNDLE` lists every attested computation a bundle declares,
+  one aligned row each, in the house style of `okf trust` and `okf sources`: the
+  concept ID, the `runtime`, the `parameters`, where the computation lives, and
+  which of §10.2's two run-and-check halves the concept declares. Selection is on
+  the `type` frontmatter value being exactly `Attested Computation`. Every column
+  restates frontmatter and none says anything about a run — a receipt and a
+  verdict live outside the bundle and okf never executes or attests anything. An
+  absent value prints as `(no runtime)`, `(no computation)`, `(2 computations)`,
+  or `(neither)` rather than as a blank cell, so the report hides nothing that
+  `okf validate --strict` reports. A bundle with no computations prints nothing
+  and exits 0.
+- `okf show CONCEPT --computation` prints a concept's computation and nothing
+  else, in whichever of §10.3's two forms its producer chose — reading the file
+  named by `computation` rather than printing its path. Offering none, or more
+  than one, exits non-zero rather than guessing.
+- `okf show` renders the §10.2 contract in the specification's own field order,
+  printing each line only when the concept declares it.
+- `examples/ddd-ordering` ships a worked attested computation at
+  `computations/order-total.md`, with a `references/skills/` executor and a
+  `references/attesters/` attester, and a test asserting it validates strictly.
 
 ### Changed
 
+- **`okf profile show` renders `objectFields`.** It printed `elementFields` and
+  not its counterpart, so a profile constraining the members of a mapping-valued
+  key displayed that rule nowhere. The gap was not hypothetical: the shipped
+  `docs/profiles/okf-v0-2.dhall` constrains the members of `generated`,
+  `verified`, and `usage_window`, and none of it was visible. The two nested
+  shapes now print together, `objectFields` first, matching
+  `okf profile document`, which already rendered its object-fields bullet in that
+  position. Every field rule gains at least an `objectFields: (none)` line, so
+  the output of this command changes for every profile.
+- **The embedded `okf help` topics describe OKF v0.2.** `okf help format` listed
+  `timestamp` among current frontmatter fields and `# Citations` as a
+  conventional body heading, and named no v0.2 family at all; `okf help
+  validation` required `timestamp` under `--strict` and opened its conformance
+  section with "OKF v0.1 conformance"; and `okf help okf` asserted the tool
+  tracks the v0.1 specification while listing five of fourteen commands. All
+  three are current. `format` gains the six v0.2 families, an ATTESTED
+  COMPUTATIONS section, the `references/` convention, and the §6.2 path grammar;
+  `validation` gains the strict-mode diagnostics, a VERSION DECLARATION section,
+  and one statement of why every optional-family check is strict-only.
+- `okf validate --strict` reports a path in a frontmatter value that names a file
+  the bundle does not hold, which no check saw before. Only `resource` and the
+  three attested-computation path fields; `sources[].resource` is deliberately
+  exempt because §5.1 sanctions a scope descriptor there.
+- `okf index` lists a directory's non-Markdown files, so a `references/attesters/`
+  directory holding only `.py` files no longer generates a one-byte `index.md`.
+- `okf validate --profile` resolves a `path` rule against every file in the
+  bundle rather than only `.md` concepts.
 - A missing member of a nested record now carries the member's `description`
   prose in parentheses — `missing profile-required field: generated.by (Who or
   what produced this content.)` — as a missing top-level key already did. This

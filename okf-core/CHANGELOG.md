@@ -71,9 +71,76 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - `okf-core/test/fixtures/profiles/object-fields-mp8-ep1.dhall`, the frozen
   descriptor generation from immediately before `objectFields` existed. Do not
   edit it.
+- **The OKF v0.2 `Attested Computation` concept type (§10).** A concept of that
+  exact type carries a sanctioned way to compute a value, so a consumer can
+  confirm a number came from running the blessed computation rather than from an
+  agent improvising its own query. `Okf.Document` reads the five contract keys —
+  `runtime`, `parameters`, `computation`, `executor`, `attester` — with
+  `Parameter`, `Executor`, `Attester`, and `attestedComputationType`, the exact
+  case-sensitive type string. All five joined `coreFrontmatterFieldOrder` and
+  `fieldsIntroducedInV02`, between `status` and `generated`, which is §10.2's own
+  worked-example order, so serialization round-trips a §10.2 concept unchanged.
+  `Okf.Bundle` projects the lot onto `Concept`.
+- The body half of §10.3: `Okf.Markdown.computationBlocks` finds the code blocks
+  under a `# Computation` heading, bounded at the next heading of the same or
+  shallower level, and accepts both the fenced spelling §10.3's prose names and
+  the indented one §10.2's own example writes. `Okf.Document.ComputationSource`
+  and `readComputationSources` restate what a document offers — file before
+  inline — and `Okf.Bundle.conceptComputationSources` projects it. Every one of
+  these is type-agnostic and never reports; scoping to the type is
+  `Okf.Validation`'s job.
+- Four strict-mode `ValidationError` constructors for that type and no other:
+  `AttestedComputationMissingRuntime` for §10.2's one REQUIRED field, and
+  `AttestedComputationHasNoComputation`, `AttestedComputationHasBothComputations`,
+  and `AttestedComputationHasManyBlocks Int` for the three ways §10.3's
+  exactly-one rule breaks. Strict-only, per
+  `docs/adr/7-okf-v0-1-legacy-fallback-policy.md`: §11's conformance list reaches
+  none of them and separately forbids rejecting a bundle for an unknown `type`,
+  so "REQUIRED for this type" binds the producer and does not license a consumer
+  to refuse.
+- **Path-valued frontmatter fields are resolved against the bundle** (§6.2), a
+  gap that predates attested computations — nothing in okf had ever looked at a
+  path sitting in a frontmatter value. `Okf.Path` gains existence checking, and
+  `Okf.Validation` reports `DanglingFrontmatterPath` under `StrictAuthoring` for
+  `resource`, `computation`, `executor.resource`, and `attester.resource`. A
+  relative path that would have resolved from the bundle root is told the
+  leading-slash spelling to write instead. `sources[].resource` is deliberately
+  excluded: §5.1 sanctions a scope descriptor there, so path-checking it would
+  report correct bundles as broken. See
+  `docs/adr/12-frontmatter-path-resolution.md`.
+- `Okf.Profile.validateProfileWith` takes a `BundleInventory`, so a profile
+  `path` rule resolves against every file in the bundle rather than only `.md`
+  concepts — which is what §6.3's own `references/attesters/revenue.py` example
+  needs. `validateProfile` is defined in terms of it and keeps its exact meaning:
+  a caller that supplies no inventory has not looked, and okf reports nothing it
+  did not check. See `docs/adr/13-the-references-convention-and-non-markdown-files.md`.
+- `Okf.Index` lists a directory's non-Markdown files under a `# Files` heading,
+  so a `references/attesters/` directory holding only `.py` files no longer
+  generates a one-byte `index.md`.
+- `okf-core/test/fixtures/attested-computation/`, a bundle carrying one complete
+  contract, one of each §10.3 failure, one `Metric` that must never be mistaken
+  for a computation, and one concept that is core-clean and deviates only from a
+  house profile. `okf-core/test/fixtures/profiles/attested-computation-house.dhall`
+  is that house profile, and is the descriptor `docs/user/profiles.md` documents.
 
 ### Changed
 
+- **Breaking for exhaustive consumers, from the attested computation work.**
+  Four changes, listed together because a consumer moving its okf pin meets them
+  as one surface. `Okf.Validation.validateBundle` takes a required
+  `BundleInventory` before its list of concepts — required rather than defaulted,
+  so no caller can pass an empty inventory and have every path report as
+  dangling. `BundleValidationError` gains `DanglingFrontmatterPath ConceptId Text
+  FilePath (Maybe FilePath)`. `ValidationError` gains the four
+  `AttestedComputation*` constructors listed above. And `Okf.Index.renderIndex`
+  takes two further parameters, for the non-Markdown files in a directory.
+  The arity change on `validateBundle` is the one that breaks a caller outright;
+  the constructor additions break only an exhaustive `case`. Mori
+  (`mori://shinzui/mori`) matches `ProfileViolation` and not `ValidationError` or
+  `BundleValidationError` as of 2026-08-01, so the constructors do not reach it,
+  but its call to `validateBundle` does — check before moving the pin rather than
+  assuming, since that is a position on a date and not a guarantee.
+  `Okf.Profile.validateProfile` is unchanged in signature and meaning.
 - **Breaking for exhaustive consumers.** `Cardinality` gains a fourth
   constructor, `Object`, and `ProfileDefinitionError` gains
   `ObjectFieldsRequireObjectShape`. The `Cardinality` addition is the wider of

@@ -939,6 +939,7 @@ testComputationsReportsFixtureBundle =
   assertComputationReport
     ("okf-core" </> "test" </> "fixtures" </> "attested-computation")
     [ "computations/both-computations  bigquery      (no parameters)           (2 computations)  (neither)",
+      "computations/churn              bigquery      year                      inline            executor",
       "computations/margin             (no runtime)  year (integer, required)  inline            (neither)",
       "computations/no-computation     bigquery      (no parameters)           (no computation)  (neither)",
       "computations/revenue            bigquery      year (integer, required)  inline            executor + attester",

@@ -69,9 +69,55 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   members, which is how a profile describes `verified`: OKF v0.2 permits it as a
   list of mappings or as one bare mapping. Write it with `field.record` or
   `field.recordOrList`. Profiles remain advisory; core validation is unchanged.
+- **OKF v0.2's `Attested Computation` concept type (§10).** A concept of that
+  type carries not just what a value *means* but a sanctioned way to *compute*
+  it, so a consumer can confirm a number came from running the blessed
+  computation rather than from an agent improvising its own SQL. okf reads the
+  five contract keys — `runtime`, `parameters`, `computation`, `executor`,
+  `attester` — renders them in `okf show`, and enforces §10.2's one REQUIRED
+  field and §10.3's rule that the computation is provided either as one code
+  block under `# Computation` or as a `computation` path, never both and never
+  neither. Both checks are strict-mode authoring diagnostics for that type alone:
+  §11's conformance list reaches neither, and separately forbids rejecting a
+  bundle over an unrecognized `type`.
+  `okf computations BUNDLE` lists a bundle's computations, and
+  `okf show CONCEPT --computation` prints one, reading the file named by
+  `computation` where the producer chose that form.
+  **okf never executes a computation and never attests one.** §10 says OKF
+  "records the computation and the means to check it; it does not execute
+  anything itself", and puts the receipt and the verdict outside the bundle
+  entirely. Nothing here runs, fetches, or judges anything.
+- **A path in a frontmatter value is resolved against the bundle** (§6.2), which
+  no okf check had ever done — `Okf.Graph` only ever followed Markdown links in
+  concept bodies, so an `executor.resource` naming a file deleted three commits
+  ago passed silently. `okf validate --strict` now reports `resource`,
+  `computation`, `executor.resource`, and `attester.resource` when they name
+  nothing, and tells an author who wrote a bare relative path what the
+  bundle-relative spelling would have been. `sources[].resource` is deliberately
+  not path-checked: §5.1 sanctions "a population or scope descriptor" there, and
+  `examples/ddd-ordering` uses that form. Like the dangling-link check, this is
+  an authoring-time lint rather than a conformance requirement.
+- The §6.3 `references/` convention is adopted and documented: a `.md` file under
+  `references/` is an ordinary concept and needs a `type`, a `.py` or `.sql` file
+  under it is not a concept and is only ever the target of a path, and `okf
+  index` now lists those files rather than generating an empty index for a
+  directory that holds only them. `okf validate --profile` resolves a `path` rule
+  against every file in the bundle, not only `.md` concepts. See
+  `docs/adr/12-frontmatter-path-resolution.md` and
+  `docs/adr/13-the-references-convention-and-non-markdown-files.md`.
 
 ### Changed
 
+- **The embedded `okf help` topics describe OKF v0.2 rather than v0.1.** Those
+  eight guides are compiled into the binary and are what an agent reads with no
+  network access, and three of them had not moved with the format: `format`
+  listed `timestamp` as a current key and `# Citations` as a conventional
+  heading, `validation` required `timestamp` under `--strict`, and `okf` said the
+  tool tracks the v0.1 specification while listing five of fourteen commands.
+- **`okf profile show` renders `objectFields`**, which it did not, so a profile
+  constraining the members of `generated`, `verified`, or an `executor` showed
+  that rule nowhere — including the shipped `docs/profiles/okf-v0-2.dhall`, which
+  constrains three such keys. Output of this command changes for every profile.
 - Two behaviour changes a user could be surprised by, both from the v0.2 work.
   Strict validation asks for `generated` rather than `timestamp` — with a
   fallback, so nothing that passed before fails, but the message for a concept
