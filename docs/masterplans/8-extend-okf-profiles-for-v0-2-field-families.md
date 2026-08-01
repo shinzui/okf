@@ -203,9 +203,9 @@ must deliberately diverge from on the profile side and say so.
 governing here, though EP-2 must respect ADR 8's boundary: a format checks the shape of a
 value and never derives a trust tier.
 
-This initiative should produce **one new ADR**,
-`docs/adr/11-growing-the-profile-descriptor-language.md`, written by EP-1 and amended by
-EP-2, EP-3, and EP-4: the rule that each additive schema change ships a frozen compatibility
+This initiative produces **one new ADR**,
+`docs/adr/11-growing-the-profile-descriptor-language.md`, **written by EP-1 on 2026-08-01** and
+to be amended by EP-2, EP-3, and EP-4: the rule that each additive schema change ships a frozen compatibility
 fixture and an `upgrade*` step, the record-versus-union distinction above, the decision
 reached in plan one about object rules versus element rules, and the fact that not every
 plan is a schema event. That is durable project context which the next person to extend the
@@ -217,7 +217,7 @@ upgrade shims.
 
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
-| 1 | Validate nested rules on scalar object fields | docs/plans/44-validate-nested-rules-on-scalar-object-fields.md | None | None | In Progress |
+| 1 | Validate nested rules on scalar object fields | docs/plans/44-validate-nested-rules-on-scalar-object-fields.md | None | None | Complete |
 | 2 | Add the actor field format and non-textual value constraints | docs/plans/45-add-the-actor-field-format-and-non-textual-value-constraints.md | EP-1 | None | Not Started |
 | 3 | Add path valued reference rules distinct from document handles | docs/plans/46-add-path-valued-reference-rules-distinct-from-document-handles.md | EP-1 | EP-2 | Not Started |
 | 4 | Enforce the profile declared okfVersion and ship a v0.2 reference profile | docs/plans/47-enforce-the-profile-declared-okfversion-and-ship-a-v0-2-reference-profile.md | EP-1, EP-2, EP-3 | None | Not Started |
@@ -376,10 +376,10 @@ the two, because they answer different questions for different consumers.
 Milestone-level progress across all four child plans. Each child plan's own Progress
 section carries the granular work; this list tracks the story.
 
-- [ ] EP-1: a profile can require a mapping-valued key to be present at all
-- [ ] EP-1: a profile can attach required, recommended, and optional rules to the members of that mapping, reported at paths such as `generated.by`
-- [ ] EP-1: `verified` written as a bare mapping is validated identically to a one-element list
-- [ ] EP-1: the frozen pre-object descriptor shape still loads, and generated documentation shows the new rule kind
+- [x] EP-1: a profile can require a mapping-valued key to be present at all (2026-08-01)
+- [x] EP-1: a profile can attach required, recommended, and optional rules to the members of that mapping, reported at paths such as `generated.by` (2026-08-01)
+- [x] EP-1: `verified` written as a bare mapping is validated identically to a one-element list (2026-08-01)
+- [x] EP-1: the frozen pre-object descriptor shape still loads, and generated documentation shows the new rule kind (2026-08-01)
 - [ ] EP-2: a profile can require a value to be a well-formed specification §7 actor, or specifically a `human:` actor
 - [ ] EP-2: a profile can constrain a numeric or boolean value, and can require such a key at all
 - [ ] EP-2: the frozen five-alternative `FieldFormat` union still loads through every earlier generation
@@ -455,6 +455,49 @@ declares `okfVersion = "0.1"` and asks for the key §13.1 supersedes.
 `docs/masterplans/7-adopt-okf-v0-2-core-semantics.md`'s Outcomes section recorded both as
 "correct until MasterPlan 8", which they individually were. EP-4 both adds the check and
 resolves the drift.
+
+**EP-1 delivered, and four of its findings change what EP-2, EP-3, and EP-4 should expect.**
+
+First, **the record-completion migration inside this repository is already complete, so adding
+a field to the closed `FieldRule` record broke nothing here.** EP-1's plan predicted that
+`okf-core/test/fixtures/profiles/postgresql.dhall`, `docs/profiles/postgresql.dhall`, and
+`docs/profiles/profile-documentation.dhall` would all fail to typecheck and need editing. None
+did: every descriptor in this repository uses `FieldRule::{ … }` or the `mk` constructors,
+which is exactly the protection `okf-core/dhall/mk/FieldRule.dhall` advertises. This does not
+weaken the compatibility discipline — the risk is entirely to descriptors *outside* this
+repository, which is what the frozen chain exists for — but EP-2 and EP-3 should not budget
+time for in-repo descriptor edits.
+
+Second, **naming a `Cardinality` or `FieldFormat` constructor after an aeson `Value`
+constructor collides in four files.** `Okf.Prelude` re-exports `Data.Aeson.Value (..)`, so
+`Object`, `Array`, `String`, `Number`, and `Bool` are all already in scope wherever profiles
+are handled. `Okf.Profile` already hid `List` for this reason; EP-1 extended the hiding to
+`Object` in `okf-core/src/Okf/Profile.hs`, `okf-cli/src/Okf/Cli.hs`, and
+`okf-core/test/Main.hs`, reaching aeson's constructor as `Aeson.Object`. EP-2 adds
+`FieldFormat` alternatives and should check its chosen names against that list before writing
+them.
+
+Third, **a `-Wincomplete-patterns` warning for a new constructor is real but easy to miss.**
+`cabal build` reports `Up to date` and skips recompiling even after `touch`, and grepping build
+output for `error:` hides warnings entirely. EP-1 nearly shipped a non-exhaustive
+`renderCardinality` for that reason. Every plan here adds a constructor to a type the CLI
+renders, so each should grep build output for `atterns` rather than for `error`.
+
+Fourth, **a rule declaring the same members under two nested shapes double-reports every
+definition error unless the walk deduplicates.** `mk.recordOrList` deliberately declares one
+`NestedRules` value under both `elementFields` and `objectFields`, and a definition error names
+a path such as `verified.by` that does not distinguish them. EP-1 added
+`declaredNestedRuleSets` and `pairedNestedRuleMaps` inside `compileProfile` for this; EP-3,
+which adds a reference rule to `NestedFieldRule`, should hang its per-shape walk on those two
+helpers rather than adding a third parallel comprehension.
+
+**One behavior changed beyond the scope EP-1 named, deliberately and recorded.** A missing
+member of a nested record now carries the member's `description` prose in parentheses, which
+`renderProfileViolation` previously did for top-level keys only. EP-1's acceptance criterion
+required it for `generated.by`, and emitting it for object members but not list-element members
+would have made the two kinds of nested rule gratuitously different. It is additive — nothing
+is emitted where a member declares no description — and the full suite passed with no
+expectation edits, which shows nothing depended on the prose being absent.
 
 **Three lessons inherited from MasterPlan 7 are written into every child plan rather than
 left to be rediscovered.** A projection nobody renders is not a user-visible outcome, which
@@ -553,6 +596,27 @@ which is why EP-4's reference profile ships with a test that validates it agains
   both fields, with a one-line `mk` constructor so an author writes the member rules once.
   Date: 2026-08-01
 
+- Decision: Treat "freeze the previous generation" and "add the new field" as one commit
+  rather than two, for every plan in this initiative.
+  Rationale: discovered while implementing EP-1. The compatibility rule asks for one
+  `upgrade*` step per schema addition, and that function constructs a *current-shape* record —
+  so it does not compile until the new member exists. A freeze written to compile on its own
+  would preserve a shape identical to the current one, which is a decoder that freezes
+  nothing, and would be rewritten immediately afterwards. The reviewability the split was meant
+  to buy is recovered by naming both milestones in the commit message.
+  Date: 2026-08-01
+
+- Decision: A missing member of a nested record renders its `description` prose, for
+  list-element members as well as object members.
+  Rationale: EP-1's acceptance criterion required the prose for `generated.by`, while its
+  Milestone 4 text said to reuse the existing violation constructor unchanged. Both are
+  satisfiable — the constructor needed no change, the CLI renderer did — and
+  `docs/adr/4-self-documenting-profiles.md` argues for prose wherever a rule lives. Emitting it
+  for object members but not list-element members would have made two kinds of nested rule
+  gratuitously different when they already share one member-checking body. The change is
+  additive and the full suite passed without expectation edits.
+  Date: 2026-08-01
+
 - Decision: EP-3 does not resolve a path-valued field to a non-Markdown target, and says so
   rather than pretending to.
   Rationale: `validateProfile` receives `[Concept]` and no filesystem handle, and a `Concept`
@@ -615,7 +679,27 @@ Compare the result against the original vision. Before marking the MasterPlan co
 distill durable context from this MasterPlan and its child ExecPlans into
 docs/adr/. Keep task-local execution and coordination details here.
 
-(To be filled during and after implementation.)
+**EP-1 complete, 2026-08-01, in five commits (`85bb87e` through `6167a5a`).** The largest of
+the four expressiveness gaps is closed: a profile can require a mapping-valued key, constrain
+its members at paths such as `generated.by`, and accept either of the two spellings OKF v0.2
+§5.2 permits for `verified`. The new ADR this initiative owes,
+`docs/adr/11-growing-the-profile-descriptor-language.md`, is written, and
+`docs/adr/5-compile-profile-rules-before-validation.md` is amended.
+
+Three coordination judgments this MasterPlan made were tested by EP-1 and held. Splitting by
+descriptor concept rather than bundling was right: one schema shape was in flight at a time and
+the frozen fixture had one obvious thing to prove. Doing object rules first was right for the
+stated reason — EP-2's most important application, `generated.by`, is now reachable, and EP-2
+does not have to be written twice. And the record-versus-union distinction, discovered while
+writing the plans rather than while implementing them, is the thing EP-1 spent the most care
+on and is now the centre of the ADR; `dhall type` over the published schema still reports
+`< Any | List | Scalar >`, so EP-1 added a cardinality without touching the published union at
+all.
+
+One decomposition assumption needs adjusting for the plans that follow. The MasterPlan and
+EP-1 both treated "freeze a generation" as a step separable from "add the field". It is not:
+the upgrade function constructs a current-shape record and does not compile without the member
+it is frozen against. EP-2 and EP-3 should plan on one commit for the pair, not two.
 
 
 ## Revision note — 2026-08-01
@@ -654,3 +738,34 @@ so it freezes no generation. Both are now stated rather than inferable.
 The Progress list was rewritten to match the milestones the child plans actually carry, and
 Integration Points gained two entries — the §6.2 path grammar as a cross-MasterPlan point,
 and the always-permitted core key set that MasterPlan 7 widened.
+
+
+## Revision note — 2026-08-01 (EP-1 complete)
+
+`docs/plans/44-validate-nested-rules-on-scalar-object-fields.md` is Complete, in five commits
+from `85bb87e` to `6167a5a`. The Exec-Plan Registry, the Progress list, Surprises &
+Discoveries, the Decision Log, and Outcomes & Retrospective are all updated; the new ADR this
+initiative owes, `docs/adr/11-growing-the-profile-descriptor-language.md`, is written, and
+`docs/adr/5-compile-profile-rules-before-validation.md` is amended with the object-rule
+decision and its consequences for exhaustive consumers.
+
+Two things changed in this document beyond marking progress.
+
+One decomposition assumption is corrected in the Decision Log and in Outcomes: freezing a
+generation and adding the field it is frozen against cannot be separate commits, because the
+`upgrade*` function constructs a current-shape record. EP-2 and EP-3 should plan for one commit
+per schema event, not two.
+
+Four cross-plan findings are recorded in Surprises & Discoveries because they change what the
+remaining plans should expect: no in-repo descriptor needed editing when the closed `FieldRule`
+record grew, since the record-completion migration here is already complete; a `Cardinality` or
+`FieldFormat` constructor named after an aeson `Value` constructor collides in four files;
+`cabal build` reports `Up to date` and skips recompiling even after `touch`, so an incomplete-
+pattern warning is easy to miss, and grepping build output for `error:` hides warnings
+entirely; and a rule declaring the same members under two nested shapes double-reports every
+definition error unless the walk deduplicates, for which EP-1 left two helpers inside
+`compileProfile` that EP-3 should extend rather than parallel.
+
+One deliberate scope extension is recorded as a decision: a missing member of a nested record
+now renders the member's `description` prose, for list-element members as well as object
+members, which `renderProfileViolation` previously did for top-level keys only.
