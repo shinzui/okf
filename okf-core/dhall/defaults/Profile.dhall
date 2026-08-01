@@ -13,6 +13,7 @@ in  { Type = ProfileType
       , allowUnknownTypes = True
       , allowUnknownFields = True
       , idField = None Text
+      , requireBundleVersion = None Text
       , types = [] : List TypeRule
       }
     }

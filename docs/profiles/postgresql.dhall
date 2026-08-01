@@ -74,6 +74,13 @@ in    { name = "shinzui-postgresql"
       , allowUnknownTypes = False
       , allowUnknownFields = True
       , idField = None Text
+      , -- This profile's rules are written for v0.2 — `generated` rather than the
+        -- superseded `timestamp` — so a bundle it governs should say that it is a
+        -- v0.2 bundle. Declared in `index.md`, or written with
+        -- `okf index BUNDLE --write --okf-version 0.2`. A house convention, not a
+        -- rule of the format: §12 makes the declaration a MAY, which is why
+        -- `docs/profiles/okf-v0-2.dhall` requires nothing here and this file does.
+        requireBundleVersion = Some "0.2"
       , types =
         [ { type = "PostgreSQL Schema"
           , description = Some

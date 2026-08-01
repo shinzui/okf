@@ -156,6 +156,7 @@ main = do
         testIO "loadProfileFile preserves the frozen condition-aware schema" testLoadConditionalCompatibilityFixture,
         testIO "loadProfileFile preserves the frozen reference-aware schema" testLoadReferenceCompatibilityFixture,
         testIO "every frozen generation fixture compiles, not merely decodes" testFrozenFixturesCompile,
+        testIO "loadProfileFile preserves the frozen pre-bundle-version schema" testLoadPreBundleVersionCompatibilityFixture,
         testIO "loadProfileFile preserves the frozen pre-path schema" testLoadPrePathCompatibilityFixture,
         testIO "loadProfileFile preserves the frozen five-alternative format union" testLoadPreActorCompatibilityFixture,
         testIO "loadProfileFile preserves the frozen optional-presence schema" testLoadPreObjectCompatibilityFixture,
@@ -216,6 +217,9 @@ main = do
         test "compileProfile rejects incoherent path rules" testPathDefinitionErrors,
         test "compileProfile rejects an unreadable or unknown-major okfVersion" testProfileVersionParsing,
         test "compileProfile clamps a higher okfVersion minor to the supported one" testProfileVersionMinorClamp,
+        test "compileProfile rejects an unreadable requireBundleVersion" testRequiredBundleVersionParsing,
+        test "validateProfileVersion judges every declaration shape" testValidateProfileVersion,
+        test "validateProfileVersion is inert without a requirement" testValidateProfileVersionUnrequired,
         test "compileProfile rejects a superseded field outside the optional list" testProfileVersionSupersededField,
         test "compileProfile rejects the actor formats in a v0.1 profile" testProfileVersionActorFormat,
         test "compileProfile does not judge a profile by its key names" testProfileVersionDoesNotJudgeKeyNames,
@@ -2658,12 +2662,43 @@ frozenGenerationFixtures =
     "object-fields-mp8-ep1.dhall",
     "formats-mp8-ep2.dhall",
     "path-references-mp8-ep3.dhall",
+    "pre-bundle-version.dhall",
     -- Not a frozen generation but a *documented* one: this is the descriptor
     -- @docs\/user\/profiles.md@ shows for the specification §10 contract as a
     -- house convention. It is listed here so the documented descriptor cannot
     -- rot into something that no longer compiles.
     "attested-computation-house.dhall"
   ]
+
+-- | The generation frozen immediately before @requireBundleVersion@: a descriptor
+-- with no such member still loads, the member arrives as 'Nothing', and every
+-- member the frozen descriptor did declare survives the upgrade. The last part is
+-- what would catch an upgrade function that dropped a field while adding the new
+-- one, which is the failure mode a chain this long invites.
+testLoadPreBundleVersionCompatibilityFixture :: IO (Either Text ())
+testLoadPreBundleVersionCompatibilityFixture = do
+  path <- fixtureFilePath "profiles/pre-bundle-version.dhall"
+  result <- loadProfileFile path
+  pure $ case result of
+    Left err -> Left ("failed to load frozen pre-bundle-version profile: " <> err)
+    Right spec -> do
+      assertEqual "pre-bundle-version" (spec ^. #name)
+      -- The new member, absent from the descriptor, means "demand nothing".
+      assertEqual Nothing (spec ^. #requireBundleVersion)
+      -- Everything else survived: prose, settings, and rules at both scopes.
+      assertEqual (Just "Frozen immediately before requireBundleVersion.") (spec ^. #description)
+      assertEqual "0.2" (spec ^. #okfVersion)
+      assertEqual False (spec ^. #allowUnknownTypes)
+      assertEqual True (spec ^. #allowUnknownFields)
+      assertEqual (Just "docId") (spec ^. #idField)
+      assertEqual ["type", "generated"] (map (^. #field) (spec ^. #frontmatter . #required))
+      assertEqual
+        (Just (HandleReferenceRule "ADR" ["mori"] False))
+        (case spec ^. #frontmatter . #optional of rule : _ -> rule ^. #reference; [] -> Nothing)
+      assertEqual
+        [Just Profile.HumanActor]
+        (concatMap (map (^. #format) . (^. #frontmatter . #required)) (spec ^. #types))
+      assertEqual [Just "ADR"] (map (^. #idPrefix) (spec ^. #types))
 
 -- | The generation frozen immediately before path-valued reference rules: a
 -- descriptor with no @path@ member on 'FieldRule' or 'NestedFieldRule' still
@@ -3136,6 +3171,7 @@ testProfileSpec =
       allowUnknownTypes = False,
       allowUnknownFields = True,
       idField = Nothing,
+      requireBundleVersion = Nothing,
       types =
         [ TypeRule
             { type_ = "PostgreSQL Table",
@@ -3165,6 +3201,7 @@ testDocumentIdProfileSpec =
       allowUnknownTypes = False,
       allowUnknownFields = True,
       idField = Just "docId",
+      requireBundleVersion = Nothing,
       types =
         [ TypeRule
             { type_ = "Decision Record",
@@ -3197,6 +3234,7 @@ typeAwareProfileSpec =
       allowUnknownTypes = True,
       allowUnknownFields = True,
       idField = Nothing,
+      requireBundleVersion = Nothing,
       types =
         [ TypeRule
             { type_ = "Owned Concept",
@@ -3804,6 +3842,7 @@ nestedProfileWithRules outerCardinality profileNested typeNested =
       allowUnknownTypes = False,
       allowUnknownFields = True,
       idField = Nothing,
+      requireBundleVersion = Nothing,
       types =
         [ TypeRule
             { type_ = "Reviewed Concept",
@@ -3879,6 +3918,7 @@ objectProfileWithRules key declaredCardinality objectRules elementRules =
       allowUnknownTypes = True,
       allowUnknownFields = True,
       idField = Nothing,
+      requireBundleVersion = Nothing,
       types = []
     }
 
@@ -3970,6 +4010,7 @@ pathProfileWith profilePath declaredFormat handlePolicy typePath =
       allowUnknownTypes = True,
       allowUnknownFields = True,
       idField = if isJust handlePolicy then Just "docId" else Nothing,
+      requireBundleVersion = Nothing,
       types =
         [ TypeRule
             { type_ = "Metric",
@@ -4010,6 +4051,7 @@ sourcesPathProfile permittedSchemes =
       allowUnknownTypes = True,
       allowUnknownFields = True,
       idField = Nothing,
+      requireBundleVersion = Nothing,
       types = []
     }
   where
@@ -4343,6 +4385,7 @@ versionProfileWith declaredVersion listName rules =
       allowUnknownTypes = True,
       allowUnknownFields = True,
       idField = Nothing,
+      requireBundleVersion = Nothing,
       types = []
     }
 
@@ -4374,6 +4417,63 @@ testProfileVersionMinorClamp = do
   case compileProfile (versionProfileWith "0.9" "optional" []) of
     Left errs -> Left ("expected a v0.9 profile to compile, got " <> Text.pack (show (toList errs)))
     Right _ -> Right ()
+
+-- | A profile that demands a bundle version okf cannot parse is rejected at
+-- compile time, before any bundle is read: no declaration could ever be compared
+-- against it, so the descriptor is asking for something unanswerable.
+--
+-- An unknown /major/ is deliberately accepted here, unlike in @okfVersion@. There
+-- the profile asks okf to interpret rules it may not understand; here it states a
+-- minimum that a bundle's own declaration is compared against, which stays
+-- meaningful whatever the major is.
+testRequiredBundleVersionParsing :: Either Text ()
+testRequiredBundleVersionParsing = do
+  assertEqual
+    (Left (InvalidRequiredBundleVersion "banana" :| []))
+    (compileProfile (requireBundleVersionProfile (Just "banana")))
+  for_ [Just "0.2", Just "1.0", Nothing] $ \required ->
+    case compileProfile (requireBundleVersionProfile required) of
+      Left errs -> Left ("expected a clean compile, got " <> Text.pack (show (toList errs)))
+      Right _ -> Right ()
+
+-- | What each shape of a bundle's §12 declaration means against a profile that
+-- requires 0.2. A bundle ahead of the minimum is not a deviation; one behind it,
+-- one that says nothing, and one okf cannot parse all are.
+testValidateProfileVersion :: Either Text ()
+testValidateProfileVersion = do
+  compiled <- firstShow (compileProfile (requireBundleVersionProfile (Just "0.2")))
+  assertEqual [] (validateProfileVersion (VersionDeclared (OkfVersion 0 2)) compiled)
+  assertEqual [] (validateProfileVersion (VersionDeclared (OkfVersion 0 3)) compiled)
+  assertEqual [] (validateProfileVersion (VersionDeclared (OkfVersion 1 0)) compiled)
+  assertEqual
+    [RequiredBundleVersionUnmet "0.2" (Just "0.1")]
+    (validateProfileVersion (VersionDeclared (OkfVersion 0 1)) compiled)
+  assertEqual
+    [RequiredBundleVersionUnmet "0.2" Nothing]
+    (validateProfileVersion VersionUndeclared compiled)
+  assertEqual
+    [RequiredBundleVersionUnmet "0.2" (Just "banana")]
+    (validateProfileVersion (VersionUnparseable "banana") compiled)
+
+-- | The default is inert: a profile that requires nothing reports nothing,
+-- whatever the bundle declares. Almost every profile is this one.
+testValidateProfileVersionUnrequired :: Either Text ()
+testValidateProfileVersionUnrequired = do
+  compiled <- firstShow (compileProfile (requireBundleVersionProfile Nothing))
+  assertEqual Nothing (compiledProfileRequiredBundleVersion compiled)
+  for_
+    [ VersionDeclared (OkfVersion 0 1),
+      VersionDeclared (OkfVersion 0 2),
+      VersionUnparseable "banana",
+      VersionUndeclared
+    ]
+    (\declaration -> assertEqual [] (validateProfileVersion declaration compiled))
+
+-- | A minimal v0.2 profile whose only interesting member is the requirement under
+-- test.
+requireBundleVersionProfile :: Maybe Text -> ProfileSpec
+requireBundleVersionProfile required =
+  (versionProfileWith "0.2" "optional" []) {requireBundleVersion = required}
 
 -- | A key the declared version supersedes is an error where it is /demanded/ and
 -- legal where it is merely documented. The optional list is how a team migrating
@@ -4605,6 +4705,7 @@ testReferenceDefinitionErrors = do
         testDocumentIdProfileSpec
           { frontmatter = FrontmatterRules {required = profileRules, recommended = [], optional = []},
             idField = profileIdField,
+            requireBundleVersion = Nothing,
             types = typeRules
           }
       path = fieldPath "supersedes"
@@ -4994,6 +5095,7 @@ testClosedFieldValidation = do
           { frontmatter = FrontmatterRules {required = [requiredField "type", requiredField "status"], recommended = [], optional = []},
             allowUnknownFields = False,
             idField = Just "requestId",
+            requireBundleVersion = Nothing,
             types = [ownedRule, reviewRule]
           }
   compiled <- firstShow (compileProfile closed)
@@ -5643,6 +5745,7 @@ duplicateSlugProfileSpec =
       allowUnknownTypes = False,
       allowUnknownFields = True,
       idField = Nothing,
+      requireBundleVersion = Nothing,
       types =
         [ plainDocumentationTypeRule "Decision Record",
           plainDocumentationTypeRule "decision record",

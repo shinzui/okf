@@ -177,6 +177,12 @@ in    { name = "okf-v0-2"
       , allowUnknownTypes = True
       , allowUnknownFields = True
       , idField = None Text
+      , -- Deliberately demanding nothing, for the same reason `verified` is
+        -- optional above. §12 makes the version declaration a MAY, so a
+        -- format-level reference profile that required one would advise the
+        -- opposite of the specification. A house profile that has finished
+        -- migrating writes `Some "0.2"` here; see `docs/profiles/postgresql.dhall`.
+        requireBundleVersion = None Text
       , types = [] : List TypeRule
       }
     : Profile

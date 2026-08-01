@@ -48,6 +48,7 @@ in    { name = "shinzui-postgresql"
       , allowUnknownTypes = False
       , allowUnknownFields = True
       , idField = None Text
+      , requireBundleVersion = None Text
       , types =
         [ { type = "PostgreSQL Schema"
           , description = Some "One namespace grouping tables and views."

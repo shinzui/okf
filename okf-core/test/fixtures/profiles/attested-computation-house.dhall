@@ -95,6 +95,7 @@ in    { name = "attested-computation-house"
       , allowUnknownTypes = True
       , allowUnknownFields = True
       , idField = None Text
+      , requireBundleVersion = None Text
       , types =
         [ TypeRule::{
           , type = "Attested Computation"

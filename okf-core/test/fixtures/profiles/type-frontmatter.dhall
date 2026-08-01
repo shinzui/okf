@@ -20,6 +20,7 @@ in    { name = "type-frontmatter"
       , allowUnknownTypes = False
       , allowUnknownFields = True
       , idField = None Text
+      , requireBundleVersion = None Text
       , types =
         [ TypeRule::{
           , type = "Owned Concept"

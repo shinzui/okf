@@ -20,6 +20,7 @@ in    { name = "closed-fields"
       , allowUnknownTypes = False
       , allowUnknownFields = False
       , idField = Some "requestId"
+      , requireBundleVersion = None Text
       , types =
         [ TypeRule::{
           , type = "Improvement Request"

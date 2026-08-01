@@ -35,6 +35,7 @@ in    { name = "document-references"
       , allowUnknownTypes = False
       , allowUnknownFields = True
       , idField = Some "docId"
+      , requireBundleVersion = None Text
       , types =
         [ TypeRule::{
           , type = "Decision Record"

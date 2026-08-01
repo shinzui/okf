@@ -409,6 +409,7 @@ samplePostgresqlProfile =
       allowUnknownTypes = False,
       allowUnknownFields = True,
       idField = Nothing,
+      requireBundleVersion = Nothing,
       types =
         [ TypeRule
             { type_ = "PostgreSQL Table",
@@ -465,6 +466,7 @@ sampleDecisionsProfile =
       allowUnknownTypes = False,
       allowUnknownFields = True,
       idField = Just "docId",
+      requireBundleVersion = Nothing,
       types =
         [ TypeRule
             { type_ = "Decision Record",
@@ -542,6 +544,7 @@ sampleNestedProfile =
       allowUnknownTypes = True,
       allowUnknownFields = True,
       idField = Nothing,
+      requireBundleVersion = Nothing,
       types = []
     }
 
@@ -551,6 +554,7 @@ sampleNestedProfileDetail =
     "name: nested",
     "description: (none)",
     "okfVersion: 0.1",
+    "requireBundleVersion: (none)",
     "allowUnknownTypes: true",
     "allowUnknownFields: true",
     "idField: (none)",
@@ -622,6 +626,7 @@ sampleProfileDetail =
     "name: decisions",
     "description: How this team records architectural decisions.",
     "okfVersion: 0.1",
+    "requireBundleVersion: (none)",
     "allowUnknownTypes: false",
     "allowUnknownFields: true",
     "idField: docId",
@@ -704,6 +709,7 @@ sampleUndocumentedProfileDetail =
     "name: shinzui-postgresql",
     "description: (none)",
     "okfVersion: 0.1",
+    "requireBundleVersion: (none)",
     "allowUnknownTypes: false",
     "allowUnknownFields: true",
     "idField: (none)",

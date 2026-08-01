@@ -42,6 +42,7 @@ in    { name = "invalid-document-references"
       , allowUnknownTypes = True
       , allowUnknownFields = True
       , idField = Some "docId"
+      , requireBundleVersion = None Text
       , types =
         [ TypeRule::{
           , type = "Decision Record"

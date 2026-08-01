@@ -61,6 +61,7 @@ in    { name = "nested-reviews"
       , allowUnknownTypes = False
       , allowUnknownFields = True
       , idField = None Text
+      , requireBundleVersion = None Text
       , types = [ TypeRule::{ type = "Reviewed Concept" } ]
       }
     : Profile

@@ -109,6 +109,7 @@ import Okf.Profile
     parseDocumentId,
     profileFieldDescriptionForType,
     renderDocumentId,
+    validateProfileVersion,
     validateProfileWith,
   )
 import Okf.Profile.Documentation
@@ -1013,12 +1014,14 @@ renderProfileDetail
       allowUnknownTypes,
       allowUnknownFields,
       idField,
+      requireBundleVersion,
       types = typeRules
     } =
     [ "export: " <> displayExport exportPath,
       "name: " <> name,
       "description: " <> renderOptional description,
       "okfVersion: " <> okfVersion,
+      "requireBundleVersion: " <> renderOptional requireBundleVersion,
       "allowUnknownTypes: " <> renderFlag allowUnknownTypes,
       "allowUnknownFields: " <> renderFlag allowUnknownFields,
       "idField: " <> renderOptional idField
@@ -1172,7 +1175,11 @@ runValidate ValidateOptions {bundlePath, strictMode, profilePath, profileEnforce
               -- naming §6.3's @references/attesters/revenue.py@ is resolved
               -- rather than accepted unchecked. This command walked a real
               -- directory, so it can answer the question.
-              let violations = validateProfileWith inventory coreProfile compiled concepts
+              -- The version requirement first: a bundle that does not declare
+              -- what the profile demands is context for every line below it.
+              let violations =
+                    validateProfileVersion declaration compiled
+                      <> validateProfileWith inventory coreProfile compiled concepts
               mapM_ (Text.IO.hPutStrLn stderr . ("profile: " <>) . renderProfileViolation compiled concepts) violations
               pure violations
 
@@ -1923,6 +1930,21 @@ renderProfileViolation compiled concepts = \case
     renderConceptId cid <> ": document ID must look like " <> prefix <> "-<number>, found: " <> actual
   DuplicateDocumentId handle cid other ->
     renderConceptId cid <> ": duplicate document ID " <> handle <> " (also on " <> renderConceptId other <> ")"
+  -- The one violation that names no concept, so it opens with "bundle" where
+  -- every other line opens with a concept ID. Both halves are named for the same
+  -- reason the version definition errors name both: the requirement is in the
+  -- profile and the declaration is in the bundle's root index, and a reader
+  -- holding one line should not have to hunt for the other end.
+  RequiredBundleVersionUnmet required declared ->
+    case declared of
+      Nothing ->
+        "bundle does not declare okf_version; this profile requires " <> required <> " or later"
+      Just declaredVersion ->
+        "bundle declares okf_version "
+          <> declaredVersion
+          <> "; this profile requires "
+          <> required
+          <> " or later"
   where
     renderDescription cid key =
       maybe "" (\prose -> " (" <> prose <> ")") $ do
@@ -2072,6 +2094,8 @@ renderProfileDefinitionError = \case
       <> " names an OKF major version this okf does not implement (supported: "
       <> renderOkfVersion supportedOkfVersion
       <> ")"
+  InvalidRequiredBundleVersion rawVersion ->
+    "requireBundleVersion is not <major>.<minor>: " <> rawVersion
   FieldSupersededInOkfVersion scope target declared supersededIn ->
     renderScope scope
       <> ": declared okfVersion "

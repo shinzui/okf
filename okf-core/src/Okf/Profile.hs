@@ -31,6 +31,7 @@ module Okf.Profile
     ProfileDefinitionError (..),
     compileProfile,
     compiledProfileSpec,
+    compiledProfileRequiredBundleVersion,
     profileFieldDescriptionForType,
 
     -- * Compiled rule inspection
@@ -73,6 +74,7 @@ module Okf.Profile
     ProfileViolation (..),
     validateProfile,
     validateProfileWith,
+    validateProfileVersion,
 
     -- * Body inspection
     schemaSectionColumns,
@@ -129,6 +131,7 @@ import Okf.Document
   )
 import Okf.Index
   ( OkfVersion (..),
+    VersionDeclaration (..),
     parseOkfVersion,
     renderOkfVersion,
     supportedOkfVersion,
@@ -146,6 +149,13 @@ import "generic-lens" Data.Generics.Labels ()
 -- | A complete house profile. @description@ is prose documenting the profile as
 -- a whole; like every description in this module it is never checked against a
 -- bundle and can never produce a 'ProfileViolation'.
+--
+-- @requireBundleVersion@ and @okfVersion@ are easy to confuse and answer
+-- different questions. @okfVersion@ says which version's rules /this profile
+-- writes/, and 'compileProfile' checks the profile's own rules against it.
+-- @requireBundleVersion@ says what the profile demands of a /bundle/: @Just
+-- \"0.2\"@ means the bundle's root @index.md@ must declare @okf_version@ at 0.2
+-- or later, checked by 'validateProfileVersion'. Neither constrains the other.
 data ProfileSpec = ProfileSpec
   { name :: !Text,
     description :: !(Maybe Text),
@@ -154,6 +164,7 @@ data ProfileSpec = ProfileSpec
     allowUnknownTypes :: !Bool,
     allowUnknownFields :: !Bool,
     idField :: !(Maybe Text),
+    requireBundleVersion :: !(Maybe Text),
     types :: ![TypeRule]
   }
   deriving stock (Generic, Eq, Show)
@@ -557,9 +568,31 @@ upgradePreV02FieldFormat = \case
   LegacyUriWithScheme scheme -> UriWithScheme scheme
   LegacyDocumentHandle prefix -> DocumentHandle prefix
 
+-- | The complete descriptor generation frozen before a profile could require its
+-- bundle to declare an OKF version. This is the immediately preceding public
+-- descriptor generation: it is today's shape minus the @requireBundleVersion@
+-- member on the top-level record. That member is the only difference, so every
+-- rule record, every type rule, and every union is unchanged and is shared
+-- rather than copied — the freezing rule of
+-- @docs\/adr\/11-growing-the-profile-descriptor-language.md@ is about the
+-- descriptor as a whole, and a generation that changes one record copies only
+-- what changed. Exercised by
+-- @okf-core\/test\/fixtures\/profiles\/pre-bundle-version.dhall@.
+data PreBundleVersionProfileSpec = PreBundleVersionProfileSpec
+  { name :: !Text,
+    description :: !(Maybe Text),
+    okfVersion :: !Text,
+    frontmatter :: !FrontmatterRules,
+    allowUnknownTypes :: !Bool,
+    allowUnknownFields :: !Bool,
+    idField :: !(Maybe Text),
+    types :: ![TypeRule]
+  }
+  deriving stock (Generic, Eq, Show)
+  deriving anyclass (FromDhall)
+
 -- | The complete descriptor generation frozen before path-valued reference
--- rules were added. This is the immediately preceding public descriptor
--- generation: it is today's shape minus the @path@ member on 'FieldRule' and on
+-- rules were added: today's shape minus the @path@ member on 'FieldRule' and on
 -- 'NestedFieldRule'. Because that is a record addition rather than a union
 -- widening, 'Cardinality', 'FieldFormat', 'FieldCondition', and
 -- 'HandleReferenceRule' are unchanged by it and so are shared rather than
@@ -1575,6 +1608,25 @@ upgradeVocabularyFrontmatter previous =
           when = Nothing
         }
 
+-- | Lift the generation frozen before @requireBundleVersion@ forward. Every rule
+-- record is shared with today's schema, so this copies members across and
+-- supplies the one no-op default: a descriptor that predates the member demands
+-- nothing of its bundle's version declaration, which is what it meant when it
+-- was written.
+upgradePreBundleVersionProfile :: PreBundleVersionProfileSpec -> ProfileSpec
+upgradePreBundleVersionProfile previous =
+  ProfileSpec
+    { name = previous ^. #name,
+      description = previous ^. #description,
+      okfVersion = previous ^. #okfVersion,
+      frontmatter = previous ^. #frontmatter,
+      allowUnknownTypes = previous ^. #allowUnknownTypes,
+      allowUnknownFields = previous ^. #allowUnknownFields,
+      idField = previous ^. #idField,
+      requireBundleVersion = Nothing,
+      types = previous ^. #types
+    }
+
 upgradePrePathProfile :: PrePathProfileSpec -> ProfileSpec
 upgradePrePathProfile previous =
   ProfileSpec
@@ -1585,6 +1637,7 @@ upgradePrePathProfile previous =
       allowUnknownTypes = previous ^. #allowUnknownTypes,
       allowUnknownFields = previous ^. #allowUnknownFields,
       idField = previous ^. #idField,
+      requireBundleVersion = Nothing,
       types = map upgradeRule (previous ^. #types)
     }
   where
@@ -1610,6 +1663,7 @@ upgradePreActorProfile previous =
       allowUnknownTypes = previous ^. #allowUnknownTypes,
       allowUnknownFields = previous ^. #allowUnknownFields,
       idField = previous ^. #idField,
+      requireBundleVersion = Nothing,
       types = map upgradeRule (previous ^. #types)
     }
   where
@@ -1635,6 +1689,7 @@ upgradePreObjectProfile previous =
       allowUnknownTypes = previous ^. #allowUnknownTypes,
       allowUnknownFields = previous ^. #allowUnknownFields,
       idField = previous ^. #idField,
+      requireBundleVersion = Nothing,
       types = map upgradeRule (previous ^. #types)
     }
   where
@@ -1660,6 +1715,7 @@ upgradeReferenceProfile previous =
       allowUnknownTypes = previous ^. #allowUnknownTypes,
       allowUnknownFields = previous ^. #allowUnknownFields,
       idField = previous ^. #idField,
+      requireBundleVersion = Nothing,
       types = map upgradeRule (previous ^. #types)
     }
   where
@@ -1685,6 +1741,7 @@ upgradeConditionalProfile previous =
       allowUnknownTypes = previous ^. #allowUnknownTypes,
       allowUnknownFields = previous ^. #allowUnknownFields,
       idField = previous ^. #idField,
+      requireBundleVersion = Nothing,
       types = map upgradeRule (previous ^. #types)
     }
   where
@@ -1710,6 +1767,7 @@ upgradeNestedProfile previous =
       allowUnknownTypes = previous ^. #allowUnknownTypes,
       allowUnknownFields = previous ^. #allowUnknownFields,
       idField = previous ^. #idField,
+      requireBundleVersion = Nothing,
       types = map upgradeRule (previous ^. #types)
     }
   where
@@ -1735,6 +1793,7 @@ upgradeFormatProfile previous =
       allowUnknownTypes = previous ^. #allowUnknownTypes,
       allowUnknownFields = previous ^. #allowUnknownFields,
       idField = previous ^. #idField,
+      requireBundleVersion = Nothing,
       types = map upgradeRule (previous ^. #types)
     }
   where
@@ -1760,6 +1819,7 @@ upgradeCardinalityProfile previous =
       allowUnknownTypes = previous ^. #allowUnknownTypes,
       allowUnknownFields = previous ^. #allowUnknownFields,
       idField = previous ^. #idField,
+      requireBundleVersion = Nothing,
       types = map upgradeRule (previous ^. #types)
     }
   where
@@ -1785,6 +1845,7 @@ upgradeVocabularyProfile previous =
       allowUnknownTypes = previous ^. #allowUnknownTypes,
       allowUnknownFields = previous ^. #allowUnknownFields,
       idField = previous ^. #idField,
+      requireBundleVersion = Nothing,
       types = map upgradeRule (previous ^. #types)
     }
   where
@@ -1810,6 +1871,7 @@ upgradeTypeAwareProfile previous =
       allowUnknownTypes = previous ^. #allowUnknownTypes,
       allowUnknownFields = True,
       idField = previous ^. #idField,
+      requireBundleVersion = Nothing,
       types = map upgradeRule (previous ^. #types)
     }
   where
@@ -1835,6 +1897,7 @@ upgradeDescribedProfile described =
       allowUnknownTypes = described ^. #allowUnknownTypes,
       allowUnknownFields = True,
       idField = described ^. #idField,
+      requireBundleVersion = Nothing,
       types = map upgradeRule (described ^. #types)
     }
   where
@@ -1867,6 +1930,7 @@ upgradeLegacyProfile legacy =
       allowUnknownTypes = legacy ^. #allowUnknownTypes,
       allowUnknownFields = True,
       idField = legacy ^. #idField,
+      requireBundleVersion = Nothing,
       types = map upgradeRule (legacy ^. #types)
     }
   where
@@ -1886,7 +1950,8 @@ upgradeLegacyProfile legacy =
 -- | Load and decode a Dhall profile descriptor from a file path. Any evaluation
 -- or decoding failure is captured as a human-readable 'Left'.
 --
--- The pre-path shape, pre-actor shape, pre-object shape, reference-aware shape,
+-- The pre-bundle-version shape, pre-path shape, pre-actor shape, pre-object
+-- shape, reference-aware shape,
 -- condition-aware shape, bounded-nested shape, EP-4
 -- format shape, EP-3 cardinality shape, EP-2 vocabulary shape, type-aware EP-1
 -- shape, self-documenting shape, and okf 0.2.x shape are accepted by frozen
@@ -1899,56 +1964,60 @@ loadProfileFile path = do
   case current of
     Right spec -> pure (Right spec)
     Left currentError -> do
-      prePath <- tryDecode (Dhall.inputFile auto path)
-      case prePath of
-        Right prePathSpec -> pure (Right (upgradePrePathProfile prePathSpec))
-        Left _prePathError -> do
-          preActor <- tryDecode (Dhall.inputFile auto path)
-          case preActor of
-            Right preActorSpec -> pure (Right (upgradePreActorProfile preActorSpec))
-            Left _preActorError -> do
-              preObject <- tryDecode (Dhall.inputFile auto path)
-              case preObject of
-                Right preObjectSpec -> pure (Right (upgradePreObjectProfile preObjectSpec))
-                Left _preObjectError -> do
-                  referenceAware <- tryDecode (Dhall.inputFile auto path)
-                  case referenceAware of
-                    Right referenceSpec -> pure (Right (upgradeReferenceProfile referenceSpec))
-                    Left _referenceError -> do
-                      conditional <- tryDecode (Dhall.inputFile auto path)
-                      case conditional of
-                        Right conditionalSpec -> pure (Right (upgradeConditionalProfile conditionalSpec))
-                        Left _conditionalError -> do
-                          nested <- tryDecode (Dhall.inputFile auto path)
-                          case nested of
-                            Right nestedSpec -> pure (Right (upgradeNestedProfile nestedSpec))
-                            Left _nestedError -> do
-                              formatted <- tryDecode (Dhall.inputFile auto path)
-                              case formatted of
-                                Right formatSpec -> pure (Right (upgradeFormatProfile formatSpec))
-                                Left _formatError -> do
-                                  cardinality <- tryDecode (Dhall.inputFile auto path)
-                                  case cardinality of
-                                    Right cardinalitySpec -> pure (Right (upgradeCardinalityProfile cardinalitySpec))
-                                    Left _cardinalityError -> do
-                                      vocabulary <- tryDecode (Dhall.inputFile auto path)
-                                      case vocabulary of
-                                        Right vocabularySpec -> pure (Right (upgradeVocabularyProfile vocabularySpec))
-                                        Left _vocabularyError -> do
-                                          typeAware <- tryDecode (Dhall.inputFile auto path)
-                                          case typeAware of
-                                            Right typeAwareSpec -> pure (Right (upgradeTypeAwareProfile typeAwareSpec))
-                                            Left _typeAwareError -> do
-                                              described <- tryDecode (Dhall.inputFile auto path)
-                                              case described of
-                                                Right describedSpec -> pure (Right (upgradeDescribedProfile describedSpec))
-                                                Left _describedError -> do
-                                                  legacy <- tryDecode (Dhall.inputFile auto path)
-                                                  pure $ case legacy of
-                                                    Right legacySpec -> Right (upgradeLegacyProfile legacySpec)
-                                                    Left _legacyError -> Left currentError
+      preBundleVersion <- tryDecode (Dhall.inputFile auto path)
+      case preBundleVersion of
+        Right preBundleVersionSpec -> pure (Right (upgradePreBundleVersionProfile preBundleVersionSpec))
+        Left _preBundleVersionError -> do
+          prePath <- tryDecode (Dhall.inputFile auto path)
+          case prePath of
+            Right prePathSpec -> pure (Right (upgradePrePathProfile prePathSpec))
+            Left _prePathError -> do
+              preActor <- tryDecode (Dhall.inputFile auto path)
+              case preActor of
+                Right preActorSpec -> pure (Right (upgradePreActorProfile preActorSpec))
+                Left _preActorError -> do
+                  preObject <- tryDecode (Dhall.inputFile auto path)
+                  case preObject of
+                    Right preObjectSpec -> pure (Right (upgradePreObjectProfile preObjectSpec))
+                    Left _preObjectError -> do
+                      referenceAware <- tryDecode (Dhall.inputFile auto path)
+                      case referenceAware of
+                        Right referenceSpec -> pure (Right (upgradeReferenceProfile referenceSpec))
+                        Left _referenceError -> do
+                          conditional <- tryDecode (Dhall.inputFile auto path)
+                          case conditional of
+                            Right conditionalSpec -> pure (Right (upgradeConditionalProfile conditionalSpec))
+                            Left _conditionalError -> do
+                              nested <- tryDecode (Dhall.inputFile auto path)
+                              case nested of
+                                Right nestedSpec -> pure (Right (upgradeNestedProfile nestedSpec))
+                                Left _nestedError -> do
+                                  formatted <- tryDecode (Dhall.inputFile auto path)
+                                  case formatted of
+                                    Right formatSpec -> pure (Right (upgradeFormatProfile formatSpec))
+                                    Left _formatError -> do
+                                      cardinality <- tryDecode (Dhall.inputFile auto path)
+                                      case cardinality of
+                                        Right cardinalitySpec -> pure (Right (upgradeCardinalityProfile cardinalitySpec))
+                                        Left _cardinalityError -> do
+                                          vocabulary <- tryDecode (Dhall.inputFile auto path)
+                                          case vocabulary of
+                                            Right vocabularySpec -> pure (Right (upgradeVocabularyProfile vocabularySpec))
+                                            Left _vocabularyError -> do
+                                              typeAware <- tryDecode (Dhall.inputFile auto path)
+                                              case typeAware of
+                                                Right typeAwareSpec -> pure (Right (upgradeTypeAwareProfile typeAwareSpec))
+                                                Left _typeAwareError -> do
+                                                  described <- tryDecode (Dhall.inputFile auto path)
+                                                  case described of
+                                                    Right describedSpec -> pure (Right (upgradeDescribedProfile describedSpec))
+                                                    Left _describedError -> do
+                                                      legacy <- tryDecode (Dhall.inputFile auto path)
+                                                      pure $ case legacy of
+                                                        Right legacySpec -> Right (upgradeLegacyProfile legacySpec)
+                                                        Left _legacyError -> Left currentError
   where
-    -- The thirteen calls look identical but are inferred at distinct result
+    -- The fourteen calls look identical but are inferred at distinct result
     -- types; @auto@ picks the corresponding current or frozen decoder.
     tryDecode :: IO a -> IO (Either Text a)
     tryDecode action =
@@ -1956,7 +2025,8 @@ loadProfileFile path = do
         `catch` \(exception :: SomeException) -> pure (Left (Text.pack (show exception)))
 
 -- | Does an already-evaluated Dhall expression decode as a profile? Tries the
--- current schema, then the pre-path, pre-actor, pre-object, reference-aware,
+-- current schema, then the pre-bundle-version, pre-path, pre-actor, pre-object,
+-- reference-aware,
 -- condition-aware, bounded-nested, EP-4, EP-3, EP-2, EP-1, self-documenting, and
 -- okf 0.2.x schemas, so the published @okf-profiles@ package still enumerates.
 -- Uses 'Dhall.rawInput', which normalizes and runs the decoder's extractor
@@ -1964,6 +2034,7 @@ loadProfileFile path = do
 decodeProfileExpr :: Expr Src Void -> Maybe ProfileSpec
 decodeProfileExpr expression =
   Dhall.rawInput Dhall.auto expression
+    <|> fmap upgradePreBundleVersionProfile (Dhall.rawInput Dhall.auto expression)
     <|> fmap upgradePrePathProfile (Dhall.rawInput Dhall.auto expression)
     <|> fmap upgradePreActorProfile (Dhall.rawInput Dhall.auto expression)
     <|> fmap upgradePreObjectProfile (Dhall.rawInput Dhall.auto expression)
@@ -2029,6 +2100,9 @@ data ProfileDefinitionError
   | -- | @okfVersion@ names a major version okf does not implement, so okf cannot
     -- know which of its rules still hold
     ProfileOkfVersionNotUnderstood Text
+  | -- | @requireBundleVersion@ is not @\<major\>.\<minor\>@, so no bundle
+    -- declaration could ever be compared against it
+    InvalidRequiredBundleVersion Text
   | -- | a required or recommended rule names a key the declared version
     -- supersedes (scope, path, declared version, version that superseded the key)
     FieldSupersededInOkfVersion (Maybe Text) FieldPath Text Text
@@ -2176,12 +2250,21 @@ presenceClauseCondition clause = clause ^. #condition
 data CompiledProfile = CompiledProfile
   { spec :: !ProfileSpec,
     baseRules :: !(Map Text EffectiveFieldRule),
-    rulesByType :: !(Map Text (Map Text EffectiveFieldRule))
+    rulesByType :: !(Map Text (Map Text EffectiveFieldRule)),
+    -- | @requireBundleVersion@ already parsed, so 'validateProfileVersion' never
+    -- re-parses and cannot disagree with what compilation accepted.
+    requiredBundleVersion :: !(Maybe OkfVersion)
   }
   deriving stock (Generic, Eq, Show)
 
 compiledProfileSpec :: CompiledProfile -> ProfileSpec
 compiledProfileSpec compiled = compiled ^. #spec
+
+-- | The minimum OKF version the profile requires its bundle to declare, already
+-- parsed. 'Nothing' when the profile requires nothing, which is the default and
+-- the case for almost every profile.
+compiledProfileRequiredBundleVersion :: CompiledProfile -> Maybe OkfVersion
+compiledProfileRequiredBundleVersion compiled = compiled ^. #requiredBundleVersion
 
 -- | The concept @type@ strings the profile declares, in the order the descriptor
 -- declares them. Declaration order is the author's and is preserved because
@@ -2217,7 +2300,11 @@ compileProfile rawSpec =
               Map.fromList
                 [ (rule ^. #type_, mergeRules baseRules (compileRules (rule ^. #frontmatter)))
                 | rule <- rawSpec ^. #types
-                ]
+                ],
+            -- Safe here and only here: 'requiredBundleVersionErrors' is one of
+            -- the checks 'definitionErrors' collects, so reaching this branch
+            -- means the value parsed.
+            requiredBundleVersion = rawSpec ^. #requireBundleVersion >>= parseOkfVersion
           }
   where
     baseRules = compileRules (rawSpec ^. #frontmatter)
@@ -2239,6 +2326,7 @@ compileProfile rawSpec =
           <> conditionDefinitionErrors
           <> referenceDefinitionErrors
           <> versionErrors
+          <> requiredBundleVersionErrors
 
     definitionErrorKey = \case
       DuplicateTypeRule ctype -> (1 :: Int, ctype, 0 :: Int, "", 0 :: Int)
@@ -2292,6 +2380,7 @@ compileProfile rawSpec =
       -- non-negative.
       InvalidProfileOkfVersion rawVersion -> (-1, rawVersion, 0, "", 0)
       ProfileOkfVersionNotUnderstood rawVersion -> (-1, rawVersion, 1, "", 0)
+      InvalidRequiredBundleVersion rawVersion -> (-1, rawVersion, 2, "", 0)
       FieldSupersededInOkfVersion scope path _declared supersededIn ->
         let (scopeRank, typeName) = scopeKey scope
          in (scopeRank, typeName, 23, renderFieldPathKey path <> ":" <> supersededIn, 0)
@@ -2624,6 +2713,17 @@ compileProfile rawSpec =
                  isJust (referenceRule ^. #reference),
                  Just fieldFormat <- [formatRule ^. #format]
                ]
+
+    -- Only a value okf cannot parse is rejected. An unknown /major/ is
+    -- deliberately accepted, unlike in @okfVersion@: there the profile is asking
+    -- okf to interpret rules it may not understand, while here it is stating a
+    -- minimum that a bundle's own declaration is compared against, which stays
+    -- meaningful whatever the major is.
+    requiredBundleVersionErrors =
+      case rawSpec ^. #requireBundleVersion of
+        Just rawVersion
+          | isNothing (parseOkfVersion rawVersion) -> [InvalidRequiredBundleVersion rawVersion]
+        _ -> []
 
     versionErrors =
       case effectiveProfileVersion (rawSpec ^. #okfVersion) of
@@ -3170,6 +3270,12 @@ data ProfileViolation
     MalformedDocumentId ConceptId Text Text
   | -- | the same handle appears on more than one concept (handle, concept, other concept)
     DuplicateDocumentId Text ConceptId ConceptId
+  | -- | the profile requires the bundle to declare an OKF version it does not
+    -- (required version, what the bundle declared, 'Nothing' when undeclared)
+    --
+    -- The only violation that belongs to the bundle rather than to a concept, so
+    -- a consumer grouping violations by 'ConceptId' has nothing to key it on.
+    RequiredBundleVersionUnmet Text (Maybe Text)
   deriving stock (Generic, Eq, Show)
 
 -- | Check every concept against a compiled profile, returning all deviations.
@@ -3214,6 +3320,43 @@ validateProfileWith inventory =
     everyFile fullInventory resolved
       | bundleInventoryMember resolved fullInventory = TargetPresent
       | otherwise = TargetAbsent
+
+-- | Check a bundle's specification §12 version declaration against the profile's
+-- @requireBundleVersion@ setting. Returns @[]@ when the profile requires nothing,
+-- which is the default and the case for almost every profile.
+--
+-- Deliberately a separate entry point rather than a parameter on
+-- 'validateProfile' and 'validateProfileWith'. Those two are public and their
+-- signatures are depended on downstream, and this check consults no concepts at
+-- all: threading a bundle-scoped question through a concept-walking function
+-- would be misleading as well as breaking.
+--
+-- §12 makes the declaration a MAY, so okf's own validator never asks for one —
+-- see @docs\/adr\/10-okf-version-declaration-and-best-effort-reading.md@. This is
+-- the house-convention half: nothing is reported unless a profile author wrote
+-- the field.
+--
+-- A declaration okf cannot parse counts as unmet. It cannot be compared, okf
+-- already reports it separately as a strict-mode authoring lint, and silently
+-- passing it would let a typo satisfy a requirement.
+validateProfileVersion :: VersionDeclaration -> CompiledProfile -> [ProfileViolation]
+validateProfileVersion declaration compiled =
+  case compiledProfileRequiredBundleVersion compiled of
+    Nothing -> []
+    Just required ->
+      let unmet = [RequiredBundleVersionUnmet (renderOkfVersion required) declaredText]
+       in case declaration of
+            -- A bundle ahead of the house minimum is not a deviation: §12 defines
+            -- a minor bump as backward-compatible additions.
+            VersionDeclared declared | declared >= required -> []
+            VersionDeclared _ -> unmet
+            VersionUnparseable _ -> unmet
+            VersionUndeclared -> unmet
+  where
+    declaredText = case declaration of
+      VersionDeclared declared -> Just (renderOkfVersion declared)
+      VersionUnparseable rawVersion -> Just rawVersion
+      VersionUndeclared -> Nothing
 
 -- | The shared body of 'validateProfile' and 'validateProfileWith'.
 --

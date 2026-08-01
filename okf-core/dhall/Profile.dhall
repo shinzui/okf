@@ -16,6 +16,13 @@
 -- read or adopt it. Like every description in this schema it is documentary only.
 -- `allowUnknownFields = False` closes top-level frontmatter to core OKF keys,
 -- the configured `idField`, and the effective profile/type field rules.
+--
+-- `requireBundleVersion = Some "0.2"` means the bundle's root `index.md` must
+-- declare `okf_version` at that version or later; `None Text` demands nothing and
+-- is the default. This is a house convention, not a rule of the format:
+-- specification §12 makes the declaration a MAY, so okf itself never asks for one.
+-- It is distinct from `okfVersion` above, which says which version's rules this
+-- profile writes rather than what it demands of a bundle.
 let TypeRule = ./TypeRule.dhall
 
 let FrontmatterRules = ./FrontmatterRules.dhall
@@ -27,5 +34,6 @@ in  { name : Text
     , allowUnknownTypes : Bool
     , allowUnknownFields : Bool
     , idField : Optional Text
+    , requireBundleVersion : Optional Text
     , types : List TypeRule
     }

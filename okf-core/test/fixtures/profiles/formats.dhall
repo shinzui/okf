@@ -32,6 +32,7 @@ in    { name = "formats"
       , allowUnknownTypes = False
       , allowUnknownFields = True
       , idField = Some "docId"
+      , requireBundleVersion = None Text
       , types =
         [ TypeRule::{
           , type = "Format Concept"
