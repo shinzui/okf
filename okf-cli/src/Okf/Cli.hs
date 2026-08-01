@@ -1045,8 +1045,9 @@ runValidate :: ValidateOptions -> IO ()
 runValidate ValidateOptions {bundlePath, strictMode, profilePath, profileEnforce, logEnforce} = do
   concepts <- loadBundleOrExit bundlePath
   logs <- loadLogsOrExit bundlePath
+  declaration <- loadBundleVersionOrExit bundlePath
   let coreProfile = if strictMode then StrictAuthoring else PermissiveConformance
-      coreErrors = validateBundle coreProfile concepts <> validateBundleLogs logs
+      coreErrors = validateBundle coreProfile declaration concepts <> validateBundleLogs logs
   mapM_ (Text.IO.hPutStrLn stderr . renderBundleValidationError) coreErrors
 
   let logStalenessReport = logStaleness concepts logs
@@ -1078,7 +1079,12 @@ runValidate ValidateOptions {bundlePath, strictMode, profilePath, profileEnforce
   if coreFailed || profileFailed || logFailed
     then exitFailure
     else do
-      Text.IO.putStrLn ("OK: " <> Text.pack (show (length concepts)) <> " concepts")
+      Text.IO.putStrLn
+        ( "OK: "
+            <> Text.pack (show (length concepts))
+            <> " concepts"
+            <> renderDeclaredVersion declaration
+        )
       unless (null profileViolations) $
         Text.IO.putStrLn
           ( "profile: "
@@ -1484,6 +1490,22 @@ loadIndexesOrExit override bundlePath = do
     Left bundleError -> dieText (renderBundleError bundleError)
     Right indexes -> pure indexes
 
+loadBundleVersionOrExit :: FilePath -> IO VersionDeclaration
+loadBundleVersionOrExit bundlePath = do
+  result <- readBundleVersion bundlePath
+  case result of
+    Left bundleError -> dieText (renderBundleError bundleError)
+    Right declaration -> pure declaration
+
+-- | The version suffix on a successful @validate@. Appended only when a bundle
+-- declares one, so output for every bundle that declares nothing — which is
+-- almost all of them — stays byte-identical for the pipelines and agents that
+-- read it (@docs\/adr\/2-interactive-bundle-and-concept-selection.md@).
+renderDeclaredVersion :: VersionDeclaration -> Text
+renderDeclaredVersion = \case
+  VersionDeclared version -> " (okf_version " <> renderOkfVersion version <> ")"
+  _ -> ""
+
 loadLogsOrExit :: FilePath -> IO [LogFile]
 loadLogsOrExit bundlePath = do
   result <- walkLogs bundlePath
@@ -1501,6 +1523,12 @@ renderBundleValidationError = \case
     "duplicate concept ID: " <> renderConceptId conceptId
   LogInvalid path error_ ->
     Text.pack path <> ": " <> renderLogValidationError error_
+  BundleVersionUnparseable rawVersion ->
+    "index.md: okf_version is not of the form MAJOR.MINOR: " <> rawVersion
+  BundleVersionNotUnderstood version ->
+    "index.md: okf_version "
+      <> version
+      <> " has a major version okf does not understand; reading the bundle permissively"
 
 bundleValidationErrorIsFailure :: BundleValidationError -> Bool
 bundleValidationErrorIsFailure = \case
@@ -1805,6 +1833,16 @@ renderValidationErrorText = \case
   DuplicateSourceId sourceId -> "duplicate sources id: " <> sourceId
   FootnoteLabelNotInSources label -> "footnote label has no matching sources id: " <> label
   SourceIdNotCited sourceId -> "lint: sources id is never cited by a footnote: " <> sourceId
+  LegacyFieldInDeclaredV2 fieldName ->
+    "legacy v0.1 field in a bundle declaring okf_version 0.2 or later: "
+      <> fieldName
+      <> maybe "" (\replacement -> " (use " <> replacement <> ")") (supersededBy fieldName)
+
+-- | The OKF v0.2 field that supersedes a v0.1 one (specification §13.1).
+supersededBy :: Text -> Maybe Text
+supersededBy = \case
+  "timestamp" -> Just "generated"
+  _ -> Nothing
 
 renderLogValidationError :: Log.LogValidationError -> Text
 renderLogValidationError = \case

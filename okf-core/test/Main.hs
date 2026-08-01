@@ -97,6 +97,9 @@ main = do
         test "extractFootnoteLabels keeps labels the parser erases and never ordinals" testExtractFootnoteLabelsKeepsErasedLabels,
         test "rendered concept link round-trips through extractConceptLinks" testConceptLinkRoundTrip,
         test "over-escaping relative links do not resolve inside bundle" testRejectOverEscapingRelativeLink,
+        test "versionGate applies specification section 12 best-effort reading" testVersionGate,
+        test "declared v0.2 reports a legacy timestamp that an undeclared bundle tolerates" testLegacyFieldInDeclaredV2,
+        test "an unreadable or unknown declaration is a strict lint, never a refusal" testVersionDeclarationLints,
         test "validateBundle reports a dangling reference" testValidateBundleDanglingReference,
         test "validateBundle accepts a bundle whose links all resolve" testValidateBundleAcceptsResolved,
         test "duplicateConceptIds finds repeated ids" testDuplicateConceptIds,
@@ -997,26 +1000,93 @@ testRejectOverEscapingRelativeLink = do
           sourceId
           (OKFDocument (setType "Test" emptyFrontmatter) "[Escapes](../../../tables/orders.md)\n")
   assertEqual [] (extractConceptLinks concept)
-  assertEqual [] (validateBundle PermissiveConformance [concept, targetConcept targetId])
+  assertEqual [] (validateBundle PermissiveConformance VersionUndeclared [concept, targetConcept targetId])
   where
     targetConcept targetId =
       conceptFromDocument
         targetId
         (OKFDocument (setType "Test" emptyFrontmatter) "# Orders\n")
 
+-- | Specification §12: a known major with a higher minor is read as the highest
+-- version okf understands within that major, because a minor bump is defined as
+-- backward-compatible additions. An unknown major is read with no
+-- version-specific rules at all.
+testVersionGate :: Either Text ()
+testVersionGate = do
+  assertEqual Nothing (gateEffective (versionGate VersionUndeclared))
+  assertEqual Nothing (gateEffective (versionGate (VersionUnparseable "zero point two")))
+  assertEqual (Just (OkfVersion 0 1)) (gateEffective (versionGate (VersionDeclared (OkfVersion 0 1))))
+  assertEqual (Just (OkfVersion 0 2)) (gateEffective (versionGate (VersionDeclared (OkfVersion 0 2))))
+  assertEqual (Just (OkfVersion 0 2)) (gateEffective (versionGate (VersionDeclared (OkfVersion 0 3))))
+  assertEqual Nothing (gateEffective (versionGate (VersionDeclared (OkfVersion 1 0))))
+  assertEqual (Just "1.0") (gateNotUnderstood (versionGate (VersionDeclared (OkfVersion 1 0))))
+  assertEqual Nothing (gateNotUnderstood (versionGate (VersionDeclared (OkfVersion 0 3))))
+  assertBool "0.2 satisfies at-least 0.2" (gateDeclaresAtLeast (OkfVersion 0 2) (versionGate (VersionDeclared (OkfVersion 0 2))))
+  assertBool "0.1 does not satisfy at-least 0.2" (not (gateDeclaresAtLeast (OkfVersion 0 2) (versionGate (VersionDeclared (OkfVersion 0 1)))))
+  assertBool "undeclared satisfies nothing" (not (gateDeclaresAtLeast (OkfVersion 0 2) (versionGate VersionUndeclared)))
+
+-- | The asymmetry this plan exists for: the v0.1 fallback stays unconditional,
+-- but a bundle that has declared v0.2 and still carries @timestamp@ is
+-- reporting an authoring mistake.
+testLegacyFieldInDeclaredV2 :: Either Text ()
+testLegacyFieldInDeclaredV2 = do
+  conceptId <- parseTestConceptId "tables/orders"
+  legacyOnly <-
+    testConceptWithFrontmatter
+      "tables/orders"
+      "type: Test\ntitle: Title\ndescription: Description\ntimestamp: \"2026-06-16T00:00:00Z\"\n"
+  migrated <-
+    testConceptWithFrontmatter
+      "tables/orders"
+      "type: Test\ntitle: Title\ndescription: Description\ngenerated:\n  by: okf/0.4\n  at: \"2026-06-16T00:00:00Z\"\n"
+  let declaredV2 = VersionDeclared (OkfVersion 0 2)
+  assertEqual [] (validateBundle StrictAuthoring VersionUndeclared [legacyOnly])
+  assertEqual [] (validateBundle PermissiveConformance declaredV2 [legacyOnly])
+  assertEqual
+    [DocumentInvalid conceptId (LegacyFieldInDeclaredV2 "timestamp")]
+    (validateBundle StrictAuthoring declaredV2 [legacyOnly])
+  assertEqual [] (validateBundle StrictAuthoring declaredV2 [migrated])
+  -- An unknown major applies no version-specific rule, so the same document is
+  -- read the way an undeclared bundle's would be.
+  assertEqual
+    [BundleVersionNotUnderstood "1.0"]
+    (validateBundle StrictAuthoring (VersionDeclared (OkfVersion 1 0)) [legacyOnly])
+
+-- | §12: "Consumers that do not understand the declared version SHOULD attempt
+-- best-effort consumption rather than refusing the bundle." Neither an
+-- unreadable value nor an unknown major stops the bundle being read, and
+-- neither is reported outside strict authoring.
+testVersionDeclarationLints :: Either Text ()
+testVersionDeclarationLints = do
+  -- A migrated concept, so the only diagnostics here are version ones.
+  concept <-
+    testConceptWithFrontmatter
+      "a"
+      "type: Test\ntitle: Title\ndescription: Description\ngenerated:\n  by: okf/0.4\n  at: \"2026-06-16T00:00:00Z\"\n"
+  assertEqual [] (validateBundle PermissiveConformance (VersionUnparseable "0.x") [concept])
+  assertEqual [] (validateBundle PermissiveConformance (VersionDeclared (OkfVersion 1 0)) [concept])
+  assertEqual
+    [BundleVersionUnparseable "0.x"]
+    (validateBundle StrictAuthoring (VersionUnparseable "0.x") [concept])
+  assertEqual
+    [BundleVersionNotUnderstood "1.0"]
+    (validateBundle StrictAuthoring (VersionDeclared (OkfVersion 1 0)) [concept])
+  -- A higher minor within a known major is a supported case, not a problem.
+  assertEqual [] (validateBundle StrictAuthoring (VersionDeclared (OkfVersion 0 3)) [concept])
+
 testValidateBundleDanglingReference :: Either Text ()
 testValidateBundleDanglingReference = do
   aId <- parseTestConceptId "a"
   bId <- parseTestConceptId "b"
   conceptA <- testConcept "a" ("See " <> renderConceptLink bId "b" <> ".\n")
-  assertEqual [DanglingReference aId bId] (validateBundle StrictAuthoring [conceptA])
+  assertEqual [DanglingReference aId bId] (validateBundle StrictAuthoring VersionUndeclared [conceptA])
 
 testValidateBundleAcceptsResolved :: Either Text ()
 testValidateBundleAcceptsResolved = do
   bId <- parseTestConceptId "b"
   conceptA <- testConcept "a" ("See " <> renderConceptLink bId "b" <> ".\n")
   conceptB <- testConcept "b" "Standalone.\n"
-  assertEqual [] (validateBundle StrictAuthoring [conceptA, conceptB])
+  assertEqual [] (validateBundle StrictAuthoring VersionUndeclared [conceptA, conceptB])
 
 testDuplicateConceptIds :: Either Text ()
 testDuplicateConceptIds = do
@@ -1500,7 +1570,7 @@ testFixtureDanglingLink = do
   root <- fixturePath "invalid-dangling-link"
   concepts <- readBundle root
   pure
-    ( case validateBundle PermissiveConformance concepts of
+    ( case validateBundle PermissiveConformance VersionUndeclared concepts of
         errs
           | any isDangling errs -> Right ()
           | otherwise -> Left ("expected a DanglingReference, got: " <> Text.pack (show errs))
@@ -3770,12 +3840,12 @@ testProfileDocumentationValidates = do
     withRenderedProfileDocumentation
       "profiles/optional-fields.dhall"
       defaultDocumentationOptions
-      (\_compiled concepts -> assertEqual [] (validateBundle PermissiveConformance concepts))
+      (\_compiled concepts -> assertEqual [] (validateBundle PermissiveConformance VersionUndeclared concepts))
   strictResult <-
     withRenderedProfileDocumentation
       "profiles/optional-fields.dhall"
       defaultDocumentationOptions {timestamp = Just "2026-07-31T00:00:00Z"}
-      (\_compiled concepts -> assertEqual [] (validateBundle StrictAuthoring concepts))
+      (\_compiled concepts -> assertEqual [] (validateBundle StrictAuthoring VersionUndeclared concepts))
   pure (permissive >> strictResult)
 
 testProfileDocumentationLinksResolve :: IO (Either Text ())

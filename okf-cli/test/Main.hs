@@ -14,6 +14,7 @@ import Okf.Cli.Fzf.Selector (conceptCandidates, conceptPreviewCommand, parseBund
 import Okf.Cli.Help (HelpTopic (..), helpTopics)
 import Okf.ConceptId (parseConceptId, renderConceptId)
 import Okf.Document (parseDocument)
+import Okf.Index (VersionDeclaration (..))
 import Okf.Profile (Cardinality (..), FieldCondition (..), FieldFormat (..), FieldRule (..), FrontmatterRules (..), HandleReferenceRule (..), NestedFieldRule (..), NestedRules (..), ProfileSpec (..), TypeRule (..), compileProfile, loadProfileFile, validateProfile)
 import Okf.Profile.Registry (RegistryEntry (..))
 import Okf.Validation (ValidationProfile (..), validateBundle)
@@ -696,7 +697,7 @@ testProfileDocumentationConformsToMetaProfile = do
         Left definitionErrors -> reportFailure ("meta-profile does not compile: " <> show definitionErrors)
         Right compiled -> do
           let profileViolations = validateProfile PermissiveConformance compiled concepts
-              structuralErrors = validateBundle PermissiveConformance concepts
+              structuralErrors = validateBundle PermissiveConformance VersionUndeclared concepts
           unless (null profileViolations) $
             putStrLn ("committed example deviates from the meta-profile: " <> show profileViolations)
           unless (null structuralErrors) $
@@ -731,7 +732,7 @@ testProfileDocumentationStrictWithTimestamp = do
             putStrLn ("meta-profile does not compile: " <> show definitionErrors)
             pure False
           Right compiled -> do
-            let structuralErrors = validateBundle StrictAuthoring concepts
+            let structuralErrors = validateBundle StrictAuthoring VersionUndeclared concepts
                 profileViolations = validateProfile StrictAuthoring compiled concepts
             unless (null structuralErrors) $
               putStrLn ("stamped output is not strict-clean: " <> show structuralErrors)

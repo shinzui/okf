@@ -58,15 +58,31 @@ is present but yields no usable date, okf falls back to `timestamp` rather than
 treating the concept as undated. The two rules never disagree, because the
 exception only applies where `generated.at` supplies nothing to prefer.
 
-Reading a v0.1 construct is silent. okf emits no diagnostic for a document whose
-only date is `timestamp`. A warning on every v0.1 document would make the tool
-unusable against existing corpora, which is the opposite of what a compatibility
-fallback is for. Making the fallback *visible* is deferred to the version
-declaration of §12 (`okf_version: "0.2"` in a bundle-root `index.md`): once a
-bundle explicitly declares that it targets v0.2, reporting a v0.1 remnant inside
-it is meaningful in a way that reporting one in an undeclared bundle is not.
-That work is
-`docs/plans/42-declare-and-honour-okf-version-in-the-bundle-root-index.md`.
+Whether reading a v0.1 construct is reported has a two-part answer, and the
+declaration of §12 is what separates the parts.
+
+In a bundle that declares no version — which is every bundle written before v0.2
+existed, and the shape almost all bundles still have — reading a v0.1 construct
+is silent. okf emits no diagnostic for a document whose only date is
+`timestamp`. A warning on every v0.1 document would make the tool unusable
+against existing corpora, which is the opposite of what a compatibility fallback
+is for.
+
+In a bundle whose root `index.md` declares `okf_version: "0.2"` or later, a
+concept carrying `timestamp` and no `generated` is reported under
+`StrictAuthoring` as `LegacyFieldInDeclaredV2 "timestamp"`. The bundle has said
+which dialect it is written in, so a v0.1 remnant inside it is an unfinished
+migration rather than a compatibility path. The fallback still applies — the
+date is still read, and the bundle is still valid under
+`PermissiveConformance` — so this is a lint about authoring, not a refusal to
+consume.
+
+The distinction is drawn in exactly one place, `Okf.Validation.versionGate`, and
+the rules for reading a declared version are recorded in
+`docs/adr/10-okf-version-declaration-and-best-effort-reading.md`. Later v0.2
+families that introduce a tolerance of their own follow the same shape: apply
+the tolerance unconditionally where the value is read, and ask the gate whether
+the bundle has opted into the stricter reading.
 
 There is no removal horizon for the fallback, and none is planned. Nobody should
 write code, profiles, or bundles on the assumption that one exists. If a future
@@ -110,8 +126,8 @@ posture is that v0.1 stays both readable and writable.
 ## Consequences
 
 Consumers that exhaustively match `Okf.Validation.ValidationError` must handle
-`MissingGeneratedField` and `GeneratedMustHaveActor` before moving their okf
-pin. okf's own CLI is currently the only such consumer: Mori's advisory renderer
+`MissingGeneratedField`, `GeneratedMustHaveActor`, and `LegacyFieldInDeclaredV2`
+before moving their okf pin. okf's own CLI is currently the only such consumer: Mori's advisory renderer
 at `mori-cli/src/Mori/Okf/Advisory.hs` imports only
 `ValidationProfile (PermissiveConformance)` from `Okf.Validation` and matches
 `ProfileViolation`, not `ValidationError`, so it is unaffected by these two

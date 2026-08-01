@@ -4,6 +4,9 @@ module Okf.Validation
     ValidationProfile (..),
     validateDocument,
     BundleValidationError (..),
+    VersionGate (..),
+    versionGate,
+    gateDeclaresAtLeast,
     validateBundle,
     validateBundleLogs,
     validateLogs,
@@ -22,6 +25,12 @@ import Okf.Bundle (Concept, LogFile, conceptDocument, conceptIdOf, conceptSource
 import Okf.ConceptId (ConceptId)
 import Okf.Document
 import Okf.Graph (danglingReferences, duplicateConceptIds)
+import Okf.Index
+  ( OkfVersion (..),
+    VersionDeclaration (..),
+    renderOkfVersion,
+    supportedOkfVersion,
+  )
 import Okf.Log (Log (logDays), LogDay (logDate), LogValidationError, validateLog)
 import Okf.Markdown (extractFootnoteLabels, footnoteLabelsUsed)
 import Okf.Prelude
@@ -60,6 +69,13 @@ data ValidationError
     -- body cites the source, which implies an id exists in order to be cited,
     -- but never requires the citation.
     SourceIdNotCited Text
+  | -- | A concept carries a superseded OKF v0.1 construct in a bundle whose
+    -- root index declares OKF v0.2 or later. Carries the legacy field's name.
+    -- Reading the legacy construct still works — see
+    -- @docs\/adr\/7-okf-v0-1-legacy-fallback-policy.md@ — but a bundle that has
+    -- said it targets v0.2 is describing an authoring mistake rather than
+    -- exercising a compatibility path.
+    LegacyFieldInDeclaredV2 Text
   deriving stock (Generic, Eq, Show)
 
 -- | A whole-bundle validation problem.
@@ -72,7 +88,81 @@ data BundleValidationError
     DuplicateConceptId ConceptId
   | -- | A reserved log file does not match the required log structure.
     LogInvalid FilePath LogValidationError
+  | -- | The bundle root's @index.md@ carries an @okf_version@ whose value is
+    -- not of the form @\<major\>.\<minor\>@ (specification §12).
+    BundleVersionUnparseable Text
+  | -- | The bundle declares a version with a major okf does not know. Per §12
+    -- the bundle is still read, best effort, with no version-specific checks.
+    BundleVersionNotUnderstood Text
   deriving stock (Generic, Eq, Show)
+
+-- | What a bundle's declared version implies for validation.
+--
+-- This is the one place in okf that answers that question. Every OKF v0.1
+-- compatibility tolerance is applied unconditionally where it is read — that is
+-- the policy of @docs\/adr\/7-okf-v0-1-legacy-fallback-policy.md@ — and a
+-- family that wants to know whether the bundle has opted into a later version's
+-- rules asks 'gateDeclaresAtLeast' here rather than testing the declaration
+-- itself. Scattering version tests is what this type exists to prevent.
+data VersionGate = VersionGate
+  { gateDeclaration :: !VersionDeclaration,
+    -- | The version okf reads the bundle as, after §12's best-effort rules.
+    -- 'Nothing' means no version-specific rule applies.
+    gateEffective :: !(Maybe OkfVersion),
+    -- | The declared version okf could not make sense of, if any.
+    gateNotUnderstood :: !(Maybe Text)
+  }
+  deriving stock (Generic, Eq, Show)
+
+-- | Apply specification §12's rules for reading a declared version.
+--
+-- §12 defines a minor bump as backward-compatible additions and a major bump as
+-- possibly breaking, and asks consumers that do not understand a declared
+-- version to "attempt best-effort consumption rather than refusing the bundle".
+-- Three cases follow:
+--
+-- * A version okf understands is read as itself.
+--
+-- * A known major with a higher minor — @0.3@ today — is read as the highest
+--   version okf understands within that major. The additions okf has never
+--   heard of are, by §12's definition of a minor bump, additions it can ignore.
+--
+-- * An unknown major — @1.0@ — is read with no version-specific rules at all,
+--   and reported once under 'StrictAuthoring'. §12 permits a major bump to
+--   rename required fields and change reserved filenames, so okf genuinely
+--   cannot know which of its rules still hold.
+--
+-- An absent or unparseable declaration also applies no version-specific rules.
+-- An undeclared bundle is precisely the case the unconditional v0.1 fallbacks
+-- exist to serve, and it is the shape of almost every bundle in existence.
+versionGate :: VersionDeclaration -> VersionGate
+versionGate declaration =
+  case declaration of
+    VersionDeclared version
+      | okfVersionMajor version == okfVersionMajor supportedOkfVersion ->
+          understood (Just (min version supportedOkfVersion))
+      | otherwise ->
+          VersionGate
+            { gateDeclaration = declaration,
+              gateEffective = Nothing,
+              gateNotUnderstood = Just (renderOkfVersion version)
+            }
+    VersionUndeclared -> understood Nothing
+    VersionUnparseable _ -> understood Nothing
+  where
+    understood effective =
+      VersionGate
+        { gateDeclaration = declaration,
+          gateEffective = effective,
+          gateNotUnderstood = Nothing
+        }
+
+-- | Whether the bundle has declared itself to target at least the given
+-- version. This is how a check asks "may I hold this bundle to my rules?"; a
+-- future v0.3 family asks the same question with a different argument.
+gateDeclaresAtLeast :: OkfVersion -> VersionGate -> Bool
+gateDeclaresAtLeast minimumVersion VersionGate {gateEffective} =
+  maybe False (>= minimumVersion) gateEffective
 
 -- | A concept whose generated date appears newer than its nearest covering log.
 data LogStaleness = LogStaleness
@@ -86,17 +176,53 @@ data LogStaleness = LogStaleness
 -- | Validate a whole bundle: per-document checks under the given profile, plus
 -- referential integrity (no links to missing concepts) and uniqueness of
 -- concept IDs. An empty list means the bundle is valid under the profile.
-validateBundle :: ValidationProfile -> [Concept] -> [BundleValidationError]
-validateBundle profile concepts =
-  perDocument <> dangling <> duplicates
+--
+-- The 'VersionDeclaration' is what the bundle root's @index.md@ says about the
+-- version it targets, read with 'Okf.Index.readBundleVersion'. Pass
+-- 'VersionUndeclared' for a bundle whose declaration is unknown or irrelevant:
+-- that is the reading almost every bundle gets, and it applies no
+-- version-specific rules. Everything the declaration implies is decided by
+-- 'versionGate'.
+validateBundle :: ValidationProfile -> VersionDeclaration -> [Concept] -> [BundleValidationError]
+validateBundle profile declaration concepts =
+  perDocument <> dangling <> duplicates <> versionErrors
   where
+    gate = versionGate declaration
     perDocument =
       [ DocumentInvalid (conceptIdOf concept) err
       | concept <- concepts,
-        err <- validateDocument profile (conceptDocument concept)
+        err <-
+          validateDocument profile (conceptDocument concept)
+            <> legacyFieldsUnderDeclaredVersion profile gate (conceptDocument concept)
       ]
     dangling = uncurry DanglingReference <$> danglingReferences concepts
     duplicates = DuplicateConceptId <$> duplicateConceptIds concepts
+    versionErrors = case profile of
+      PermissiveConformance -> []
+      StrictAuthoring ->
+        [BundleVersionUnparseable rawVersion | VersionUnparseable rawVersion <- [declaration]]
+          <> [BundleVersionNotUnderstood version | Just version <- [gateNotUnderstood gate]]
+
+-- | Strict-mode check that a bundle which has declared OKF v0.2 carries no
+-- superseded v0.1 construct.
+--
+-- okf reads a v0.1 @timestamp@ whenever @generated@ is absent, always and
+-- silently; @docs\/adr\/7-okf-v0-1-legacy-fallback-policy.md@ fixes that as the
+-- policy and this check does not change it. What it adds is the other half of
+-- the answer that ADR left open. A bundle that has explicitly said
+-- @okf_version: "0.2"@ and still carries @timestamp@ is not exercising a
+-- compatibility path; it is describing a document nobody finished migrating,
+-- and only the declaration makes that distinction possible.
+--
+-- Strict-mode only, and silent for an undeclared bundle.
+legacyFieldsUnderDeclaredVersion :: ValidationProfile -> VersionGate -> OKFDocument -> [ValidationError]
+legacyFieldsUnderDeclaredVersion PermissiveConformance _ _ = []
+legacyFieldsUnderDeclaredVersion StrictAuthoring gate OKFDocument {frontmatter}
+  | not (gateDeclaresAtLeast (OkfVersion {okfVersionMajor = 0, okfVersionMinor = 2}) gate) = []
+  | isJust (frontmatterLookup "timestamp" frontmatter),
+    isNothing (frontmatterLookup "generated" frontmatter) =
+      [LegacyFieldInDeclaredV2 "timestamp"]
+  | otherwise = []
 
 -- | Validate all parsed @log.md@ files discovered in a bundle.
 validateBundleLogs :: [LogFile] -> [BundleValidationError]

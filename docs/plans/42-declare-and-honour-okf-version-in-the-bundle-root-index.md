@@ -68,9 +68,9 @@ plan is what makes it possible to say so.
 
 - [x] Milestone 1: a bundle-root `index.md` declaration is parsed into a typed version value (2026-08-01)
 - [x] Milestone 2: index generation preserves an existing declaration and can write one (2026-08-01)
-- [ ] Milestone 3: the declared version is reported by the CLI
-- [ ] Milestone 4: v0.1 fallbacks route through one gate that consults the declaration
-- [ ] Milestone 5: an unknown declared version degrades to best-effort consumption, never refusal
+- [x] Milestone 3: the declared version is reported by the CLI (2026-08-01)
+- [x] Milestone 4: v0.1 fallbacks route through one gate that consults the declaration (2026-08-01)
+- [x] Milestone 5: an unknown declared version degrades to best-effort consumption, never refusal (2026-08-01)
 
 
 ## Surprises & Discoveries
@@ -112,6 +112,28 @@ count — so "is this the root?" cannot be a test on the relative directory stri
 `renderDirectoryIndex` decides it on the normalised index path instead
 (`FilePath.normalise indexPath == "index.md"`), which is true for both spellings and
 false for every subdirectory.
+
+One discovery from Milestones 3 through 5.
+
+*The plan's acceptance sentence "a bundle declaring `"0.3"` validates cleanly" needs a
+qualifier, and the qualifier is the point.* A `0.3` declaration produces no version
+diagnostic — that part is as written — but because the gate reads it as `0.2`, a `0.3`
+bundle whose concepts still carry `timestamp` reports `LegacyFieldInDeclaredV2` under
+`--strict` exactly as a `0.2` bundle does. That is correct and is what "treated as 0.2"
+means: reading a newer minor as the newest known version is not the same as exempting it
+from that version's rules. The observed output on a copy of
+`okf-core/test/fixtures/valid-bundle` declaring `"0.3"`:
+
+```text
+$ cabal run okf -- validate /tmp/okf-v03 --strict
+datasets/sales: legacy v0.1 field in a bundle declaring okf_version 0.2 or later: timestamp (use generated)
+references/source-system: legacy v0.1 field in a bundle declaring okf_version 0.2 or later: timestamp (use generated)
+tables/customers: legacy v0.1 field in a bundle declaring okf_version 0.2 or later: timestamp (use generated)
+tables/orders: legacy v0.1 field in a bundle declaring okf_version 0.2 or later: timestamp (use generated)
+```
+
+The same bundle declaring `"1.0"` reports exactly one line and none of the four, because
+an unknown major applies no version-specific rule at all.
 
 (Record further discoveries here as you work, with short evidence.)
 
@@ -161,8 +183,58 @@ false for every subdirectory.
   tests, unchanged while giving them the preservation fix for free.
   Date: 2026-08-01
 
-(Add further decisions as you make them. Milestones 4 and 5 each end with a decision this
-plan requires you to record.)
+- Decision: Add the `VersionDeclaration` as a parameter to `validateBundle` rather than
+  introducing a differently named function and leaving `validateBundle` as a wrapper.
+  Rationale: the Idempotence section allows the wrapper if the change "ripples further
+  than expected". It did not: eight call sites, all in this repository's two test suites
+  plus one in `runValidate`, and each became `validateBundle <profile> VersionUndeclared`.
+  A wrapper would have let a caller keep the old name and silently get the undeclared
+  reading forever, which is the mistake this plan exists to make visible. Mori is
+  unaffected — `mori-cli/src/Mori/Okf/Advisory.hs` imports only
+  `ValidationProfile (PermissiveConformance)` and never calls `validateBundle`, as
+  `docs/adr/7-okf-v0-1-legacy-fallback-policy.md` records.
+  Date: 2026-08-01
+
+- Decision: The gate is a `VersionGate` record built by `Okf.Validation.versionGate`, and
+  the only question a check may ask of it is `gateDeclaresAtLeast`.
+  Rationale: the plan's constraint is that exactly one place decides what a declared
+  version implies. A boolean parameter threaded into each check would have satisfied the
+  letter and not the spirit — the next family would add a second boolean. Asking
+  "does this bundle declare at least version X" is the question every family actually
+  has, and a v0.3 family asks it with a different argument and no new mechanism.
+  Date: 2026-08-01
+
+- Decision (Milestone 5, required by the plan): a declared version with a **known major
+  and a higher minor** is read as the highest version okf understands within that major —
+  `0.3` is read as `0.2` — and is never reported.
+  Rationale: §12 defines a minor bump as "backward-compatible additions (new optional
+  fields, new conventional section headings)". Every difference between `0.3` and `0.2`
+  is therefore something okf can ignore without misreading what is there, which is
+  precisely the "best-effort consumption" §12 asks for. Reporting it would be reporting a
+  bundle for being newer than the reader while the reader is coping fine. An unknown
+  **major** is the opposite case — §12 permits it to rename required fields and change
+  reserved filenames — so there okf applies no version-specific rule at all and says so.
+  Date: 2026-08-01
+
+- Decision: Version diagnostics are `StrictAuthoring` lints that exit non-zero under
+  `--strict`, exactly like every other authoring diagnostic okf reports.
+  Rationale: §12's "rather than refusing the bundle" is about consumption, and okf still
+  parses, validates, indexes, and traverses a bundle whose version it does not understand.
+  `--strict` is okf's authoring verdict, and making these two constructors the only
+  strict diagnostics that do not affect the exit code would be a rule nobody could
+  predict. Under the default `PermissiveConformance` they are silent.
+  Date: 2026-08-01
+
+- Decision: Record the version rules as a new ADR,
+  `docs/adr/10-okf-version-declaration-and-best-effort-reading.md`, and amend
+  `docs/adr/7-okf-v0-1-legacy-fallback-policy.md` to the two-part answer rather than
+  putting everything in ADR 7.
+  Rationale: the plan required only the ADR 7 amendment. But §12's reading rules, the
+  single-gate constraint, and the preserve-on-regenerate rule are about *versions*, not
+  about the v0.1 fallback, and MasterPlan 9's attested computations will meet them
+  without caring about `timestamp` at all. ADR 7 keeps what it is about — what okf does
+  with a v0.1 construct — and now points at ADR 10 for when that becomes reportable.
+  Date: 2026-08-01
 
 
 ## Outcomes & Retrospective
