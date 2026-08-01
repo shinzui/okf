@@ -9,6 +9,7 @@ import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text.IO
+import Okf.Actor
 import Okf.Bundle
 import Okf.ConceptId
 import Okf.Discovery
@@ -37,7 +38,9 @@ main :: IO ()
 main = do
   results <-
     sequence
-      [ test "parse valid document with YAML frontmatter" testParseValidDocument,
+      [ test "parseActor classifies the three specification section 7 shapes" testParseActorShapes,
+        test "renderActor inverts parseActor on every input" testActorRoundTrip,
+        test "parse valid document with YAML frontmatter" testParseValidDocument,
         test "parse document with no frontmatter as empty-frontmatter body" testParseNoFrontmatter,
         test "reject unterminated frontmatter" testRejectUnterminatedFrontmatter,
         test "reject frontmatter that is not a YAML mapping" testRejectNonMappingFrontmatter,
@@ -192,6 +195,34 @@ testIO :: Text -> IO (Either Text ()) -> IO Bool
 testIO name assertion = do
   result <- assertion
   test name result
+
+testParseActorShapes :: Either Text ()
+testParseActorShapes = do
+  assertEqual (HumanActor "ahormati") (parseActor "human:ahormati")
+  assertEqual (ProcessActor "finance-nightly") (parseActor "process:finance-nightly")
+  assertEqual (ProducerActor "reference_agent" "gemini-2.5-pro") (parseActor "reference_agent/gemini-2.5-pro")
+  assertEqual (UnclassifiedActor "something") (parseActor "something")
+  -- Section 7 writes the prefixes in lower case and section 5.3 makes the
+  -- `human:` test load-bearing, so matching is case-sensitive.
+  assertEqual (UnclassifiedActor "Human:ahormati") (parseActor "Human:ahormati")
+  assertBool "human actor is human" (isHumanActor (parseActor "human:ahormati"))
+  assertBool "producer actor is not human" (not (isHumanActor (parseActor "reference_agent/gemini-2.5-pro")))
+
+testActorRoundTrip :: Either Text ()
+testActorRoundTrip =
+  for_
+    [ "human:ahormati",
+      "process:finance-nightly",
+      "reference_agent/gemini-2.5-pro",
+      "something",
+      "Human:ahormati",
+      "human:",
+      "/version",
+      "producer/",
+      "a/b/c",
+      ""
+    ]
+    (\raw -> assertEqual raw (renderActor (parseActor raw)))
 
 testParseValidDocument :: Either Text ()
 testParseValidDocument = do

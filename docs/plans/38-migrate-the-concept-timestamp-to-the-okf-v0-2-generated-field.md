@@ -75,7 +75,7 @@ rather than inventing their own.
 
 ## Progress
 
-- [ ] Milestone 1: `Okf.Actor` module exists, parses the three actor shapes, and is covered by tests
+- [x] Milestone 1: `Okf.Actor` module exists, parses the three actor shapes, and is covered by tests (2026-07-31)
 - [ ] Milestone 2: `coreFrontmatterFieldOrder` carries the six version 0.2 concept keys in a settled order; serialization tests updated
 - [ ] Milestone 3: `generated` is readable through `Okf.Document` and projected onto `Okf.Bundle.Concept`
 - [ ] Milestone 4: strict validation accepts `generated`, falls back to `timestamp`, and reports a v0.2-shaped message
@@ -96,6 +96,21 @@ rather than inventing their own.
   as the sole authority for this plan.
   Rationale: it is the published specification this project tracks, and it is on disk on
   this machine, so every requirement can be checked rather than recalled.
+  Date: 2026-07-31
+
+- Decision: `parseActor` matches the `human:` and `process:` prefixes case-sensitively and
+  before the `/` split, so `Human:ahormati` is `UnclassifiedActor`, not a human actor.
+  Rationale: specification §7 writes both prefixes in lower case, and §5.3 makes the
+  `human:` test the sole discriminator between the machine-confirmed and human-reviewed
+  trust tiers. A case-insensitive match would silently promote a typo to the highest trust
+  tier, which is the one direction in which being lenient is unsafe.
+  Date: 2026-07-31
+
+- Decision: `parseActor` requires both halves of `<producer>/<version>` to be non-empty and
+  splits on the *first* `/`, so `a/b/c` is `ProducerActor "a" "b/c"` while `producer/` and
+  `/version` are unclassified.
+  Rationale: splitting on the first separator keeps `renderActor . parseActor` the identity
+  on every input, which the serializer depends on so it never rewrites a producer's text.
   Date: 2026-07-31
 
 (Add further decisions as you make them. Milestones 2 and 7 below each end with a decision

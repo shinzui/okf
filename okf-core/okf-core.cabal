@@ -45,6 +45,7 @@ library
   import:          common-options
   hs-source-dirs:  src
   exposed-modules:
+    Okf.Actor
     Okf.Bundle
     Okf.ConceptId
     Okf.Discovery
