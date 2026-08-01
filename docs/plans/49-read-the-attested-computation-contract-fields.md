@@ -88,7 +88,8 @@ This section must always reflect the actual current state of the work.
 - [x] Milestone 3 (2026-08-01): `okf show` on a concept that is not an Attested Computation is byte-identical to before
 - [x] Milestone 4 (2026-08-01): `okf validate --strict` reports an `Attested Computation` with no `runtime`, and reports nothing for any other type
 - [x] Milestone 4 (2026-08-01, added during implementation): `computation`, `executor.resource`, and `attester.resource` are wired into `Okf.Validation.pathValuedFields`, which the parent MasterPlan assigned to this plan after it was written
-- [ ] Milestone 5: a shipped example bundle contains an attested computation, and `docs/user/format.md` no longer says the type is unimplemented
+- [x] Milestone 5 (2026-08-01): a shipped example bundle contains an attested computation, and `docs/user/format.md` no longer says the type is unimplemented
+- [x] Milestone 5 (2026-08-01, added during implementation): every `okf` transcript in `docs/` that the example change perturbs is re-run and corrected — `docs/user/cli.md`'s trust listing re-pads, `docs/user/profiles.md`'s concept count moves
 
 
 ## Surprises & Discoveries
@@ -166,6 +167,42 @@ should anchor at the bundle root is a real question, and it belongs to the plan 
 Changing the anchoring here would have meant changing §6.2 resolution for every path-valued
 field, days after EP-1 fixed it in an ADR, on the strength of one example whose concept location
 the specification never states.
+
+**Specification §10.5's claim that `type: Attested Computation` is "liftable into `index.md`"
+turned out to be free, and the evidence is here so EP-5 does not have to re-derive it.** That
+plan is scheduled to verify the claim against a real bundle. It holds:
+`Okf.Index.renderIndex` already groups concepts under one heading per frontmatter `type`, so
+adding `computations/order-total.md` to `examples/ddd-ordering` and running
+`okf index --write` produced, with no code change at all,
+
+```text
+# Attested Computation
+
+- [Order total for a placed order](order-total.md) - Sanctioned computation of an order's total from its lines.
+```
+
+EP-5 still owns deciding whether *more* than that is wanted — a root-level listing, say — but
+the baseline is confirmed rather than assumed.
+
+**`okf index --write` generates a one-byte `index.md` for a directory holding only
+non-Markdown files.** `examples/ddd-ordering/references/attesters/` contains only
+`order-total.py`, and the generated index for it is a single newline. It is shipped rather than
+deleted, because deleting it would put the example out of step with what the tool produces —
+the next `okf index --write` recreates it. Nothing is broken: the file is reserved, it validates,
+and its parent's index links to it. But an empty index entry is a small user-facing wart on
+exactly the directory shape §6.3's convention encourages, so it belongs to whichever of EP-4
+(the `references/` convention) or EP-5 (index treatment) reaches it first. Recorded here so that
+meeting it is not mistaken for a regression this plan introduced.
+
+**Adding two directories to a shipped example moved a documentation transcript that has nothing
+to do with attested computations.** `okf trust` pads its concept-ID column to the longest ID in
+the bundle, and `references/skills/run-on-postgres` is now the longest in
+`examples/ddd-ordering`, so every row in `docs/user/cli.md`'s trust listing shifted by two
+spaces. `docs/user/profiles.md`'s "all nineteen concepts" became twenty-two. This plan warned
+about exactly this — "several render sites emit deliberately fixed-shape output, so any change
+perturbs transcripts about unrelated features" — and the warning earned its place: grepping
+`docs/` for `ddd-ordering` found both, and neither would have been found by grepping for
+anything to do with this feature.
 
 
 ## Decision Log
@@ -294,7 +331,80 @@ Compare the result against the original purpose. Before marking the plan complet
 distill durable project context from the Decision Log, Surprises & Discoveries, and
 this section into docs/adr/. Keep task-local execution details here.
 
-(To be filled during and after implementation.)
+All five milestones are complete, in commits `7cec0c2` (Milestones 1 through 4) and `bae984d`
+(Milestone 5), with `cabal test all` green on both packages.
+
+What the plan promised is what shipped. `okf show` on the attested computation now prints the
+contract, and the output matches this plan's Purpose section almost line for line:
+
+```text
+$ cabal run -v0 okf -- show examples/ddd-ordering computations/order-total
+id: computations/order-total
+type: Attested Computation
+title: Order total for a placed order
+description: Sanctioned computation of an order's total from its lines.
+tags: ddd, ordering, attested-computation
+runtime: postgres
+parameters: order_id (uuid, required)
+executor: /references/skills/run-on-postgres.md, receipt: statement_id, executed_sql, result
+attester: /references/attesters/order-total.py
+generated: human:nadeem at 2026-08-01T00:00:00Z
+trust: unverified
+status: stable
+```
+
+and a contract missing the one field §10.2 marks REQUIRED is reported under `--strict` and
+nowhere else:
+
+```text
+$ cabal run -v0 okf -- validate /tmp/okf-ac --strict
+computations/margin: Attested Computation concepts must declare runtime
+```
+
+Changing that concept's `type` to `Metric` makes the diagnostic disappear, which is the check's
+scope demonstrated rather than asserted. `okf show` on a concept that is not an Attested
+Computation is byte-identical to before the plan, verified by diff against output captured
+before the first edit.
+
+Three things went beyond the written scope, each recorded as a decision. The plan gained
+Milestone 4's path-field wiring, which the parent MasterPlan assigned here after this plan was
+written; that turned out to be four list entries in `Okf.Validation.pathValuedFields` and a
+fixture, exactly as the MasterPlan predicted. Milestone 5 gained a transcript sweep, because
+adding two directories to a shipped example moved a `docs/user/cli.md` transcript about the
+`trust` command. And Milestone 2's byte-identity test asserts against the normalized form rather
+than §10.2's text, because the specification writes flow-style YAML that no okf-serialized
+document can reproduce — see Surprises & Discoveries, which explains what the test asserts
+instead and why those three properties are what the milestone actually wanted.
+
+Two lessons worth carrying forward, both addressed to the three sibling plans not yet written.
+
+**The Surprises section's opening warning was right and load-bearing.** It said a house profile
+could already express this entire contract, so a core check had to justify itself as something a
+profile cannot do. That framing is what kept Milestone 4 to one check. The temptation to also
+report a `parameters` entry with no `type`, or an `executor` with no `resource`, was real and
+concrete — both are trivially expressible — and both are house conventions §10.2 does not
+require. `docs/plans/47-enforce-the-profile-declared-okfversion-and-ship-a-v0-2-reference-profile.md`
+withdrew a check and failed thirty-one tests learning that lesson, and it did not have to be
+learned twice.
+
+**Deferring EP-3, EP-4, and EP-5 was the right call, and this plan is evidence for it rather
+than merely consistent with it.** Two questions surfaced during implementation that a plan
+written last week would have guessed at: whether a bare `references/` prefix should anchor at
+the bundle root, which is EP-4's, and what an empty generated `index.md` should do, which is
+EP-4's or EP-5's. Both are recorded in Surprises & Discoveries with the evidence attached, which
+is a better starting position than a plan that had assumed an answer.
+
+Nothing is left undone within this plan's scope. What it deliberately did not do is read the
+`# Computation` body section or enforce §10.3's exactly-one rule; that is the sibling plan, which
+hard-depends on this one for `readComputation`, and `docs/user/format.md` now says so in the
+user-facing text rather than only in a plan.
+
+No ADR was created or amended. The two ADRs this initiative owes belong to EP-1 (written, as
+`docs/adr/12-frontmatter-path-resolution.md`) and EP-4 (outstanding). The one decision here that
+touched durable context — that the five contract keys join `coreFrontmatterFieldOrder` — applied
+`docs/adr/7-okf-v0-1-legacy-fallback-policy.md`'s existing reasoning without extending it, so
+that ADR needed no change; the reasoning is in this plan's Decision Log and in the haddock on
+`coreFrontmatterFieldOrder`, which is where a reader of the code will look for it.
 
 
 ## Context and Orientation

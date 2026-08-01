@@ -205,7 +205,7 @@ is green (`cabal test all`, 2026-08-01).
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
 | 1 | Resolve path valued frontmatter fields against the bundle | docs/plans/48-resolve-path-valued-frontmatter-fields-against-the-bundle.md | None | None | Complete |
-| 2 | Read the Attested Computation contract fields | docs/plans/49-read-the-attested-computation-contract-fields.md | None | EP-1 | In Progress |
+| 2 | Read the Attested Computation contract fields | docs/plans/49-read-the-attested-computation-contract-fields.md | None | EP-1 | Complete |
 | 3 | Inspect the Computation body section and enforce exactly one computation source | (not yet created) | EP-2 | None | Not Started |
 | 4 | Adopt the references convention for executors and attesters | (not yet created) | EP-1 | EP-2 | Not Started |
 | 5 | Surface attested computations in the CLI index and documentation | (not yet created) | EP-2, EP-3 | EP-4 | Not Started |
@@ -417,15 +417,17 @@ coherent across the tool rather than the plan that first makes it visible.
 
 - [x] EP-1 (2026-08-01): `Okf.Path` gains existence checking, and which of §6.2's five fields are checked by default is decided and justified against `examples/ddd-ordering` — only the top-level `resource`
 - [x] EP-1 (2026-08-01): a frontmatter path that points at nothing in the bundle is reported, distinctly from a dangling body link, and at the `ValidationProfile` placement ADR 7 requires
-- [ ] EP-2: `type: Attested Computation` concepts are read with their `runtime`, `parameters`, `computation`, `executor`, and `attester` contract
-- [ ] EP-2: whether the five contract keys join `Okf.Document.coreFrontmatterFieldOrder` is decided, and serialization round-trips a §10.2 concept unchanged
-- [ ] EP-2: a contract missing `runtime` is reported for that type only, leaving other types untouched, and `okf show` renders the contract
+- [x] EP-2 (2026-08-01): `type: Attested Computation` concepts are read with their `runtime`, `parameters`, `computation`, `executor`, and `attester` contract
+- [x] EP-2 (2026-08-01): whether the five contract keys join `Okf.Document.coreFrontmatterFieldOrder` is decided — they join it, between `status` and `generated` — and serialization round-trips a §10.2 concept unchanged
+- [x] EP-2 (2026-08-01): a contract missing `runtime` is reported for that type only, leaving other types untouched, and `okf show` renders the contract
+- [x] EP-2 (2026-08-01): `computation`, `executor.resource`, and `attester.resource` are wired into EP-1's core path check, discharging the obligation the Decision Log assigned to this plan
 - [ ] EP-3: the `# Computation` body section and its fenced block are extracted
 - [ ] EP-3: providing both an inline fence and a `computation` path, or neither, is reported per §10.3, and the computation is reachable from the CLI
 - [ ] EP-4: the `references/` convention is documented and okf's treatment of Markdown and non-Markdown files under it is decided and tested
 - [ ] EP-5: the CLI reports attested computations and their contract problems coherently across commands
-- [ ] EP-5: index treatment is verified against a real bundle, an attested computation appears in a shipped example, and user documentation covers the type
-- [ ] EP-5: `docs/user/format.md`'s "one v0.2 addition okf does not implement" paragraph is retired
+- [x] EP-5 (2026-08-01, delivered by EP-2): index treatment is verified against a real bundle — `Okf.Index.renderIndex` already groups by `type`, so §10.5's claim holds with no code change; EP-5 still owns whether more than that is wanted
+- [x] EP-5 (2026-08-01, delivered by EP-2): an attested computation appears in a shipped example — `examples/ddd-ordering/computations/order-total.md`, with a test asserting it validates
+- [x] EP-5 (2026-08-01, delivered by EP-2): user documentation covers the type, and `docs/user/format.md`'s "one v0.2 addition okf does not implement" paragraph is retired
 
 
 ## Surprises & Discoveries
@@ -590,6 +592,61 @@ and `sources[].resource: all order-domain terms ...` does not. The asymmetry is 
 specification's, it was accepted consciously rather than worked around, and any plan tempted
 to "fix" it should read ADR 12 first.
 
+**EP-2 is complete, and it narrows what EP-3, EP-4, and EP-5 have left.** Landed 2026-08-01 in
+commits `7cec0c2` and `bae984d`. Five things every remaining plan should know.
+
+First, **the contract is on `Concept` and the five keys are in
+`Okf.Document.coreFrontmatterFieldOrder`**, between `status` and `generated`, which is §10.2's
+own worked-example order. The Integration Point above asked EP-2 to decide that deliberately and
+state the reasoning either way; it decided to add them, applying
+`docs/adr/7-okf-v0-1-legacy-fallback-policy.md`'s argument for the six v0.2 concept keys
+unchanged — closure governs unknown keys, and a key §13.2 names is not unknown. They joined
+`fieldsIntroducedInV02` at the same time, because `testVersionedFieldsAreCoreFields` requires it
+and §13.2 is what that list records. **No ADR was amended**: existing reasoning was applied, not
+extended.
+
+Second, **the path-field obligation is discharged.** `Okf.Validation.pathValuedFields` now
+returns `computation`, `executor.resource`, and `attester.resource` alongside `resource`, so
+EP-4 inherits a working check rather than a to-do. Nothing in §10 sanctions a non-path value for
+those three the way §5.1 does for `sources[].resource`, so the asymmetry the Decision Log
+recorded is preserved and justified rather than accidental.
+
+Third, **a bare `references/…` path does not anchor at the bundle root, and this is EP-4's to
+settle.** §6.2 says a path-valued field accepts "a relative path", and `Okf.Path` resolves one
+against the concept's own directory — the rule `docs/adr/12-frontmatter-path-resolution.md`
+fixed. §10.2's own worked example writes `executor.resource: references/skills/run-on-bq.md`, and
+§10.4 puts computations in a `computations/` folder, so a bundle copied from the specification
+gets
+
+```text
+computations/revenue: executor.resource names computations/references/skills/run-on-bq.md, which does not exist in this bundle
+```
+
+Nothing is wrong — §6.3 calls `references/` "a naming convention, not a requirement" and never
+anchors it at the root — and every fixture and example this initiative ships uses §6.2's
+unambiguous leading-slash form instead. But the specification's own example is the shape an
+author will copy, so **whether a bare `references/` prefix should anchor at the bundle root is a
+real question and it belongs to EP-4**, which owns that convention. EP-2 declined to decide it,
+because changing the anchoring would change §6.2 resolution for every path-valued field, days
+after EP-1 fixed it in an ADR, on the strength of one example whose concept location the
+specification never states.
+
+Fourth, **two of EP-5's milestones are already delivered and one of its questions is answered.**
+§10.5's claim that `type: Attested Computation` is "liftable into `index.md`" holds for free:
+`Okf.Index.renderIndex` groups by frontmatter `type`, so `okf index --write` produced an
+`# Attested Computation` heading with no code change. `examples/ddd-ordering` carries a worked
+computation with a test behind it, and `docs/user/format.md` documents the type. What EP-5 still
+owns is coherence across *every* command — and one wart EP-2 found and shipped rather than
+fixed: `okf index --write` generates a one-byte `index.md` for a directory holding only
+non-Markdown files, which is exactly the shape §6.3's convention encourages.
+
+Fifth, **a shipped example is a transcript dependency.** Adding two directories to
+`examples/ddd-ordering` re-padded the concept-ID column in `docs/user/cli.md`'s `okf trust`
+listing, a document about a command unrelated to this initiative, and moved a concept count in
+`docs/user/profiles.md`. Neither would have been found by grepping for anything to do with
+attested computations. Any plan touching a shipped example should grep `docs/` for that bundle's
+name and re-run what it finds.
+
 
 ## Decision Log
 
@@ -737,6 +794,52 @@ to "fix" it should read ADR 12 first.
   Date: 2026-08-01
 
 
+- Decision: The five §10.2 contract keys join `Okf.Document.coreFrontmatterFieldOrder` and
+  `Okf.Document.fieldsIntroducedInV02`, and no ADR was amended to record it.
+  Rationale: this discharges the Integration Point and the Decision Log entry above, which
+  reserved the call for EP-2 and required a stated reasoning either way. EP-2 added them, between
+  `status` and `generated`, which is §10.2's own worked-example order.
+  `docs/adr/7-okf-v0-1-legacy-fallback-policy.md`'s argument for the six v0.2 concept keys reaches
+  these five unchanged — the list "exists to name the keys the format itself defines", §13.2 names
+  all five in as many words, and omitting them would tax a closed profile for a specification
+  revision. The counter-argument this MasterPlan raised, that these five are meaningful for one
+  `type` where the six were universal, is real but not decisive: closure governs *unknown* keys,
+  and a key §13.2 names is not unknown; a profile wanting to reject `runtime` on a `Metric` says
+  so with a `TypeRule`. No ADR changed because ADR 7's reasoning was applied rather than extended,
+  and the reasoning now sits in the haddock on `coreFrontmatterFieldOrder`, where a reader of the
+  code will look for it.
+  Date: 2026-08-01
+
+- Decision: EP-4 owns whether a bare `references/…` path should anchor at the bundle root; EP-2
+  deliberately left §6.2 resolution alone and wrote every shipped path with a leading slash.
+  Rationale: §6.2 says a path-valued field accepts "a relative path" and
+  `docs/adr/12-frontmatter-path-resolution.md` fixed that a relative path resolves against the
+  concept's own directory. §10.2's worked example writes `references/skills/run-on-bq.md` and
+  §10.4 puts computations under `computations/`, so a bundle copied from the specification reports
+  `computations/references/skills/run-on-bq.md` as dangling. §6.3 calls `references/` "a naming
+  convention, not a requirement" and never anchors it at the root, so okf is following §6.2 as
+  written and the leading-slash form is the unambiguous spelling. But the specification's own
+  example is the shape an author will copy, so the question is real — and it is the same question
+  EP-4 already owns from the other side, since it decides what a file under `references/` is.
+  Changing the anchoring in EP-2 would have altered §6.2 resolution for every path-valued field,
+  days after EP-1 fixed it in an ADR, on the strength of one example whose concept location the
+  specification never states.
+  Date: 2026-08-01
+
+- Decision: EP-2 delivered three of EP-5's Progress items — index verification, the shipped
+  example, and the user documentation — and EP-5's remaining scope is coherence across every
+  command.
+  Rationale: EP-2 already added a concept to `examples/ddd-ordering` for Milestone 5, and running
+  `okf index --write` over it settled §10.5's "liftable into `index.md`" claim for free, since
+  `Okf.Index.renderIndex` groups by frontmatter `type`. Retiring `docs/user/format.md`'s "one v0.2
+  addition okf does not implement" paragraph could not honestly wait either, once the type was
+  read and validated. Leaving those items open would have invited EP-5 to redo them. What EP-5
+  keeps is the part EP-2 could not do from one command's vantage — and one new item, the one-byte
+  `index.md` that `okf index --write` generates for a directory holding only non-Markdown files,
+  which is exactly the shape §6.3's convention encourages.
+  Date: 2026-08-01
+
+
 ## Outcomes & Retrospective
 
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
@@ -871,3 +974,35 @@ assumed.
 No child ExecPlan needed cascading. EP-2 was written before EP-1 landed and none of its
 content is invalidated; the one thing it gains is a named obligation, recorded here and in
 Surprises & Discoveries rather than by editing that plan mid-flight.
+
+
+## Revision note — 2026-08-01 (EP-2 complete)
+
+`docs/plans/49-read-the-attested-computation-contract-fields.md` is Complete, in commits
+`7cec0c2` and `bae984d`, with `cabal test all` green on both packages. The registry, the
+Progress list, Surprises & Discoveries, and the Decision Log are updated.
+
+The decomposition did not change, and no child plan needed cascading. EP-2 delivered what it was
+scoped to deliver plus the path-field wiring the Decision Log of this date assigned to it — four
+list entries in `Okf.Validation.pathValuedFields`, exactly the size this document predicted.
+
+Three open items are now closed by decision rather than left to whoever reaches them first, and
+all three are in the Decision Log above. The five contract keys **do** join
+`coreFrontmatterFieldOrder`, on ADR 7's reasoning applied unchanged, with **no ADR amended**.
+EP-4 owns whether a bare `references/…` prefix should anchor at the bundle root, which is a
+question EP-2 surfaced by shipping a §10.2 example and watching okf report the specification's
+own spelling as dangling. And three of EP-5's Progress items are struck as delivered by EP-2,
+with EP-5's remaining scope narrowed to coherence across every command plus one new wart.
+
+Two things this document should have said before EP-2 started, and now does. The §10.5 index
+claim is free — `Okf.Index.renderIndex` already groups by `type` — so EP-5's verification
+milestone was answered by running one command rather than by writing code. And a shipped example
+is a transcript dependency: adding two directories to `examples/ddd-ordering` re-padded a `okf
+trust` listing in `docs/user/cli.md`, a document about a command with nothing to do with this
+initiative. Any remaining plan touching a shipped example should grep `docs/` for that bundle's
+name and re-run what it finds.
+
+The remaining plans are EP-3, EP-4, and EP-5, none of which is written yet. EP-3's hard
+dependency on EP-2 is now satisfied and it is the next implementable plan; EP-4's hard dependency
+on EP-1 was already satisfied, so EP-3 and EP-4 can proceed in parallel. EP-5 still waits on
+EP-3.
