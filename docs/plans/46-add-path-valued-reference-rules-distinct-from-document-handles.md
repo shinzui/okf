@@ -78,12 +78,12 @@ even if it requires splitting a partially completed task into two ("done" vs. "r
 This section must always reflect the actual current state of the work.
 
 - [x] Milestone 1 (part): reproduced the "a dangling frontmatter path is invisible" transcript, verbatim as the plan predicted (2026-08-01).
-- [ ] Milestone 1 (remaining): freeze the current descriptor generation behind a compatibility decoder and fixture. Deferred into the same commit as Milestone 3 per the MasterPlan's "one commit per schema event" decision — `upgradePrePathProfile` constructs a current-shape record and does not compile before `path` exists.
+- [x] Milestone 1 (remaining): froze the current descriptor generation as `PrePathProfile*` with fixture `path-references-mp8-ep3.dhall`, verified by negative control (2026-08-01). Landed in the same commit as Milestones 3–6 per the MasterPlan's "one commit per schema event" decision — `upgradePrePathProfile` constructs a current-shape record and does not compile before `path` exists.
 - [x] Milestone 2: extract the OKF v0.2 §6.2 path grammar into a new exported `Okf.Path` module that `Okf.Graph` also uses (2026-08-01).
-- [ ] Milestone 3: add `path` to the published `FieldRule` and `NestedFieldRule`, with its own rule type, defaults, and `mk` constructors.
-- [ ] Milestone 4: compile path rules, including the definition error for combining one with a handle reference, and wire reference checking into nested and object scopes.
-- [ ] Milestone 5: validate path values and report the four distinct failures.
-- [ ] Milestone 6: render the new rule kind in generated profile documentation, regenerate the committed example, and extend the CLI diagnostic vocabulary.
+- [x] Milestone 3: add `path` to the published `FieldRule` and `NestedFieldRule`, with its own rule type, defaults, and `mk` constructors (2026-08-01).
+- [x] Milestone 4: compile path rules, including the definition error for combining one with a handle reference, and wire reference checking into nested and object scopes (2026-08-01).
+- [x] Milestone 5: validate path values and report the four distinct failures (2026-08-01).
+- [x] Milestone 6: render the new rule kind in generated profile documentation, regenerate the committed example, and extend the CLI diagnostic vocabulary (2026-08-01).
 - [ ] Milestone 7: document the feature in `docs/user/profiles.md` and amend the ADRs.
 
 

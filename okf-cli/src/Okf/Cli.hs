@@ -85,6 +85,7 @@ import Okf.Profile
     -- @optparse-applicative@'s, so this module reads all three presence lists
     -- through generic-lens labels instead.
     HandleReferenceRule (..),
+    PathReferenceRule (..),
     ProfileDefinitionError (..),
     ProfileSpec (..),
     ProfileViolation (..),
@@ -970,6 +971,7 @@ renderProfileDetail
           indent <> "    cardinality: " <> renderCardinality (rule ^. #cardinality),
           indent <> "    format: " <> maybe "(none)" renderFieldFormat (rule ^. #format),
           indent <> "    reference: " <> maybe "(none)" renderHandleReferenceRule (rule ^. #reference),
+          indent <> "    path: " <> maybe "(none)" renderPathReferenceRule (rule ^. #path),
           indent <> "    when: " <> maybe "(none)" renderCondition (rule ^. #when)
         ]
           <> case rule ^. #elementFields of
@@ -989,6 +991,7 @@ renderProfileDetail
           indent <> "    allowedValues: " <> renderVocabulary (rule ^. #allowedValues),
           indent <> "    cardinality: " <> renderCardinality (rule ^. #cardinality),
           indent <> "    format: " <> maybe "(none)" renderFieldFormat (rule ^. #format),
+          indent <> "    path: " <> maybe "(none)" renderPathReferenceRule (rule ^. #path),
           indent <> "    when: " <> maybe "(none)" renderCondition (rule ^. #when)
         ]
 
@@ -1638,6 +1641,29 @@ renderProfileViolation compiled concepts = \case
       <> renderFieldPath fieldPath
       <> " is not allowed: "
       <> handle
+  -- Phrased to mirror 'DanglingHandleReference' above, so a reader can tell at
+  -- a glance which kind of reference okf was resolving: a handle is reported as
+  -- "references ADR-7, which does not exist in this bundle", a path as
+  -- "references /references/x.md, which does not exist in this bundle".
+  DanglingPathReference cid fieldPath rawPath ->
+    renderConceptId cid
+      <> ": "
+      <> renderFieldPath fieldPath
+      <> " references "
+      <> rawPath
+      <> ", which does not exist in this bundle"
+  MalformedPathReference cid fieldPath actual ->
+    renderConceptId cid
+      <> ": malformed path at "
+      <> renderFieldPath fieldPath
+      <> ": "
+      <> Text.pack (LazyByteString.unpack (Aeson.encode actual))
+  PathEscapesBundle cid fieldPath rawPath ->
+    renderConceptId cid
+      <> ": path at "
+      <> renderFieldPath fieldPath
+      <> " climbs above the bundle root: "
+      <> rawPath
   FieldNotInProfile cid key ->
     renderConceptId cid <> ": frontmatter field not declared by profile: " <> key
   NestedElementNotRecord cid fieldPath actual ->
@@ -1801,6 +1827,11 @@ renderProfileDefinitionError = \case
     renderScope scope
       <> ": optional field cannot carry a when condition: "
       <> renderFieldPath target
+  PathReferenceWithHandleReference scope target ->
+    renderScope scope
+      <> ": path at "
+      <> renderFieldPath target
+      <> " cannot also declare a document reference; a value is resolved as one or the other"
   where
     renderScope Nothing = "profile frontmatter"
     renderScope (Just ctype) = "type " <> ctype <> " frontmatter"
@@ -1836,6 +1867,19 @@ renderHandleReferenceRule HandleReferenceRule {localPrefix, externalUriSchemes, 
   "local-prefix("
     <> localPrefix
     <> "), external-uri-schemes("
+    <> renderList externalUriSchemes
+    <> "), allow-self("
+    <> (if allowSelf then "true" else "false")
+    <> ")"
+  where
+    renderList xs = "[" <> Text.intercalate ", " xs <> "]"
+
+-- | Deliberately shaped like 'renderHandleReferenceRule' minus the local prefix
+-- a path has no analogue for, so an author who has read one recognizes the
+-- other and can see at a glance which kind of rule a key carries.
+renderPathReferenceRule :: PathReferenceRule -> Text
+renderPathReferenceRule PathReferenceRule {externalUriSchemes, allowSelf} =
+  "external-uri-schemes("
     <> renderList externalUriSchemes
     <> "), allow-self("
     <> (if allowSelf then "true" else "false")

@@ -24,6 +24,8 @@ let FieldCondition = ../FieldCondition.dhall
 
 let HandleReferenceRule = ../defaults/HandleReferenceRule.dhall
 
+let PathReferenceRule = ../defaults/PathReferenceRule.dhall
+
 in  { plain = \(field : Text) -> FieldRule::{ field }
     , documented =
         \(field : Text) ->
@@ -100,5 +102,13 @@ in  { plain = \(field : Text) -> FieldRule::{ field }
           , field
           , reference =
               Some HandleReferenceRule::{ localPrefix, externalUriSchemes }
+          }
+    , bundlePath = \(field : Text) -> FieldRule::{ field, path = Some PathReferenceRule::{=} }
+    , localOrExternalPath =
+        \(field : Text) ->
+        \(externalUriSchemes : List Text) ->
+          FieldRule::{
+          , field
+          , path = Some PathReferenceRule::{ externalUriSchemes }
           }
     }

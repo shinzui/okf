@@ -33,6 +33,7 @@ Human-readable name of the object, as a reader would say it.
 - Cardinality: any
 - Format: none
 - Reference: none
+- Path: none
 - Condition: none
 - Object fields: none
 - Element fields: none
@@ -45,6 +46,7 @@ The OKF concept type; must be one of the type rules below.
 - Cardinality: any
 - Format: none
 - Reference: none
+- Path: none
 - Condition: none
 - Object fields: none
 - Element fields: none
@@ -59,6 +61,7 @@ One or two sentences on what this object is for.
 - Cardinality: any
 - Format: none
 - Reference: none
+- Path: none
 - Condition: none
 - Object fields: none
 - Element fields: none
@@ -72,6 +75,7 @@ postgresql:// URI locating the live object.
 - Cardinality: any
 - Format: uri-with-scheme(postgresql)
 - Reference: none
+- Path: none
 - Condition: none
 - Object fields: none
 - Element fields: none
@@ -85,6 +89,7 @@ UTC RFC3339 timestamp when the description was last confirmed accurate.
 - Cardinality: any
 - Format: rfc3339-utc
 - Reference: none
+- Path: none
 - Condition: none
 - Object fields: none
 - Element fields: none
@@ -100,6 +105,7 @@ Team accountable for the object, when one is named.
 - Cardinality: any
 - Format: none
 - Reference: none
+- Path: none
 - Condition: none
 - Object fields: none
 - Element fields: none

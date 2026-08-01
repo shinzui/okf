@@ -15,7 +15,7 @@ import Okf.Cli.Help (HelpTopic (..), helpTopics)
 import Okf.ConceptId (parseConceptId, renderConceptId)
 import Okf.Document (parseDocument)
 import Okf.Index (VersionDeclaration (..))
-import Okf.Profile (Cardinality (..), FieldCondition (..), FieldFormat (..), FieldRule (..), FrontmatterRules (..), HandleReferenceRule (..), NestedFieldRule (..), NestedRules (..), ProfileSpec (..), TypeRule (..), compileProfile, loadProfileFile, validateProfile)
+import Okf.Profile (Cardinality (..), FieldCondition (..), FieldFormat (..), FieldRule (..), FrontmatterRules (..), HandleReferenceRule (..), NestedFieldRule (..), NestedRules (..), PathReferenceRule (..), ProfileSpec (..), TypeRule (..), compileProfile, loadProfileFile, validateProfile)
 import Okf.Profile.Registry (RegistryEntry (..))
 import Okf.Validation (ValidationProfile (..), validateBundle)
 import Options.Applicative
@@ -360,6 +360,7 @@ sampleDecisionsProfile =
                     elementFields = Nothing,
                     objectFields = Nothing,
                     reference = Nothing,
+                    path = Nothing,
                     when = Nothing
                   },
                 undocumentedField "title"
@@ -375,6 +376,7 @@ sampleDecisionsProfile =
                     elementFields = Nothing,
                     objectFields = Nothing,
                     reference = Nothing,
+                    path = Nothing,
                     when = Nothing
                   }
               ]
@@ -388,9 +390,9 @@ sampleDecisionsProfile =
               description = Just "One accepted decision, never edited after acceptance.",
               frontmatter =
                 FrontmatterRules
-                  { required = [FieldRule "owner" (Just "Person responsible for the decision.") [] Scalar (Just (DocumentHandle "USR")) Nothing Nothing Nothing Nothing],
-                    recommended = [FieldRule "reviewer" Nothing ["Ari", "Bo"] List Nothing Nothing Nothing (Just (HandleReferenceRule "ADR" ["mori"] False)) Nothing],
-                    optional = [FieldRule "supersedes" Nothing [] Scalar Nothing Nothing Nothing (Just (HandleReferenceRule "ADR" [] False)) Nothing]
+                  { required = [FieldRule "owner" (Just "Person responsible for the decision.") [] Scalar (Just (DocumentHandle "USR")) Nothing Nothing Nothing Nothing Nothing],
+                    recommended = [FieldRule "reviewer" Nothing ["Ari", "Bo"] List Nothing Nothing Nothing (Just (HandleReferenceRule "ADR" ["mori"] False)) Nothing Nothing],
+                    optional = [FieldRule "supersedes" Nothing [] Scalar Nothing Nothing Nothing (Just (HandleReferenceRule "ADR" [] False)) Nothing Nothing]
                   },
               pathPattern = Just "decisions/*",
               resourceScheme = Nothing,
@@ -402,7 +404,7 @@ sampleDecisionsProfile =
     }
 
 undocumentedField :: Text.Text -> FieldRule
-undocumentedField key = FieldRule {field = key, description = Nothing, allowedValues = [], cardinality = Any, format = Nothing, elementFields = Nothing, objectFields = Nothing, reference = Nothing, when = Nothing}
+undocumentedField key = FieldRule {field = key, description = Nothing, allowedValues = [], cardinality = Any, format = Nothing, elementFields = Nothing, objectFields = Nothing, reference = Nothing, path = Nothing, when = Nothing}
 
 sampleNestedProfile :: ProfileSpec
 sampleNestedProfile =
@@ -421,11 +423,12 @@ sampleNestedProfile =
                   Nothing
                   ( Just
                       NestedRules
-                        { required = [NestedFieldRule "outcome" Nothing ["approved", "rejected"] Any Nothing (Just (FieldCondition "kind" ["model"]))],
-                          recommended = [NestedFieldRule "notes" Nothing [] Scalar Nothing Nothing],
-                          optional = [NestedFieldRule "model" Nothing [] Scalar Nothing Nothing]
+                        { required = [NestedFieldRule "outcome" Nothing ["approved", "rejected"] Any Nothing Nothing (Just (FieldCondition "kind" ["model"]))],
+                          recommended = [NestedFieldRule "notes" Nothing [] Scalar Nothing Nothing Nothing],
+                          optional = [NestedFieldRule "model" Nothing [] Scalar Nothing Nothing Nothing]
                         }
                   )
+                  Nothing
                   Nothing
                   Nothing
                   Nothing
@@ -454,6 +457,7 @@ sampleNestedProfileDetail =
     "    cardinality: any",
     "    format: (none)",
     "    reference: (none)",
+    "    path: (none)",
     "    when: (none)",
     "    elementFields:",
     "      required:",
@@ -461,18 +465,21 @@ sampleNestedProfileDetail =
     "          allowedValues: approved, rejected",
     "          cardinality: any",
     "          format: (none)",
+    "          path: (none)",
     "          when: kind in [model]",
     "      recommended:",
     "        - notes: (none)",
     "          allowedValues: (any)",
     "          cardinality: scalar",
     "          format: (none)",
+    "          path: (none)",
     "          when: (none)",
     "      optional:",
     "        - model: (none)",
     "          allowedValues: (any)",
     "          cardinality: scalar",
     "          format: (none)",
+    "          path: (none)",
     "          when: (none)",
     "frontmatter.recommended: (none)",
     "frontmatter.optional: (none)"
@@ -496,6 +503,7 @@ sampleProfileDetail =
     "    cardinality: any",
     "    format: (none)",
     "    reference: (none)",
+    "    path: (none)",
     "    when: (none)",
     "    elementFields: (none)",
     "  - title: (none)",
@@ -503,6 +511,7 @@ sampleProfileDetail =
     "    cardinality: any",
     "    format: (none)",
     "    reference: (none)",
+    "    path: (none)",
     "    when: (none)",
     "    elementFields: (none)",
     "frontmatter.recommended: (none)",
@@ -512,6 +521,7 @@ sampleProfileDetail =
     "    cardinality: scalar",
     "    format: (none)",
     "    reference: (none)",
+    "    path: (none)",
     "    when: (none)",
     "    elementFields: (none)",
     "",
@@ -523,6 +533,7 @@ sampleProfileDetail =
     "      cardinality: scalar",
     "      format: document-handle(USR)",
     "      reference: (none)",
+    "      path: (none)",
     "      when: (none)",
     "      elementFields: (none)",
     "  frontmatter.recommended:",
@@ -531,6 +542,7 @@ sampleProfileDetail =
     "      cardinality: list",
     "      format: (none)",
     "      reference: local-prefix(ADR), external-uri-schemes([mori]), allow-self(false)",
+    "      path: (none)",
     "      when: (none)",
     "      elementFields: (none)",
     "  frontmatter.optional:",
@@ -539,6 +551,7 @@ sampleProfileDetail =
     "      cardinality: scalar",
     "      format: (none)",
     "      reference: local-prefix(ADR), external-uri-schemes([]), allow-self(false)",
+    "      path: (none)",
     "      when: (none)",
     "      elementFields: (none)",
     "  pathPattern: decisions/*",
@@ -566,6 +579,7 @@ sampleUndocumentedProfileDetail =
     "    cardinality: any",
     "    format: (none)",
     "    reference: (none)",
+    "    path: (none)",
     "    when: (none)",
     "    elementFields: (none)",
     "  - title: (none)",
@@ -573,6 +587,7 @@ sampleUndocumentedProfileDetail =
     "    cardinality: any",
     "    format: (none)",
     "    reference: (none)",
+    "    path: (none)",
     "    when: (none)",
     "    elementFields: (none)",
     "frontmatter.recommended: (none)",

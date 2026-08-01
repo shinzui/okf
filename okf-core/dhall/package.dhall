@@ -19,6 +19,7 @@
 , FieldRule = ./FieldRule.dhall
 , FieldCondition = ./FieldCondition.dhall
 , HandleReferenceRule = ./HandleReferenceRule.dhall
+, PathReferenceRule = ./PathReferenceRule.dhall
 , NestedRules = ./NestedRules.dhall
 , NestedFieldRule = ./NestedFieldRule.dhall
 , Cardinality = ./Cardinality.dhall
@@ -29,6 +30,7 @@
   , FrontmatterRules = ./defaults/FrontmatterRules.dhall
   , FieldRule = ./defaults/FieldRule.dhall
   , HandleReferenceRule = ./defaults/HandleReferenceRule.dhall
+  , PathReferenceRule = ./defaults/PathReferenceRule.dhall
   , NestedRules = ./defaults/NestedRules.dhall
   , NestedFieldRule = ./defaults/NestedFieldRule.dhall
   }

@@ -7,6 +7,8 @@ let FieldFormat = ../FieldFormat.dhall
 
 let FieldCondition = ../FieldCondition.dhall
 
+let PathReferenceRule = ../defaults/PathReferenceRule.dhall
+
 in  { plain = \(field : Text) -> NestedFieldRule::{ field }
     , documented =
         \(field : Text) ->
@@ -51,4 +53,14 @@ in  { plain = \(field : Text) -> NestedFieldRule::{ field }
         \(rule : NestedFieldRule.Type) ->
         \(condition : FieldCondition) ->
           rule with when = Some condition
+    , bundlePath =
+        \(field : Text) ->
+          NestedFieldRule::{ field, path = Some PathReferenceRule::{=} }
+    , localOrExternalPath =
+        \(field : Text) ->
+        \(externalUriSchemes : List Text) ->
+          NestedFieldRule::{
+          , field
+          , path = Some PathReferenceRule::{ externalUriSchemes }
+          }
     }

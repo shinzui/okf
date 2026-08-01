@@ -140,6 +140,7 @@ main = do
         testIO "loadProfileFile decodes same-scope conditions" testLoadConditionalFieldsProfileFixture,
         testIO "loadProfileFile preserves the frozen condition-aware schema" testLoadConditionalCompatibilityFixture,
         testIO "loadProfileFile preserves the frozen reference-aware schema" testLoadReferenceCompatibilityFixture,
+        testIO "loadProfileFile preserves the frozen pre-path schema" testLoadPrePathCompatibilityFixture,
         testIO "loadProfileFile preserves the frozen five-alternative format union" testLoadPreActorCompatibilityFixture,
         testIO "loadProfileFile preserves the frozen optional-presence schema" testLoadPreObjectCompatibilityFixture,
         testIO "loadProfileFile still accepts an okf 0.2.x descriptor" testLoadLegacyProfileFixture,
@@ -191,6 +192,12 @@ main = do
         test "nested record validation reports indexed paths and strict recommendations" testNestedRecordValidation,
         test "compileProfile rejects objectFields with an explicit scalar or list cardinality" testObjectFieldsRequireObjectShape,
         test "compileProfile refines an object rule to object cardinality" testCompileObjectRule,
+        test "compileProfile normalizes a path rule at top-level and nested scope" testCompilePathRule,
+        test "a type-scope path rule narrows the profile-scope one" testMergePathRule,
+        test "compileProfile rejects incoherent path rules" testPathDefinitionErrors,
+        test "validateProfile checks a top-level path-valued field" testValidatePathTopLevel,
+        test "validateProfile checks sources[].resource with element indexes" testValidatePathNested,
+        test "validateProfile checks a path inside an object-valued field" testValidatePathObjectScope,
         test "compileProfile keeps a rule declaring both shapes at any cardinality" testCompileRecordOrListRule,
         test "validateProfile requires a member of an object field" testValidateObjectMember,
         test "validateProfile checks a bare mapping and a list against the same member rules" testValidateRecordOrList,
@@ -1893,6 +1900,54 @@ testLoadReferenceCompatibilityFixture = do
             _ -> Left "expected the frozen nested rules to survive with an empty optional list"
         _ -> Left "expected three frozen reference-aware recommended rules"
 
+-- | The generation frozen immediately before path-valued reference rules: a
+-- descriptor with no @path@ member on 'FieldRule' or 'NestedFieldRule' still
+-- loads, every member it did declare survives at both levels and at both nested
+-- shapes, and the new member arrives as 'Nothing' everywhere. The fixture writes
+-- out every published type it names, unions included, so widening one cannot
+-- quietly turn this into a test of the current decoder.
+testLoadPrePathCompatibilityFixture :: IO (Either Text ())
+testLoadPrePathCompatibilityFixture = do
+  path <- fixtureFilePath "profiles/path-references-mp8-ep3.dhall"
+  result <- loadProfileFile path
+  pure $ case result of
+    Left err -> Left ("failed to load frozen pre-path profile: " <> err)
+    Right spec -> do
+      assertEqual "path-references-mp8-ep3" (spec ^. #name)
+      -- The new member is absent everywhere it can appear: three top-level
+      -- presence lists, one type scope, and both nested shapes.
+      assertEqual [Nothing, Nothing, Nothing] (map (^. #path) (spec ^. #frontmatter . #required))
+      assertEqual [Nothing] (map (^. #path) (spec ^. #frontmatter . #recommended))
+      assertEqual [Nothing] (map (^. #path) (spec ^. #frontmatter . #optional))
+      assertEqual
+        [Nothing]
+        (concatMap (map (^. #path) . (^. #frontmatter . #required)) (spec ^. #types))
+      -- Everything the frozen descriptor did declare survives the upgrade.
+      assertEqual
+        (Just (HandleReferenceRule "ADR" ["mori"] False))
+        (case spec ^. #frontmatter . #optional of rule : _ -> rule ^. #reference; [] -> Nothing)
+      assertEqual
+        [Just Profile.NonNegativeInteger]
+        (map (^. #format) (spec ^. #frontmatter . #recommended))
+      assertEqual
+        [Just Profile.HumanActor]
+        (concatMap (map (^. #format) . (^. #frontmatter . #required)) (spec ^. #types))
+      case spec ^. #frontmatter . #required of
+        [_typeRule, sourcesRule, generatedRule] -> do
+          case sourcesRule ^. #elementFields of
+            Just NestedRules {required = [resourceRule]} -> do
+              assertEqual "resource" (resourceRule ^. #field)
+              assertEqual Scalar (resourceRule ^. #cardinality)
+              assertEqual Nothing (resourceRule ^. #path)
+            _ -> Left "expected the frozen element-field rule to survive"
+          case generatedRule ^. #objectFields of
+            Just NestedRules {required = [byRule]} -> do
+              assertEqual "by" (byRule ^. #field)
+              assertEqual (Just Profile.Actor) (byRule ^. #format)
+              assertEqual Nothing (byRule ^. #path)
+            _ -> Left "expected the frozen object-member rule to survive"
+        _ -> Left "expected three frozen required rules"
+
 -- | The generation frozen immediately before the OKF v0.2 value formats: a
 -- descriptor whose records match today's shape but whose @format@ members are
 -- typed by the five-alternative format union still loads, and every format it
@@ -2045,6 +2100,7 @@ testProfileJsonShape = do
                                "elementFields" .= (Nothing :: Maybe Value),
                                "objectFields" .= (Nothing :: Maybe Value),
                                "reference" .= (Nothing :: Maybe HandleReferenceRule),
+                               "path" .= (Nothing :: Maybe PathReferenceRule),
                                "when" .= (Nothing :: Maybe FieldCondition)
                              ],
                            object
@@ -2056,6 +2112,7 @@ testProfileJsonShape = do
                                "elementFields" .= (Nothing :: Maybe Value),
                                "objectFields" .= (Nothing :: Maybe Value),
                                "reference" .= (Nothing :: Maybe HandleReferenceRule),
+                               "path" .= (Nothing :: Maybe PathReferenceRule),
                                "when" .= (Nothing :: Maybe FieldCondition)
                              ]
                          ],
@@ -2070,6 +2127,7 @@ testProfileJsonShape = do
                                "elementFields" .= (Nothing :: Maybe Value),
                                "objectFields" .= (Nothing :: Maybe Value),
                                "reference" .= (Nothing :: Maybe HandleReferenceRule),
+                               "path" .= (Nothing :: Maybe PathReferenceRule),
                                "when" .= (Nothing :: Maybe FieldCondition)
                              ]
                          ],
@@ -2084,6 +2142,7 @@ testProfileJsonShape = do
                                "elementFields" .= (Nothing :: Maybe Value),
                                "objectFields" .= (Nothing :: Maybe Value),
                                "reference" .= (Nothing :: Maybe HandleReferenceRule),
+                               "path" .= (Nothing :: Maybe PathReferenceRule),
                                "when" .= (Nothing :: Maybe FieldCondition)
                              ]
                          ]
@@ -2263,7 +2322,7 @@ testFindConceptsByDocumentId = do
 -- | An undocumented frontmatter key: the validation tests care about names, not
 -- prose, and descriptions never affect validation.
 requiredField :: Text -> FieldRule
-requiredField key = FieldRule {field = key, description = Nothing, allowedValues = [], cardinality = Any, format = Nothing, elementFields = Nothing, objectFields = Nothing, reference = Nothing, when = Nothing}
+requiredField key = FieldRule {field = key, description = Nothing, allowedValues = [], cardinality = Any, format = Nothing, elementFields = Nothing, objectFields = Nothing, reference = Nothing, path = Nothing, when = Nothing}
 
 -- | Build a 'FieldRule' positionally in the argument order this file used
 -- before 'FieldRule' gained @objectFields@, filling that member in as
@@ -2291,6 +2350,7 @@ fieldRule key description allowedValues cardinality format elementFields referen
       elementFields,
       objectFields = Nothing,
       reference,
+      path = Nothing,
       when = condition
     }
 
@@ -2861,15 +2921,15 @@ testCompiledNestedRules :: Either Text ()
 testCompiledNestedRules = do
   let profileRules =
         NestedRules
-          { required = [NestedFieldRule "kind" Nothing ["decision", "implementation"] Any Nothing Nothing],
-            recommended = [NestedFieldRule "notes" Nothing [] Scalar Nothing Nothing],
+          { required = [NestedFieldRule "kind" Nothing ["decision", "implementation"] Any Nothing Nothing Nothing],
+            recommended = [NestedFieldRule "notes" Nothing [] Scalar Nothing Nothing Nothing],
             optional = []
           }
       typeRules =
         NestedRules
           { required =
-              [ NestedFieldRule "kind" Nothing ["implementation", "operations"] Any Nothing Nothing,
-                NestedFieldRule "outcome" Nothing ["approved", "rejected"] Any Nothing Nothing
+              [ NestedFieldRule "kind" Nothing ["implementation", "operations"] Any Nothing Nothing Nothing,
+                NestedFieldRule "outcome" Nothing ["approved", "rejected"] Any Nothing Nothing Nothing
               ],
             recommended = [],
             optional = []
@@ -2997,15 +3057,15 @@ nestedReviewProfileSpec =
     nestedRules =
       NestedRules
         { required =
-            [ NestedFieldRule "kind" Nothing ["human", "model"] Any Nothing Nothing,
-              NestedFieldRule "reviewer" Nothing [] Scalar Nothing Nothing,
-              NestedFieldRule "reviewed_at" Nothing [] Any (Just Rfc3339Utc) Nothing,
-              NestedFieldRule "document_timestamp" Nothing [] Any (Just Rfc3339Utc) Nothing,
-              NestedFieldRule "scope" Nothing reviewScopes Any Nothing Nothing,
-              NestedFieldRule "outcome" Nothing ["approved", "changes-requested", "commented"] Any Nothing Nothing,
-              NestedFieldRule "context" Nothing [] Scalar Nothing Nothing
+            [ NestedFieldRule "kind" Nothing ["human", "model"] Any Nothing Nothing Nothing,
+              NestedFieldRule "reviewer" Nothing [] Scalar Nothing Nothing Nothing,
+              NestedFieldRule "reviewed_at" Nothing [] Any (Just Rfc3339Utc) Nothing Nothing,
+              NestedFieldRule "document_timestamp" Nothing [] Any (Just Rfc3339Utc) Nothing Nothing,
+              NestedFieldRule "scope" Nothing reviewScopes Any Nothing Nothing Nothing,
+              NestedFieldRule "outcome" Nothing ["approved", "changes-requested", "commented"] Any Nothing Nothing Nothing,
+              NestedFieldRule "context" Nothing [] Scalar Nothing Nothing Nothing
             ],
-          recommended = [NestedFieldRule "notes" Nothing [] Scalar Nothing Nothing],
+          recommended = [NestedFieldRule "notes" Nothing [] Scalar Nothing Nothing Nothing],
           optional = []
         }
 
@@ -3036,6 +3096,7 @@ objectProfileWithRules key declaredCardinality objectRules elementRules =
                     elementFields = elementRules,
                     objectFields = objectRules,
                     reference = Nothing,
+                    path = Nothing,
                     when = Nothing
                   }
               ],
@@ -3053,8 +3114,8 @@ objectProfileWithRules key declaredCardinality objectRules elementRules =
 provenanceMemberRules :: NestedRules
 provenanceMemberRules =
   NestedRules
-    { required = [NestedFieldRule "by" (Just "Who or what produced this content.") [] Any Nothing Nothing],
-      recommended = [NestedFieldRule "at" Nothing [] Any (Just Rfc3339Utc) Nothing],
+    { required = [NestedFieldRule "by" (Just "Who or what produced this content.") [] Any Nothing Nothing Nothing],
+      recommended = [NestedFieldRule "at" Nothing [] Any (Just Rfc3339Utc) Nothing Nothing],
       optional = []
     }
 
@@ -3109,6 +3170,275 @@ testCompileRecordOrListRule = do
   assertEqual (Just ["at", "by"]) (Map.keys <$> fieldRuleObjectFields rule)
   assertEqual (Just ["at", "by"]) (Map.keys <$> fieldRuleElementFields rule)
 
+-- | A profile with one path rule on a top-level key, plus the given rules on the
+-- same key at type scope, so scheme intersection across scopes is exercisable.
+pathProfileWith :: Maybe PathReferenceRule -> Maybe FieldFormat -> Maybe HandleReferenceRule -> Maybe PathReferenceRule -> ProfileSpec
+pathProfileWith profilePath declaredFormat handlePolicy typePath =
+  ProfileSpec
+    { name = "path-rules",
+      description = Nothing,
+      okfVersion = "0.1",
+      frontmatter =
+        FrontmatterRules
+          { required = [requiredField "type"],
+            recommended = [],
+            -- Optional rather than required, so a concept that simply does not
+            -- carry the key reports nothing and the tests below see only the
+            -- value checks they are about. An optional rule is fully
+            -- value-checked whenever it is present.
+            optional =
+              [ (requiredField "resource")
+                  { format = declaredFormat,
+                    reference = handlePolicy,
+                    path = profilePath
+                  }
+              ]
+          },
+      allowUnknownTypes = True,
+      allowUnknownFields = True,
+      idField = if isJust handlePolicy then Just "docId" else Nothing,
+      types =
+        [ TypeRule
+            { type_ = "Metric",
+              description = Nothing,
+              frontmatter =
+                FrontmatterRules
+                  { required = [],
+                    recommended = [],
+                    optional = [(requiredField "resource") {path = typePath}]
+                  },
+              pathPattern = Nothing,
+              resourceScheme = Nothing,
+              requireSchemaSection = False,
+              schemaColumns = [],
+              idPrefix = if isJust handlePolicy then Just "ADR" else Nothing
+            }
+        | isJust typePath || isJust handlePolicy
+        ]
+    }
+
+-- | A profile whose @sources@ key is a list of records, each of which carries a
+-- path rule on @resource@ — the OKF v0.2 §6.2 field the rule kind exists for,
+-- and the one that was unreachable before nested path checking existed.
+sourcesPathProfile :: [Text] -> ProfileSpec
+sourcesPathProfile permittedSchemes =
+  ProfileSpec
+    { name = "sources-paths",
+      description = Nothing,
+      okfVersion = "0.1",
+      frontmatter =
+        FrontmatterRules
+          { required = [requiredField "type"],
+            recommended = [],
+            -- Optional for the same reason 'pathProfileWith' is: the tests are
+            -- about what a present value resolves to, not about presence.
+            optional = [fieldRule "sources" Nothing [] List Nothing (Just memberRules) Nothing Nothing]
+          },
+      allowUnknownTypes = True,
+      allowUnknownFields = True,
+      idField = Nothing,
+      types = []
+    }
+  where
+    memberRules =
+      NestedRules
+        { required =
+            [ (NestedFieldRule "resource" Nothing [] Any Nothing Nothing Nothing)
+                { path = Just (PathReferenceRule permittedSchemes False)
+                }
+            ],
+          recommended = [],
+          optional = []
+        }
+
+-- | Compiling a path rule normalizes its scheme list exactly as a handle rule's
+-- is — deduplicated case-insensitively and case-folded for storage — and the
+-- result is reachable through the new accessor at top-level, nested, and object
+-- scope. Nested reachability is the part with no precedent:
+-- 'compileOptionalNestedFieldRule' previously hard-coded every reference member
+-- to 'Nothing'.
+testCompilePathRule :: Either Text ()
+testCompilePathRule = do
+  compiled <-
+    firstShow
+      (compileProfile (pathProfileWith (Just (PathReferenceRule ["HTTPS", "https", "mori"] True)) Nothing Nothing Nothing))
+  rule <- lookupBaseRule compiled "resource"
+  assertEqual (Just (PathReferenceRule ["https", "mori"] True)) (fieldRulePath rule)
+  -- A path rule and a handle rule are different things and never both present.
+  assertEqual Nothing (fieldRuleReference rule)
+  nestedCompiled <- firstShow (compileProfile (sourcesPathProfile ["https"]))
+  sourcesRule <- lookupBaseRule nestedCompiled "sources"
+  case fieldRuleElementFields sourcesRule of
+    Nothing -> Left "expected compiled element member rules for sources"
+    Just members -> do
+      memberRule <- maybe (Left "expected a rule for resource") Right (Map.lookup "resource" members)
+      assertEqual (Just (PathReferenceRule ["https"] False)) (fieldRulePath memberRule)
+      -- Nested rules stay depth-bounded and carry no handle policy at all.
+      assertEqual Nothing (fieldRuleReference memberRule)
+
+-- | A type-scope path rule narrows the profile-scope one rather than replacing
+-- it: schemes intersect and @allowSelf@ combines with logical AND. Unlike
+-- 'mergeReferenceRule' the merge is total, because a path policy has no
+-- @localPrefix@ for two scopes to disagree about.
+testMergePathRule :: Either Text ()
+testMergePathRule = do
+  compiled <-
+    firstShow
+      ( compileProfile
+          ( pathProfileWith
+              (Just (PathReferenceRule ["https", "mori"] True))
+              Nothing
+              Nothing
+              (Just (PathReferenceRule ["mori", "ftp"] False))
+          )
+      )
+  merged <- lookupCompiledRule "resource" (compiledProfileRulesForType compiled "Metric")
+  assertEqual (Just (PathReferenceRule ["mori"] False)) (fieldRulePath merged)
+
+-- | The three ways a path rule can be incoherent on its own. Two reuse the
+-- handle-reference definition errors because the claim is identical; the third
+-- is new, and cannot arise at nested scope where 'NestedFieldRule' carries no
+-- handle policy.
+testPathDefinitionErrors :: Either Text ()
+testPathDefinitionErrors = do
+  -- A value cannot be resolved as both a PREFIX-N handle and a §6.2 path.
+  assertEqual
+    (Left (PathReferenceWithHandleReference Nothing (fieldPath "resource") :| []))
+    ( compileProfile
+        ( pathProfileWith
+            (Just (PathReferenceRule [] False))
+            Nothing
+            (Just (HandleReferenceRule "ADR" [] False))
+            Nothing
+        )
+    )
+  -- A scheme that is not a legal URI scheme, at top-level scope.
+  assertEqual
+    (Left (InvalidExternalReferenceScheme Nothing (fieldPath "resource") "9nope" :| []))
+    (compileProfile (pathProfileWith (Just (PathReferenceRule ["9nope"] False)) Nothing Nothing Nothing))
+  -- The same mistake at nested scope, which the reference walk did not reach
+  -- before this plan extended it.
+  assertEqual
+    (Left (InvalidExternalReferenceScheme Nothing (objectMemberPath "sources" "resource") "9nope" :| []))
+    (compileProfile (sourcesPathProfile ["9nope"]))
+  -- A named format would be checked against text the path rule is already
+  -- interpreting structurally, and the two can contradict.
+  assertEqual
+    (Left (ReferenceWithFormat Nothing (fieldPath "resource") Uri :| []))
+    (compileProfile (pathProfileWith (Just (PathReferenceRule [] False)) (Just Uri) Nothing Nothing))
+
+-- | The five outcomes of checking one path value at top-level scope, plus the
+-- two shapes that are accepted in silence. Every diagnostic carries the raw text
+-- the author wrote rather than the collapsed path okf computed from it.
+testValidatePathTopLevel :: Either Text ()
+testValidatePathTopLevel = do
+  compiled <-
+    firstShow
+      (compileProfile (pathProfileWith (Just (PathReferenceRule ["https"] False)) Nothing Nothing Nothing))
+  cid <- parseTestConceptId "metrics/revenue"
+  target <- profileConcept "references/policy" [("type", String "Reference")] "# Policy\n"
+  let check value = do
+        subject <-
+          profileConcept
+            "metrics/revenue"
+            [("type", String "Metric"), ("resource", value)]
+            "# Revenue\n"
+        pure (validateProfile PermissiveConformance compiled [subject, target])
+      resourcePath = fieldPath "resource"
+  -- A bundle path naming a real concept, and a permitted external URL, are both
+  -- silent.
+  check (String "/references/policy.md") >>= assertEqual []
+  check (String "../references/policy.md") >>= assertEqual []
+  check (String "https://wiki.acme/revenue") >>= assertEqual []
+  -- A path to a non-Markdown file is accepted without a check, because
+  -- validateProfile is handed concepts and never looked. §6.3's own example.
+  check (String "/references/attesters/revenue.py") >>= assertEqual []
+  -- The four failures.
+  check (String "/references/gone.md")
+    >>= assertEqual [DanglingPathReference cid resourcePath "/references/gone.md"]
+  check (String "ftp://files.acme/revenue.csv")
+    >>= assertEqual [ExternalReferenceSchemeNotAllowed cid resourcePath "ftp" ["https"]]
+  check (String "../../../etc/passwd")
+    >>= assertEqual [PathEscapesBundle cid resourcePath "../../../etc/passwd"]
+  check (String "   ")
+    >>= assertEqual [MalformedPathReference cid resourcePath (String "   ")]
+  -- A value that is not text at all is malformed rather than silently skipped.
+  check (Bool True)
+    >>= assertEqual [MalformedPathReference cid resourcePath (Bool True)]
+  -- A path resolving to the concept that carries it, with allowSelf unset.
+  check (String "/metrics/revenue.md")
+    >>= assertEqual [SelfDocumentReference cid resourcePath "/metrics/revenue.md"]
+
+-- | The motivating case: a path rule on @sources[].resource@, reported with the
+-- element index so the author can find the entry. Nested path checking did not
+-- exist before this plan — 'NestedFieldRule' had no reference member of any kind
+-- — so this is the assertion the whole plan is for.
+testValidatePathNested :: Either Text ()
+testValidatePathNested = do
+  compiled <- firstShow (compileProfile (sourcesPathProfile ["https"]))
+  cid <- parseTestConceptId "metric"
+  target <- profileConcept "references/policy" [("type", String "Reference")] "# Policy\n"
+  subject <-
+    profileConcept
+      "metric"
+      [ ("type", String "Metric"),
+        ( "sources",
+          toJSON
+            [ object ["id" .= ("policy" :: Text), "resource" .= ("/references/policy.md" :: Text)],
+              object ["id" .= ("gone" :: Text), "resource" .= ("/references/gone.md" :: Text)],
+              object ["id" .= ("upstream" :: Text), "resource" .= ("https://wiki.acme/revenue" :: Text)],
+              object ["id" .= ("ftp" :: Text), "resource" .= ("ftp://files.acme/revenue.csv" :: Text)],
+              object ["id" .= ("escape" :: Text), "resource" .= ("../../etc/passwd" :: Text)],
+              object ["id" .= ("script" :: Text), "resource" .= ("references/attesters/revenue.py" :: Text)]
+            ]
+        )
+      ]
+      "# Revenue\n"
+  assertEqual
+    [ DanglingPathReference cid (nestedTestPathIn "sources" 1 "resource") "/references/gone.md",
+      ExternalReferenceSchemeNotAllowed cid (nestedTestPathIn "sources" 3 "resource") "ftp" ["https"],
+      PathEscapesBundle cid (nestedTestPathIn "sources" 4 "resource") "../../etc/passwd"
+    ]
+    (validateProfile PermissiveConformance compiled [subject, target])
+
+-- | The same rule kind at object scope, where the member is named without an
+-- index: @executor.resource@ rather than @executor[0].resource@.
+testValidatePathObjectScope :: Either Text ()
+testValidatePathObjectScope = do
+  compiled <-
+    firstShow
+      ( compileProfile
+          ( objectProfileWithRules
+              "executor"
+              Any
+              ( Just
+                  NestedRules
+                    { required =
+                        [ (NestedFieldRule "resource" Nothing [] Any Nothing Nothing Nothing)
+                            { path = Just (PathReferenceRule [] False)
+                            }
+                        ],
+                      recommended = [],
+                      optional = []
+                    }
+              )
+              Nothing
+          )
+      )
+  cid <- parseTestConceptId "thing"
+  subject <-
+    profileConcept
+      "thing"
+      [("type", String "Thing"), ("executor", object ["resource" .= ("/computations/gone.md" :: Text)])]
+      "# Thing\n"
+  assertEqual
+    [DanglingPathReference cid (objectMemberPath "executor" "resource") "/computations/gone.md"]
+    (validateProfile PermissiveConformance compiled [subject])
+
+nestedTestPathIn :: Text -> Int -> Text -> FieldPath
+nestedTestPathIn parent elementIndex key =
+  FieldPath (FieldName parent :| [ArrayIndex elementIndex, FieldName key])
+
 lookupBaseRule :: CompiledProfile -> Text -> Either Text EffectiveFieldRule
 lookupBaseRule compiled key =
   maybe
@@ -3154,8 +3484,8 @@ testConditionDefinitionErrors = do
   let nestedCrossScope =
         NestedRules
           { required =
-              [ NestedFieldRule "kind" Nothing ["human", "model"] Scalar Nothing Nothing,
-                NestedFieldRule "provider" Nothing [] Scalar Nothing (Just (FieldCondition "status" ["active"]))
+              [ NestedFieldRule "kind" Nothing ["human", "model"] Scalar Nothing Nothing Nothing,
+                NestedFieldRule "provider" Nothing [] Scalar Nothing Nothing (Just (FieldCondition "status" ["active"]))
               ],
             recommended = [],
             optional = []
@@ -3236,11 +3566,11 @@ testNestedConditionalPresence = do
   let nestedRules =
         NestedRules
           { required =
-              [ NestedFieldRule "kind" Nothing ["human", "model"] Scalar Nothing Nothing,
-                NestedFieldRule "provider" Nothing [] Scalar Nothing (Just (FieldCondition "kind" ["model"]))
+              [ NestedFieldRule "kind" Nothing ["human", "model"] Scalar Nothing Nothing Nothing,
+                NestedFieldRule "provider" Nothing [] Scalar Nothing Nothing (Just (FieldCondition "kind" ["model"]))
               ],
             recommended =
-              [NestedFieldRule "notes" Nothing [] Scalar Nothing (Just (FieldCondition "kind" ["human"]))],
+              [NestedFieldRule "notes" Nothing [] Scalar Nothing Nothing (Just (FieldCondition "kind" ["human"]))],
             optional = []
           }
       spec = nestedProfileWithRules List nestedRules Nothing
@@ -3472,9 +3802,9 @@ testOptionalNestedFieldPresence :: Either Text ()
 testOptionalNestedFieldPresence = do
   let nestedRules =
         NestedRules
-          { required = [NestedFieldRule "kind" Nothing ["human", "model"] Scalar Nothing Nothing],
-            recommended = [NestedFieldRule "notes" Nothing [] Scalar Nothing Nothing],
-            optional = [NestedFieldRule "model" Nothing ["opus", "sonnet"] Scalar Nothing Nothing]
+          { required = [NestedFieldRule "kind" Nothing ["human", "model"] Scalar Nothing Nothing Nothing],
+            recommended = [NestedFieldRule "notes" Nothing [] Scalar Nothing Nothing Nothing],
+            optional = [NestedFieldRule "model" Nothing ["opus", "sonnet"] Scalar Nothing Nothing Nothing]
           }
   compiled <- firstShow (compileProfile (nestedProfileWithRules Any nestedRules Nothing))
   concept <-
@@ -3577,9 +3907,9 @@ testOptionalDefinitionErrors = do
     )
   let nestedRules =
         NestedRules
-          { required = [NestedFieldRule "kind" Nothing ["model"] Scalar Nothing Nothing],
+          { required = [NestedFieldRule "kind" Nothing ["model"] Scalar Nothing Nothing Nothing],
             recommended = [],
-            optional = [NestedFieldRule "model" Nothing [] Scalar Nothing (Just (FieldCondition "kind" ["model"]))]
+            optional = [NestedFieldRule "model" Nothing [] Scalar Nothing Nothing (Just (FieldCondition "kind" ["model"]))]
           }
   assertEqual
     (Left (OptionalFieldWithCondition Nothing (FieldPath (FieldName "reviews" :| [FieldName "model"])) :| []))

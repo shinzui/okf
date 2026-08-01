@@ -33,6 +33,8 @@ let FieldCondition = ./FieldCondition.dhall
 
 let HandleReferenceRule = ./HandleReferenceRule.dhall
 
+let PathReferenceRule = ./PathReferenceRule.dhall
+
 in  { field : Text
     , description : Optional Text
     , allowedValues : List Text
@@ -41,5 +43,6 @@ in  { field : Text
     , elementFields : Optional NestedRules
     , objectFields : Optional NestedRules
     , reference : Optional HandleReferenceRule
+    , path : Optional PathReferenceRule
     , when : Optional FieldCondition
     }

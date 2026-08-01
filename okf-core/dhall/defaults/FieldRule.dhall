@@ -11,6 +11,8 @@ let FieldCondition = ../FieldCondition.dhall
 
 let HandleReferenceRule = ../HandleReferenceRule.dhall
 
+let PathReferenceRule = ../PathReferenceRule.dhall
+
 in  { Type = FieldRuleType
     , default =
       { description = None Text
@@ -20,6 +22,7 @@ in  { Type = FieldRuleType
       , elementFields = None NestedRules
       , objectFields = None NestedRules
       , reference = None HandleReferenceRule
+      , path = None PathReferenceRule
       , when = None FieldCondition
       }
     }

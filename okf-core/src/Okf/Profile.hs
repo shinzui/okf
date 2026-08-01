@@ -15,6 +15,7 @@ module Okf.Profile
     FrontmatterRules (..),
     FieldCondition (..),
     HandleReferenceRule (..),
+    PathReferenceRule (..),
     FieldRule (..),
     NestedRules (..),
     NestedFieldRule (..),
@@ -54,6 +55,7 @@ module Okf.Profile
     fieldRuleCardinality,
     fieldRuleFormat,
     fieldRuleReference,
+    fieldRulePath,
     fieldRuleElementFields,
     fieldRuleObjectFields,
     compiledProfileTypeNames,
@@ -87,6 +89,7 @@ import Data.List qualified as List
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (catMaybes, mapMaybe)
+import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Text qualified as Text
 import Data.Text.Read qualified as Text.Read
@@ -112,14 +115,16 @@ import Okf.Bundle
     conceptResource,
     conceptType,
   )
-import Okf.ConceptId (ConceptId, renderConceptId)
+import Okf.ConceptId (ConceptId, conceptIdFromFilePath, renderConceptId)
 import Okf.Document (Frontmatter, coreFrontmatterFields, frontmatterKeys, frontmatterLookup)
 import Okf.Markdown (markdownOptions)
+import Okf.Path (PathReference (..), classifyPathReference)
 -- 'List' and 'Object' are 'Cardinality' constructors here; the names aeson uses
 -- for the corresponding 'Value' constructors are reached as 'Aeson.Array' and
 -- 'Aeson.Object'.
 import Okf.Prelude hiding (List, Object, (.=))
 import Okf.Validation (ValidationProfile (..))
+import System.FilePath qualified as FilePath
 import "generic-lens" Data.Generics.Labels ()
 
 -- | A complete house profile. @description@ is prose documenting the profile as
@@ -170,6 +175,27 @@ data HandleReferenceRule = HandleReferenceRule
   deriving stock (Generic, Eq, Ord, Show)
   deriving anyclass (FromDhall)
 
+-- | A field whose values name a path or URI per OKF v0.2 specification §6.2: an
+-- absolute URL, a bundle-relative path beginning with @\/@, or an ordinary
+-- relative path resolved against the concept's own directory.
+--
+-- Deliberately distinct from 'HandleReferenceRule'. A handle resolves against
+-- the bundle's document-ID index and fails by carrying the wrong prefix or
+-- having no owner; a path resolves against the concept tree and fails by not
+-- being a §6.2 shape, by climbing above the bundle root, or by naming a concept
+-- that is not there. Declaring both on one rule is a definition error.
+--
+-- An empty @externalUriSchemes@ means no absolute URL is permitted at all, so a
+-- separate "must be a path, never a URL" flag would say nothing new. okf
+-- resolves a bundle path only when it names a @.md@ file, because
+-- 'validateProfile' is handed concepts and no filesystem.
+data PathReferenceRule = PathReferenceRule
+  { externalUriSchemes :: ![Text],
+    allowSelf :: !Bool
+  }
+  deriving stock (Generic, Eq, Ord, Show)
+  deriving anyclass (FromDhall)
+
 -- | One documented frontmatter key. The description is prose for humans and is
 -- never checked against a bundle.
 --
@@ -187,6 +213,7 @@ data FieldRule = FieldRule
     elementFields :: !(Maybe NestedRules),
     objectFields :: !(Maybe NestedRules),
     reference :: !(Maybe HandleReferenceRule),
+    path :: !(Maybe PathReferenceRule),
     when :: !(Maybe FieldCondition)
   }
   deriving stock (Generic, Eq, Show)
@@ -204,12 +231,17 @@ data NestedRules = NestedRules
   deriving stock (Generic, Eq, Show)
   deriving anyclass (FromDhall)
 
+-- | One field inside a list element record or an object-valued mapping. It
+-- carries @path@ because @sources[].resource@ is the motivating path-valued
+-- field of §6.2 and lives inside a list element; it deliberately carries no
+-- @reference@, because no v0.2 field names a document handle at nested scope.
 data NestedFieldRule = NestedFieldRule
   { field :: !Text,
     description :: !(Maybe Text),
     allowedValues :: ![Text],
     cardinality :: !Cardinality,
     format :: !(Maybe FieldFormat),
+    path :: !(Maybe PathReferenceRule),
     when :: !(Maybe FieldCondition)
   }
   deriving stock (Generic, Eq, Show)
@@ -330,8 +362,15 @@ instance ToJSON HandleReferenceRule where
         "allowSelf" .= allowSelf
       ]
 
+instance ToJSON PathReferenceRule where
+  toJSON PathReferenceRule {externalUriSchemes, allowSelf} =
+    object
+      [ "externalUriSchemes" .= externalUriSchemes,
+        "allowSelf" .= allowSelf
+      ]
+
 instance ToJSON FieldRule where
-  toJSON FieldRule {field = fieldName, description, allowedValues, cardinality, format, elementFields, objectFields, reference, when = condition} =
+  toJSON FieldRule {field = fieldName, description, allowedValues, cardinality, format, elementFields, objectFields, reference, path = pathRule, when = condition} =
     object
       [ "field" .= fieldName,
         "description" .= description,
@@ -344,7 +383,8 @@ instance ToJSON FieldRule where
         -- Appended rather than placed beside @elementFields@, so that the list
         -- reads as "the keys this instance has always emitted, then the ones
         -- added since". A consumer keys on names, not position.
-        "objectFields" .= objectFields
+        "objectFields" .= objectFields,
+        "path" .= pathRule
       ]
 
 instance ToJSON NestedRules where
@@ -356,14 +396,16 @@ instance ToJSON NestedRules where
       ]
 
 instance ToJSON NestedFieldRule where
-  toJSON NestedFieldRule {field = fieldName, description, allowedValues, cardinality, format, when = condition} =
+  toJSON NestedFieldRule {field = fieldName, description, allowedValues, cardinality, format, path = pathRule, when = condition} =
     object
       [ "field" .= fieldName,
         "description" .= description,
         "allowedValues" .= allowedValues,
         "cardinality" .= cardinality,
         "format" .= format,
-        "when" .= condition
+        "when" .= condition,
+        -- Appended for the same reason 'FieldRule' appends @objectFields@.
+        "path" .= pathRule
       ]
 
 instance ToJSON Cardinality where
@@ -497,10 +539,92 @@ upgradePreV02FieldFormat = \case
   LegacyUriWithScheme scheme -> UriWithScheme scheme
   LegacyDocumentHandle prefix -> DocumentHandle prefix
 
+-- | The complete descriptor generation frozen before path-valued reference
+-- rules were added. This is the immediately preceding public descriptor
+-- generation: it is today's shape minus the @path@ member on 'FieldRule' and on
+-- 'NestedFieldRule'. Because that is a record addition rather than a union
+-- widening, 'Cardinality', 'FieldFormat', 'FieldCondition', and
+-- 'HandleReferenceRule' are unchanged by it and so are shared rather than
+-- copied; the two rule records and everything that contains them are copied.
+-- Exercised by @okf-core\/test\/fixtures\/profiles\/path-references-mp8-ep3.dhall@.
+data PrePathProfileFieldRule = PrePathProfileFieldRule
+  { field :: !Text,
+    description :: !(Maybe Text),
+    allowedValues :: ![Text],
+    cardinality :: !Cardinality,
+    format :: !(Maybe FieldFormat),
+    elementFields :: !(Maybe PrePathProfileNestedRules),
+    objectFields :: !(Maybe PrePathProfileNestedRules),
+    reference :: !(Maybe HandleReferenceRule),
+    when :: !(Maybe FieldCondition)
+  }
+  deriving stock (Generic, Eq, Show)
+  deriving anyclass (FromDhall)
+
+data PrePathProfileNestedRules = PrePathProfileNestedRules
+  { required :: ![PrePathProfileNestedFieldRule],
+    recommended :: ![PrePathProfileNestedFieldRule],
+    optional :: ![PrePathProfileNestedFieldRule]
+  }
+  deriving stock (Generic, Eq, Show)
+  deriving anyclass (FromDhall)
+
+data PrePathProfileNestedFieldRule = PrePathProfileNestedFieldRule
+  { field :: !Text,
+    description :: !(Maybe Text),
+    allowedValues :: ![Text],
+    cardinality :: !Cardinality,
+    format :: !(Maybe FieldFormat),
+    when :: !(Maybe FieldCondition)
+  }
+  deriving stock (Generic, Eq, Show)
+  deriving anyclass (FromDhall)
+
+data PrePathProfileFrontmatterRules = PrePathProfileFrontmatterRules
+  { required :: ![PrePathProfileFieldRule],
+    recommended :: ![PrePathProfileFieldRule],
+    optional :: ![PrePathProfileFieldRule]
+  }
+  deriving stock (Generic, Eq, Show)
+  deriving anyclass (FromDhall)
+
+data PrePathProfileSpec = PrePathProfileSpec
+  { name :: !Text,
+    description :: !(Maybe Text),
+    okfVersion :: !Text,
+    frontmatter :: !PrePathProfileFrontmatterRules,
+    allowUnknownTypes :: !Bool,
+    allowUnknownFields :: !Bool,
+    idField :: !(Maybe Text),
+    types :: ![PrePathProfileTypeRule]
+  }
+  deriving stock (Generic, Eq, Show)
+  deriving anyclass (FromDhall)
+
+data PrePathProfileTypeRule = PrePathProfileTypeRule
+  { type_ :: !Text,
+    description :: !(Maybe Text),
+    frontmatter :: !PrePathProfileFrontmatterRules,
+    pathPattern :: !(Maybe Text),
+    resourceScheme :: !(Maybe Text),
+    requireSchemaSection :: !Bool,
+    schemaColumns :: ![Text],
+    idPrefix :: !(Maybe Text)
+  }
+  deriving stock (Generic, Eq, Show)
+
+instance FromDhall PrePathProfileTypeRule where
+  autoWith _normalizer =
+    genericAutoWith
+      (Dhall.defaultInterpretOptions {Dhall.fieldModifier = stripTrailingUnderscore})
+    where
+      stripTrailingUnderscore fieldName =
+        fromMaybe fieldName (Text.stripSuffix "_" fieldName)
+
 -- | The complete object-rule descriptor generation, frozen before the OKF v0.2
--- value formats were added to 'FieldFormat'. This is the immediately preceding
--- public descriptor generation: its records match today's shape exactly, and the
--- only difference is that every @format@ member refers to the frozen
+-- value formats were added to 'FieldFormat'. Its records match the shape
+-- 'PrePathProfileFieldRule' froze — no @path@ member — and the further
+-- difference is that every @format@ member refers to the frozen
 -- five-alternative 'PreV02FieldFormat'. Exercised by
 -- @okf-core\/test\/fixtures\/profiles\/formats-mp8-ep2.dhall@.
 data PreActorProfileFieldRule = PreActorProfileFieldRule
@@ -1117,6 +1241,44 @@ instance FromDhall DescribedTypeRule where
 emptyFrontmatterRules :: FrontmatterRules
 emptyFrontmatterRules = FrontmatterRules {required = [], recommended = [], optional = []}
 
+upgradePrePathProfileFrontmatter :: PrePathProfileFrontmatterRules -> FrontmatterRules
+upgradePrePathProfileFrontmatter previous =
+  FrontmatterRules
+    { required = map upgradeField (previous ^. #required),
+      recommended = map upgradeField (previous ^. #recommended),
+      optional = map upgradeField (previous ^. #optional)
+    }
+  where
+    upgradeField rule =
+      FieldRule
+        { field = rule ^. #field,
+          description = rule ^. #description,
+          allowedValues = rule ^. #allowedValues,
+          cardinality = rule ^. #cardinality,
+          format = rule ^. #format,
+          elementFields = upgradeNestedRules <$> rule ^. #elementFields,
+          objectFields = upgradeNestedRules <$> rule ^. #objectFields,
+          reference = rule ^. #reference,
+          path = Nothing,
+          when = rule ^. #when
+        }
+    upgradeNestedRules rules =
+      NestedRules
+        { required = map upgradeNestedField (rules ^. #required),
+          recommended = map upgradeNestedField (rules ^. #recommended),
+          optional = map upgradeNestedField (rules ^. #optional)
+        }
+    upgradeNestedField rule =
+      NestedFieldRule
+        { field = rule ^. #field,
+          description = rule ^. #description,
+          allowedValues = rule ^. #allowedValues,
+          cardinality = rule ^. #cardinality,
+          format = rule ^. #format,
+          path = Nothing,
+          when = rule ^. #when
+        }
+
 upgradePreActorProfileFrontmatter :: PreActorProfileFrontmatterRules -> FrontmatterRules
 upgradePreActorProfileFrontmatter previous =
   FrontmatterRules
@@ -1135,6 +1297,7 @@ upgradePreActorProfileFrontmatter previous =
           elementFields = upgradeNestedRules <$> rule ^. #elementFields,
           objectFields = upgradeNestedRules <$> rule ^. #objectFields,
           reference = rule ^. #reference,
+          path = Nothing,
           when = rule ^. #when
         }
     upgradeNestedRules rules =
@@ -1150,6 +1313,7 @@ upgradePreActorProfileFrontmatter previous =
           allowedValues = rule ^. #allowedValues,
           cardinality = rule ^. #cardinality,
           format = upgradePreV02FieldFormat <$> rule ^. #format,
+          path = Nothing,
           when = rule ^. #when
         }
 
@@ -1171,6 +1335,7 @@ upgradePreObjectProfileFrontmatter previous =
           elementFields = upgradeNestedRules <$> rule ^. #elementFields,
           objectFields = Nothing,
           reference = rule ^. #reference,
+          path = Nothing,
           when = rule ^. #when
         }
     upgradeNestedRules rules =
@@ -1186,6 +1351,7 @@ upgradePreObjectProfileFrontmatter previous =
           allowedValues = rule ^. #allowedValues,
           cardinality = rule ^. #cardinality,
           format = upgradePreV02FieldFormat <$> rule ^. #format,
+          path = Nothing,
           when = rule ^. #when
         }
 
@@ -1207,6 +1373,7 @@ upgradeReferenceProfileFrontmatter previous =
           elementFields = upgradeNestedRules <$> rule ^. #elementFields,
           objectFields = Nothing,
           reference = rule ^. #reference,
+          path = Nothing,
           when = rule ^. #when
         }
     upgradeNestedRules rules =
@@ -1222,6 +1389,7 @@ upgradeReferenceProfileFrontmatter previous =
           allowedValues = rule ^. #allowedValues,
           cardinality = rule ^. #cardinality,
           format = upgradePreV02FieldFormat <$> rule ^. #format,
+          path = Nothing,
           when = rule ^. #when
         }
 
@@ -1243,6 +1411,7 @@ upgradePreviousFrontmatter previous =
           elementFields = Nothing,
           objectFields = Nothing,
           reference = Nothing,
+          path = Nothing,
           when = Nothing
         }
 
@@ -1264,6 +1433,7 @@ upgradeConditionalProfileFrontmatter previous =
           elementFields = upgradeNestedRules <$> rule ^. #elementFields,
           objectFields = Nothing,
           reference = Nothing,
+          path = Nothing,
           when = rule ^. #when
         }
     upgradeNestedRules rules =
@@ -1279,6 +1449,7 @@ upgradeConditionalProfileFrontmatter previous =
           allowedValues = rule ^. #allowedValues,
           cardinality = rule ^. #cardinality,
           format = upgradePreV02FieldFormat <$> rule ^. #format,
+          path = Nothing,
           when = rule ^. #when
         }
 
@@ -1300,6 +1471,7 @@ upgradeNestedProfileFrontmatter previous =
           elementFields = upgradeNestedProfileRules <$> rule ^. #elementFields,
           objectFields = Nothing,
           reference = Nothing,
+          path = Nothing,
           when = Nothing
         }
     upgradeNestedProfileRules rules =
@@ -1315,6 +1487,7 @@ upgradeNestedProfileFrontmatter previous =
           allowedValues = rule ^. #allowedValues,
           cardinality = rule ^. #cardinality,
           format = upgradePreV02FieldFormat <$> rule ^. #format,
+          path = Nothing,
           when = Nothing
         }
 
@@ -1336,6 +1509,7 @@ upgradeFormatFrontmatter previous =
           elementFields = Nothing,
           objectFields = Nothing,
           reference = Nothing,
+          path = Nothing,
           when = Nothing
         }
 
@@ -1357,6 +1531,7 @@ upgradeCardinalityFrontmatter previous =
           elementFields = Nothing,
           objectFields = Nothing,
           reference = Nothing,
+          path = Nothing,
           when = Nothing
         }
 
@@ -1378,7 +1553,33 @@ upgradeVocabularyFrontmatter previous =
           elementFields = Nothing,
           objectFields = Nothing,
           reference = Nothing,
+          path = Nothing,
           when = Nothing
+        }
+
+upgradePrePathProfile :: PrePathProfileSpec -> ProfileSpec
+upgradePrePathProfile previous =
+  ProfileSpec
+    { name = previous ^. #name,
+      description = previous ^. #description,
+      okfVersion = previous ^. #okfVersion,
+      frontmatter = upgradePrePathProfileFrontmatter (previous ^. #frontmatter),
+      allowUnknownTypes = previous ^. #allowUnknownTypes,
+      allowUnknownFields = previous ^. #allowUnknownFields,
+      idField = previous ^. #idField,
+      types = map upgradeRule (previous ^. #types)
+    }
+  where
+    upgradeRule rule =
+      TypeRule
+        { type_ = rule ^. #type_,
+          description = rule ^. #description,
+          frontmatter = upgradePrePathProfileFrontmatter (rule ^. #frontmatter),
+          pathPattern = rule ^. #pathPattern,
+          resourceScheme = rule ^. #resourceScheme,
+          requireSchemaSection = rule ^. #requireSchemaSection,
+          schemaColumns = rule ^. #schemaColumns,
+          idPrefix = rule ^. #idPrefix
         }
 
 upgradePreActorProfile :: PreActorProfileSpec -> ProfileSpec
@@ -1651,7 +1852,7 @@ upgradeLegacyProfile legacy =
       types = map upgradeRule (legacy ^. #types)
     }
   where
-    undocumented key = FieldRule {field = key, description = Nothing, allowedValues = [], cardinality = Any, format = Nothing, elementFields = Nothing, objectFields = Nothing, reference = Nothing, when = Nothing}
+    undocumented key = FieldRule {field = key, description = Nothing, allowedValues = [], cardinality = Any, format = Nothing, elementFields = Nothing, objectFields = Nothing, reference = Nothing, path = Nothing, when = Nothing}
     upgradeRule rule =
       TypeRule
         { type_ = rule ^. #type_,
@@ -1667,8 +1868,8 @@ upgradeLegacyProfile legacy =
 -- | Load and decode a Dhall profile descriptor from a file path. Any evaluation
 -- or decoding failure is captured as a human-readable 'Left'.
 --
--- The pre-actor shape, pre-object shape, reference-aware shape, condition-aware
--- shape, bounded-nested shape, EP-4
+-- The pre-path shape, pre-actor shape, pre-object shape, reference-aware shape,
+-- condition-aware shape, bounded-nested shape, EP-4
 -- format shape, EP-3 cardinality shape, EP-2 vocabulary shape, type-aware EP-1
 -- shape, self-documenting shape, and okf 0.2.x shape are accepted by frozen
 -- fallback decoders and upgraded
@@ -1680,60 +1881,64 @@ loadProfileFile path = do
   case current of
     Right spec -> pure (Right spec)
     Left currentError -> do
-      preActor <- tryDecode (Dhall.inputFile auto path)
-      case preActor of
-        Right preActorSpec -> pure (Right (upgradePreActorProfile preActorSpec))
-        Left _preActorError -> do
-          preObject <- tryDecode (Dhall.inputFile auto path)
-          case preObject of
-            Right preObjectSpec -> pure (Right (upgradePreObjectProfile preObjectSpec))
-            Left _preObjectError -> do
-              referenceAware <- tryDecode (Dhall.inputFile auto path)
-              case referenceAware of
-                Right referenceSpec -> pure (Right (upgradeReferenceProfile referenceSpec))
-                Left _referenceError -> do
-                  conditional <- tryDecode (Dhall.inputFile auto path)
-                  case conditional of
-                    Right conditionalSpec -> pure (Right (upgradeConditionalProfile conditionalSpec))
-                    Left _conditionalError -> do
-                      nested <- tryDecode (Dhall.inputFile auto path)
-                      case nested of
-                        Right nestedSpec -> pure (Right (upgradeNestedProfile nestedSpec))
-                        Left _nestedError -> do
-                          formatted <- tryDecode (Dhall.inputFile auto path)
-                          case formatted of
-                            Right formatSpec -> pure (Right (upgradeFormatProfile formatSpec))
-                            Left _formatError -> do
-                              cardinality <- tryDecode (Dhall.inputFile auto path)
-                              case cardinality of
-                                Right cardinalitySpec -> pure (Right (upgradeCardinalityProfile cardinalitySpec))
-                                Left _cardinalityError -> do
-                                  vocabulary <- tryDecode (Dhall.inputFile auto path)
-                                  case vocabulary of
-                                    Right vocabularySpec -> pure (Right (upgradeVocabularyProfile vocabularySpec))
-                                    Left _vocabularyError -> do
-                                      typeAware <- tryDecode (Dhall.inputFile auto path)
-                                      case typeAware of
-                                        Right typeAwareSpec -> pure (Right (upgradeTypeAwareProfile typeAwareSpec))
-                                        Left _typeAwareError -> do
-                                          described <- tryDecode (Dhall.inputFile auto path)
-                                          case described of
-                                            Right describedSpec -> pure (Right (upgradeDescribedProfile describedSpec))
-                                            Left _describedError -> do
-                                              legacy <- tryDecode (Dhall.inputFile auto path)
-                                              pure $ case legacy of
-                                                Right legacySpec -> Right (upgradeLegacyProfile legacySpec)
-                                                Left _legacyError -> Left currentError
+      prePath <- tryDecode (Dhall.inputFile auto path)
+      case prePath of
+        Right prePathSpec -> pure (Right (upgradePrePathProfile prePathSpec))
+        Left _prePathError -> do
+          preActor <- tryDecode (Dhall.inputFile auto path)
+          case preActor of
+            Right preActorSpec -> pure (Right (upgradePreActorProfile preActorSpec))
+            Left _preActorError -> do
+              preObject <- tryDecode (Dhall.inputFile auto path)
+              case preObject of
+                Right preObjectSpec -> pure (Right (upgradePreObjectProfile preObjectSpec))
+                Left _preObjectError -> do
+                  referenceAware <- tryDecode (Dhall.inputFile auto path)
+                  case referenceAware of
+                    Right referenceSpec -> pure (Right (upgradeReferenceProfile referenceSpec))
+                    Left _referenceError -> do
+                      conditional <- tryDecode (Dhall.inputFile auto path)
+                      case conditional of
+                        Right conditionalSpec -> pure (Right (upgradeConditionalProfile conditionalSpec))
+                        Left _conditionalError -> do
+                          nested <- tryDecode (Dhall.inputFile auto path)
+                          case nested of
+                            Right nestedSpec -> pure (Right (upgradeNestedProfile nestedSpec))
+                            Left _nestedError -> do
+                              formatted <- tryDecode (Dhall.inputFile auto path)
+                              case formatted of
+                                Right formatSpec -> pure (Right (upgradeFormatProfile formatSpec))
+                                Left _formatError -> do
+                                  cardinality <- tryDecode (Dhall.inputFile auto path)
+                                  case cardinality of
+                                    Right cardinalitySpec -> pure (Right (upgradeCardinalityProfile cardinalitySpec))
+                                    Left _cardinalityError -> do
+                                      vocabulary <- tryDecode (Dhall.inputFile auto path)
+                                      case vocabulary of
+                                        Right vocabularySpec -> pure (Right (upgradeVocabularyProfile vocabularySpec))
+                                        Left _vocabularyError -> do
+                                          typeAware <- tryDecode (Dhall.inputFile auto path)
+                                          case typeAware of
+                                            Right typeAwareSpec -> pure (Right (upgradeTypeAwareProfile typeAwareSpec))
+                                            Left _typeAwareError -> do
+                                              described <- tryDecode (Dhall.inputFile auto path)
+                                              case described of
+                                                Right describedSpec -> pure (Right (upgradeDescribedProfile describedSpec))
+                                                Left _describedError -> do
+                                                  legacy <- tryDecode (Dhall.inputFile auto path)
+                                                  pure $ case legacy of
+                                                    Right legacySpec -> Right (upgradeLegacyProfile legacySpec)
+                                                    Left _legacyError -> Left currentError
   where
-    -- The twelve calls look identical but are inferred at distinct result types;
-    -- @auto@ picks the corresponding current or frozen decoder.
+    -- The thirteen calls look identical but are inferred at distinct result
+    -- types; @auto@ picks the corresponding current or frozen decoder.
     tryDecode :: IO a -> IO (Either Text a)
     tryDecode action =
       (Right <$> action)
         `catch` \(exception :: SomeException) -> pure (Left (Text.pack (show exception)))
 
 -- | Does an already-evaluated Dhall expression decode as a profile? Tries the
--- current schema, then the pre-actor, pre-object, reference-aware,
+-- current schema, then the pre-path, pre-actor, pre-object, reference-aware,
 -- condition-aware, bounded-nested, EP-4, EP-3, EP-2, EP-1, self-documenting, and
 -- okf 0.2.x schemas, so the published @okf-profiles@ package still enumerates.
 -- Uses 'Dhall.rawInput', which normalizes and runs the decoder's extractor
@@ -1741,6 +1946,7 @@ loadProfileFile path = do
 decodeProfileExpr :: Expr Src Void -> Maybe ProfileSpec
 decodeProfileExpr expression =
   Dhall.rawInput Dhall.auto expression
+    <|> fmap upgradePrePathProfile (Dhall.rawInput Dhall.auto expression)
     <|> fmap upgradePreActorProfile (Dhall.rawInput Dhall.auto expression)
     <|> fmap upgradePreObjectProfile (Dhall.rawInput Dhall.auto expression)
     <|> fmap upgradeReferenceProfile (Dhall.rawInput Dhall.auto expression)
@@ -1797,6 +2003,9 @@ data ProfileDefinitionError
   | -- | a rule declares @objectFields@ alongside an explicit scalar or list
     -- cardinality; an object is neither, so the pairing cannot be satisfied
     ObjectFieldsRequireObjectShape (Maybe Text) FieldPath Cardinality
+  | -- | one rule declares both a document-handle policy and a path policy;
+    -- a value cannot be resolved as both a handle and a path
+    PathReferenceWithHandleReference (Maybe Text) FieldPath
   deriving stock (Generic, Eq, Ord, Show)
 
 -- | Whether a 'PresenceClause' demands a key or merely recommends it. There is
@@ -1827,7 +2036,8 @@ data EffectiveFieldRule = EffectiveFieldRule
     format :: !(Maybe FieldFormat),
     elementFields :: !(Maybe (Map Text EffectiveFieldRule)),
     objectFields :: !(Maybe (Map Text EffectiveFieldRule)),
-    reference :: !(Maybe HandleReferenceRule)
+    reference :: !(Maybe HandleReferenceRule),
+    path :: !(Maybe PathReferenceRule)
   }
   deriving stock (Generic, Eq, Show)
 
@@ -1893,6 +2103,18 @@ fieldRuleFormat rule = rule ^. #format
 -- | The document-reference policy for this key, if any.
 fieldRuleReference :: EffectiveFieldRule -> Maybe HandleReferenceRule
 fieldRuleReference rule = rule ^. #reference
+
+-- | The path-valued policy for this key, if any. Distinct from
+-- 'fieldRuleReference': a handle resolves against the bundle's document-ID
+-- index, a path against its concept tree. A rule never carries both — compiling
+-- one that does is a 'PathReferenceWithHandleReference' definition error — so a
+-- consumer can read whichever is present without disambiguating.
+--
+-- Unlike 'fieldRuleReference' this can be present on a rule taken from
+-- 'fieldRuleElementFields' or 'fieldRuleObjectFields', because
+-- @sources[].resource@ is the field the policy exists for.
+fieldRulePath :: EffectiveFieldRule -> Maybe PathReferenceRule
+fieldRulePath rule = rule ^. #path
 
 -- | Rules for the flat object stored in each element of a list-valued key,
 -- keyed by nested key name, or 'Nothing' when the key declares no nested shape.
@@ -2029,9 +2251,10 @@ compileProfile rawSpec =
       OptionalFieldWithCondition scope target ->
         let (scopeRank, typeName) = scopeKey scope
          in (scopeRank, typeName, 19, renderFieldPathKey target, 0)
-      ObjectFieldsRequireObjectShape scope path cardinality ->
+      ObjectFieldsRequireObjectShape scope fieldPath cardinality ->
         let (scopeRank, typeName) = scopeKey scope
-         in (scopeRank, typeName, 20, renderFieldPathKey path, fromEnum (cardinality == Scalar))
+         in (scopeRank, typeName, 20, renderFieldPathKey fieldPath, fromEnum (cardinality == Scalar))
+      PathReferenceWithHandleReference scope target -> referenceErrorKey scope target 21 ""
 
     scopeKey Nothing = (0, "")
     scopeKey (Just ctype) = (1, ctype)
@@ -2282,7 +2505,28 @@ compileProfile rawSpec =
             : [(Just (rule ^. #type_), rule ^. #frontmatter) | rule <- rawSpec ^. #types]
 
         rawReferenceErrors (scope, rules) =
-          concatMap (fieldReferenceErrors scope) (rules ^. #required <> rules ^. #recommended <> rules ^. #optional)
+          concatMap (fieldReferenceErrors scope) topLevelRules
+            <> concatMap (fieldPathErrors scope) topLevelRules
+            -- Path rules are declarable at nested and object scope too, which
+            -- is where @sources[].resource@ lives, so the walk descends. It
+            -- hangs on 'declaredNestedRuleSets' rather than iterating
+            -- @elementFields@ and @objectFields@ separately, because
+            -- @mk.recordOrList@ declares one rule set under both names and a
+            -- @FieldPath@ such as @sources.resource@ cannot tell them apart.
+            <> [ nestedError
+               | rule <- topLevelRules,
+                 nestedRules <- declaredNestedRuleSets rule,
+                 nestedRule <- nestedRules ^. #required <> nestedRules ^. #recommended <> nestedRules ^. #optional,
+                 nestedError <-
+                   pathPolicyErrors
+                     scope
+                     (nestedDefinitionPath (rule ^. #field) (nestedRule ^. #field))
+                     (nestedRule ^. #format)
+                     Nothing
+                     (nestedRule ^. #path)
+               ]
+          where
+            topLevelRules = rules ^. #required <> rules ^. #recommended <> rules ^. #optional
 
         fieldReferenceErrors scope rule =
           case rule ^. #reference of
@@ -2296,6 +2540,31 @@ compileProfile rawSpec =
                     <> [ReferenceRequiresIdField scope path | isNothing (rawSpec ^. #idField)]
                     <> [InvalidExternalReferenceScheme scope path scheme | scheme <- schemes, not (validUriScheme scheme)]
                     <> [ReferenceWithFormat scope path fieldFormat | Just fieldFormat <- [rule ^. #format]]
+
+        fieldPathErrors scope rule =
+          pathPolicyErrors
+            scope
+            (topLevelFieldPath (rule ^. #field))
+            (rule ^. #format)
+            (rule ^. #reference)
+            (rule ^. #path)
+
+        -- The three ways a path policy can be incoherent on its own. Two reuse
+        -- the handle-reference constructors because the claim is identical: a
+        -- scheme that is not a legal URI scheme, and a structural interpretation
+        -- of a value paired with a textual format that would be checked against
+        -- the same text. The third is genuinely new — a value cannot be resolved
+        -- as both a @PREFIX-N@ handle and a §6.2 path — and cannot arise at
+        -- nested scope, where 'NestedFieldRule' carries no handle policy.
+        pathPolicyErrors scope path declaredFormat handlePolicy = \case
+          Nothing -> []
+          Just policy ->
+            [ InvalidExternalReferenceScheme scope path scheme
+            | scheme <- deduplicateSchemes (policy ^. #externalUriSchemes),
+              not (validUriScheme scheme)
+            ]
+              <> [ReferenceWithFormat scope path fieldFormat | Just fieldFormat <- [declaredFormat]]
+              <> [PathReferenceWithHandleReference scope path | isJust handlePolicy]
 
         mergedReferenceErrors typeRule =
           [ ConflictingReferencePrefix (typeRule ^. #type_) (topLevelFieldPath key) (profilePolicy ^. #localPrefix) (typePolicy ^. #localPrefix)
@@ -2357,7 +2626,8 @@ compileOptionalFieldRule rule =
       format = rule ^. #format,
       elementFields = compileNestedRules <$> rule ^. #elementFields,
       objectFields = compileNestedRules <$> rule ^. #objectFields,
-      reference = compileReferenceRule <$> rule ^. #reference
+      reference = compileReferenceRule <$> rule ^. #reference,
+      path = compilePathRule <$> rule ^. #path
     }
 
 -- | The cardinality a rule with no declared one takes from its format.
@@ -2416,7 +2686,11 @@ compileOptionalNestedFieldRule rule =
       -- Nested rules stay depth-bounded: 'NestedFieldRule' has no object member,
       -- so a profile cannot constrain @sources[0].usage_window.from@.
       objectFields = Nothing,
-      reference = Nothing
+      -- Still 'Nothing': 'NestedFieldRule' carries no document-handle policy.
+      reference = Nothing,
+      -- But it does carry a path policy, which is the point of the member —
+      -- @sources[].resource@ is only reachable here.
+      path = compilePathRule <$> rule ^. #path
     }
 
 compileNestedFieldRule :: FieldRequirement -> NestedFieldRule -> EffectiveFieldRule
@@ -2438,7 +2712,8 @@ mergeEffectiveFieldRule profileRule typeRule =
       format = fromMaybe (profileRule ^. #format) (mergeFieldFormat (profileRule ^. #format) (typeRule ^. #format)),
       elementFields = mergeNestedRuleMaps (profileRule ^. #elementFields) (typeRule ^. #elementFields),
       objectFields = mergeNestedRuleMaps (profileRule ^. #objectFields) (typeRule ^. #objectFields),
-      reference = fromMaybe (profileRule ^. #reference) (mergeReferenceRule (profileRule ^. #reference) (typeRule ^. #reference))
+      reference = fromMaybe (profileRule ^. #reference) (mergeReferenceRule (profileRule ^. #reference) (typeRule ^. #reference)),
+      path = mergePathRule (profileRule ^. #path) (typeRule ^. #path)
     }
 
 -- | Normalize a declared condition for storage in a 'PresenceClause': the shape
@@ -2459,6 +2734,34 @@ compileReferenceRule policy =
       externalUriSchemes = map Text.toCaseFold (deduplicateSchemes (policy ^. #externalUriSchemes)),
       allowSelf = policy ^. #allowSelf
     }
+
+compilePathRule :: PathReferenceRule -> PathReferenceRule
+compilePathRule policy =
+  PathReferenceRule
+    { externalUriSchemes = map Text.toCaseFold (deduplicateSchemes (policy ^. #externalUriSchemes)),
+      allowSelf = policy ^. #allowSelf
+    }
+
+-- | Combine a profile-scope path policy with a type-scope one: intersect the
+-- permitted schemes and require both scopes to allow self-reference.
+--
+-- Unlike 'mergeReferenceRule' this is total and needs no @Maybe@-of-@Maybe@
+-- result, because a path policy has no @localPrefix@ — the one thing two
+-- handle policies can flatly disagree about. Narrowing to the intersection is
+-- the same direction 'mergeVocabulary' takes: a type rule tightens the
+-- profile-wide rule and never loosens it.
+mergePathRule :: Maybe PathReferenceRule -> Maybe PathReferenceRule -> Maybe PathReferenceRule
+mergePathRule Nothing typePolicy = typePolicy
+mergePathRule profilePolicy Nothing = profilePolicy
+mergePathRule (Just profilePolicy) (Just typePolicy) =
+  Just
+    PathReferenceRule
+      { externalUriSchemes =
+          filter
+            (`Set.member` Set.fromList (typePolicy ^. #externalUriSchemes))
+            (profilePolicy ^. #externalUriSchemes),
+        allowSelf = profilePolicy ^. #allowSelf && typePolicy ^. #allowSelf
+      }
 
 -- | Merge one scope's map of member rules with another's. Used for both
 -- @elementFields@ and @objectFields@; it was named for the former until the
@@ -2703,8 +3006,14 @@ data ProfileViolation
     MalformedDocumentReference ConceptId FieldPath Value
   | -- | an absolute external URI uses a scheme the profile did not permit
     ExternalReferenceSchemeNotAllowed ConceptId FieldPath Text [Text]
-  | -- | a local handle resolves to the concept carrying the reference
+  | -- | a local handle, or a bundle path, resolves to the concept carrying it
     SelfDocumentReference ConceptId FieldPath Text
+  | -- | a path-valued field's value is not one of the three shapes of §6.2
+    MalformedPathReference ConceptId FieldPath Value
+  | -- | a relative path climbs above the bundle root
+    PathEscapesBundle ConceptId FieldPath Text
+  | -- | a bundle path names a concept that does not exist in this bundle
+    DanglingPathReference ConceptId FieldPath Text
   | -- | a closed profile does not declare this top-level field
     FieldNotInProfile ConceptId Text
   | -- | a declared list element is not an object record
@@ -2738,6 +3047,11 @@ validateProfile validationProfile compiled concepts =
     sortedConcepts = List.sortOn (renderConceptId . conceptIdOf) concepts
     rulesByType = [(rule ^. #type_, rule) | rule <- spec ^. #types]
     validDocumentIdIndex = buildValidDocumentIdIndex spec rulesByType sortedConcepts
+    -- Every concept in the bundle, built once, so a path rule can decide
+    -- whether a resolved @.md@ target is there. This is the whole of what
+    -- profile validation can see: a 'Concept' is a non-reserved @.md@ file, so
+    -- there is deliberately no way to ask about @references/revenue.py@.
+    knownConceptIds = Set.fromList (map conceptIdOf sortedConcepts)
 
     checkConcept concept =
       let cid = conceptIdOf concept
@@ -2763,10 +3077,12 @@ validateProfile validationProfile compiled concepts =
                 <> maybe [] (vocabularyViolations key rule) actual
                 <> maybe [] (formatViolations key rule) actual
                 <> maybe [] (referenceViolations key rule) actual
+                <> maybe [] (pathViolations (topLevelFieldPath key) rule) actual
             FieldPresent actual ->
               vocabularyViolations key rule actual
                 <> formatViolations key rule actual
                 <> referenceViolations key rule actual
+                <> pathViolations (topLevelFieldPath key) rule actual
                 <> nestedViolations key rule actual
                 <> objectViolations key rule actual
             FieldWrongShape actual -> [CardinalityMismatch cid (topLevelFieldPath key) (rule ^. #cardinality) actual]
@@ -2793,6 +3109,14 @@ validateProfile validationProfile compiled concepts =
           case rule ^. #reference of
             Nothing -> []
             Just policy -> validateReferenceValue validDocumentIdIndex cid (topLevelFieldPath key) policy actual
+
+        -- Takes a 'FieldPath' rather than a key because it is shared by all
+        -- three scopes: a top-level key, a member of a list element, and a
+        -- member of an object-valued mapping.
+        pathViolations fieldPath rule actual =
+          case rule ^. #path of
+            Nothing -> []
+            Just policy -> validatePathValue knownConceptIds cid fieldPath policy actual
 
         nestedViolations parentKey parentRule = \case
           Array elementValues
@@ -2831,9 +3155,11 @@ validateProfile validationProfile compiled concepts =
                   nestedPresenceViolations members path rule
                     <> maybe [] (nestedVocabularyViolations path rule) actual
                     <> maybe [] (nestedFormatViolations path rule) actual
+                    <> maybe [] (pathViolations path rule) actual
                 FieldPresent actual ->
                   nestedVocabularyViolations path rule actual
                     <> nestedFormatViolations path rule actual
+                    <> pathViolations path rule actual
                 FieldWrongShape actual -> [CardinalityMismatch cid path (rule ^. #cardinality) actual]
 
         nestedPresenceViolations objectFields path rule =
@@ -2932,6 +3258,53 @@ validateReferenceText validOwners sourceConcept path policy rawReference =
           where
             normalizedScheme = Text.toCaseFold (Text.dropWhileEnd (== ':') (Text.pack (uriScheme parsed)))
         Nothing -> [MalformedDocumentReference sourceConcept path (String rawReference)]
+
+-- | Check one path-valued frontmatter value, at any scope. A list is checked
+-- element-wise so that a diagnostic names @sources[1].resource@ rather than the
+-- whole list.
+validatePathValue :: Set ConceptId -> ConceptId -> FieldPath -> PathReferenceRule -> Value -> [ProfileViolation]
+validatePathValue knownConcepts sourceConcept path policy = \case
+  String rawPath -> validatePathText knownConcepts sourceConcept path policy rawPath
+  Array values ->
+    concat
+      [ case value of
+          String rawPath ->
+            validatePathText knownConcepts sourceConcept (appendArrayIndex path elementIndex) policy rawPath
+          _ -> [MalformedPathReference sourceConcept (appendArrayIndex path elementIndex) value]
+      | (elementIndex, value) <- zip [0 ..] (Vector.toList values)
+      ]
+  actual -> [MalformedPathReference sourceConcept path actual]
+
+-- | Check one path value against the §6.2 grammar and the profile's policy.
+--
+-- Every diagnostic carries the raw text the author wrote rather than the
+-- collapsed path okf computed from it, so the message names something findable
+-- in the file. Existence is decided only for a @.md@ target; see
+-- 'validateProfile'.
+validatePathText :: Set ConceptId -> ConceptId -> FieldPath -> PathReferenceRule -> Text -> [ProfileViolation]
+validatePathText knownConcepts sourceConcept path policy rawPath =
+  case classifyPathReference sourceConcept rawPath of
+    ExternalUrl scheme
+      | scheme `elem` policy ^. #externalUriSchemes -> []
+      | otherwise ->
+          [ExternalReferenceSchemeNotAllowed sourceConcept path scheme (policy ^. #externalUriSchemes)]
+    EscapesBundle -> [PathEscapesBundle sourceConcept path rawPath]
+    MalformedPath -> [MalformedPathReference sourceConcept path (String rawPath)]
+    BundlePath resolved
+      -- A path to anything other than a concept is accepted without a check.
+      -- OKF v0.2 §6.3's own example is @references/attesters/revenue.py@, and
+      -- 'validateProfile' never sees a file that is not a concept, so reporting
+      -- one as dangling would be a claim okf did not check.
+      | FilePath.takeExtension resolved /= ".md" -> []
+      | otherwise ->
+          case conceptIdFromFilePath resolved of
+            Left _ -> [MalformedPathReference sourceConcept path (String rawPath)]
+            Right target
+              | target == sourceConcept,
+                not (policy ^. #allowSelf) ->
+                  [SelfDocumentReference sourceConcept path rawPath]
+              | target `Set.member` knownConcepts -> []
+              | otherwise -> [DanglingPathReference sourceConcept path rawPath]
 
 appendArrayIndex :: FieldPath -> Int -> FieldPath
 appendArrayIndex (FieldPath pathSegments) elementIndex =

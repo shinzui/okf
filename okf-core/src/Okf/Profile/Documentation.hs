@@ -378,7 +378,8 @@ renderFieldRule level key rule =
       [ "- Allowed values: " <> codeListOr "any" (fieldRuleAllowedValues rule),
         "- Cardinality: " <> renderCardinalityName (fieldRuleCardinality rule),
         "- Format: " <> maybe "none" renderFieldFormatName (fieldRuleFormat rule),
-        "- Reference: " <> maybe "none" renderReference (fieldRuleReference rule)
+        "- Reference: " <> maybe "none" renderReference (fieldRuleReference rule),
+        "- Path: " <> maybe "none" renderPathRule (fieldRulePath rule)
       ]
         <> conditionBullets
         <> objectFieldBullets
@@ -420,17 +421,27 @@ renderFieldRule level key rule =
 
 -- | Nested element rules are depth-bounded at one level, so this is flat by
 -- construction: 'fieldRuleElementFields' on a nested rule is always 'Nothing'.
+--
+-- The path clause is emitted only when the member declares one, unlike the
+-- fixed bullet list of 'renderFieldRule'. This line is already a dense
+-- semicolon-separated run and a member declares no path policy far more often
+-- than not, so a @path: none@ on every member of every record would cost more
+-- than it says. A nested path policy is nevertheless the motivating case for
+-- path rules — @sources[].resource@ lives here — so it must be visible when it
+-- is there.
 renderElementField :: Text -> EffectiveFieldRule -> Text
 renderElementField key rule =
   code key
     <> " — "
     <> Text.intercalate
       "; "
-      [ presencePhrase rule,
-        "allowed values: " <> codeListOr "any" (fieldRuleAllowedValues rule),
-        "cardinality: " <> renderCardinalityName (fieldRuleCardinality rule),
-        "format: " <> maybe "none" renderFieldFormatName (fieldRuleFormat rule)
-      ]
+      ( [ presencePhrase rule,
+          "allowed values: " <> codeListOr "any" (fieldRuleAllowedValues rule),
+          "cardinality: " <> renderCardinalityName (fieldRuleCardinality rule),
+          "format: " <> maybe "none" renderFieldFormatName (fieldRuleFormat rule)
+        ]
+          <> foldMap (\policy -> ["path: " <> renderPathRule policy]) (fieldRulePath rule)
+      )
     <> maybe "" (" — " <>) (nonBlank (fieldRuleDescription rule))
 
 -- | How a key's presence reads in a heading: @required@, @recommended@,
@@ -472,6 +483,24 @@ renderReference policy =
         [] -> "external URIs not allowed"
         [single] -> "external URIs with scheme " <> code single
         schemes -> "external URIs with schemes " <> codeListOr "any" schemes
+
+-- | A path policy in prose, deliberately parallel to 'renderReference' so the
+-- two rule kinds read as siblings. It says what okf resolves as well as what it
+-- permits, because the @.md@-only existence check is the surprising part.
+renderPathRule :: PathReferenceRule -> Text
+renderPathRule policy =
+  Text.intercalate
+    "; "
+    [ "bundle paths resolved to concepts",
+      externalPhrase,
+      if policy ^. #allowSelf then "self-reference allowed" else "self-reference not allowed"
+    ]
+  where
+    externalPhrase =
+      case policy ^. #externalUriSchemes of
+        [] -> "external URLs not allowed"
+        [single] -> "external URLs with scheme " <> code single
+        schemes -> "external URLs with schemes " <> codeListOr "any" schemes
 
 -- * Small shared helpers
 
