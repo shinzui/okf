@@ -14,7 +14,7 @@ import Okf.Cli.Fzf.Selector (conceptCandidates, conceptPreviewCommand, parseBund
 import Okf.Cli.Help (HelpTopic (..), helpTopics)
 import Okf.ConceptId (parseConceptId, renderConceptId)
 import Okf.Document (Attester (..), Executor (..), Parameter (..), parseDocument)
-import Okf.Index (OkfVersion (..), VersionDeclaration (..))
+import Okf.Index (OkfVersion (..), VersionDeclaration (..), parseOkfVersion, readBundleVersion)
 import Okf.Profile (Cardinality (..), FieldCondition (..), FieldFormat (..), FieldRule (..), FrontmatterRules (..), HandleReferenceRule (..), NestedFieldRule (..), NestedRules (..), PathReferenceRule (..), ProfileSpec (..), TypeRule (..), compileProfile, loadProfileFile, validateProfile)
 import Okf.Profile.Registry (RegistryEntry (..))
 import Okf.Validation (ValidationProfile (..), validateBundle)
@@ -36,6 +36,7 @@ main = do
   assistCommandBuilder <- testAssistCommandBuilder
   assistModelOverride <- testAssistModelOverride
   profileDocumentWrites <- testProfileDocumentWritesBundle
+  profileDocumentDeclaresVersion <- testProfileDocumentDeclaresOkfVersion
   profileDocMatchesExample <- testProfileDocumentationMatchesCommittedExample
   profileDocConformsToMeta <- testProfileDocumentationConformsToMetaProfile
   referenceProfileCompiles <- testReferenceProfileCompiles
@@ -248,7 +249,39 @@ main = do
                     profilePath = Nothing,
                     outputPath = Just "d",
                     write = True,
-                    timestamp = Just "2026-07-31T00:00:00Z"
+                    timestamp = Just "2026-07-31T00:00:00Z",
+                    generatedBy = Nothing,
+                    generatedAt = Nothing,
+                    okfVersion = Nothing
+                  }
+            ),
+          -- The three provenance and version flags reach the options record.
+          parseProfileMatches
+            [ "profile",
+              "document",
+              "--profile",
+              "p.dhall",
+              "--out",
+              "d",
+              "--write",
+              "--generated-by",
+              "okf/0.5.0.0",
+              "--generated-at",
+              "2026-08-01T00:00:00Z",
+              "--okf-version",
+              "0.2"
+            ]
+            ( ProfileDocument
+                ProfileDocumentOptions
+                  { registryRef = Nothing,
+                    export = Nothing,
+                    profilePath = Just "p.dhall",
+                    outputPath = Just "d",
+                    write = True,
+                    timestamp = Nothing,
+                    generatedBy = Just "okf/0.5.0.0",
+                    generatedAt = Just "2026-08-01T00:00:00Z",
+                    okfVersion = Just "0.2"
                   }
             ),
           parseProfileMatches
@@ -260,7 +293,10 @@ main = do
                     profilePath = Nothing,
                     outputPath = Nothing,
                     write = False,
-                    timestamp = Nothing
+                    timestamp = Nothing,
+                    generatedBy = Nothing,
+                    generatedAt = Nothing,
+                    okfVersion = Nothing
                   }
             ),
           parseProfileMatches
@@ -272,7 +308,10 @@ main = do
                     profilePath = Just "p.dhall",
                     outputPath = Nothing,
                     write = False,
-                    timestamp = Nothing
+                    timestamp = Nothing,
+                    generatedBy = Nothing,
+                    generatedAt = Nothing,
+                    okfVersion = Nothing
                   }
             ),
           parseSucceeds ["trust", "bundle"],
@@ -287,6 +326,7 @@ main = do
           parseFails ["hello"],
           logAddWrites,
           profileDocumentWrites,
+          profileDocumentDeclaresVersion,
           profileDocMatchesExample,
           profileDocConformsToMeta,
           referenceProfileCompiles,
@@ -789,15 +829,26 @@ readMarkdownTree root = List.sortOn fst <$> go ""
 
 -- | Options that regenerate the committed example into @destination@. Kept in
 -- one place so the drift test and the strict test cannot disagree about them.
-exampleDocumentOptions :: FilePath -> FilePath -> Maybe Text.Text -> ProfileDocumentOptions
-exampleDocumentOptions descriptor destination stamp =
+-- | The last argument is the OKF version to declare in the generated bundle's
+-- root index, or 'Nothing' to declare none. The provenance flags are left unset
+-- so every caller exercises the default @generated.by@.
+exampleDocumentOptions ::
+  FilePath ->
+  FilePath ->
+  Maybe Text.Text ->
+  Maybe Text.Text ->
+  ProfileDocumentOptions
+exampleDocumentOptions descriptor destination stamp version =
   ProfileDocumentOptions
     { registryRef = Nothing,
       export = Nothing,
       profilePath = Just descriptor,
       outputPath = Just destination,
       write = True,
-      timestamp = stamp
+      timestamp = stamp,
+      generatedBy = Nothing,
+      generatedAt = Nothing,
+      okfVersion = version
     }
 
 -- | The committed @examples/postgresql-profile@ must be exactly what the
@@ -815,7 +866,7 @@ testProfileDocumentationMatchesCommittedExample =
       scratch <- createTempDirectory temporaryDirectory "okf-cli-profile-doc-drift"
       bracket (pure scratch) removeDirectoryRecursive $ \root -> do
         let destination = root </> "regenerated"
-        runCommand (Profile (ProfileDocument (exampleDocumentOptions descriptor destination Nothing)))
+        runCommand (Profile (ProfileDocument (exampleDocumentOptions descriptor destination Nothing Nothing)))
         regenerated <- readMarkdownTree destination
         let changed = [path | (path, content) <- committed, lookup path regenerated /= Just content]
             added = [path | (path, _) <- regenerated, path `notElem` map fst committed]
@@ -1038,7 +1089,7 @@ testProfileDocumentationStrictWithTimestamp =
         runCommand
           ( Profile
               ( ProfileDocument
-                  (exampleDocumentOptions descriptor destination (Just "2026-07-31T00:00:00Z"))
+                  (exampleDocumentOptions descriptor destination (Just "2026-07-31T00:00:00Z") Nothing)
               )
           )
         walked <- walkBundle destination
@@ -1082,7 +1133,10 @@ testProfileDocumentWritesBundle =
                 profilePath = Just descriptorPath,
                 outputPath = Just destination,
                 write = True,
-                timestamp = Nothing
+                timestamp = Nothing,
+                generatedBy = Nothing,
+                generatedAt = Nothing,
+                okfVersion = Nothing
               }
       runCommand (Profile (ProfileDocument options))
       firstProfile <- Text.IO.readFile (destination </> "profile.md")
@@ -1096,13 +1150,51 @@ testProfileDocumentWritesBundle =
       let walkedIds = case walked of
             Left _ -> []
             Right concepts -> map (renderConceptId . conceptIdOf) concepts
+      -- Provenance must survive the whole write path, not merely the pure
+      -- renderer: this is the frontmatter a user actually gets on disk.
+      let carriesDefaultProvenance =
+            Text.isInfixOf "generated:\n  by: process:okf-profile-document" firstProfile
+      unless carriesDefaultProvenance $
+        putStrLn ("written profile.md carries no default generated.by:\n" <> Text.unpack firstProfile)
       pure
         ( typeWritten
             && rootIndexWritten
             && typeIndexWritten
+            && carriesDefaultProvenance
             && firstProfile == secondProfile
             && walkedIds == ["profile", "types/decision-record"]
         )
+
+-- | @--okf-version@ must reach the destination's root index, so a generated
+-- bundle can declare the format version it targets without a second command.
+testProfileDocumentDeclaresOkfVersion :: IO Bool
+testProfileDocumentDeclaresOkfVersion =
+  withRepositoryPath "okf profile document --okf-version declares the version" profileFixture $ \descriptorPath -> do
+    temporaryDirectory <- getTemporaryDirectory
+    root <- createTempDirectory temporaryDirectory "okf-cli-profile-document-version"
+    bracket (pure root) removeDirectoryRecursive $ \scratch -> do
+      let destination = scratch </> "bundle"
+      runCommand
+        ( Profile
+            (ProfileDocument (exampleDocumentOptions descriptorPath destination Nothing (Just "0.2")))
+        )
+      declared <- readBundleVersion destination
+      let expected = Right (VersionDeclared version02) `asTypeOf` declared
+          version02 = case parseOkfVersion "0.2" of
+            Just parsed -> parsed
+            Nothing -> error "0.2 must parse as an OKF version"
+      unless (declared == expected) $
+        putStrLn ("generated root index declares " <> show declared <> ", expected " <> show expected)
+      -- Regenerating without the flag must preserve the declaration rather than
+      -- silently stripping it.
+      runCommand
+        ( Profile
+            (ProfileDocument (exampleDocumentOptions descriptorPath destination Nothing Nothing))
+        )
+      preserved <- readBundleVersion destination
+      unless (preserved == declared) $
+        putStrLn ("regenerating without --okf-version changed the declaration to " <> show preserved)
+      pure (declared == expected && preserved == declared)
 
 testLogAddWritesFile :: IO Bool
 testLogAddWritesFile = do

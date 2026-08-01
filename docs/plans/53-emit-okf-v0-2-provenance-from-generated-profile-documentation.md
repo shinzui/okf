@@ -82,9 +82,12 @@ committed worked example `examples/postgresql-profile/` will be regenerated to m
       the OKF v0.2 `generated` family, defaulting to a version-free process actor, with unit
       tests in `okf-core/test/Main.hs`. `cabal test okf-core` passes, including the three new
       checks and the unchanged byte-stability check.
-- [ ] Milestone 2: `okf profile document` gains `--generated-by`, `--generated-at`, and
-      `--okf-version`, emits `generated` by default, and writes the version declaration
-      into the bundle root `index.md`.
+- [x] Milestone 2 (2026-08-01): `okf profile document` gained `--generated-by`,
+      `--generated-at`, and `--okf-version`, emits `generated` by default, and writes the
+      version declaration into the bundle root `index.md`. The acceptance transcript
+      reproduces exactly: default output plus `--okf-version 0.2` validates strict-clean with
+      `OK: 4 concepts (okf_version 0.2)`. As the plan predicted, `cabal test okf-cli` now
+      fails on the drift check alone, resolved by Milestone 3.
 - [ ] Milestone 3: `docs/profiles/profile-documentation.dhall` declares `okfVersion = "0.2"`
       and requires `generated`; `examples/postgresql-profile/` is regenerated; both
       `okf-cli/test/Main.hs` drift and conformance tests pass against the new shape.
@@ -168,6 +171,16 @@ committed worked example `examples/postgresql-profile/` will be regenerated to m
   replaced, because it is the only check proving the v0.1 spelling still satisfies strict
   authoring on its own; deleting it would silently retire the legacy path that
   `docs/adr/7-okf-v0-1-legacy-fallback-policy.md` promises to keep working.
+  Date: 2026-08-01
+
+
+- Decision: `exampleDocumentOptions` in `okf-cli/test/Main.hs` gained a fourth parameter for
+  the OKF version to declare, rather than hard-coding `Just "0.2"` inside the helper.
+  Rationale: Its two callers want different things.
+  `testProfileDocumentationMatchesCommittedExample` must declare 0.2 to match the committed
+  example, while `testProfileDocumentationStrictWithTimestamp` deliberately validates against
+  `VersionUndeclared` — declaring 0.2 there would make the legacy-`timestamp` lint fire and
+  turn a test about strict authoring into a test about version migration.
   Date: 2026-08-01
 
 

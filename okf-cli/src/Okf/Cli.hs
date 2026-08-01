@@ -41,7 +41,7 @@ import Data.Set qualified as Set
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text.IO
 import Data.Time (defaultTimeLocale, formatTime, getCurrentTime, utctDay)
-import Okf.Actor (renderActor)
+import Okf.Actor (parseActor, renderActor)
 import Okf.Bundle
 import Okf.Cli.Assist (AssistOptions, assistOptionsParser, handleAssistCommand)
 import Okf.Cli.Completions (CompletionsShell, completionsParser, handleCompletions)
@@ -114,6 +114,7 @@ import Okf.Profile
 import Okf.Profile.Documentation
   ( DocumentationError (..),
     DocumentationOptions (..),
+    defaultDocumentationActor,
     defaultDocumentationOptions,
     renderProfileDocumentation,
   )
@@ -271,7 +272,10 @@ data ProfileDocumentOptions = ProfileDocumentOptions
     profilePath :: !(Maybe FilePath),
     outputPath :: !(Maybe FilePath),
     write :: !Bool,
-    timestamp :: !(Maybe Text)
+    timestamp :: !(Maybe Text),
+    generatedBy :: !(Maybe Text),
+    generatedAt :: !(Maybe Text),
+    okfVersion :: !(Maybe Text)
   }
   deriving stock (Show, Eq)
 
@@ -577,8 +581,31 @@ profileDocumentOptionsParser =
           <$> strOption
             ( long "timestamp"
                 <> metavar "RFC3339"
-                <> help "Value for the timestamp frontmatter key; omitted entirely when not given. Required if you intend to run `okf validate --strict` on the result."
+                <> help "Value for the superseded v0.1 timestamp frontmatter key; omitted entirely when not given. Provenance is written as generated.by by default, so this is needed only when producing a v0.1 bundle."
             )
+      )
+    <*> optional
+      ( Text.pack
+          <$> strOption
+            ( long "generated-by"
+                <> metavar "ACTOR"
+                <> help "Actor recorded in generated.by on every page: <producer>/<version>, human:<id>, or process:<id>. Defaults to process:okf-profile-document."
+            )
+      )
+    <*> optional
+      ( Text.pack
+          <$> strOption
+            ( long "generated-at"
+                <> metavar "RFC3339"
+                <> help "Timestamp recorded in generated.at. Omitted when not given, because generation never reads the clock."
+            )
+      )
+    <*> optional
+      ( strOption
+          ( long "okf-version"
+              <> metavar "MAJOR.MINOR"
+              <> help "Declare the OKF version in the generated bundle's root index"
+          )
       )
 
 registryOption :: Parser Text
@@ -821,25 +848,47 @@ runProfileDocument
       profilePath,
       outputPath,
       write,
-      timestamp
+      timestamp,
+      generatedBy,
+      generatedAt,
+      okfVersion
     } = do
     when (isJust profilePath && (isJust requestedExport || isJust registryRef)) $
       dieText "Pass either --profile PATH or an EXPORT argument, not both."
     when (write && isNothing outputPath) $
       dieText "--write needs a destination; pass --out DIR."
+    -- Parse the requested version before anything is written, so a malformed
+    -- one fails without leaving a half-generated bundle behind.
+    versionOverride <- traverse requestedVersion okfVersion
     compiled <- resolveCompiledProfile
     concepts <- case renderProfileDocumentation documentationOptions compiled of
       Left documentationError -> dieText (renderDocumentationError documentationError)
       Right rendered -> pure rendered
     case (write, outputPath) of
-      (True, Just destination) -> writeProfileDocumentation destination concepts
+      (True, Just destination) -> writeProfileDocumentation versionOverride destination concepts
       _ -> previewProfileDocumentation outputPath concepts
     where
+      -- Same diagnostic as @okf index --okf-version@, so the two commands
+      -- reject a malformed version identically.
+      requestedVersion rawVersion =
+        case parseOkfVersion rawVersion of
+          Just version -> pure version
+          Nothing -> dieText ("Not an OKF version of the form MAJOR.MINOR: " <> rawVersion)
+
       documentationOptions =
         DocumentationOptions
           { rootConceptId = rootConceptId defaultDocumentationOptions,
             typeDirectory = typeDirectory defaultDocumentationOptions,
-            timestamp = timestamp
+            timestamp = timestamp,
+            -- 'parseActor' is total, so @--generated-by Nadeem@ is preserved
+            -- verbatim as an unclassified actor rather than rejected:
+            -- specification §11 forbids failing on a malformed optional field.
+            generated =
+              Just
+                ( Generated
+                    (maybe defaultDocumentationActor parseActor generatedBy)
+                    generatedAt
+                )
           }
 
       resolveCompiledProfile = do
@@ -892,8 +941,12 @@ previewProfileDocumentation destination concepts = do
 -- Overwrites exactly the concepts it generated and never deletes, so a
 -- destination holding pages from an earlier profile keeps them. Those are
 -- reported rather than silently left to rot.
-writeProfileDocumentation :: FilePath -> [Concept] -> IO ()
-writeProfileDocumentation destination concepts = do
+--
+-- A 'Just' version override declares that OKF version in the destination's root
+-- index; 'Nothing' preserves whatever declaration is already there, so
+-- regenerating into a directory that declares a version cannot strip it.
+writeProfileDocumentation :: Maybe OkfVersion -> FilePath -> [Concept] -> IO ()
+writeProfileDocumentation versionOverride destination concepts = do
   -- A destination that does not exist yet walks as an IO error, which here
   -- means "no pre-existing concepts" rather than a failure: writeBundle
   -- creates the directory.
@@ -906,13 +959,13 @@ writeProfileDocumentation destination concepts = do
           not (Set.member conceptId generated)
         ]
   writeBundle destination concepts
-  indexes <- renderBundleIndexes destination
+  indexes <- renderBundleIndexesWith versionOverride destination
   indexCount <- case indexes of
     Left bundleError -> dieText (renderBundleError bundleError)
     -- Count distinct paths: 'renderBundleIndexes' yields the bundle root twice,
     -- once as "" and once as ".", which write the same file.
     Right rendered -> pure (length (List.nub (map (FilePath.normalise . fst) rendered)))
-  written <- writeBundleIndexes destination
+  written <- writeBundleIndexesWith versionOverride destination
   case written of
     Left bundleError -> dieText (renderBundleError bundleError)
     Right () -> pure ()
