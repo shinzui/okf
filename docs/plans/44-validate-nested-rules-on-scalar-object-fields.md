@@ -76,7 +76,7 @@ This section must always reflect the actual current state of the work.
 
 - [x] Milestone 1: reproduce the three "cannot describe an object" transcripts and freeze the current descriptor generation behind a compatibility decoder and fixture. (2026-08-01)
 - [x] Milestone 2: add `objectFields` to the published Dhall schema, its record-completion default, and the `mk` constructors. (2026-08-01)
-- [ ] Milestone 3: compile `objectFields` into the effective rule, with the compiled-only `Object` cardinality and the new definition error.
+- [x] Milestone 3: compile `objectFields` into the effective rule, with the compiled-only `Object` cardinality and the new definition error. (2026-08-01)
 - [ ] Milestone 4: validate an object value's members and report a `FieldPath` such as `generated.by`.
 - [ ] Milestone 5: render the new rule kind in generated profile documentation, regenerate the committed example, and extend the CLI diagnostic vocabulary.
 - [ ] Milestone 6: document the feature in `docs/user/profiles.md` and write the descriptor-growth ADR.
@@ -119,6 +119,40 @@ and not the current one.
 **The three baseline transcripts reproduce exactly as written**, including the incidental
 `log:` advisory, and `okf validate okf-core/test/fixtures/valid-bundle --strict` prints
 `OK: 4 concepts (okf_version 0.2)` — the before-capture the plan asks for.
+
+**Naming the new cardinality `Object` collides with aeson's `Value` constructor of the same
+name, in four files.** `Okf.Prelude` re-exports `Data.Aeson.Value (..)`, so `Object` was
+already in scope everywhere as the mapping constructor of a JSON value. `Okf.Profile` already
+hid `List` from the prelude for exactly this reason — `List` is a `Cardinality` constructor —
+and the fix is the same one extended: `hiding (List, Object, …)` in
+`okf-core/src/Okf/Profile.hs`, `okf-cli/src/Okf/Cli.hs`, and `okf-core/test/Main.hs`, with
+aeson's constructor reached as `Aeson.Object` at the few sites that pattern-match a value.
+The precedent made this cheap, but it is not visible from the plan and it costs a compile
+cycle per file to find.
+
+**`-Wincomplete-patterns` does fire for the new constructor, and it is worth trusting.**
+Removing the `Object` case from `renderCardinality` reproduces:
+
+```text
+src/Okf/Cli.hs:1783:21: warning: [GHC-62161] [-Wincomplete-patterns]
+    Pattern match(es) are non-exhaustive
+    In a \case alternative:
+        Patterns of type ‘Cardinality’ not matched: Object
+```
+
+The same build also flagged `renderProfileDefinitionError` as missing
+`ObjectFieldsRequireObjectShape`. Two cautions for the sibling plans. Cabal will report
+`Up to date` and skip recompiling even after `touch`, so a warning can be missed simply by not
+rebuilding; and a `grep` for `error:` over build output hides warnings entirely, which is how
+this one was nearly missed here.
+
+**A rule that declares the same member rules under both `elementFields` and `objectFields` —
+which is exactly what `mk.recordOrList` produces — would report every definition error twice
+without explicit deduplication.** A definition error names a path such as `verified.by`, which
+does not distinguish the list spelling from the mapping spelling, so the two walks produce
+identical errors. Both new helpers (`declaredNestedRuleSets` and `pairedNestedRuleMaps`) and
+the nested arm of `conditionErrors` therefore deduplicate, in the manner
+`referenceDefinitionErrors` already used.
 
 One discovery predates implementation and is the reason this plan is written the way it is.
 The blocker is **not** only the `ElementFieldsRequireList` definition error that

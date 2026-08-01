@@ -68,7 +68,9 @@ import Okf.Document
 import Okf.Graph (buildGraph)
 import Okf.Index
 import Okf.Log qualified as Log
-import Okf.Prelude hiding (List)
+-- 'List' and 'Object' are 'Okf.Profile.Cardinality' constructors here; aeson's
+-- same-named 'Value' constructors are reached as 'Aeson.Object' and friends.
+import Okf.Prelude hiding (List, Object)
 import Okf.Profile
   ( Cardinality (..),
     CompiledProfile,
@@ -1782,6 +1784,7 @@ renderCardinality = \case
   Any -> "any"
   Scalar -> "scalar"
   List -> "list"
+  Object -> "object"
 
 renderFieldFormat :: FieldFormat -> Text
 renderFieldFormat = \case

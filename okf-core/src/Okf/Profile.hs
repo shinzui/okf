@@ -55,6 +55,7 @@ module Okf.Profile
     fieldRuleFormat,
     fieldRuleReference,
     fieldRuleElementFields,
+    fieldRuleObjectFields,
     compiledProfileTypeNames,
     compiledProfileBaseRules,
     compiledProfileRulesForType,
@@ -78,13 +79,14 @@ where
 import CMarkGFM qualified
 import Control.Exception (SomeException, catch)
 import Data.Aeson (ToJSON (..), object, (.=))
+import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as Aeson.Key
 import Data.Aeson.KeyMap qualified as Aeson.KeyMap
 import Data.Char (isAsciiLower, isAsciiUpper)
 import Data.List qualified as List
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (mapMaybe)
+import Data.Maybe (catMaybes, mapMaybe)
 import Data.Set qualified as Set
 import Data.Text qualified as Text
 import Data.Text.Read qualified as Text.Read
@@ -109,7 +111,10 @@ import Okf.Bundle
 import Okf.ConceptId (ConceptId, renderConceptId)
 import Okf.Document (Frontmatter, coreFrontmatterFields, frontmatterKeys, frontmatterLookup)
 import Okf.Markdown (markdownOptions)
-import Okf.Prelude hiding (List, (.=))
+-- 'List' and 'Object' are 'Cardinality' constructors here; the names aeson uses
+-- for the corresponding 'Value' constructors are reached as 'Aeson.Array' and
+-- 'Aeson.Object'.
+import Okf.Prelude hiding (List, Object, (.=))
 import Okf.Validation (ValidationProfile (..))
 import "generic-lens" Data.Generics.Labels ()
 
@@ -206,9 +211,29 @@ data NestedFieldRule = NestedFieldRule
   deriving stock (Generic, Eq, Show)
   deriving anyclass (FromDhall)
 
-data Cardinality = Any | Scalar | List
+-- | Whether a key must be a single value, a non-empty list, a mapping, or any
+-- of them. 'Object' is placed last so the derived 'Ord' keeps the relative
+-- order of the three published alternatives, which the definition-error sort key
+-- relies on.
+data Cardinality = Any | Scalar | List | Object
   deriving stock (Generic, Eq, Ord, Show)
-  deriving anyclass (FromDhall)
+
+-- | Decoded from the three-alternative published union in
+-- @okf-core\/dhall\/Cardinality.dhall@. 'Object' is deliberately unreachable
+-- from Dhall: it is produced only by compilation, when a rule declares
+-- @objectFields@. Adding an alternative to the published union would change the
+-- type of every value written against it and would break descriptors pinned to
+-- the previous schema, which no record-level fallback decoder can repair,
+-- because every frozen generation in the chain refers to this same type. An
+-- author who wants to say "this key must be a mapping" and nothing more writes
+-- @objectFields = Some NestedRules::{=}@.
+instance FromDhall Cardinality where
+  autoWith _normalizer =
+    Dhall.union
+      ( (Any <$ Dhall.constructor "Any" Dhall.unit)
+          <> (Scalar <$ Dhall.constructor "Scalar" Dhall.unit)
+          <> (List <$ Dhall.constructor "List" Dhall.unit)
+      )
 
 -- | A named textual format. Formats constrain present text values but do not
 -- imply that a field must be present.
@@ -329,6 +354,7 @@ cardinalityName = \case
   Any -> "any"
   Scalar -> "scalar"
   List -> "list"
+  Object -> "object"
 
 instance ToJSON FieldFormat where
   toJSON = \case
@@ -1523,6 +1549,9 @@ data ProfileDefinitionError
   | -- | an @optional@ rule carries a @when@ condition, which gates only presence
     -- and is therefore dead: an optional rule has no presence check at all
     OptionalFieldWithCondition (Maybe Text) FieldPath
+  | -- | a rule declares @objectFields@ alongside an explicit scalar or list
+    -- cardinality; an object is neither, so the pairing cannot be satisfied
+    ObjectFieldsRequireObjectShape (Maybe Text) FieldPath Cardinality
   deriving stock (Generic, Eq, Ord, Show)
 
 -- | Whether a 'PresenceClause' demands a key or merely recommends it. There is
@@ -1552,18 +1581,22 @@ data EffectiveFieldRule = EffectiveFieldRule
     cardinality :: !Cardinality,
     format :: !(Maybe FieldFormat),
     elementFields :: !(Maybe (Map Text EffectiveFieldRule)),
+    objectFields :: !(Maybe (Map Text EffectiveFieldRule)),
     reference :: !(Maybe HandleReferenceRule)
   }
   deriving stock (Generic, Eq, Show)
 
--- | The stable lowercase display name for a cardinality: @any@, @scalar@, or
--- @list@. These are the names the CLI prints and the names generated profile
--- documentation uses, so a reader who has seen one recognizes the other.
+-- | The stable lowercase display name for a cardinality: @any@, @scalar@,
+-- @list@, or @object@. These are the names the CLI prints and the names
+-- generated profile documentation uses, so a reader who has seen one recognizes
+-- the other. @object@ is also the word the CLI already prints for an actual
+-- mapping value, so a cardinality-mismatch message reads coherently.
 renderCardinalityName :: Cardinality -> Text
 renderCardinalityName = \case
   Any -> "any"
   Scalar -> "scalar"
   List -> "list"
+  Object -> "object"
 
 -- | The stable display name for a named format: @rfc3339-utc@, @date@, @uri@,
 -- @uri-with-scheme(SCHEME)@, or @document-handle(PREFIX)@. As with
@@ -1617,6 +1650,15 @@ fieldRuleReference rule = rule ^. #reference
 -- 'Nothing'.
 fieldRuleElementFields :: EffectiveFieldRule -> Maybe (Map Text EffectiveFieldRule)
 fieldRuleElementFields rule = rule ^. #elementFields
+
+-- | Rules for the members of the mapping stored at this key, keyed by member
+-- name, or 'Nothing' when the key declares no object shape. Like
+-- 'fieldRuleElementFields' this is depth-bounded: a value taken from this map
+-- always has 'Nothing' for both nested accessors. A rule may declare both, which
+-- means either spelling of the value is accepted and both are checked against
+-- the same member rules.
+fieldRuleObjectFields :: EffectiveFieldRule -> Maybe (Map Text EffectiveFieldRule)
+fieldRuleObjectFields rule = rule ^. #objectFields
 
 -- | Whether this clause demands the key or merely recommends it.
 presenceClauseRequirement :: PresenceClause -> FieldRequirement
@@ -1689,6 +1731,7 @@ compileProfile rawSpec =
           <> vocabularyErrors
           <> cardinalityErrors
           <> nestedCardinalityErrors
+          <> objectCardinalityErrors
           <> formatParameterErrors
           <> conflictingFormatErrors
           <> conditionDefinitionErrors
@@ -1735,6 +1778,9 @@ compileProfile rawSpec =
       OptionalFieldWithCondition scope target ->
         let (scopeRank, typeName) = scopeKey scope
          in (scopeRank, typeName, 19, renderFieldPathKey target, 0)
+      ObjectFieldsRequireObjectShape scope path cardinality ->
+        let (scopeRank, typeName) = scopeKey scope
+         in (scopeRank, typeName, 20, renderFieldPathKey path, fromEnum (cardinality == Scalar))
 
     scopeKey Nothing = (0, "")
     scopeKey (Just ctype) = (1, ctype)
@@ -1757,9 +1803,9 @@ compileProfile rawSpec =
         <> concatMap (nestedScopeErrors scope) (required <> recommended <> optional)
 
     nestedScopeErrors scope parentRule =
-      case parentRule ^. #elementFields of
-        Nothing -> []
-        Just NestedRules {required, recommended, optional} ->
+      concatMap oneNestedRuleSet (declaredNestedRuleSets parentRule)
+      where
+        oneNestedRuleSet NestedRules {required, recommended, optional} =
           let qualify key = parentRule ^. #field <> "." <> key
            in [DuplicateFieldRule scope "nested required" (qualify key) | key <- duplicates (map (^. #field) required)]
                 <> [DuplicateFieldRule scope "nested recommended" (qualify key) | key <- duplicates (map (^. #field) recommended)]
@@ -1797,8 +1843,7 @@ compileProfile rawSpec =
            | rule <- rawSpec ^. #types,
              let typeRules = compileRules (rule ^. #frontmatter),
              (parentKey, (profileRule, typeRule)) <- Map.toAscList (Map.intersectionWith (,) baseRules typeRules),
-             Just profileNested <- [profileRule ^. #elementFields],
-             Just typeNested <- [typeRule ^. #elementFields],
+             (profileNested, typeNested) <- pairedNestedRuleMaps profileRule typeRule,
              (nestedKey, (profileNestedRule, typeNestedRule)) <- Map.toAscList (Map.intersectionWith (,) profileNested typeNested),
              let profileValues = profileNestedRule ^. #allowedValues
                  typeValues = typeNestedRule ^. #allowedValues,
@@ -1822,8 +1867,7 @@ compileProfile rawSpec =
            | rule <- rawSpec ^. #types,
              let typeRules = compileRules (rule ^. #frontmatter),
              (parentKey, (profileRule, typeRule)) <- Map.toAscList (Map.intersectionWith (,) baseRules typeRules),
-             Just profileNested <- [profileRule ^. #elementFields],
-             Just typeNested <- [typeRule ^. #elementFields],
+             (profileNested, typeNested) <- pairedNestedRuleMaps profileRule typeRule,
              (nestedKey, (profileNestedRule, typeNestedRule)) <- Map.toAscList (Map.intersectionWith (,) profileNested typeNested),
              let profileCardinality = profileNestedRule ^. #cardinality
                  typeCardinality = typeNestedRule ^. #cardinality,
@@ -1834,11 +1878,45 @@ compileProfile rawSpec =
 
     nestedCardinalityErrors =
       [ ElementFieldsRequireList scope (topLevelFieldPath (fieldRule ^. #field)) Scalar
-      | (scope, rules) <- (Nothing, rawSpec ^. #frontmatter) : [(Just (rule ^. #type_), rule ^. #frontmatter) | rule <- rawSpec ^. #types],
+      | (scope, rules) <- scopedFrontmatterRules,
         fieldRule <- rules ^. #required <> rules ^. #recommended <> rules ^. #optional,
         isJust (fieldRule ^. #elementFields),
         fieldRule ^. #cardinality == Scalar
       ]
+
+    -- The mirror image: @objectFields@ says the value is a mapping, and neither
+    -- an explicit @scalar@ nor an explicit @list@ can be one.
+    objectCardinalityErrors =
+      [ ObjectFieldsRequireObjectShape scope (topLevelFieldPath (fieldRule ^. #field)) declared
+      | (scope, rules) <- scopedFrontmatterRules,
+        fieldRule <- rules ^. #required <> rules ^. #recommended <> rules ^. #optional,
+        isJust (fieldRule ^. #objectFields),
+        let declared = fieldRule ^. #cardinality,
+        declared == Scalar || declared == List
+      ]
+
+    scopedFrontmatterRules =
+      (Nothing, rawSpec ^. #frontmatter)
+        : [(Just (rule ^. #type_), rule ^. #frontmatter) | rule <- rawSpec ^. #types]
+
+    -- The nested rule sets one raw rule declares: its list-element rules, its
+    -- object-member rules, or both. Deduplicated because @mk.recordOrList@
+    -- deliberately declares the same rules under both names, and a definition
+    -- error names a path such as @verified.by@ that does not distinguish the two
+    -- — so without this the same incoherence would be reported twice.
+    declaredNestedRuleSets rawRule =
+      List.nub (catMaybes [rawRule ^. #elementFields, rawRule ^. #objectFields])
+
+    -- The same idea across two scopes: the nested maps a profile-scope rule and
+    -- a type-scope rule both declare, paired shape with matching shape. Pairing
+    -- an element map against an object map would compare rules that never meet.
+    pairedNestedRuleMaps profileRule typeRule =
+      List.nub
+        [ (profileNested, typeNested)
+        | nestedMap <- [(^. #elementFields), (^. #objectFields)],
+          Just profileNested <- [nestedMap profileRule],
+          Just typeNested <- [nestedMap typeRule]
+        ]
 
     formatParameterErrors =
       [ InvalidFormatParameter (topLevelFieldPath (rule ^. #field)) fieldFormat parameter
@@ -1849,7 +1927,7 @@ compileProfile rawSpec =
         <> [ InvalidFormatParameter (nestedDefinitionPath (rule ^. #field) (nestedRule ^. #field)) fieldFormat parameter
            | rules <- (rawSpec ^. #frontmatter) : map (^. #frontmatter) (rawSpec ^. #types),
              rule <- rules ^. #required <> rules ^. #recommended <> rules ^. #optional,
-             Just nestedRules <- [rule ^. #elementFields],
+             nestedRules <- declaredNestedRuleSets rule,
              nestedRule <- nestedRules ^. #required <> nestedRules ^. #recommended <> nestedRules ^. #optional,
              Just (fieldFormat, parameter) <- [invalidFormatParameter =<< nestedRule ^. #format]
            ]
@@ -1867,8 +1945,7 @@ compileProfile rawSpec =
            | rule <- rawSpec ^. #types,
              let typeRules = compileRules (rule ^. #frontmatter),
              (parentKey, (profileRule, typeRule)) <- Map.toAscList (Map.intersectionWith (,) baseRules typeRules),
-             Just profileNested <- [profileRule ^. #elementFields],
-             Just typeNested <- [typeRule ^. #elementFields],
+             (profileNested, typeNested) <- pairedNestedRuleMaps profileRule typeRule,
              (nestedKey, (profileNestedRule, typeNestedRule)) <- Map.toAscList (Map.intersectionWith (,) profileNested typeNested),
              Just profileFormat <- [profileNestedRule ^. #format],
              Just typeFormat <- [typeNestedRule ^. #format],
@@ -1890,19 +1967,24 @@ compileProfile rawSpec =
            | rawRule <- rules ^. #optional,
              isJust (rawRule ^. #when)
            ]
-        <> concat
-          [ case (rawRule ^. #elementFields, Map.lookup (rawRule ^. #field) effectiveRules >>= (^. #elementFields)) of
-              (Just nestedRules, Just effectiveNestedRules) ->
-                concatMap
+        <> List.nub
+          ( concat
+              [ concatMap
                   (fieldConditionErrors scope (Just (rawRule ^. #field)) effectiveNestedRules)
                   (nestedRules ^. #required <> nestedRules ^. #recommended)
                   <> [ deadCondition scope (Just (rawRule ^. #field)) (nestedRule ^. #field)
                      | nestedRule <- nestedRules ^. #optional,
                        isJust (nestedRule ^. #when)
                      ]
-              _ -> []
-          | rawRule <- rules ^. #required <> rules ^. #recommended <> rules ^. #optional
-          ]
+              | rawRule <- rules ^. #required <> rules ^. #recommended <> rules ^. #optional,
+                let effectiveRule = Map.lookup (rawRule ^. #field) effectiveRules,
+                (nestedRules, effectiveNestedRules) <-
+                  catMaybes
+                    [ (,) <$> (rawRule ^. #elementFields) <*> (effectiveRule >>= (^. #elementFields)),
+                      (,) <$> (rawRule ^. #objectFields) <*> (effectiveRule >>= (^. #objectFields))
+                    ]
+              ]
+          )
 
     -- A condition gates presence, and an optional rule has no presence clause to
     -- gate, so the pairing is dead in the descriptor rather than a weaker rule.
@@ -2011,11 +2093,18 @@ compileOptionalFieldRule rule =
       description = rule ^. #description,
       allowedValues = deduplicate (rule ^. #allowedValues),
       cardinality =
-        case (rule ^. #elementFields, rule ^. #cardinality) of
-          (Just _, Any) -> List
-          (_, cardinality) -> cardinality,
+        -- Declaring a nested shape and no explicit cardinality refines what the
+        -- value may be, because the shape only makes sense against one. A rule
+        -- declaring both shapes stays 'Any', which is what lets either spelling
+        -- of the OKF v0.2 @verified@ key satisfy it.
+        case (rule ^. #objectFields, rule ^. #elementFields, rule ^. #cardinality) of
+          (Just _, Just _, Any) -> Any
+          (Just _, Nothing, Any) -> Object
+          (Nothing, Just _, Any) -> List
+          (_, _, declared) -> declared,
       format = rule ^. #format,
       elementFields = compileNestedRules <$> rule ^. #elementFields,
+      objectFields = compileNestedRules <$> rule ^. #objectFields,
       reference = compileReferenceRule <$> rule ^. #reference
     }
 
@@ -2049,6 +2138,9 @@ compileOptionalNestedFieldRule rule =
       cardinality = rule ^. #cardinality,
       format = rule ^. #format,
       elementFields = Nothing,
+      -- Nested rules stay depth-bounded: 'NestedFieldRule' has no object member,
+      -- so a profile cannot constrain @sources[0].usage_window.from@.
+      objectFields = Nothing,
       reference = Nothing
     }
 
@@ -2069,7 +2161,8 @@ mergeEffectiveFieldRule profileRule typeRule =
       allowedValues = mergeVocabulary (profileRule ^. #allowedValues) (typeRule ^. #allowedValues),
       cardinality = mergeCardinality (profileRule ^. #cardinality) (typeRule ^. #cardinality),
       format = fromMaybe (profileRule ^. #format) (mergeFieldFormat (profileRule ^. #format) (typeRule ^. #format)),
-      elementFields = mergeElementFields (profileRule ^. #elementFields) (typeRule ^. #elementFields),
+      elementFields = mergeNestedRuleMaps (profileRule ^. #elementFields) (typeRule ^. #elementFields),
+      objectFields = mergeNestedRuleMaps (profileRule ^. #objectFields) (typeRule ^. #objectFields),
       reference = fromMaybe (profileRule ^. #reference) (mergeReferenceRule (profileRule ^. #reference) (typeRule ^. #reference))
     }
 
@@ -2092,10 +2185,13 @@ compileReferenceRule policy =
       allowSelf = policy ^. #allowSelf
     }
 
-mergeElementFields :: Maybe (Map Text EffectiveFieldRule) -> Maybe (Map Text EffectiveFieldRule) -> Maybe (Map Text EffectiveFieldRule)
-mergeElementFields Nothing typeRules = typeRules
-mergeElementFields profileRules Nothing = profileRules
-mergeElementFields (Just profileRules) (Just typeRules) = Just (Map.unionWith mergeEffectiveFieldRule profileRules typeRules)
+-- | Merge one scope's map of member rules with another's. Used for both
+-- @elementFields@ and @objectFields@; it was named for the former until the
+-- latter existed and is a plain union-with-merge either way.
+mergeNestedRuleMaps :: Maybe (Map Text EffectiveFieldRule) -> Maybe (Map Text EffectiveFieldRule) -> Maybe (Map Text EffectiveFieldRule)
+mergeNestedRuleMaps Nothing typeRules = typeRules
+mergeNestedRuleMaps profileRules Nothing = profileRules
+mergeNestedRuleMaps (Just profileRules) (Just typeRules) = Just (Map.unionWith mergeEffectiveFieldRule profileRules typeRules)
 
 mergeReferenceRule :: Maybe HandleReferenceRule -> Maybe HandleReferenceRule -> Maybe (Maybe HandleReferenceRule)
 mergeReferenceRule Nothing typePolicy = Just typePolicy
@@ -2423,7 +2519,7 @@ validateProfile validationProfile compiled concepts =
             | Just nestedRules <- parentRule ^. #elementFields ->
                 concat
                   [ case elementValue of
-                      Object objectFields ->
+                      Aeson.Object objectFields ->
                         concatMap
                           (checkNestedField parentKey elementIndex objectFields)
                           (Map.toAscList nestedRules)

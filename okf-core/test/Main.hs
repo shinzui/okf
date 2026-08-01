@@ -19,7 +19,9 @@ import Okf.Graph
 import Okf.Index
 import Okf.Log
 import Okf.Markdown
-import Okf.Prelude hiding (List, setField, (.=))
+-- 'List' and 'Object' are 'Cardinality' constructors; aeson's same-named
+-- 'Value' constructors are reached as 'Aeson.Object' and friends.
+import Okf.Prelude hiding (List, Object, setField, (.=))
 import Okf.Profile
 import Okf.Profile.Documentation
 import Okf.Profile.Registry
@@ -175,6 +177,9 @@ main = do
         test "named formats validate parser boundaries, lists, and shapes" testNamedFormatValidation,
         test "compiled nested rules merge and reject impossible outer cardinality" testCompiledNestedRules,
         test "nested record validation reports indexed paths and strict recommendations" testNestedRecordValidation,
+        test "compileProfile rejects objectFields with an explicit scalar or list cardinality" testObjectFieldsRequireObjectShape,
+        test "compileProfile refines an object rule to object cardinality" testCompileObjectRule,
+        test "compileProfile keeps a rule declaring both shapes at any cardinality" testCompileRecordOrListRule,
         test "compileProfile rejects invalid same-scope field conditions" testConditionDefinitionErrors,
         test "top-level conditions gate presence without gating value checks" testTopLevelConditionalPresence,
         test "nested conditions use siblings and avoid cascading diagnostics" testNestedConditionalPresence,
@@ -2761,6 +2766,109 @@ nestedReviewProfileSpec =
 nestedTestPath :: Int -> Text -> FieldPath
 nestedTestPath elementIndex key =
   FieldPath (FieldName "reviews" :| [ArrayIndex elementIndex, FieldName key])
+
+-- | A profile whose single object-valued key carries the given member rules and
+-- the given declared cardinality. Built with record syntax rather than the
+-- positional 'fieldRule' helper precisely because @objectFields@ is the member
+-- under test here.
+objectProfileWithRules :: Text -> Cardinality -> Maybe NestedRules -> Maybe NestedRules -> ProfileSpec
+objectProfileWithRules key declaredCardinality objectRules elementRules =
+  ProfileSpec
+    { name = "object-rules",
+      description = Nothing,
+      okfVersion = "0.1",
+      frontmatter =
+        FrontmatterRules
+          { required =
+              [ requiredField "type",
+                FieldRule
+                  { field = key,
+                    description = Nothing,
+                    allowedValues = [],
+                    cardinality = declaredCardinality,
+                    format = Nothing,
+                    elementFields = elementRules,
+                    objectFields = objectRules,
+                    reference = Nothing,
+                    when = Nothing
+                  }
+              ],
+            recommended = [],
+            optional = []
+          },
+      allowUnknownTypes = True,
+      allowUnknownFields = True,
+      idField = Nothing,
+      types = []
+    }
+
+-- | The member rules used by the object-rule tests: @by@ is demanded, @at@ is
+-- recommended and must be an RFC3339 UTC timestamp.
+provenanceMemberRules :: NestedRules
+provenanceMemberRules =
+  NestedRules
+    { required = [NestedFieldRule "by" (Just "Who or what produced this content.") [] Any Nothing Nothing],
+      recommended = [NestedFieldRule "at" Nothing [] Any (Just Rfc3339Utc) Nothing],
+      optional = []
+    }
+
+-- | Declaring @objectFields@ next to an explicit scalar or list cardinality is
+-- incoherent — a mapping is neither — and is rejected at compile time in both
+-- directions, mirroring 'ElementFieldsRequireList' for the opposite mistake.
+testObjectFieldsRequireObjectShape :: Either Text ()
+testObjectFieldsRequireObjectShape = do
+  assertEqual
+    (Left (ObjectFieldsRequireObjectShape Nothing (fieldPath "generated") List :| []))
+    (compileProfile (objectProfileWithRules "generated" List (Just provenanceMemberRules) Nothing))
+  assertEqual
+    (Left (ObjectFieldsRequireObjectShape Nothing (fieldPath "generated") Scalar :| []))
+    (compileProfile (objectProfileWithRules "generated" Scalar (Just provenanceMemberRules) Nothing))
+
+-- | A rule that declares object members and no explicit cardinality is refined
+-- to 'Object', the compiled-only cardinality that has no Dhall spelling, and its
+-- members are reachable through the new accessor.
+testCompileObjectRule :: Either Text ()
+testCompileObjectRule = do
+  compiled <-
+    firstShow
+      (compileProfile (objectProfileWithRules "generated" Any (Just provenanceMemberRules) Nothing))
+  rule <- lookupBaseRule compiled "generated"
+  assertEqual Object (fieldRuleCardinality rule)
+  assertEqual Nothing (fieldRuleElementFields rule)
+  case fieldRuleObjectFields rule of
+    Nothing -> Left "expected compiled object member rules"
+    Just members -> do
+      assertEqual ["at", "by"] (Map.keys members)
+      byRule <- maybe (Left "expected a rule for by") Right (Map.lookup "by" members)
+      assertEqual
+        (Just "Who or what produced this content.")
+        (fieldRuleDescription byRule)
+      assertEqual [RequiredField] (map presenceClauseRequirement (fieldRulePresenceClauses byRule))
+      -- Depth-bounded: a member rule never itself carries a nested shape.
+      assertEqual Nothing (fieldRuleObjectFields byRule)
+      assertEqual Nothing (fieldRuleElementFields byRule)
+
+-- | A rule declaring both shapes stays at 'Any' cardinality, which is what lets
+-- either OKF v0.2 spelling of @verified@ satisfy it, and compiles the same
+-- member rules under both accessors.
+testCompileRecordOrListRule :: Either Text ()
+testCompileRecordOrListRule = do
+  compiled <-
+    firstShow
+      ( compileProfile
+          (objectProfileWithRules "verified" Any (Just provenanceMemberRules) (Just provenanceMemberRules))
+      )
+  rule <- lookupBaseRule compiled "verified"
+  assertEqual Any (fieldRuleCardinality rule)
+  assertEqual (Just ["at", "by"]) (Map.keys <$> fieldRuleObjectFields rule)
+  assertEqual (Just ["at", "by"]) (Map.keys <$> fieldRuleElementFields rule)
+
+lookupBaseRule :: CompiledProfile -> Text -> Either Text EffectiveFieldRule
+lookupBaseRule compiled key =
+  maybe
+    (Left ("expected a compiled rule for " <> key))
+    Right
+    (Map.lookup key (compiledProfileBaseRules compiled))
 
 reviewScopes :: [Text]
 reviewScopes = ["content", "technical-accuracy", "editorial", "catalog-metadata", "content-and-metadata"]
