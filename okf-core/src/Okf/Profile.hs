@@ -432,21 +432,160 @@ instance FromDhall LegacyTypeRule where
       stripTrailingUnderscore fieldName =
         fromMaybe fieldName (Text.stripSuffix "_" fieldName)
 
+-- | The five-alternative published format union, frozen before the OKF v0.2
+-- value formats were added.
+--
+-- Unlike every other frozen shape below this is a /union/ rather than a record.
+-- A Dhall union value carries its full alternative set in its type, so a
+-- descriptor pinned to the five-alternative
+-- @okf-core\/dhall\/FieldFormat.dhall@ does not typecheck against the current
+-- decoder, and no record-level fallback can repair that: every frozen generation
+-- would still refer to the widened 'FieldFormat'. Every frozen generation below
+-- therefore refers to this type instead.
+--
+-- The instance is hand-written rather than derived so that the Dhall alternative
+-- names stay @Rfc3339Utc@ and friends while the Haskell constructors stay
+-- distinct from the current type's.
+data PreV02FieldFormat
+  = LegacyRfc3339Utc
+  | LegacyDate
+  | LegacyUri
+  | LegacyUriWithScheme Text
+  | LegacyDocumentHandle Text
+  deriving stock (Generic, Eq, Ord, Show)
+
+instance FromDhall PreV02FieldFormat where
+  autoWith _normalizer =
+    Dhall.union
+      ( (LegacyRfc3339Utc <$ Dhall.constructor "Rfc3339Utc" Dhall.unit)
+          <> (LegacyDate <$ Dhall.constructor "Date" Dhall.unit)
+          <> (LegacyUri <$ Dhall.constructor "Uri" Dhall.unit)
+          <> (LegacyUriWithScheme <$> Dhall.constructor "UriWithScheme" Dhall.auto)
+          <> (LegacyDocumentHandle <$> Dhall.constructor "DocumentHandle" Dhall.auto)
+      )
+
+upgradePreV02FieldFormat :: PreV02FieldFormat -> FieldFormat
+upgradePreV02FieldFormat = \case
+  LegacyRfc3339Utc -> Rfc3339Utc
+  LegacyDate -> Date
+  LegacyUri -> Uri
+  LegacyUriWithScheme scheme -> UriWithScheme scheme
+  LegacyDocumentHandle prefix -> DocumentHandle prefix
+
+-- | The complete object-rule descriptor generation, frozen before the OKF v0.2
+-- value formats were added to 'FieldFormat'. This is the immediately preceding
+-- public descriptor generation: its records match today's shape exactly, and the
+-- only difference is that every @format@ member refers to the frozen
+-- five-alternative 'PreV02FieldFormat'. Exercised by
+-- @okf-core\/test\/fixtures\/profiles\/formats-mp8-ep2.dhall@.
+data PreActorProfileFieldRule = PreActorProfileFieldRule
+  { field :: !Text,
+    description :: !(Maybe Text),
+    allowedValues :: ![Text],
+    cardinality :: !Cardinality,
+    format :: !(Maybe PreV02FieldFormat),
+    elementFields :: !(Maybe PreActorProfileNestedRules),
+    objectFields :: !(Maybe PreActorProfileNestedRules),
+    reference :: !(Maybe HandleReferenceRule),
+    when :: !(Maybe FieldCondition)
+  }
+  deriving stock (Generic, Eq, Show)
+  deriving anyclass (FromDhall)
+
+data PreActorProfileNestedRules = PreActorProfileNestedRules
+  { required :: ![PreActorProfileNestedFieldRule],
+    recommended :: ![PreActorProfileNestedFieldRule],
+    optional :: ![PreActorProfileNestedFieldRule]
+  }
+  deriving stock (Generic, Eq, Show)
+  deriving anyclass (FromDhall)
+
+data PreActorProfileNestedFieldRule = PreActorProfileNestedFieldRule
+  { field :: !Text,
+    description :: !(Maybe Text),
+    allowedValues :: ![Text],
+    cardinality :: !Cardinality,
+    format :: !(Maybe PreV02FieldFormat),
+    when :: !(Maybe FieldCondition)
+  }
+  deriving stock (Generic, Eq, Show)
+  deriving anyclass (FromDhall)
+
+data PreActorProfileFrontmatterRules = PreActorProfileFrontmatterRules
+  { required :: ![PreActorProfileFieldRule],
+    recommended :: ![PreActorProfileFieldRule],
+    optional :: ![PreActorProfileFieldRule]
+  }
+  deriving stock (Generic, Eq, Show)
+  deriving anyclass (FromDhall)
+
+data PreActorProfileSpec = PreActorProfileSpec
+  { name :: !Text,
+    description :: !(Maybe Text),
+    okfVersion :: !Text,
+    frontmatter :: !PreActorProfileFrontmatterRules,
+    allowUnknownTypes :: !Bool,
+    allowUnknownFields :: !Bool,
+    idField :: !(Maybe Text),
+    types :: ![PreActorProfileTypeRule]
+  }
+  deriving stock (Generic, Eq, Show)
+  deriving anyclass (FromDhall)
+
+data PreActorProfileTypeRule = PreActorProfileTypeRule
+  { type_ :: !Text,
+    description :: !(Maybe Text),
+    frontmatter :: !PreActorProfileFrontmatterRules,
+    pathPattern :: !(Maybe Text),
+    resourceScheme :: !(Maybe Text),
+    requireSchemaSection :: !Bool,
+    schemaColumns :: ![Text],
+    idPrefix :: !(Maybe Text)
+  }
+  deriving stock (Generic, Eq, Show)
+
+instance FromDhall PreActorProfileTypeRule where
+  autoWith _normalizer =
+    genericAutoWith
+      (Dhall.defaultInterpretOptions {Dhall.fieldModifier = stripTrailingUnderscore})
+    where
+      stripTrailingUnderscore fieldName =
+        fromMaybe fieldName (Text.stripSuffix "_" fieldName)
+
 -- | The complete optional-presence descriptor generation, frozen before object
--- rules were added. This is the immediately preceding public descriptor
--- generation: it matches today's shape exactly apart from @objectFields@ on
--- 'FieldRule'. 'NestedRules', 'NestedFieldRule', 'Cardinality', 'FieldFormat',
--- 'HandleReferenceRule', and 'FieldCondition' are unchanged by that addition and
--- so are shared rather than copied. Exercised by
+-- rules were added: it matches the shape before @objectFields@ was added to
+-- 'FieldRule'. 'Cardinality', 'HandleReferenceRule', and 'FieldCondition' are
+-- unchanged by every addition since and so are shared rather than copied; the
+-- nested rule types are copied because their @format@ member now refers to the
+-- frozen 'PreV02FieldFormat'. Exercised by
 -- @okf-core\/test\/fixtures\/profiles\/object-fields-mp8-ep1.dhall@.
 data PreObjectProfileFieldRule = PreObjectProfileFieldRule
   { field :: !Text,
     description :: !(Maybe Text),
     allowedValues :: ![Text],
     cardinality :: !Cardinality,
-    format :: !(Maybe FieldFormat),
-    elementFields :: !(Maybe NestedRules),
+    format :: !(Maybe PreV02FieldFormat),
+    elementFields :: !(Maybe PreObjectProfileNestedRules),
     reference :: !(Maybe HandleReferenceRule),
+    when :: !(Maybe FieldCondition)
+  }
+  deriving stock (Generic, Eq, Show)
+  deriving anyclass (FromDhall)
+
+data PreObjectProfileNestedRules = PreObjectProfileNestedRules
+  { required :: ![PreObjectProfileNestedFieldRule],
+    recommended :: ![PreObjectProfileNestedFieldRule],
+    optional :: ![PreObjectProfileNestedFieldRule]
+  }
+  deriving stock (Generic, Eq, Show)
+  deriving anyclass (FromDhall)
+
+data PreObjectProfileNestedFieldRule = PreObjectProfileNestedFieldRule
+  { field :: !Text,
+    description :: !(Maybe Text),
+    allowedValues :: ![Text],
+    cardinality :: !Cardinality,
+    format :: !(Maybe PreV02FieldFormat),
     when :: !(Maybe FieldCondition)
   }
   deriving stock (Generic, Eq, Show)
@@ -504,7 +643,7 @@ data ReferenceProfileFieldRule = ReferenceProfileFieldRule
     description :: !(Maybe Text),
     allowedValues :: ![Text],
     cardinality :: !Cardinality,
-    format :: !(Maybe FieldFormat),
+    format :: !(Maybe PreV02FieldFormat),
     elementFields :: !(Maybe ReferenceProfileNestedRules),
     reference :: !(Maybe HandleReferenceRule),
     when :: !(Maybe FieldCondition)
@@ -524,7 +663,7 @@ data ReferenceProfileNestedFieldRule = ReferenceProfileNestedFieldRule
     description :: !(Maybe Text),
     allowedValues :: ![Text],
     cardinality :: !Cardinality,
-    format :: !(Maybe FieldFormat),
+    format :: !(Maybe PreV02FieldFormat),
     when :: !(Maybe FieldCondition)
   }
   deriving stock (Generic, Eq, Show)
@@ -577,7 +716,7 @@ data ConditionalProfileFieldRule = ConditionalProfileFieldRule
     description :: !(Maybe Text),
     allowedValues :: ![Text],
     cardinality :: !Cardinality,
-    format :: !(Maybe FieldFormat),
+    format :: !(Maybe PreV02FieldFormat),
     elementFields :: !(Maybe ConditionalProfileNestedRules),
     when :: !(Maybe FieldCondition)
   }
@@ -596,7 +735,7 @@ data ConditionalProfileNestedFieldRule = ConditionalProfileNestedFieldRule
     description :: !(Maybe Text),
     allowedValues :: ![Text],
     cardinality :: !Cardinality,
-    format :: !(Maybe FieldFormat),
+    format :: !(Maybe PreV02FieldFormat),
     when :: !(Maybe FieldCondition)
   }
   deriving stock (Generic, Eq, Show)
@@ -650,7 +789,7 @@ data NestedProfileFieldRule = NestedProfileFieldRule
     description :: !(Maybe Text),
     allowedValues :: ![Text],
     cardinality :: !Cardinality,
-    format :: !(Maybe FieldFormat),
+    format :: !(Maybe PreV02FieldFormat),
     elementFields :: !(Maybe NestedProfileRules)
   }
   deriving stock (Generic, Eq, Show)
@@ -668,7 +807,7 @@ data NestedProfileNestedFieldRule = NestedProfileNestedFieldRule
     description :: !(Maybe Text),
     allowedValues :: ![Text],
     cardinality :: !Cardinality,
-    format :: !(Maybe FieldFormat)
+    format :: !(Maybe PreV02FieldFormat)
   }
   deriving stock (Generic, Eq, Show)
   deriving anyclass (FromDhall)
@@ -720,7 +859,7 @@ data FormatFieldRule = FormatFieldRule
     description :: !(Maybe Text),
     allowedValues :: ![Text],
     cardinality :: !Cardinality,
-    format :: !(Maybe FieldFormat)
+    format :: !(Maybe PreV02FieldFormat)
   }
   deriving stock (Generic, Eq, Show)
   deriving anyclass (FromDhall)
@@ -953,6 +1092,42 @@ instance FromDhall DescribedTypeRule where
 emptyFrontmatterRules :: FrontmatterRules
 emptyFrontmatterRules = FrontmatterRules {required = [], recommended = [], optional = []}
 
+upgradePreActorProfileFrontmatter :: PreActorProfileFrontmatterRules -> FrontmatterRules
+upgradePreActorProfileFrontmatter previous =
+  FrontmatterRules
+    { required = map upgradeField (previous ^. #required),
+      recommended = map upgradeField (previous ^. #recommended),
+      optional = map upgradeField (previous ^. #optional)
+    }
+  where
+    upgradeField rule =
+      FieldRule
+        { field = rule ^. #field,
+          description = rule ^. #description,
+          allowedValues = rule ^. #allowedValues,
+          cardinality = rule ^. #cardinality,
+          format = upgradePreV02FieldFormat <$> rule ^. #format,
+          elementFields = upgradeNestedRules <$> rule ^. #elementFields,
+          objectFields = upgradeNestedRules <$> rule ^. #objectFields,
+          reference = rule ^. #reference,
+          when = rule ^. #when
+        }
+    upgradeNestedRules rules =
+      NestedRules
+        { required = map upgradeNestedField (rules ^. #required),
+          recommended = map upgradeNestedField (rules ^. #recommended),
+          optional = map upgradeNestedField (rules ^. #optional)
+        }
+    upgradeNestedField rule =
+      NestedFieldRule
+        { field = rule ^. #field,
+          description = rule ^. #description,
+          allowedValues = rule ^. #allowedValues,
+          cardinality = rule ^. #cardinality,
+          format = upgradePreV02FieldFormat <$> rule ^. #format,
+          when = rule ^. #when
+        }
+
 upgradePreObjectProfileFrontmatter :: PreObjectProfileFrontmatterRules -> FrontmatterRules
 upgradePreObjectProfileFrontmatter previous =
   FrontmatterRules
@@ -967,10 +1142,25 @@ upgradePreObjectProfileFrontmatter previous =
           description = rule ^. #description,
           allowedValues = rule ^. #allowedValues,
           cardinality = rule ^. #cardinality,
-          format = rule ^. #format,
-          elementFields = rule ^. #elementFields,
+          format = upgradePreV02FieldFormat <$> rule ^. #format,
+          elementFields = upgradeNestedRules <$> rule ^. #elementFields,
           objectFields = Nothing,
           reference = rule ^. #reference,
+          when = rule ^. #when
+        }
+    upgradeNestedRules rules =
+      NestedRules
+        { required = map upgradeNestedField (rules ^. #required),
+          recommended = map upgradeNestedField (rules ^. #recommended),
+          optional = map upgradeNestedField (rules ^. #optional)
+        }
+    upgradeNestedField rule =
+      NestedFieldRule
+        { field = rule ^. #field,
+          description = rule ^. #description,
+          allowedValues = rule ^. #allowedValues,
+          cardinality = rule ^. #cardinality,
+          format = upgradePreV02FieldFormat <$> rule ^. #format,
           when = rule ^. #when
         }
 
@@ -988,7 +1178,7 @@ upgradeReferenceProfileFrontmatter previous =
           description = rule ^. #description,
           allowedValues = rule ^. #allowedValues,
           cardinality = rule ^. #cardinality,
-          format = rule ^. #format,
+          format = upgradePreV02FieldFormat <$> rule ^. #format,
           elementFields = upgradeNestedRules <$> rule ^. #elementFields,
           objectFields = Nothing,
           reference = rule ^. #reference,
@@ -1006,7 +1196,7 @@ upgradeReferenceProfileFrontmatter previous =
           description = rule ^. #description,
           allowedValues = rule ^. #allowedValues,
           cardinality = rule ^. #cardinality,
-          format = rule ^. #format,
+          format = upgradePreV02FieldFormat <$> rule ^. #format,
           when = rule ^. #when
         }
 
@@ -1045,7 +1235,7 @@ upgradeConditionalProfileFrontmatter previous =
           description = rule ^. #description,
           allowedValues = rule ^. #allowedValues,
           cardinality = rule ^. #cardinality,
-          format = rule ^. #format,
+          format = upgradePreV02FieldFormat <$> rule ^. #format,
           elementFields = upgradeNestedRules <$> rule ^. #elementFields,
           objectFields = Nothing,
           reference = Nothing,
@@ -1063,7 +1253,7 @@ upgradeConditionalProfileFrontmatter previous =
           description = rule ^. #description,
           allowedValues = rule ^. #allowedValues,
           cardinality = rule ^. #cardinality,
-          format = rule ^. #format,
+          format = upgradePreV02FieldFormat <$> rule ^. #format,
           when = rule ^. #when
         }
 
@@ -1081,7 +1271,7 @@ upgradeNestedProfileFrontmatter previous =
           description = rule ^. #description,
           allowedValues = rule ^. #allowedValues,
           cardinality = rule ^. #cardinality,
-          format = rule ^. #format,
+          format = upgradePreV02FieldFormat <$> rule ^. #format,
           elementFields = upgradeNestedProfileRules <$> rule ^. #elementFields,
           objectFields = Nothing,
           reference = Nothing,
@@ -1099,7 +1289,7 @@ upgradeNestedProfileFrontmatter previous =
           description = rule ^. #description,
           allowedValues = rule ^. #allowedValues,
           cardinality = rule ^. #cardinality,
-          format = rule ^. #format,
+          format = upgradePreV02FieldFormat <$> rule ^. #format,
           when = Nothing
         }
 
@@ -1117,7 +1307,7 @@ upgradeFormatFrontmatter previous =
           description = rule ^. #description,
           allowedValues = rule ^. #allowedValues,
           cardinality = rule ^. #cardinality,
-          format = rule ^. #format,
+          format = upgradePreV02FieldFormat <$> rule ^. #format,
           elementFields = Nothing,
           objectFields = Nothing,
           reference = Nothing,
@@ -1164,6 +1354,31 @@ upgradeVocabularyFrontmatter previous =
           objectFields = Nothing,
           reference = Nothing,
           when = Nothing
+        }
+
+upgradePreActorProfile :: PreActorProfileSpec -> ProfileSpec
+upgradePreActorProfile previous =
+  ProfileSpec
+    { name = previous ^. #name,
+      description = previous ^. #description,
+      okfVersion = previous ^. #okfVersion,
+      frontmatter = upgradePreActorProfileFrontmatter (previous ^. #frontmatter),
+      allowUnknownTypes = previous ^. #allowUnknownTypes,
+      allowUnknownFields = previous ^. #allowUnknownFields,
+      idField = previous ^. #idField,
+      types = map upgradeRule (previous ^. #types)
+    }
+  where
+    upgradeRule rule =
+      TypeRule
+        { type_ = rule ^. #type_,
+          description = rule ^. #description,
+          frontmatter = upgradePreActorProfileFrontmatter (rule ^. #frontmatter),
+          pathPattern = rule ^. #pathPattern,
+          resourceScheme = rule ^. #resourceScheme,
+          requireSchemaSection = rule ^. #requireSchemaSection,
+          schemaColumns = rule ^. #schemaColumns,
+          idPrefix = rule ^. #idPrefix
         }
 
 upgradePreObjectProfile :: PreObjectProfileSpec -> ProfileSpec
@@ -1427,8 +1642,8 @@ upgradeLegacyProfile legacy =
 -- | Load and decode a Dhall profile descriptor from a file path. Any evaluation
 -- or decoding failure is captured as a human-readable 'Left'.
 --
--- The pre-object shape, reference-aware shape, condition-aware shape,
--- bounded-nested shape, EP-4
+-- The pre-actor shape, pre-object shape, reference-aware shape, condition-aware
+-- shape, bounded-nested shape, EP-4
 -- format shape, EP-3 cardinality shape, EP-2 vocabulary shape, type-aware EP-1
 -- shape, self-documenting shape, and okf 0.2.x shape are accepted by frozen
 -- fallback decoders and upgraded
@@ -1440,48 +1655,52 @@ loadProfileFile path = do
   case current of
     Right spec -> pure (Right spec)
     Left currentError -> do
-      preObject <- tryDecode (Dhall.inputFile auto path)
-      case preObject of
-        Right preObjectSpec -> pure (Right (upgradePreObjectProfile preObjectSpec))
-        Left _preObjectError -> do
-          referenceAware <- tryDecode (Dhall.inputFile auto path)
-          case referenceAware of
-            Right referenceSpec -> pure (Right (upgradeReferenceProfile referenceSpec))
-            Left _referenceError -> do
-              conditional <- tryDecode (Dhall.inputFile auto path)
-              case conditional of
-                Right conditionalSpec -> pure (Right (upgradeConditionalProfile conditionalSpec))
-                Left _conditionalError -> do
-                  nested <- tryDecode (Dhall.inputFile auto path)
-                  case nested of
-                    Right nestedSpec -> pure (Right (upgradeNestedProfile nestedSpec))
-                    Left _nestedError -> do
-                      formatted <- tryDecode (Dhall.inputFile auto path)
-                      case formatted of
-                        Right formatSpec -> pure (Right (upgradeFormatProfile formatSpec))
-                        Left _formatError -> do
-                          cardinality <- tryDecode (Dhall.inputFile auto path)
-                          case cardinality of
-                            Right cardinalitySpec -> pure (Right (upgradeCardinalityProfile cardinalitySpec))
-                            Left _cardinalityError -> do
-                              vocabulary <- tryDecode (Dhall.inputFile auto path)
-                              case vocabulary of
-                                Right vocabularySpec -> pure (Right (upgradeVocabularyProfile vocabularySpec))
-                                Left _vocabularyError -> do
-                                  typeAware <- tryDecode (Dhall.inputFile auto path)
-                                  case typeAware of
-                                    Right typeAwareSpec -> pure (Right (upgradeTypeAwareProfile typeAwareSpec))
-                                    Left _typeAwareError -> do
-                                      described <- tryDecode (Dhall.inputFile auto path)
-                                      case described of
-                                        Right describedSpec -> pure (Right (upgradeDescribedProfile describedSpec))
-                                        Left _describedError -> do
-                                          legacy <- tryDecode (Dhall.inputFile auto path)
-                                          pure $ case legacy of
-                                            Right legacySpec -> Right (upgradeLegacyProfile legacySpec)
-                                            Left _legacyError -> Left currentError
+      preActor <- tryDecode (Dhall.inputFile auto path)
+      case preActor of
+        Right preActorSpec -> pure (Right (upgradePreActorProfile preActorSpec))
+        Left _preActorError -> do
+          preObject <- tryDecode (Dhall.inputFile auto path)
+          case preObject of
+            Right preObjectSpec -> pure (Right (upgradePreObjectProfile preObjectSpec))
+            Left _preObjectError -> do
+              referenceAware <- tryDecode (Dhall.inputFile auto path)
+              case referenceAware of
+                Right referenceSpec -> pure (Right (upgradeReferenceProfile referenceSpec))
+                Left _referenceError -> do
+                  conditional <- tryDecode (Dhall.inputFile auto path)
+                  case conditional of
+                    Right conditionalSpec -> pure (Right (upgradeConditionalProfile conditionalSpec))
+                    Left _conditionalError -> do
+                      nested <- tryDecode (Dhall.inputFile auto path)
+                      case nested of
+                        Right nestedSpec -> pure (Right (upgradeNestedProfile nestedSpec))
+                        Left _nestedError -> do
+                          formatted <- tryDecode (Dhall.inputFile auto path)
+                          case formatted of
+                            Right formatSpec -> pure (Right (upgradeFormatProfile formatSpec))
+                            Left _formatError -> do
+                              cardinality <- tryDecode (Dhall.inputFile auto path)
+                              case cardinality of
+                                Right cardinalitySpec -> pure (Right (upgradeCardinalityProfile cardinalitySpec))
+                                Left _cardinalityError -> do
+                                  vocabulary <- tryDecode (Dhall.inputFile auto path)
+                                  case vocabulary of
+                                    Right vocabularySpec -> pure (Right (upgradeVocabularyProfile vocabularySpec))
+                                    Left _vocabularyError -> do
+                                      typeAware <- tryDecode (Dhall.inputFile auto path)
+                                      case typeAware of
+                                        Right typeAwareSpec -> pure (Right (upgradeTypeAwareProfile typeAwareSpec))
+                                        Left _typeAwareError -> do
+                                          described <- tryDecode (Dhall.inputFile auto path)
+                                          case described of
+                                            Right describedSpec -> pure (Right (upgradeDescribedProfile describedSpec))
+                                            Left _describedError -> do
+                                              legacy <- tryDecode (Dhall.inputFile auto path)
+                                              pure $ case legacy of
+                                                Right legacySpec -> Right (upgradeLegacyProfile legacySpec)
+                                                Left _legacyError -> Left currentError
   where
-    -- The eleven calls look identical but are inferred at distinct result types;
+    -- The twelve calls look identical but are inferred at distinct result types;
     -- @auto@ picks the corresponding current or frozen decoder.
     tryDecode :: IO a -> IO (Either Text a)
     tryDecode action =
@@ -1489,14 +1708,15 @@ loadProfileFile path = do
         `catch` \(exception :: SomeException) -> pure (Left (Text.pack (show exception)))
 
 -- | Does an already-evaluated Dhall expression decode as a profile? Tries the
--- current schema, then the pre-object, reference-aware, condition-aware,
--- bounded-nested, EP-4, EP-3, EP-2, EP-1, self-documenting, and okf 0.2.x
--- schemas, so the published @okf-profiles@ package still enumerates. Uses
--- 'Dhall.rawInput', which normalizes and runs the decoder's extractor without
--- throwing, which is what lets registry enumeration be pure.
+-- current schema, then the pre-actor, pre-object, reference-aware,
+-- condition-aware, bounded-nested, EP-4, EP-3, EP-2, EP-1, self-documenting, and
+-- okf 0.2.x schemas, so the published @okf-profiles@ package still enumerates.
+-- Uses 'Dhall.rawInput', which normalizes and runs the decoder's extractor
+-- without throwing, which is what lets registry enumeration be pure.
 decodeProfileExpr :: Expr Src Void -> Maybe ProfileSpec
 decodeProfileExpr expression =
   Dhall.rawInput Dhall.auto expression
+    <|> fmap upgradePreActorProfile (Dhall.rawInput Dhall.auto expression)
     <|> fmap upgradePreObjectProfile (Dhall.rawInput Dhall.auto expression)
     <|> fmap upgradeReferenceProfile (Dhall.rawInput Dhall.auto expression)
     <|> fmap upgradeConditionalProfile (Dhall.rawInput Dhall.auto expression)

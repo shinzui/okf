@@ -134,6 +134,7 @@ main = do
         testIO "loadProfileFile decodes same-scope conditions" testLoadConditionalFieldsProfileFixture,
         testIO "loadProfileFile preserves the frozen condition-aware schema" testLoadConditionalCompatibilityFixture,
         testIO "loadProfileFile preserves the frozen reference-aware schema" testLoadReferenceCompatibilityFixture,
+        testIO "loadProfileFile preserves the frozen five-alternative format union" testLoadPreActorCompatibilityFixture,
         testIO "loadProfileFile preserves the frozen optional-presence schema" testLoadPreObjectCompatibilityFixture,
         testIO "loadProfileFile still accepts an okf 0.2.x descriptor" testLoadLegacyProfileFixture,
         testIO "profileFieldDescription finds required and recommended prose" testProfileFieldDescription,
@@ -1834,6 +1835,43 @@ testLoadReferenceCompatibilityFixture = do
               assertEqual [] (map (^. #field) nestedOptional)
             _ -> Left "expected the frozen nested rules to survive with an empty optional list"
         _ -> Left "expected three frozen reference-aware recommended rules"
+
+-- | The generation frozen immediately before the OKF v0.2 value formats: a
+-- descriptor whose records match today's shape but whose @format@ members are
+-- typed by the five-alternative format union still loads, and every format it
+-- declared arrives as the corresponding current 'FieldFormat'. The fixture
+-- writes the union out as a literal rather than importing
+-- @okf-core\/dhall\/FieldFormat.dhall@, so widening that file cannot quietly
+-- turn this into a test of the current decoder.
+testLoadPreActorCompatibilityFixture :: IO (Either Text ())
+testLoadPreActorCompatibilityFixture = do
+  path <- fixtureFilePath "profiles/formats-mp8-ep2.dhall"
+  result <- loadProfileFile path
+  pure $ case result of
+    Left err -> Left ("failed to load frozen five-alternative format profile: " <> err)
+    Right spec -> do
+      assertEqual "formats-mp8-ep2" (spec ^. #name)
+      assertEqual
+        [Nothing, Nothing, Nothing]
+        (map (^. #format) (spec ^. #frontmatter . #required))
+      assertEqual
+        [Just Rfc3339Utc, Just Date]
+        (map (^. #format) (spec ^. #frontmatter . #recommended))
+      assertEqual
+        [Just (UriWithScheme "https"), Just (DocumentHandle "ADR"), Just Uri]
+        (map (^. #format) (spec ^. #frontmatter . #optional))
+      assertEqual
+        [Just Date]
+        (concatMap (map (^. #format) . (^. #frontmatter . #required)) (spec ^. #types))
+      case spec ^. #frontmatter . #required of
+        [_typeRule, _titleRule, generatedRule] ->
+          case generatedRule ^. #objectFields of
+            Just NestedRules {required = [byRule, atRule]} -> do
+              assertEqual "by" (byRule ^. #field)
+              assertEqual Nothing (byRule ^. #format)
+              assertEqual (Just Rfc3339Utc) (atRule ^. #format)
+            _ -> Left "expected the frozen object members to survive"
+        _ -> Left "expected three frozen required rules"
 
 -- | The generation frozen immediately before object rules: a descriptor that
 -- spells out the optional-presence record types with no @objectFields@ member
