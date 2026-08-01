@@ -42,9 +42,19 @@ computations can do several things they cannot do today. They can validate that 
 declares a receipt shape. They can have okf enforce specification §10.3's exactly-one rule:
 a computation is provided *either* as an inline fence under `# Computation` *or* as a file
 named by the `computation` key, never both and never neither. And, most usefully, they can
-have okf resolve the path-valued frontmatter fields — `computation`, `executor.resource`,
-`attester.resource`, and `sources[].resource` — against the bundle and report the ones that
-point at nothing, which today are entirely invisible to every check okf performs.
+have okf resolve the path-valued frontmatter fields against the bundle and report the ones
+that point at nothing, which today are entirely invisible to every check okf performs.
+
+Specification §6.2 names five such fields, and this MasterPlan means all five: the
+top-level `resource` of §4.1, `sources[].resource`, and the attested-computation fields
+`computation`, `executor.resource`, and `attester.resource`. Two of them are not
+unconditionally paths, and EP-1 must decide what to do about that rather than discover it
+while implementing. §4.1 defines `resource` as "a URI that uniquely identifies the
+underlying asset", which in this repository's own bundles is
+`bigquery://analytics.tables.orders` — a URL, not a bundle path. And §5.1 says
+`sources[].resource` names "either a concrete artifact a consumer can follow … or a
+population or scope descriptor it cannot"; `examples/ddd-ordering` uses the second form.
+See Surprises & Discoveries, which records what a naive check does to that bundle today.
 
 That last capability is worth dwelling on, because it is a gap that predates attested
 computations. `Okf.Graph` builds the concept graph by extracting *markdown links from
@@ -84,10 +94,14 @@ does *not* mention attested computations in its acceptance criteria, because it 
 standalone capability that fixes a pre-existing gap: after it lands, a bundle whose
 `sources[].resource` points at a deleted file is caught, whether or not any attested
 computation exists. Sequencing it first also de-risks the initiative, because it is the
-plan most likely to surface surprises — it must decide how a frontmatter path relates to the
-existing concept graph, whether a path to a non-Markdown file such as
-`references/attesters/revenue.py` is resolvable at all, and how a dangling frontmatter path
-is reported next to the existing `DanglingReference` violation.
+plan most likely to surface surprises. It must decide four things: how a frontmatter path
+relates to the existing concept graph; whether a path to a non-Markdown file such as
+`references/attesters/revenue.py` is resolvable at all; how a dangling frontmatter path is
+reported next to the existing `DanglingReference` violation; and — added on 2026-08-01, and
+the one most likely to be got wrong — *which of §6.2's five fields are checked by default at
+all*, given that two of them accept values that are deliberately not paths. That last
+decision has a worked counter-example in Surprises & Discoveries and is the direct heir of
+`docs/masterplans/8-extend-okf-profiles-for-v0-2-field-families.md` EP-4's withdrawn check.
 
 The second plan reads the contract fields. It is the "boring" plan by design: a new concept
 type and five frontmatter keys, following whatever family-reading pattern
@@ -135,8 +149,29 @@ compiled and merged with profile-scoped rules, which is the machinery plan two a
 three must extend. `docs/adr/2-interactive-bundle-and-concept-selection.md` is relevant to
 plan five only, and only for the constraint it records: okf is used non-interactively in
 pipelines, in CI, and by agents, and a convenience that changes scripted behaviour is not a
-convenience. No existing ADR covers frontmatter path resolution or the `references/`
-convention, which is why this initiative should produce two.
+convenience.
+
+Four further ADRs were written after this MasterPlan was drafted and were reviewed against it
+on 2026-08-01. Two of them govern work here rather than merely informing it.
+`docs/adr/7-okf-v0-1-legacy-fallback-policy.md` fixes *where a new v0.2 check lands*: presence
+checks on an optional family are `StrictAuthoring` only, shape checks on a family that is
+present are reported under strict as well "for consistency", and a family that wants to know
+whether the bundle has opted into the stricter reading asks
+`Okf.Validation.gateDeclaresAtLeast` rather than testing the declaration itself. Every check
+this MasterPlan adds is subject to that policy, and it is now an Integration Point.
+`docs/adr/9-one-markdown-parse-configuration-and-source-scanned-authoring-checks.md` settles
+what the Integration Points section below asked EP-3 to route through: the single
+configuration point is `Okf.Markdown.markdownOptions`, extensions stay per call site, and a
+check meant to catch an author's mistake must read source text rather than the parse tree.
+`docs/adr/10-okf-version-declaration-and-best-effort-reading.md` and
+`docs/adr/11-growing-the-profile-descriptor-language.md` are context rather than constraint;
+ADR 11's most transferable rule — a new rejection must be non-retroactive or unambiguous, and
+a check specified from the specification must be run against the shipped bundles before it is
+believed — is profile-side in its letter and applies here in its spirit, which is exactly what
+the `sources[].resource` finding below demonstrates.
+
+No existing ADR covers frontmatter path resolution or the `references/` convention, which is
+why this initiative should still produce two.
 
 The **two new ADRs** this initiative should produce are: one on frontmatter path
 resolution — what a path-valued field may point at, whether a non-Markdown target is
@@ -147,15 +182,19 @@ concept, and what okf does with non-Markdown files in a bundle (plan four).
 
 ## Exec-Plan Registry
 
-Child ExecPlans for this MasterPlan have not been created yet. They are deferred until
+Child ExecPlans for this MasterPlan have not been created yet. They were deferred until
 `docs/masterplans/7-adopt-okf-v0-2-core-semantics.md` is complete and
 `docs/masterplans/8-extend-okf-profiles-for-v0-2-field-families.md` has settled its
 descriptor primitives, for the reasons in the Dependency Graph and Decision Log below.
 
-As of 2026-08-01 the first of those is discharged — MasterPlan 7 completed in full — and the
-second is settled on paper but not yet implemented: MasterPlan 8's four child plans are
-written and its descriptor decisions are recorded, but no code has landed. See the Dependency
-Graph for which of this MasterPlan's plans that unblocks and which it does not.
+**Both deferrals are discharged as of 2026-08-01.** MasterPlan 7 completed in full with all
+six child plans Complete, and MasterPlan 8 completed in full with all four child plans
+Complete and its code landed — including `okf-core/src/Okf/Path.hs`, the object rules, the
+path-valued reference rule kind, and a shipped v0.2 reference profile at
+`docs/profiles/okf-v0-2.dhall`. Nothing external blocks this MasterPlan, and the working tree
+is green (`cabal test all`, 2026-08-01). What remains before its child plans are written is
+the review recorded in the revision note at the bottom of this file, whose findings the plans
+must carry.
 
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
@@ -183,16 +222,29 @@ both exist — a definition can be stale and still attest cleanly. A plan here t
 contract fields before MasterPlan 7 reads the trust families would either duplicate that
 work or ship a concept type that cannot express its own trust state.
 
-It hard-depends on `docs/masterplans/8-extend-okf-profiles-for-v0-2-field-families.md` for
+It hard-depended on `docs/masterplans/8-extend-okf-profiles-for-v0-2-field-families.md` for
 its EP-1, now `docs/plans/44-validate-nested-rules-on-scalar-object-fields.md` (object rules),
 and its EP-3, now
 `docs/plans/46-add-path-valued-reference-rules-distinct-from-document-handles.md`
-(path-valued references). `executor` and `attester` are scalar objects, and `computation`,
-`executor.resource`, and `attester.resource` are path-valued fields. Without those two
-primitives, a profile could require an `Attested Computation` concept to *have* an executor
-and could say nothing about whether the executor names anything real. That said, the
-dependency binds the *profile-facing* half of this work only: EP-1 and EP-2 here are
-core-library work that can proceed on MasterPlan 7 alone.
+(path-valued references), and **that dependency is now satisfied**: MasterPlan 8 completed in
+full on 2026-08-01 with all four child plans Complete. `executor` and `attester` are scalar
+objects, and `computation`, `executor.resource`, and `attester.resource` are path-valued
+fields. Without those two primitives, a profile could require an `Attested Computation`
+concept to *have* an executor and could say nothing about whether the executor names anything
+real.
+
+The consequence is worth stating plainly, because it narrows what this MasterPlan is for. A
+team can express the entire §10 contract as a house convention **today**, with no code from
+this MasterPlan: `objectFields` reaches inside `executor` and `attester`, `path` reaches
+`executor.resource` and `attester.resource` and `computation`, and a `TypeRule` scopes all of
+it to `type: Attested Computation`. What no profile can supply, and what this MasterPlan
+therefore exists to add, is the *unprofiled core* half — reading the contract onto `Concept`
+so every command can see it, the §10.3 exactly-one rule which is a frontmatter-and-body
+constraint no `FieldRule` can express, path checking that does not require the user to have
+written a profile at all, and non-Markdown targets, which
+`docs/adr/11-growing-the-profile-descriptor-language.md` and MasterPlan 8's Decision Log both
+record as deliberately left here. EP-5 should demonstrate the profile route rather than
+duplicate it.
 
 Two things settled while MasterPlan 8's plans were written bear directly on this MasterPlan's
 EP-1 and are recorded here so it is not planned against stale assumptions. First, MasterPlan 8
@@ -224,8 +276,12 @@ The critical path is EP-2, then EP-3, then EP-5, with EP-1 and EP-4 running alon
 
 ## Integration Points
 
+Every file location in this section was re-verified against the working tree on 2026-08-01,
+after MasterPlans 7 and 8 completed. Line numbers move; the named identifiers are what to
+grep for.
+
 **The referential-integrity check** — `Okf.Validation.validateBundle` at
-`okf-core/src/Okf/Validation.hs:65`, drawing on `Okf.Graph.danglingReferences` at
+`okf-core/src/Okf/Validation.hs:186`, drawing on `Okf.Graph.danglingReferences` at
 `okf-core/src/Okf/Graph.hs:103`. Involved: EP-1, EP-4. Today the only referential check is
 over body markdown links, and it reports `DanglingReference` carrying two `ConceptId`
 values. A dangling *frontmatter path* is a different thing — its target may not be a concept
@@ -238,17 +294,60 @@ tolerate broken links because a link may represent not-yet-written knowledge. An
 dangling-path check inherits that framing and must not be presented as a conformance
 requirement.
 
-**The path grammar of specification §6.2** — involved: EP-1, EP-4, and
-`docs/masterplans/8-extend-okf-profiles-for-v0-2-field-families.md` EP-3. Three fields'
-worth of code will need to answer "is this text an absolute URL, a bundle-relative path
-beginning with `/`, or a relative path, and what does it resolve to". `Okf.Graph` already
-contains most of this logic for body links — `isExternalUrl`, `stripUrlSuffix`, and
-`collapseBundlePath` at `okf-core/src/Okf/Graph.hs:157-177`, the last of which correctly
-refuses paths that escape the bundle root. EP-1 owns extracting that into a reusable,
-exported path resolver and must export it in a form MasterPlan 8's path-reference rule can
-consume without copying. This is an integration dependency across MasterPlans: neither
-blocks the other, but the two must agree, and the reconciliation happens when MasterPlan 8
-EP-3 is written.
+**The path grammar of specification §6.2** — `okf-core/src/Okf/Path.hs`. Involved: EP-1,
+EP-4. **This integration point is discharged and its ownership has changed hands.** It
+formerly said EP-1 owned extracting the grammar out of `Okf.Graph` and must export it in a
+shape MasterPlan 8's path-reference rule could consume. MasterPlan 8 EP-3 landed first and
+did the extraction, so the module exists, `Okf.Profile` already consumes it, and EP-1 now
+**extends** it rather than creating it. What EP-1 must not do is re-derive the grammar or move
+`Okf.Graph.isExternalUrl`, which deliberately stayed behind. The seam EP-1 extends is
+existence checking, which `Okf.Path` deliberately does not do. The full detail — the exported
+signatures, the three things EP-1 must know, and why `isExternalUrl` stayed — is in Surprises
+& Discoveries below and must be carried into EP-1's own plan rather than assumed.
+
+**Where a new check lands, and whether the bundle opted into it** —
+`Okf.Validation.ValidationProfile` (`PermissiveConformance` versus `StrictAuthoring`) and
+`Okf.Validation.versionGate` / `gateDeclaresAtLeast` at `okf-core/src/Okf/Validation.hs:138`
+and `:163`. Involved: EP-1, EP-2, EP-3. This entry did not exist when this MasterPlan was
+drafted, because the machinery did not exist; MasterPlan 7 EP-5 built it and
+`docs/adr/7-okf-v0-1-legacy-fallback-policy.md` records the policy. Three consequences bind
+every check this initiative adds.
+
+Presence checks on an optional v0.2 family are `StrictAuthoring` only, and shape checks on a
+family that *is* present are reported under strict as well, "for consistency". Specification
+§11 is the reason and it is unusually direct here: the conformance list contains three items,
+none of which is a computation field, and it separately forbids rejecting a bundle for an
+unknown `type` value. So even though §10.2 marks `runtime` REQUIRED **for this type**, a
+concept declaring `type: Attested Computation` with no `runtime` cannot be a
+`PermissiveConformance` failure. It is a strict-mode authoring diagnostic, or it is a profile
+`TypeRule`, and this MasterPlan's Vision must be read that way.
+
+A check that only makes sense for a bundle that has adopted v0.2 asks `gateDeclaresAtLeast`
+rather than testing the declaration itself; ADR 7 says scattering version tests is what
+`VersionGate` exists to prevent. EP-1 should note that its check is the exception that proves
+the rule — a dangling `resource` path is wrong in a v0.1 bundle too, since §6.2's grammar is
+not a v0.2 addition — and should say so rather than reaching for the gate reflexively.
+
+And the vocabulary is split: `ValidationError` is per document, `BundleValidationError` is per
+bundle, and `docs/adr/7-okf-v0-1-legacy-fallback-policy.md` lists the exhaustive consumers who
+must handle a new constructor before moving their okf pin. Mori (`mori://shinzui/mori`)
+matches `ProfileViolation` and not `ValidationError`, which is the position as of that date
+and not a guarantee.
+
+**The centrally owned core key set** — `Okf.Document.coreFrontmatterFieldOrder`, from which
+`coreFrontmatterFields` derives, at `okf-core/src/Okf/Document.hs:114`. Involved: EP-2. This
+entry did not exist when this MasterPlan was drafted. MasterPlan 7 added the six v0.2 concept
+keys to that list in one edit, and per ADR 7 that list does two jobs: it fixes the
+serialization key order so regenerating a bundle yields minimal diffs, and every key in it is
+always permitted by a closed profile (`allowUnknownFields = False`). The five §10 contract
+keys — `runtime`, `parameters`, `computation`, `executor`, `attester` — are format-defined by
+§10.2 and §13.2 and are **not** in the list today. EP-2 must decide whether to add them and
+must state the reasoning either way. The argument ADR 7 gives for the six generalises cleanly
+(closure governs unknown keys, not known ones, and taxing a closed profile for each
+specification revision is what that widening rejected); the argument against is that these
+five are meaningful only for one `type`, which none of the six were. Whichever way it goes,
+this is one edit in one place made deliberately, not five keys added incidentally by whichever
+plan first needs one.
 
 **`TypeRule` and its structural checks** — `okf-core/src/Okf/Profile.hs`, the `TypeRule`
 record and the `requireSchemaSection` / `schemaColumns` pair, with
@@ -258,21 +357,38 @@ body, and EP-3's exactly-one rule is the second such rule. EP-3 must follow the 
 shape — a boolean or enumerated knob on the type rule, a body inspector in `Okf.Profile`, a
 `ProfileViolation` constructor — rather than inventing a parallel mechanism.
 
-**The Markdown body inspector** — `Okf.Profile.schemaSectionColumns` and its
-`CMarkGFM.commonmarkToNode` call. Involved: EP-3. MasterPlan 7 EP-4 owns the decision to
-enable `CMarkGFM.optFootnotes` at every call site. EP-3 adds a second body inspector next
-to the first and must use the same parse configuration, not a fresh one. If MasterPlan 7
-EP-4 has not landed when EP-3 is implemented, EP-3 must still route through whatever single
-configuration point exists rather than hard-coding `[] []`.
+**The Markdown parse configuration** — `Okf.Markdown.markdownOptions` at
+`okf-core/src/Okf/Markdown.hs:39`, and the body inspector `Okf.Profile.schemaSectionColumns`
+at `okf-core/src/Okf/Profile.hs:3715`. Involved: EP-3. **This entry's open question is now
+answered.** It formerly said EP-3 "must route through whatever single configuration point
+exists" if MasterPlan 7 EP-4 had not landed. It has: the single point is
+`Okf.Markdown.markdownOptions`, every call site imports it, and
+`docs/adr/9-one-markdown-parse-configuration-and-source-scanned-authoring-checks.md` governs.
+Two things EP-3 must take from that module rather than rediscover.
 
-**The generated index** — `Okf.Index.renderIndex` at `okf-core/src/Okf/Index.hs:24`.
+Extensions stay per call site and are deliberately not uniform — `schemaSectionColumns` passes
+`[CMarkGFM.extTable]` because it reads a GitHub-flavored table, and nothing else needs an
+extension. EP-3 reads a fenced code block, which is plain CommonMark, so it passes `[]` and
+inherits `markdownOptions`.
+
+And ADR 9's substantive rule bites: a check meant to catch an author's mistake must read
+source text, because the parse tree records what the document *means*. EP-3's exactly-one rule
+is genuinely tree-shaped — "is there a fenced block under a `# Computation` heading" is a
+question about structure, not about what the author typed — so the tree is the right instrument
+here. But `Okf.Markdown`'s own haddock records the cost accepted by enabling footnotes:
+cmark-gfm **deletes a footnote definition nothing cites**, along with any fenced block nested
+inside it. EP-3 should have a fixture for that and decide whether it matters, rather than
+meeting it as a bug report.
+
+**The generated index** — `Okf.Index.renderIndex` at `okf-core/src/Okf/Index.hs:141`.
 Involved: EP-5. The index already groups concepts under a heading per frontmatter `type`,
 which appears to satisfy specification §10.5's suggestion that `type: Attested Computation`
 is a signal liftable into `index.md`. EP-5 must verify that claim against a real bundle
 before deciding whether any index change is needed, and must record the finding either way.
 
 **The `Concept` walk** — `Okf.Bundle.walkBundle` and `isReservedMarkdownFile` at
-`okf-core/src/Okf/Bundle.hs:71` and `:141`. Involved: EP-4. Any change to what counts as a
+`okf-core/src/Okf/Bundle.hs:83` and `:194`, with `discoverMarkdownFiles` at `:198` as the
+place the `.md` filter is actually applied. Involved: EP-4. Any change to what counts as a
 concept affects every command in the tool, every fixture, and the index generator. EP-4 owns
 this decision and must not make it incidentally.
 
@@ -282,15 +398,24 @@ this decision and must not make it incidentally.
 Milestone-level progress across all five child plans. Populate the granular items when each
 child plan is created.
 
-- [ ] EP-1: a reusable specification §6.2 path resolver is exported from okf-core
-- [ ] EP-1: a frontmatter path that points at nothing in the bundle is reported, distinctly from a dangling body link
+`docs/masterplans/7-adopt-okf-v0-2-core-semantics.md`'s retrospective left one instruction
+for this list, learned three times independently there: *a family projected onto `Concept` is
+not a user-visible outcome until something renders it, so "surfaced in the CLI" belongs in a
+milestone rather than in a purpose paragraph.* The list below is amended accordingly — EP-2
+and EP-3 each carry their own surfacing milestone, and EP-5 is the plan that makes the type
+coherent across the tool rather than the plan that first makes it visible.
+
+- [ ] EP-1: `Okf.Path` gains existence checking, and which of §6.2's five fields are checked by default is decided and justified against `examples/ddd-ordering`
+- [ ] EP-1: a frontmatter path that points at nothing in the bundle is reported, distinctly from a dangling body link, and at the `ValidationProfile` placement ADR 7 requires
 - [ ] EP-2: `type: Attested Computation` concepts are read with their `runtime`, `parameters`, `computation`, `executor`, and `attester` contract
-- [ ] EP-2: a contract missing `runtime` is reported for that type only, leaving other types untouched
+- [ ] EP-2: whether the five contract keys join `Okf.Document.coreFrontmatterFieldOrder` is decided, and serialization round-trips a §10.2 concept unchanged
+- [ ] EP-2: a contract missing `runtime` is reported for that type only, leaving other types untouched, and `okf show` renders the contract
 - [ ] EP-3: the `# Computation` body section and its fenced block are extracted
-- [ ] EP-3: providing both an inline fence and a `computation` path, or neither, is reported per §10.3
+- [ ] EP-3: providing both an inline fence and a `computation` path, or neither, is reported per §10.3, and the computation is reachable from the CLI
 - [ ] EP-4: the `references/` convention is documented and okf's treatment of Markdown and non-Markdown files under it is decided and tested
-- [ ] EP-5: the CLI reports attested computations and their contract problems
-- [ ] EP-5: index treatment is verified against a real bundle and user documentation covers the type
+- [ ] EP-5: the CLI reports attested computations and their contract problems coherently across commands
+- [ ] EP-5: index treatment is verified against a real bundle, an attested computation appears in a shipped example, and user documentation covers the type
+- [ ] EP-5: `docs/user/format.md`'s "one v0.2 addition okf does not implement" paragraph is retired
 
 
 ## Surprises & Discoveries
@@ -345,6 +470,77 @@ conventions today, with `ProfileViolation` constructors `MalformedPathReference`
 no profile, so it should reuse those violation names' phrasing where it reports the same
 claim, and must not duplicate the profile-side machinery.
 
+**A naive core dangling-path check reports a false positive on this repository's own shipped
+example bundle, and this is the single most important finding of the 2026-08-01 review.**
+This MasterPlan's Vision promised that okf would "resolve the path-valued frontmatter
+fields … and report the ones that point at nothing". Run against `examples/ddd-ordering`,
+`examples/ddd-ordering/aggregates/order.md:32` carries:
+
+```yaml
+    resource: all order-domain terms agreed in the ordering team's glossary reviews
+```
+
+That is specification §5.1's second sanctioned form — `sources[].resource` "names either a
+concrete artifact a consumer can follow … or a population or scope descriptor it cannot".
+`classifyPathReference` has no case for a scope descriptor and cannot have one: the text has
+no URI scheme, so it is not `ExternalUrl`; it does not climb out of the bundle, so it is not
+`EscapesBundle`; it is neither empty nor whitespace, so it is not `MalformedPath`. It
+classifies as `BundlePath "aggregates/all order-domain terms …"`, and a check that reports
+every unresolvable `BundlePath` reports it as dangling. The bundle is correct and okf would be
+wrong.
+
+**And okf's own source already says so, in as many words.** `Okf.Document.Source`'s haddock
+for `sourceResource` at `okf-core/src/Okf/Document.hs:265` — written by MasterPlan 7 EP-3,
+after this MasterPlan was drafted — reads:
+
+```haskell
+    -- | REQUIRED within an entry. Either a concrete artifact a consumer can
+    -- follow (absolute URL, bundle-relative path, @references\/@ path) __or a
+    -- population or scope descriptor it cannot__, such as
+    -- @all queries in BigQuery project X@. Never treat this as a path.
+    sourceResource :: !Text,
+```
+
+"Never treat this as a path" is an instruction to exactly the code EP-1 was going to write.
+This MasterPlan's Vision, drafted the day before, promised the opposite. That settles the
+question rather than merely raising it: EP-1 does not path-check `sources[].resource` by
+default, and the interesting remaining question is only whether a *profile* opt-in is worth
+offering — which MasterPlan 8 EP-3 already shipped, as `path` on a `NestedFieldRule`.
+
+This is not a new discovery so much as a rediscovery, and that is what makes it worth the
+space. `docs/masterplans/8-extend-okf-profiles-for-v0-2-field-families.md` EP-4 reached the
+same conclusion from the other side and recorded it as a decision: the shipped v0.2 reference
+profile **deliberately places no path rule on `sources[].resource`**, on the ground that
+demanding a followable path there is a house convention rather than a v0.2 rule. A core check
+has strictly less licence than a profile rule to make that demand, since the user did not opt
+in by writing anything. And the shape of the mistake is exactly the one that cost MasterPlan 8
+EP-4 a withdrawn check and thirty-one failing tests: a rule reasoned out from the
+specification, which reading could not falsify and one command did. **EP-1 must run its check
+against `examples/ddd-ordering`, `examples/postgresql-sample`, and the fixture bundles before
+its acceptance criteria are considered met**, and must state in its plan which of §6.2's five
+fields it checks by default and why the others are excluded, exempted, or gated behind a
+profile.
+
+Two adjacent facts EP-1 needs at the same time. The top-level **`resource` field was missing
+from this MasterPlan's own list** until 2026-08-01: §6.2 names five path-valued fields and
+this document named four, omitting the one that appears in bundles today. Both
+`Okf.Path`'s module haddock and `docs/user/profiles.md:1282` name all five, so the omission
+was this document's alone. And `resource` carries the same hazard from the other direction:
+§4.1 defines it as "a URI that uniquely identifies the underlying asset", which in this
+repository is `bigquery://analytics.tables.orders` and `postgresql://warehouse/sales/public/
+customers`. Those all carry schemes and classify as `ExternalUrl`, so they are safe today —
+but a producer writing a bare `analytics.tables.orders` is writing a legitimate §4.1 value
+that classifies as `BundlePath`. The safety here is a property of this repository's fixtures,
+not of the field.
+
+**Two MasterPlan 8 items are inherited as context rather than as work.** `okf profile show`
+renders no `objectFields` block, so a profile constraining `executor`'s members displays them
+nowhere in that command — EP-5 touches CLI display and is the natural place to close it, if it
+chooses to. And `okf-core/test/fixtures/profiles/document-references-ep3.dhall` decodes but
+has never compiled, and is excluded from `testFrozenFixturesCompile` with its defect named.
+Neither is this MasterPlan's to fix; both are recorded so that meeting them is not mistaken
+for a regression.
+
 
 ## Decision Log
 
@@ -393,8 +589,64 @@ claim, and must not duplicate the profile-side machinery.
   Rationale: no existing ADR covers either, both are durable constraints on what a bundle
   may contain and what okf will check, and both will be re-litigated by the next contributor
   if the reasoning is left in a plan rather than promoted.
-  Date: 2026-07-31
+  Date: 2026-07-31, reaffirmed 2026-08-01 after reviewing ADRs 7 through 11
 
+- Decision: EP-1 does not path-check `sources[].resource` by default, and must name in its
+  plan which of specification §6.2's five path-valued fields it *does* check, running the
+  check against `examples/ddd-ordering`, `examples/postgresql-sample`, and the fixture
+  bundles before its acceptance criteria count as met. A value that §5.1 or §4.1 sanctions
+  as a non-path must not be reported as a dangling path.
+  Rationale: `examples/ddd-ordering/aggregates/order.md:32` carries a §5.1 scope descriptor
+  as `sources[].resource`, which `classifyPathReference` necessarily classifies as
+  `BundlePath`, so the check this MasterPlan's Vision promised reports this repository's own
+  correct example as broken. `docs/masterplans/8-extend-okf-profiles-for-v0-2-field-families.md`
+  EP-4 reached the same conclusion from the profile side and shipped a reference profile with
+  no path rule on `sources[].resource` for exactly this reason; a core check has less licence
+  than a profile rule, not more, because the user opted into nothing. The failure shape — a
+  rule reasoned from the specification that reading cannot falsify and one command can — is
+  the one that cost MasterPlan 8 EP-4 a withdrawn check and thirty-one failing tests. And
+  okf's own source settles it independently: `Okf.Document.Source`'s haddock for
+  `sourceResource` at `okf-core/src/Okf/Document.hs:265`, written by MasterPlan 7 EP-3 after
+  this MasterPlan was drafted, ends "Never treat this as a path." This belongs in EP-1's
+  frontmatter-path-resolution ADR when that ADR is written.
+  Date: 2026-08-01
+
+- Decision: Every check this initiative adds is placed per
+  `docs/adr/7-okf-v0-1-legacy-fallback-policy.md` — presence checks under `StrictAuthoring`
+  only, shape checks on a present family under strict as well — and an `Attested Computation`
+  missing its §10.2-REQUIRED `runtime` is therefore a strict-mode authoring diagnostic or a
+  profile `TypeRule`, never a `PermissiveConformance` failure.
+  Rationale: specification §11's conformance list has three items and none is a computation
+  field, and §11 separately forbids rejecting a bundle for an unknown `type` value. "REQUIRED
+  for this type" in §10.2 is a producer obligation, not a consumer licence to refuse. This
+  MasterPlan's Vision was drafted before ADR 7 existed and read as though core validation
+  would enforce the contract; it does not, and the distinction is now stated in Integration
+  Points so no child plan has to rediscover it.
+  Date: 2026-08-01
+
+- Decision: EP-2 owns the decision on whether `runtime`, `parameters`, `computation`,
+  `executor`, and `attester` join `Okf.Document.coreFrontmatterFieldOrder`, and must state
+  the reasoning either way.
+  Rationale: that list fixes serialization key order and, per ADR 7, defines what a closed
+  profile always permits; MasterPlan 7 added the six v0.2 concept keys to it in one
+  deliberate edit. The five contract keys are format-defined by §10.2 and §13.2, so the same
+  argument reaches them — closure governs unknown keys, not known ones — but they differ from
+  the six in being meaningful for exactly one `type`, which is a real distinction and not
+  obviously decisive. What must not happen is five keys arriving incidentally, one per plan
+  that needs one.
+  Date: 2026-08-01
+
+- Decision: What this MasterPlan adds beyond MasterPlan 8 is the *unprofiled core* half, and
+  EP-5 demonstrates the profile route rather than duplicating it.
+  Rationale: with MasterPlan 8 complete, a team can already express the whole §10 contract as
+  a house convention — `objectFields` reaches inside `executor` and `attester`, `path` reaches
+  the three path-valued contract fields, and a `TypeRule` scopes it to
+  `type: Attested Computation`. What no profile can supply is reading the contract onto
+  `Concept` so every command sees it, the §10.3 exactly-one rule (a frontmatter-and-body
+  constraint no `FieldRule` can express), checking that needs no profile to have been written,
+  and non-Markdown targets, which MasterPlan 8 EP-3 explicitly left here. Stating the boundary
+  now prevents EP-2 and EP-5 from reimplementing the profile layer in the core.
+  Date: 2026-08-01
 
 ## Outcomes & Retrospective
 
@@ -404,3 +656,64 @@ distill durable project context from this MasterPlan and its child ExecPlans int
 docs/adr/. Keep task-local execution and coordination details here.
 
 (To be filled during and after implementation.)
+
+
+## Revision note — 2026-08-01 (pre-implementation review against completed MasterPlans 7 and 8)
+
+This MasterPlan was drafted on 2026-07-31, before either of its external dependencies had
+landed any code. Both are now complete, and this document was reviewed against the working
+tree before its child ExecPlans are written. **It needed updating.** Nothing in the
+decomposition changed — five plans, same boundaries, same ordering, same critical path — but
+six substantive things were stale or absent, and one of them would have produced a shipped
+false positive.
+
+The finding that matters most is in Surprises & Discoveries and now constrains EP-1 by
+decision. The dangling-frontmatter-path check this MasterPlan's Vision promised, applied to
+`sources[].resource` as written, reports `examples/ddd-ordering` as broken: that bundle
+carries a specification §5.1 scope descriptor, which `classifyPathReference` necessarily
+classifies as a bundle path. MasterPlan 8 EP-4 had already reached the same conclusion from
+the profile side and shipped its reference profile without a path rule on that field. EP-1 now
+owes a decision about *which* of §6.2's five fields it checks by default, and owes it against
+the real bundles rather than against the specification.
+
+Relatedly, the field list was wrong by one. §6.2 names five path-valued fields; this document
+named four, omitting the top-level `resource` of §4.1 — the only one that appears in bundles
+today. Vision & Scope now names all five and records that two of them accept sanctioned
+non-path values.
+
+Two Integration Points changed ownership or were answered. The §6.2 path grammar is no longer
+EP-1's to extract: MasterPlan 8 EP-3 landed `okf-core/src/Okf/Path.hs` first, so EP-1 extends
+it, and the seam it extends is existence checking, which that module deliberately does not do.
+And the Markdown parse configuration question — "route through whatever single configuration
+point exists" — has an answer, `Okf.Markdown.markdownOptions`, with
+`docs/adr/9-one-markdown-parse-configuration-and-source-scanned-authoring-checks.md` governing
+and one documented cmark-gfm behaviour (an uncited footnote definition is deleted along with
+any fence inside it) that EP-3 should meet as a fixture rather than as a bug.
+
+Two Integration Points are new, because the machinery they describe did not exist when this
+document was drafted. `Okf.Validation.ValidationProfile` and `versionGate` fix where a new
+check lands, and ADR 7's policy has a consequence this MasterPlan's Vision papered over: an
+`Attested Computation` missing its §10.2-REQUIRED `runtime` cannot be a
+`PermissiveConformance` failure, because §11's conformance list does not reach it and §11
+forbids rejecting a bundle for an unknown `type`. It is a strict-mode diagnostic or a profile
+rule. And `Okf.Document.coreFrontmatterFieldOrder` is a centrally owned list that the five
+contract keys are not yet in; EP-2 owns that decision rather than making it incidentally.
+
+The Dependency Graph now records what MasterPlan 8's completion actually means for scope: a
+team can express the entire §10 contract as a house convention today, so this initiative's
+remaining contribution is the unprofiled core half. That is a narrowing worth stating, and
+EP-5 should demonstrate the profile route rather than duplicate it.
+
+Finally, the Progress list absorbed MasterPlan 7's retrospective instruction — that a family
+projected onto `Concept` is not a user-visible outcome until something renders it, so
+surfacing belongs in a milestone — and every file location in Integration Points was
+re-verified: `Okf.Validation.validateBundle` is at `:186` not `:65`, `Okf.Index.renderIndex`
+at `:141` not `:24`, and `Okf.Bundle.walkBundle` and `isReservedMarkdownFile` at `:83` and
+`:194` not `:71` and `:141`. `Okf.Graph.danglingReferences` at `:103` was still correct.
+
+No ADR was created or amended by this revision. The two ADRs this initiative owes are
+unchanged in scope, and the `sources[].resource` decision recorded above is durable content
+for EP-1's frontmatter-path-resolution ADR — it belongs there, written by the plan that
+implements it, rather than in a record written before any code exists. No child ExecPlans
+exist yet, so nothing cascaded.
+
