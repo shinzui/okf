@@ -41,6 +41,8 @@ module Okf.Document
     readComputation,
     readExecutor,
     readAttester,
+    ComputationSource (..),
+    readComputationSources,
 
     -- * Frontmatter authoring
     frontmatterFromFields,
@@ -80,6 +82,7 @@ import Data.Vector qualified as Vector
 import Data.Yaml qualified as Yaml
 import Data.Yaml.Pretty qualified as YamlPretty
 import Okf.Actor (Actor, parseActor, renderActor)
+import Okf.Markdown (computationBlocks)
 import Okf.Prelude hiding (setField)
 
 -- | YAML frontmatter fields. OKF allows producer-defined extension keys, so
@@ -511,6 +514,39 @@ readAttester frontmatterValue =
   case frontmatterLookup "attester" frontmatterValue of
     Just (Object attesterFields) -> Just (Attester (objectText "resource" attesterFields))
     _ -> Nothing
+
+-- | Where an attested computation's computation actually lives (specification
+-- §10.3).
+data ComputationSource
+  = -- | A code block in the body's @# Computation@ section, carrying its literal
+    -- contents.
+    ComputationInline !Text
+  | -- | The §6.2 path in the @computation@ frontmatter key, verbatim and not
+    -- resolved against the bundle.
+    ComputationFile !Text
+  deriving stock (Generic, Eq, Show)
+
+-- | Every computation the document offers, file before inline.
+--
+-- §10.3 requires exactly one — "Inline: a single fenced code block in the body
+-- under @# Computation@" or "File: set @computation@ to a path (§6.2) and omit
+-- the body fence" — and this reader deliberately does not enforce that. Like
+-- every reader in this module it restates what the document says and never
+-- fails. A list with none, or with two, is what
+-- 'Okf.Validation.validateDocument' reports.
+--
+-- This is the first reader here that takes an 'OKFDocument' rather than a
+-- 'Frontmatter', because §10.3 is the first rule in OKF that spans both halves
+-- of a document: the frontmatter key and the body section are alternatives to
+-- each other, so neither half can answer the question alone.
+--
+-- Type-agnostic, matching every other projection here: a @# Computation@
+-- section on a @Metric@ is still a fact about that document. Scoping a report to
+-- 'attestedComputationType' is "Okf.Validation"'s job.
+readComputationSources :: OKFDocument -> [ComputationSource]
+readComputationSources OKFDocument {frontmatter = documentFrontmatter, body = documentBody} =
+  foldMap (pure . ComputationFile) (readComputation documentFrontmatter)
+    <> map ComputationInline (computationBlocks documentBody)
 
 -- | Read an integral member. Only a YAML integer qualifies: a numeric string
 -- and a fractional number both yield 'Nothing', because aeson's @Integer@

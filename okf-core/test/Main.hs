@@ -136,6 +136,7 @@ main = do
         test "the attested computation contract reads from the specification worked example" testReadAttestedComputationContract,
         test "a malformed contract field is not read rather than rejected" testReadAttestedComputationDegenerateShapes,
         test "the specification worked example serializes byte-identically" testAttestedComputationRoundTrip,
+        test "readComputationSources joins the body section to the computation key" testReadComputationSources,
         test "strict validation reports an Attested Computation with no runtime" testValidateAttestedComputationRuntime,
         testIO "writeBundle then walkBundle round-trips" testWriteBundleRoundTrip,
         testIO "fixture dangling link reports a bundle validation error" testFixtureDanglingLink,
@@ -1997,6 +1998,63 @@ testAttestedComputationRoundTrip = do
     ]
     (topLevelKeysInEmissionOrder normalized)
 
+-- | §10.3's two forms, read off one document each and then off a document that
+-- wrongly offers both. The reader restates and never enforces, so the
+-- both-forms document yields two entries rather than a failure; reporting that
+-- is 'validateDocument''s job.
+testReadComputationSources :: Either Text ()
+testReadComputationSources = do
+  -- The specification's own worked example: no `computation` key, one indented
+  -- block under `# Computation`.
+  inline <- firstShow (parseDocument attestedComputationFixtureDocument)
+  assertEqual
+    [ComputationInline "SELECT SUM(amount) AS revenue FROM finance.recognized_revenue WHERE fiscal_year = @year\n"]
+    (readComputationSources inline)
+  byFile <-
+    firstShow
+      ( parseDocument
+          ( Text.unlines
+              [ "---",
+                "type: Attested Computation",
+                "computation: /references/revenue.sql",
+                "---",
+                "",
+                "# Notes",
+                "",
+                "The computation lives in a file, so this body carries no block."
+              ]
+          )
+      )
+  assertEqual [ComputationFile "/references/revenue.sql"] (readComputationSources byFile)
+  both <-
+    firstShow
+      ( parseDocument
+          ( Text.unlines
+              [ "---",
+                "type: Attested Computation",
+                "computation: /references/revenue.sql",
+                "---",
+                "",
+                "# Computation",
+                "",
+                "```sql",
+                "SELECT 1",
+                "```"
+              ]
+          )
+      )
+  assertEqual
+    [ComputationFile "/references/revenue.sql", ComputationInline "SELECT 1\n"]
+    (readComputationSources both)
+  -- Type-agnostic: a `# Computation` section on a `Metric` is still a fact about
+  -- that document. Scoping a report to the one type is `Okf.Validation`'s job.
+  onMetric <-
+    firstShow
+      ( parseDocument
+          (Text.unlines ["---", "type: Metric", "---", "", "# Computation", "", "    SELECT 1"])
+      )
+  assertEqual [ComputationInline "SELECT 1\n"] (readComputationSources onMetric)
+
 -- | The top-level frontmatter keys of a serialized document, in the order they
 -- were emitted. A top-level key is the only thing that starts in column zero
 -- inside the frontmatter fence.
@@ -2222,6 +2280,14 @@ testFixtureAttestedComputation = do
           (executorResource =<< conceptExecutor revenue)
         assertEqual (Just ["job_id", "executed_sql", "result"]) (executorReceipt <$> conceptExecutor revenue)
         assertEqual (Just "/references/attesters/revenue.py") (attesterResource =<< conceptAttester revenue)
+        -- The body half of §10.3, projected alongside the frontmatter half: this
+        -- concept names no `computation` path, so its one computation is the
+        -- indented block under `# Computation`.
+        assertEqual
+          [ ComputationInline
+              "SELECT SUM(amount) AS revenue\nFROM finance.recognized_revenue\nWHERE fiscal_year = @year\n"
+          ]
+          (conceptComputationSources revenue)
     )
 
 -- | Resolve a fixture file path regardless of whether tests run from the repo

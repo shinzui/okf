@@ -10,6 +10,7 @@ module Okf.Bundle
     conceptFromDocument,
     conceptAttester,
     conceptComputation,
+    conceptComputationSources,
     conceptDescription,
     conceptDocument,
     conceptExecutor,
@@ -77,7 +78,8 @@ data Concept = Concept
     parameters :: ![Parameter],
     computation :: !(Maybe Text),
     executor :: !(Maybe Executor),
-    attester :: !(Maybe Attester)
+    attester :: !(Maybe Attester),
+    computationSources :: ![ComputationSource]
   }
   deriving stock (Generic, Eq, Show)
 
@@ -285,6 +287,15 @@ conceptExecutor Concept {executor} = executor
 conceptAttester :: Concept -> Maybe Attester
 conceptAttester Concept {attester} = attester
 
+-- | Every computation the concept offers (specification §10.3), file before
+-- inline. Empty when it offers none.
+--
+-- Unlike 'conceptComputation', which restates the frontmatter key verbatim, this
+-- also sees the body. §10.3's rule that exactly one of the two forms must be
+-- present is 'Okf.Validation.validateDocument''s to report.
+conceptComputationSources :: Concept -> [ComputationSource]
+conceptComputationSources Concept {computationSources} = computationSources
+
 -- | Reserved Markdown filenames are not normal concept documents.
 isReservedMarkdownFile :: FilePath -> Bool
 isReservedMarkdownFile path =
@@ -427,7 +438,15 @@ tryBundleIo path action = do
 -- @parameters@, @computation@, @executor@, @attester@) are derived
 -- from the document's frontmatter, so they can never disagree with it.
 -- A projection may only restate what frontmatter says; it may never store a
--- derivation frontmatter does not carry. The source
+-- derivation frontmatter does not carry.
+--
+-- @computationSources@ is the one field derived from the whole document rather
+-- than from frontmatter alone, because specification §10.3 makes the
+-- @computation@ key and the body's @# Computation@ section alternatives to each
+-- other. Restating what the /document/ says, both halves together, is still
+-- restating rather than deriving.
+--
+-- The source
 -- path is derived from the concept ID. Use this when assembling concepts in
 -- memory (for 'writeBundle' or 'Okf.Validation.validateBundle').
 conceptFromDocument :: ConceptId -> OKFDocument -> Concept
@@ -456,7 +475,8 @@ conceptAt conceptId relativePath document =
       parameters = readParameters (frontmatter document),
       computation = readComputation (frontmatter document),
       executor = readExecutor (frontmatter document),
-      attester = readAttester (frontmatter document)
+      attester = readAttester (frontmatter document),
+      computationSources = readComputationSources document
     }
 
 textField :: Text -> Frontmatter -> Text
