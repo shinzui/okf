@@ -3,8 +3,11 @@ type: Bounded Context
 key: ordering
 title: Ordering
 subdomain: ordering
+description: Owns the order lifecycle from placement through fulfillment.
 purpose: Owns the order lifecycle from placement through fulfillment.
-timestamp: 2026-06-18T00:00:00Z
+generated:
+  by: human:nadeem
+  at: 2026-06-18T00:00:00Z
 tags: [ddd, bounded-context, ordering]
 ---
 

@@ -3,8 +3,11 @@ type: Bounded Context
 key: billing
 title: Billing
 subdomain: billing
+description: Issues invoices in response to placed orders.
 purpose: Issues invoices in response to placed orders.
-timestamp: 2026-06-18T00:00:00Z
+generated:
+  by: human:nadeem
+  at: 2026-06-18T00:00:00Z
 tags: [ddd, bounded-context, billing]
 ---
 

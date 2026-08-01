@@ -5,7 +5,9 @@ message: IssueInvoice
 title: Issue Invoice
 aggregate: invoice
 description: Request to issue an invoice for a placed order.
-timestamp: 2026-06-18T00:00:00Z
+generated:
+  by: human:nadeem
+  at: 2026-06-18T00:00:00Z
 tags: [ddd, command, billing]
 ---
 

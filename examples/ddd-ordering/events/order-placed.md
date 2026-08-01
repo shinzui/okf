@@ -5,7 +5,9 @@ message: OrderPlaced
 title: Order Placed
 aggregate: order
 description: A new order was successfully placed.
-timestamp: 2026-06-18T00:00:00Z
+generated:
+  by: human:nadeem
+  at: 2026-06-18T00:00:00Z
 tags: [ddd, event, ordering]
 ---
 

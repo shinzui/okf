@@ -4,7 +4,9 @@ term: Aggregate Root
 title: Aggregate Root
 aliases: [root entity]
 description: The single entry point through which an aggregate is accessed.
-timestamp: 2026-06-18T00:00:00Z
+generated:
+  by: human:nadeem
+  at: 2026-06-18T00:00:00Z
 tags: [ddd, glossary]
 ---
 

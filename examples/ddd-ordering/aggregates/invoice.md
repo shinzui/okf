@@ -10,7 +10,9 @@ invariants:
   - An invoice references exactly one placed order.
 size: Medium
 throughputPerDay: 500
-timestamp: 2026-06-18T00:00:00Z
+generated:
+  by: human:nadeem
+  at: 2026-06-18T00:00:00Z
 tags: [ddd, aggregate, billing]
 ---
 

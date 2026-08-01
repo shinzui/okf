@@ -4,7 +4,9 @@ key: issue-invoice-on-order
 title: Issue Invoice On Order
 context: billing
 description: When an order is placed, issue an invoice for it.
-timestamp: 2026-06-18T00:00:00Z
+generated:
+  by: human:nadeem
+  at: 2026-06-18T00:00:00Z
 tags: [ddd, policy, billing]
 ---
 

@@ -3,7 +3,9 @@ type: Value Object
 key: money
 title: Money
 description: Immutable amount-and-currency value object.
-timestamp: 2026-06-18T00:00:00Z
+generated:
+  by: human:nadeem
+  at: 2026-06-18T00:00:00Z
 tags: [ddd, value-object, shared-kernel]
 ---
 

@@ -6,7 +6,9 @@ pattern: CustomerSupplier
 teamRelationship: UpstreamDownstream
 title: Ordering → Billing
 description: Billing consumes Ordering's published order events.
-timestamp: 2026-06-18T00:00:00Z
+generated:
+  by: human:nadeem
+  at: 2026-06-18T00:00:00Z
 tags: [ddd, context-mapping]
 ---
 

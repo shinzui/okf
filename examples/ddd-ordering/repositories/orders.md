@@ -4,7 +4,9 @@ key: orders
 title: Orders Repository
 aggregate: order
 description: Persistence boundary for the Order aggregate.
-timestamp: 2026-06-18T00:00:00Z
+generated:
+  by: human:nadeem
+  at: 2026-06-18T00:00:00Z
 tags: [ddd, repository, ordering]
 ---
 

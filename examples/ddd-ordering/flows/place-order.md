@@ -3,7 +3,9 @@ type: Message Flow
 key: place-order
 title: Place Order
 description: Placing an order triggers an invoice in Billing.
-timestamp: 2026-06-18T00:00:00Z
+generated:
+  by: human:nadeem
+  at: 2026-06-18T00:00:00Z
 tags: [ddd, flow]
 ---
 

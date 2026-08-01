@@ -4,7 +4,9 @@ key: reserve-stock
 title: Reserve Stock
 context: ordering
 description: When an order is placed, reserve stock for its lines.
-timestamp: 2026-06-18T00:00:00Z
+generated:
+  by: human:nadeem
+  at: 2026-06-18T00:00:00Z
 tags: [ddd, policy, ordering]
 ---
 

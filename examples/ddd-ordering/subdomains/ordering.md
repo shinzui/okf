@@ -5,7 +5,9 @@ title: Ordering
 kind: Core
 evolution: Product
 description: Owns the order lifecycle; the competitive heart of the business.
-timestamp: 2026-06-18T00:00:00Z
+generated:
+  by: human:nadeem
+  at: 2026-06-18T00:00:00Z
 tags: [ddd, subdomain, core]
 ---
 

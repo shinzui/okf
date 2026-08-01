@@ -11,7 +11,9 @@ invariants:
   - Order total equals the sum of its line subtotals.
 size: Large
 throughputPerDay: 500
-timestamp: 2026-06-18T00:00:00Z
+generated:
+  by: human:nadeem
+  at: 2026-06-18T00:00:00Z
 tags: [ddd, aggregate, ordering]
 ---
 

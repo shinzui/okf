@@ -2,6 +2,9 @@
 type: PostgreSQL Table
 title: Orders
 description: One row per customer order.
+generated:
+  by: human:nadeem
+  at: 2026-06-22T00:00:00Z
 resource: postgresql://warehouse/sales/public/orders
 ---
 

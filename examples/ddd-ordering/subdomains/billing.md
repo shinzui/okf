@@ -5,7 +5,9 @@ title: Billing
 kind: Supporting
 evolution: Commodity
 description: Issues invoices for placed orders; necessary but not differentiating.
-timestamp: 2026-06-18T00:00:00Z
+generated:
+  by: human:nadeem
+  at: 2026-06-18T00:00:00Z
 tags: [ddd, subdomain, supporting]
 ---
 

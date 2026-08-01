@@ -5,7 +5,9 @@ title: Idempotency
 context: ordering
 aliases: [at-most-once effect]
 description: Applying the same command twice has the same effect as once.
-timestamp: 2026-06-18T00:00:00Z
+generated:
+  by: human:nadeem
+  at: 2026-06-18T00:00:00Z
 tags: [ddd, glossary]
 ---
 
