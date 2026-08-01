@@ -7,6 +7,12 @@ frontmatter for metadata and Markdown body text for human-readable knowledge.
 The CLI works on plain files and does not require Mori, Mina, BigQuery, an LLM,
 or network access.
 
+okf implements OKF v0.2, which adds optional frontmatter for provenance, trust,
+and lifecycle so that a reader can judge machine-written knowledge: where a
+concept came from, who confirmed it, and whether it is still current. Bundles
+written against v0.1 stay readable — see
+[OKF Bundle Format](format.md#migrating-from-v01) for what changed.
+
 
 ## Start Here
 
@@ -51,7 +57,9 @@ needed. See the [CLI Reference](cli.md#help) for details.
 4. Run `okf index <bundle> --write` to update indexes.
 5. Run `okf graph <bundle> --json` to produce graph data for tools.
 6. Run `okf show <bundle> <concept-id>` to inspect one concept.
-7. Run `okf profile document --profile <profile.dhall> --out <dir> --write` to
+7. Run `okf trust <bundle>` to see each concept's trust tier, status, and
+   staleness, and `okf sources <bundle>` to see the provenance it records.
+8. Run `okf profile document --profile <profile.dhall> --out <dir> --write` to
    generate browsable documentation for the profile you validate against.
 
 ## Shell Completion

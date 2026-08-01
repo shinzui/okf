@@ -55,7 +55,7 @@ something documented does not actually work.
 
 ## Progress
 
-- [ ] Milestone 1: README and the user guide describe OKF v0.2
+- [x] Milestone 1: README and the user guide describe OKF v0.2 (2026-08-01)
 - [ ] Milestone 2: `docs/user/format.md` documents every v0.2 family with worked examples
 - [ ] Milestone 3: `docs/user/cli.md` and `docs/user/authoring.md` cover the new commands and setters
 - [ ] Milestone 4: the example bundles migrate to v0.2 and declare `okf_version`
@@ -77,6 +77,16 @@ out not to work — with short evidence.)
   Rationale: it is the published specification this project tracks and it is on disk, so
   every claim in the documentation can be checked rather than recalled.
   Date: 2026-07-31
+
+- Decision: Implement the milestones in the order 1, 4, 5, 2, 3, 6 rather than 1 through 6.
+  Rationale: Milestones 2 and 3 require transcripts and YAML snippets that were actually
+  run, and the plan is emphatic about that — "a plausible-looking transcript that differs
+  from reality is worse than none". The bundles those transcripts run against are built by
+  Milestones 4 and 5. Writing the guides first would have meant writing them twice or
+  pasting invented output. Milestone 1 keeps its place because the version claim in
+  `README.md` is the single most visible wrong statement in the repository and depends on
+  nothing.
+  Date: 2026-08-01
 
 (Add further decisions as you make them. Milestone 5 ends with a decision this plan requires
 you to record.)

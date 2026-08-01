@@ -8,10 +8,22 @@ It treats plain files as a knowledge substrate that humans can read and static
 tools can validate, index, and traverse.
 
 This implementation tracks Google's
-[Open Knowledge Format v0.1 specification](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md).
+[Open Knowledge Format v0.2 specification](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md).
 The standalone CLI does not require Mori, Mina, an LLM, or network access.
 Integration documentation exists for Mori and Mina, but those workflows are
 thin layers over the reusable `okf-core` library.
+
+Version 0.2 assumes a corpus written and maintained by agents rather than
+authored once by people, and adds the frontmatter a reader needs in order to
+judge machine-written knowledge: **provenance** (`sources`, with per-source
+credibility signals, and `usage_window`), **trust** (`generated`, `verified`),
+and **lifecycle** (`status`, `stale_after`). Every one of them is optional —
+`type` is still the only key a concept must have — and v0.1 bundles remain
+readable, with `timestamp` read whenever `generated` is absent. A bundle may
+declare which dialect it targets with `okf_version: "0.2"` in its root
+`index.md`. See [docs/user/format.md](./docs/user/format.md) for the field set
+and [docs/adr/7-okf-v0-1-legacy-fallback-policy.md](./docs/adr/7-okf-v0-1-legacy-fallback-policy.md)
+for what okf does with a v0.1 bundle.
 
 
 ## Packages
@@ -67,7 +79,9 @@ cabal run okf -- validate <bundle>
 cabal run okf -- validate <bundle> --strict
 cabal run okf -- validate <bundle> --profile <descriptor>.dhall [--profile-enforce]
 cabal run okf -- validate <bundle> --log-enforce
-cabal run okf -- index <bundle> [--write]
+cabal run okf -- index <bundle> [--write] [--okf-version MAJOR.MINOR]
+cabal run okf -- trust <bundle>
+cabal run okf -- sources <bundle>
 cabal run okf -- log <bundle> [--check-stale] [--since <git-ref>]
 cabal run okf -- log add <bundle> [<concept-id>] -m <message> [--kind <kind>] [--date YYYY-MM-DD]
 cabal run okf -- graph <bundle> [--json]
@@ -84,13 +98,23 @@ cabal run okf -- help [topic]
 `validate` checks every concept document and whole-bundle referential integrity.
 Default validation requires a non-empty `type` frontmatter field. `--strict`
 also requires the recommended authoring fields `title`, `description`, and
-`timestamp`. If the bundle contains `log.md` files, validation checks their
-structure and reports stale-log advisories when concept `timestamp` dates are
+`generated` — or a legacy v0.1 `timestamp` in its place. If the bundle contains
+`log.md` files, validation checks their structure and reports stale-log
+advisories when a concept's `generated.at` date (falling back to `timestamp`) is
 newer than the nearest enclosing log entry; `--log-enforce` makes those
-advisories fail the command.
+advisories fail the command. When a bundle declares `okf_version`, the success
+line names it.
+
+`trust` reports each concept's derived trust tier, `status`, and whether it has
+passed its `stale_after` date. `sources` lists the provenance each concept
+records, with the credibility signals a reader judges it by. Neither command
+stores anything: a tier is derived from `verified` on every read, per
+[docs/adr/8-derived-not-stored-trust-and-credibility.md](./docs/adr/8-derived-not-stored-trust-and-credibility.md).
 
 `index` previews generated `index.md` files by default and writes them with
-`--write`. `log` previews and checks reserved `log.md` files; `log add` appends
+`--write`; `--okf-version` declares the OKF version in the bundle root index,
+and an existing declaration is preserved when the flag is absent. `log` previews
+and checks reserved `log.md` files; `log add` appends
 a dated entry to the root log or to the log in a concept's directory. `graph`
 emits JSON graph data; JSON is currently the only graph format, and `--json` is
 accepted to keep the command shape stable for future formats. `show` prints one
@@ -218,7 +242,10 @@ Each concept document may start with YAML frontmatter:
 type: PostgreSQL Table
 title: Orders
 description: Order fact table.
-timestamp: 2026-06-16T00:00:00Z
+status: stable
+generated:
+  by: human:nadeem
+  at: 2026-06-16T00:00:00Z
 resource: postgresql://warehouse/public/orders
 tags: [orders, sales]
 ---
@@ -228,13 +255,20 @@ tags: [orders, sales]
 Orders join to [Customers](/tables/customers.md).
 ```
 
+`type` is the only key a concept must have. `generated` records who or what
+produced the content and when, and supersedes the v0.1 `timestamp`, which okf
+still reads when `generated` is absent. The other v0.2 families — `verified`,
+`stale_after`, `sources`, and `usage_window` — are documented in
+[docs/user/format.md](./docs/user/format.md).
+
 Reserved files such as `index.md` and `log.md` are not treated as concept
-documents. Markdown links to other `.md` concepts become graph edges when the
-target exists in the bundle; dangling references are reported by `validate`.
-`log.md` files use a level-1 title, `## YYYY-MM-DD` date groups, and bullet
-entries. They provide optional update history for a directory scope, and the CLI
-can preview them, append entries, and compare concept timestamps against the
-nearest enclosing log.
+documents; the one exception is that a bundle-root `index.md` may carry an
+`okf_version` declaration in frontmatter. Markdown links to other `.md` concepts
+become graph edges when the target exists in the bundle; dangling references are
+reported by `validate`. `log.md` files use a level-1 title, `## YYYY-MM-DD` date
+groups, and bullet entries. They provide optional update history for a directory
+scope, and the CLI can preview them, append entries, and compare concept
+generated dates against the nearest enclosing log.
 
 See [docs/user/format.md](./docs/user/format.md) for this implementation's
 format reference, [Google's OKF specification](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md)
