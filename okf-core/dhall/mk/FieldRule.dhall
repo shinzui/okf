@@ -59,6 +59,18 @@ in  { plain = \(field : Text) -> FieldRule::{ field }
           , cardinality = Cardinality.List
           , elementFields = Some elementFields
           }
+    , record =
+        \(field : Text) ->
+        \(objectFields : NestedRules) ->
+          FieldRule::{ field, objectFields = Some objectFields }
+    , recordOrList =
+        \(field : Text) ->
+        \(fields : NestedRules) ->
+          FieldRule::{
+          , field
+          , objectFields = Some fields
+          , elementFields = Some fields
+          }
     , conditional =
         \(rule : FieldRule.Type) ->
         \(condition : FieldCondition) ->

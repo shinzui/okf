@@ -358,6 +358,7 @@ sampleDecisionsProfile =
                     cardinality = Any,
                     format = Nothing,
                     elementFields = Nothing,
+                    objectFields = Nothing,
                     reference = Nothing,
                     when = Nothing
                   },
@@ -372,6 +373,7 @@ sampleDecisionsProfile =
                     cardinality = Scalar,
                     format = Nothing,
                     elementFields = Nothing,
+                    objectFields = Nothing,
                     reference = Nothing,
                     when = Nothing
                   }
@@ -386,9 +388,9 @@ sampleDecisionsProfile =
               description = Just "One accepted decision, never edited after acceptance.",
               frontmatter =
                 FrontmatterRules
-                  { required = [FieldRule "owner" (Just "Person responsible for the decision.") [] Scalar (Just (DocumentHandle "USR")) Nothing Nothing Nothing],
-                    recommended = [FieldRule "reviewer" Nothing ["Ari", "Bo"] List Nothing Nothing (Just (HandleReferenceRule "ADR" ["mori"] False)) Nothing],
-                    optional = [FieldRule "supersedes" Nothing [] Scalar Nothing Nothing (Just (HandleReferenceRule "ADR" [] False)) Nothing]
+                  { required = [FieldRule "owner" (Just "Person responsible for the decision.") [] Scalar (Just (DocumentHandle "USR")) Nothing Nothing Nothing Nothing],
+                    recommended = [FieldRule "reviewer" Nothing ["Ari", "Bo"] List Nothing Nothing Nothing (Just (HandleReferenceRule "ADR" ["mori"] False)) Nothing],
+                    optional = [FieldRule "supersedes" Nothing [] Scalar Nothing Nothing Nothing (Just (HandleReferenceRule "ADR" [] False)) Nothing]
                   },
               pathPattern = Just "decisions/*",
               resourceScheme = Nothing,
@@ -400,7 +402,7 @@ sampleDecisionsProfile =
     }
 
 undocumentedField :: Text.Text -> FieldRule
-undocumentedField key = FieldRule {field = key, description = Nothing, allowedValues = [], cardinality = Any, format = Nothing, elementFields = Nothing, reference = Nothing, when = Nothing}
+undocumentedField key = FieldRule {field = key, description = Nothing, allowedValues = [], cardinality = Any, format = Nothing, elementFields = Nothing, objectFields = Nothing, reference = Nothing, when = Nothing}
 
 sampleNestedProfile :: ProfileSpec
 sampleNestedProfile =
@@ -424,6 +426,7 @@ sampleNestedProfile =
                           optional = [NestedFieldRule "model" Nothing [] Scalar Nothing Nothing]
                         }
                   )
+                  Nothing
                   Nothing
                   Nothing
               ],

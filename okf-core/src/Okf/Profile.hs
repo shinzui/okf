@@ -163,6 +163,12 @@ data HandleReferenceRule = HandleReferenceRule
 
 -- | One documented frontmatter key. The description is prose for humans and is
 -- never checked against a bundle.
+--
+-- @elementFields@ and @objectFields@ describe two different shapes.
+-- @elementFields@ constrains the record inside /each element of a list/;
+-- @objectFields@ constrains the record that /is/ the value. Declaring both means
+-- either spelling is accepted and both are checked against the same member
+-- rules, which is how a profile describes the OKF v0.2 @verified@ key.
 data FieldRule = FieldRule
   { field :: !Text,
     description :: !(Maybe Text),
@@ -170,15 +176,17 @@ data FieldRule = FieldRule
     cardinality :: !Cardinality,
     format :: !(Maybe FieldFormat),
     elementFields :: !(Maybe NestedRules),
+    objectFields :: !(Maybe NestedRules),
     reference :: !(Maybe HandleReferenceRule),
     when :: !(Maybe FieldCondition)
   }
   deriving stock (Generic, Eq, Show)
   deriving anyclass (FromDhall)
 
--- | Rules for the flat object stored in each element of a list-valued field.
--- The nested rule type has no @elementFields@ member, which makes the public
--- descriptor depth-bounded rather than recursive.
+-- | Rules for the flat object stored in each element of a list-valued field, or
+-- in the mapping that is the value of an object-valued field. The nested rule
+-- type has neither an @elementFields@ nor an @objectFields@ member, which makes
+-- the public descriptor depth-bounded rather than recursive.
 data NestedRules = NestedRules
   { required :: ![NestedFieldRule],
     recommended :: ![NestedFieldRule],
@@ -278,7 +286,7 @@ instance ToJSON HandleReferenceRule where
       ]
 
 instance ToJSON FieldRule where
-  toJSON FieldRule {field = fieldName, description, allowedValues, cardinality, format, elementFields, reference, when = condition} =
+  toJSON FieldRule {field = fieldName, description, allowedValues, cardinality, format, elementFields, objectFields, reference, when = condition} =
     object
       [ "field" .= fieldName,
         "description" .= description,
@@ -287,7 +295,11 @@ instance ToJSON FieldRule where
         "format" .= format,
         "elementFields" .= elementFields,
         "reference" .= reference,
-        "when" .= condition
+        "when" .= condition,
+        -- Appended rather than placed beside @elementFields@, so that the list
+        -- reads as "the keys this instance has always emitted, then the ones
+        -- added since". A consumer keys on names, not position.
+        "objectFields" .= objectFields
       ]
 
 instance ToJSON NestedRules where
@@ -387,6 +399,67 @@ data LegacyTypeRule = LegacyTypeRule
   deriving stock (Generic, Eq, Show)
 
 instance FromDhall LegacyTypeRule where
+  autoWith _normalizer =
+    genericAutoWith
+      (Dhall.defaultInterpretOptions {Dhall.fieldModifier = stripTrailingUnderscore})
+    where
+      stripTrailingUnderscore fieldName =
+        fromMaybe fieldName (Text.stripSuffix "_" fieldName)
+
+-- | The complete optional-presence descriptor generation, frozen before object
+-- rules were added. This is the immediately preceding public descriptor
+-- generation: it matches today's shape exactly apart from @objectFields@ on
+-- 'FieldRule'. 'NestedRules', 'NestedFieldRule', 'Cardinality', 'FieldFormat',
+-- 'HandleReferenceRule', and 'FieldCondition' are unchanged by that addition and
+-- so are shared rather than copied. Exercised by
+-- @okf-core\/test\/fixtures\/profiles\/object-fields-mp8-ep1.dhall@.
+data PreObjectProfileFieldRule = PreObjectProfileFieldRule
+  { field :: !Text,
+    description :: !(Maybe Text),
+    allowedValues :: ![Text],
+    cardinality :: !Cardinality,
+    format :: !(Maybe FieldFormat),
+    elementFields :: !(Maybe NestedRules),
+    reference :: !(Maybe HandleReferenceRule),
+    when :: !(Maybe FieldCondition)
+  }
+  deriving stock (Generic, Eq, Show)
+  deriving anyclass (FromDhall)
+
+data PreObjectProfileFrontmatterRules = PreObjectProfileFrontmatterRules
+  { required :: ![PreObjectProfileFieldRule],
+    recommended :: ![PreObjectProfileFieldRule],
+    optional :: ![PreObjectProfileFieldRule]
+  }
+  deriving stock (Generic, Eq, Show)
+  deriving anyclass (FromDhall)
+
+data PreObjectProfileSpec = PreObjectProfileSpec
+  { name :: !Text,
+    description :: !(Maybe Text),
+    okfVersion :: !Text,
+    frontmatter :: !PreObjectProfileFrontmatterRules,
+    allowUnknownTypes :: !Bool,
+    allowUnknownFields :: !Bool,
+    idField :: !(Maybe Text),
+    types :: ![PreObjectProfileTypeRule]
+  }
+  deriving stock (Generic, Eq, Show)
+  deriving anyclass (FromDhall)
+
+data PreObjectProfileTypeRule = PreObjectProfileTypeRule
+  { type_ :: !Text,
+    description :: !(Maybe Text),
+    frontmatter :: !PreObjectProfileFrontmatterRules,
+    pathPattern :: !(Maybe Text),
+    resourceScheme :: !(Maybe Text),
+    requireSchemaSection :: !Bool,
+    schemaColumns :: ![Text],
+    idPrefix :: !(Maybe Text)
+  }
+  deriving stock (Generic, Eq, Show)
+
+instance FromDhall PreObjectProfileTypeRule where
   autoWith _normalizer =
     genericAutoWith
       (Dhall.defaultInterpretOptions {Dhall.fieldModifier = stripTrailingUnderscore})
@@ -854,6 +927,27 @@ instance FromDhall DescribedTypeRule where
 emptyFrontmatterRules :: FrontmatterRules
 emptyFrontmatterRules = FrontmatterRules {required = [], recommended = [], optional = []}
 
+upgradePreObjectProfileFrontmatter :: PreObjectProfileFrontmatterRules -> FrontmatterRules
+upgradePreObjectProfileFrontmatter previous =
+  FrontmatterRules
+    { required = map upgradeField (previous ^. #required),
+      recommended = map upgradeField (previous ^. #recommended),
+      optional = map upgradeField (previous ^. #optional)
+    }
+  where
+    upgradeField rule =
+      FieldRule
+        { field = rule ^. #field,
+          description = rule ^. #description,
+          allowedValues = rule ^. #allowedValues,
+          cardinality = rule ^. #cardinality,
+          format = rule ^. #format,
+          elementFields = rule ^. #elementFields,
+          objectFields = Nothing,
+          reference = rule ^. #reference,
+          when = rule ^. #when
+        }
+
 upgradeReferenceProfileFrontmatter :: ReferenceProfileFrontmatterRules -> FrontmatterRules
 upgradeReferenceProfileFrontmatter previous =
   FrontmatterRules
@@ -870,6 +964,7 @@ upgradeReferenceProfileFrontmatter previous =
           cardinality = rule ^. #cardinality,
           format = rule ^. #format,
           elementFields = upgradeNestedRules <$> rule ^. #elementFields,
+          objectFields = Nothing,
           reference = rule ^. #reference,
           when = rule ^. #when
         }
@@ -905,6 +1000,7 @@ upgradePreviousFrontmatter previous =
           cardinality = Any,
           format = Nothing,
           elementFields = Nothing,
+          objectFields = Nothing,
           reference = Nothing,
           when = Nothing
         }
@@ -925,6 +1021,7 @@ upgradeConditionalProfileFrontmatter previous =
           cardinality = rule ^. #cardinality,
           format = rule ^. #format,
           elementFields = upgradeNestedRules <$> rule ^. #elementFields,
+          objectFields = Nothing,
           reference = Nothing,
           when = rule ^. #when
         }
@@ -960,6 +1057,7 @@ upgradeNestedProfileFrontmatter previous =
           cardinality = rule ^. #cardinality,
           format = rule ^. #format,
           elementFields = upgradeNestedProfileRules <$> rule ^. #elementFields,
+          objectFields = Nothing,
           reference = Nothing,
           when = Nothing
         }
@@ -995,6 +1093,7 @@ upgradeFormatFrontmatter previous =
           cardinality = rule ^. #cardinality,
           format = rule ^. #format,
           elementFields = Nothing,
+          objectFields = Nothing,
           reference = Nothing,
           when = Nothing
         }
@@ -1015,6 +1114,7 @@ upgradeCardinalityFrontmatter previous =
           cardinality = rule ^. #cardinality,
           format = Nothing,
           elementFields = Nothing,
+          objectFields = Nothing,
           reference = Nothing,
           when = Nothing
         }
@@ -1035,8 +1135,34 @@ upgradeVocabularyFrontmatter previous =
           cardinality = Any,
           format = Nothing,
           elementFields = Nothing,
+          objectFields = Nothing,
           reference = Nothing,
           when = Nothing
+        }
+
+upgradePreObjectProfile :: PreObjectProfileSpec -> ProfileSpec
+upgradePreObjectProfile previous =
+  ProfileSpec
+    { name = previous ^. #name,
+      description = previous ^. #description,
+      okfVersion = previous ^. #okfVersion,
+      frontmatter = upgradePreObjectProfileFrontmatter (previous ^. #frontmatter),
+      allowUnknownTypes = previous ^. #allowUnknownTypes,
+      allowUnknownFields = previous ^. #allowUnknownFields,
+      idField = previous ^. #idField,
+      types = map upgradeRule (previous ^. #types)
+    }
+  where
+    upgradeRule rule =
+      TypeRule
+        { type_ = rule ^. #type_,
+          description = rule ^. #description,
+          frontmatter = upgradePreObjectProfileFrontmatter (rule ^. #frontmatter),
+          pathPattern = rule ^. #pathPattern,
+          resourceScheme = rule ^. #resourceScheme,
+          requireSchemaSection = rule ^. #requireSchemaSection,
+          schemaColumns = rule ^. #schemaColumns,
+          idPrefix = rule ^. #idPrefix
         }
 
 upgradeReferenceProfile :: ReferenceProfileSpec -> ProfileSpec
@@ -1259,7 +1385,7 @@ upgradeLegacyProfile legacy =
       types = map upgradeRule (legacy ^. #types)
     }
   where
-    undocumented key = FieldRule {field = key, description = Nothing, allowedValues = [], cardinality = Any, format = Nothing, elementFields = Nothing, reference = Nothing, when = Nothing}
+    undocumented key = FieldRule {field = key, description = Nothing, allowedValues = [], cardinality = Any, format = Nothing, elementFields = Nothing, objectFields = Nothing, reference = Nothing, when = Nothing}
     upgradeRule rule =
       TypeRule
         { type_ = rule ^. #type_,
@@ -1275,7 +1401,8 @@ upgradeLegacyProfile legacy =
 -- | Load and decode a Dhall profile descriptor from a file path. Any evaluation
 -- or decoding failure is captured as a human-readable 'Left'.
 --
--- The reference-aware shape, condition-aware shape, bounded-nested shape, EP-4
+-- The pre-object shape, reference-aware shape, condition-aware shape,
+-- bounded-nested shape, EP-4
 -- format shape, EP-3 cardinality shape, EP-2 vocabulary shape, type-aware EP-1
 -- shape, self-documenting shape, and okf 0.2.x shape are accepted by frozen
 -- fallback decoders and upgraded
@@ -1287,44 +1414,48 @@ loadProfileFile path = do
   case current of
     Right spec -> pure (Right spec)
     Left currentError -> do
-      referenceAware <- tryDecode (Dhall.inputFile auto path)
-      case referenceAware of
-        Right referenceSpec -> pure (Right (upgradeReferenceProfile referenceSpec))
-        Left _referenceError -> do
-          conditional <- tryDecode (Dhall.inputFile auto path)
-          case conditional of
-            Right conditionalSpec -> pure (Right (upgradeConditionalProfile conditionalSpec))
-            Left _conditionalError -> do
-              nested <- tryDecode (Dhall.inputFile auto path)
-              case nested of
-                Right nestedSpec -> pure (Right (upgradeNestedProfile nestedSpec))
-                Left _nestedError -> do
-                  formatted <- tryDecode (Dhall.inputFile auto path)
-                  case formatted of
-                    Right formatSpec -> pure (Right (upgradeFormatProfile formatSpec))
-                    Left _formatError -> do
-                      cardinality <- tryDecode (Dhall.inputFile auto path)
-                      case cardinality of
-                        Right cardinalitySpec -> pure (Right (upgradeCardinalityProfile cardinalitySpec))
-                        Left _cardinalityError -> do
-                          vocabulary <- tryDecode (Dhall.inputFile auto path)
-                          case vocabulary of
-                            Right vocabularySpec -> pure (Right (upgradeVocabularyProfile vocabularySpec))
-                            Left _vocabularyError -> do
-                              typeAware <- tryDecode (Dhall.inputFile auto path)
-                              case typeAware of
-                                Right typeAwareSpec -> pure (Right (upgradeTypeAwareProfile typeAwareSpec))
-                                Left _typeAwareError -> do
-                                  described <- tryDecode (Dhall.inputFile auto path)
-                                  case described of
-                                    Right describedSpec -> pure (Right (upgradeDescribedProfile describedSpec))
-                                    Left _describedError -> do
-                                      legacy <- tryDecode (Dhall.inputFile auto path)
-                                      pure $ case legacy of
-                                        Right legacySpec -> Right (upgradeLegacyProfile legacySpec)
-                                        Left _legacyError -> Left currentError
+      preObject <- tryDecode (Dhall.inputFile auto path)
+      case preObject of
+        Right preObjectSpec -> pure (Right (upgradePreObjectProfile preObjectSpec))
+        Left _preObjectError -> do
+          referenceAware <- tryDecode (Dhall.inputFile auto path)
+          case referenceAware of
+            Right referenceSpec -> pure (Right (upgradeReferenceProfile referenceSpec))
+            Left _referenceError -> do
+              conditional <- tryDecode (Dhall.inputFile auto path)
+              case conditional of
+                Right conditionalSpec -> pure (Right (upgradeConditionalProfile conditionalSpec))
+                Left _conditionalError -> do
+                  nested <- tryDecode (Dhall.inputFile auto path)
+                  case nested of
+                    Right nestedSpec -> pure (Right (upgradeNestedProfile nestedSpec))
+                    Left _nestedError -> do
+                      formatted <- tryDecode (Dhall.inputFile auto path)
+                      case formatted of
+                        Right formatSpec -> pure (Right (upgradeFormatProfile formatSpec))
+                        Left _formatError -> do
+                          cardinality <- tryDecode (Dhall.inputFile auto path)
+                          case cardinality of
+                            Right cardinalitySpec -> pure (Right (upgradeCardinalityProfile cardinalitySpec))
+                            Left _cardinalityError -> do
+                              vocabulary <- tryDecode (Dhall.inputFile auto path)
+                              case vocabulary of
+                                Right vocabularySpec -> pure (Right (upgradeVocabularyProfile vocabularySpec))
+                                Left _vocabularyError -> do
+                                  typeAware <- tryDecode (Dhall.inputFile auto path)
+                                  case typeAware of
+                                    Right typeAwareSpec -> pure (Right (upgradeTypeAwareProfile typeAwareSpec))
+                                    Left _typeAwareError -> do
+                                      described <- tryDecode (Dhall.inputFile auto path)
+                                      case described of
+                                        Right describedSpec -> pure (Right (upgradeDescribedProfile describedSpec))
+                                        Left _describedError -> do
+                                          legacy <- tryDecode (Dhall.inputFile auto path)
+                                          pure $ case legacy of
+                                            Right legacySpec -> Right (upgradeLegacyProfile legacySpec)
+                                            Left _legacyError -> Left currentError
   where
-    -- The ten calls look identical but are inferred at distinct result types;
+    -- The eleven calls look identical but are inferred at distinct result types;
     -- @auto@ picks the corresponding current or frozen decoder.
     tryDecode :: IO a -> IO (Either Text a)
     tryDecode action =
@@ -1332,14 +1463,15 @@ loadProfileFile path = do
         `catch` \(exception :: SomeException) -> pure (Left (Text.pack (show exception)))
 
 -- | Does an already-evaluated Dhall expression decode as a profile? Tries the
--- current schema, then the reference-aware, condition-aware, bounded-nested,
--- EP-4, EP-3, EP-2, EP-1, self-documenting, and okf 0.2.x schemas,
--- so the published @okf-profiles@ package still enumerates. Uses
+-- current schema, then the pre-object, reference-aware, condition-aware,
+-- bounded-nested, EP-4, EP-3, EP-2, EP-1, self-documenting, and okf 0.2.x
+-- schemas, so the published @okf-profiles@ package still enumerates. Uses
 -- 'Dhall.rawInput', which normalizes and runs the decoder's extractor without
 -- throwing, which is what lets registry enumeration be pure.
 decodeProfileExpr :: Expr Src Void -> Maybe ProfileSpec
 decodeProfileExpr expression =
   Dhall.rawInput Dhall.auto expression
+    <|> fmap upgradePreObjectProfile (Dhall.rawInput Dhall.auto expression)
     <|> fmap upgradeReferenceProfile (Dhall.rawInput Dhall.auto expression)
     <|> fmap upgradeConditionalProfile (Dhall.rawInput Dhall.auto expression)
     <|> fmap upgradeNestedProfile (Dhall.rawInput Dhall.auto expression)

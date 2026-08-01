@@ -18,6 +18,7 @@ in  { Type = FieldRuleType
       , cardinality = Cardinality.Any
       , format = None FieldFormat
       , elementFields = None NestedRules
+      , objectFields = None NestedRules
       , reference = None HandleReferenceRule
       , when = None FieldCondition
       }

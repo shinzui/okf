@@ -74,8 +74,8 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] Milestone 1: reproduce the three "cannot describe an object" transcripts and freeze the current descriptor generation behind a compatibility decoder and fixture.
-- [ ] Milestone 2: add `objectFields` to the published Dhall schema, its record-completion default, and the `mk` constructors.
+- [x] Milestone 1: reproduce the three "cannot describe an object" transcripts and freeze the current descriptor generation behind a compatibility decoder and fixture. (2026-08-01)
+- [x] Milestone 2: add `objectFields` to the published Dhall schema, its record-completion default, and the `mk` constructors. (2026-08-01)
 - [ ] Milestone 3: compile `objectFields` into the effective rule, with the compiled-only `Object` cardinality and the new definition error.
 - [ ] Milestone 4: validate an object value's members and report a `FieldPath` such as `generated.by`.
 - [ ] Milestone 5: render the new rule kind in generated profile documentation, regenerate the committed example, and extend the CLI diagnostic vocabulary.
@@ -86,6 +86,39 @@ This section must always reflect the actual current state of the work.
 
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
+
+**Milestones 1 and 2 cannot be separate commits, because the freeze does not compile without
+the field it freezes against.** `upgradePreObjectProfileFrontmatter` builds a current-shape
+`FieldRule`, and the plan's own Milestone 1 test asserts `objectFields = Nothing` on the
+result. Both mention a member that only exists after Milestone 2. Splitting them would have
+meant writing a Milestone 1 whose frozen generation was structurally identical to the current
+one — a decoder that freezes nothing — and then rewriting it in Milestone 2. They are
+therefore one commit, and the Decision Log records why.
+
+**No shipped descriptor broke when `objectFields` was added to the closed `FieldRule` record.**
+The plan predicted `cabal test all` would fail on descriptors that annotate themselves against
+the schema by relative path, naming `okf-core/test/fixtures/profiles/postgresql.dhall`,
+`docs/profiles/postgresql.dhall`, and `docs/profiles/profile-documentation.dhall`. It did not:
+every one of those already uses record completion (`FieldRule::{ … }`), which is exactly the
+protection `okf-core/dhall/mk/FieldRule.dhall`'s header comment claims for descriptors written
+from now on. The prediction was right about the mechanism and wrong about this repository's
+current state, and the good state is worth recording — the record-completion migration that
+`docs/adr/4-self-documenting-profiles.md` called for is complete inside this repository.
+
+**The frozen fixture is load-bearing, verified by a negative control rather than by assertion.**
+With the two `upgradePreObjectProfile` fallbacks removed from `loadProfileFile` and
+`decodeProfileExpr`, the new test fails immediately:
+
+```text
+FAIL loadProfileFile preserves the frozen optional-presence schema: failed to load frozen optional-presence profile:
+```
+
+Restoring the fallbacks makes it pass. So the fixture genuinely exercises the frozen decoder
+and not the current one.
+
+**The three baseline transcripts reproduce exactly as written**, including the incidental
+`log:` advisory, and `okf validate okf-core/test/fixtures/valid-bundle --strict` prints
+`OK: 4 concepts (okf_version 0.2)` — the before-capture the plan asks for.
 
 One discovery predates implementation and is the reason this plan is written the way it is.
 The blocker is **not** only the `ElementFieldsRequireList` definition error that
@@ -137,6 +170,26 @@ Record every decision made while working on the plan.
   thing. Retiring the constructor would be a breaking change for exhaustive consumers of
   `ProfileDefinitionError` — `docs/adr/5-compile-profile-rules-before-validation.md` names
   Mori's `mori-cli/src/Mori/Okf/Advisory.hs` as one — for no gain.
+  Date: 2026-08-01
+
+- Decision: Land Milestones 1 and 2 as one commit rather than two.
+  Rationale: the plan asked for a separate Milestone 2 commit so the schema-breaking change
+  could be pointed at, which is a good instinct. But the frozen generation's `upgrade*`
+  function constructs a current-shape `FieldRule`, and Milestone 1's own test asserts
+  `objectFields = Nothing` on the loaded spec, so neither compiles until the field exists. A
+  Milestone 1 written to compile alone would have frozen a shape identical to the current one
+  and would have had to be rewritten immediately. The commit message names both milestones so
+  the schema event is still findable.
+  Date: 2026-08-01
+
+- Decision: Give `okf-core/test/Main.hs` a positional `fieldRule` helper carrying the
+  pre-object argument order, rather than adding a ninth `Nothing` to forty-odd call sites.
+  Rationale: those call sites exercise vocabularies, cardinalities, formats, conditions, and
+  references; none of them says anything about object shapes, so a ninth positional `Nothing`
+  at each would be noise that obscures the argument each test actually varies. The helper is
+  one function whose only job is to fill in `objectFields = Nothing`, and a test that does
+  exercise object rules builds its rule with record syntax where the member is visible.
+  `okf-cli/test/Main.hs` has only a handful of sites and was edited directly.
   Date: 2026-08-01
 
 - Decision: Do not extend nested rules to a second level, so a profile still cannot constrain
