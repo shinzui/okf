@@ -102,6 +102,7 @@ main = do
         test "readSources reads entries and skips one without resource" testReadSources,
         test "usage_window applies at document scope with per-entry override" testUsageWindowOverride,
         test "setSources and setUsageWindow round-trip through serialize and parse" testSourcesRoundTrip,
+        test "strict validation reports sources missing resource and duplicate ids" testValidateSources,
         testIO "writeBundle then walkBundle round-trips" testWriteBundleRoundTrip,
         testIO "fixture dangling link reports a bundle validation error" testFixtureDanglingLink,
         testIO "loadProfileFile decodes the postgresql fixture" testLoadProfileFixture,
@@ -1145,6 +1146,60 @@ testSourcesRoundTrip = do
   reparsed <- firstShow (parseDocument (serializeDocument (OKFDocument built "# Orders\n")))
   assertEqual sources (readSources (reparsed ^. #frontmatter))
   assertEqual (Just window) (readUsageWindow (reparsed ^. #frontmatter))
+
+testValidateSources :: Either Text ()
+testValidateSources = do
+  let strictErrors source = validateDocument StrictAuthoring <$> firstShow (parseDocument source)
+      permissiveErrors source = validateDocument PermissiveConformance <$> firstShow (parseDocument source)
+      preamble =
+        Text.unlines
+          [ "---",
+            "type: BigQuery Table",
+            "title: Orders",
+            "description: Order fact table.",
+            "generated: { by: human:ahormati, at: 2026-06-20T22:53:05Z }"
+          ]
+      broken =
+        preamble
+          <> Text.unlines
+            [ "sources:",
+              "  - id: ga4-schema",
+              "    resource: https://example.com/ga4",
+              "  - id: no-resource",
+              "    title: Missing the required key",
+              "  - id: ga4-schema",
+              "    resource: https://example.com/ga4-again",
+              "---",
+              "",
+              "# Orders"
+            ]
+  errors <- strictErrors broken
+  -- The index is the position in the raw YAML list, which is what a person sees
+  -- in the file, not the position in the list readSources returns.
+  assertEqual [SourceMissingResource 1, DuplicateSourceId "ga4-schema"] errors
+  -- Section 11 forbids rejecting a bundle over an optional family, so neither
+  -- diagnostic may fire permissively.
+  permissive <- permissiveErrors broken
+  assertEqual [] permissive
+  -- A well-formed sources list, including a scope-descriptor resource that no
+  -- consumer can follow, is clean. Section 5.1 explicitly permits that shape.
+  clean <-
+    strictErrors
+      ( preamble
+          <> Text.unlines
+            [ "sources:",
+              "  - id: ga4-schema",
+              "    resource: https://example.com/ga4",
+              "  - resource: all queries in BigQuery project X",
+              "---",
+              "",
+              "# Orders"
+            ]
+      )
+  assertEqual [] clean
+  -- A document with no sources at all stays valid in strict mode.
+  noSources <- strictErrors (preamble <> "---\n\n# Orders\n")
+  assertEqual [] noSources
 
 testConceptFromDocumentDerivesFields :: Either Text ()
 testConceptFromDocumentDerivesFields = do

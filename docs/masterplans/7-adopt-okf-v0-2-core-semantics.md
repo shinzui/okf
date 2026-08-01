@@ -151,7 +151,7 @@ from the signals ... not stored") and a boundary later work will be tempted to c
 |---|-------|------|-----------|-----------|--------|
 | 1 | Migrate the concept timestamp to the OKF v0.2 generated field | docs/plans/38-migrate-the-concept-timestamp-to-the-okf-v0-2-generated-field.md | None | None | Complete |
 | 2 | Read the OKF v0.2 verified status and stale after fields and derive trust tiers | docs/plans/39-read-the-okf-v0-2-verified-status-and-stale-after-fields-and-derive-trust-tiers.md | EP-1 | None | Complete |
-| 3 | Read the OKF v0.2 sources provenance family with credibility signals | docs/plans/40-read-the-okf-v0-2-sources-provenance-family-with-credibility-signals.md | EP-1 | EP-2 | In Progress |
+| 3 | Read the OKF v0.2 sources provenance family with credibility signals | docs/plans/40-read-the-okf-v0-2-sources-provenance-family-with-credibility-signals.md | EP-1 | EP-2 | Complete |
 | 4 | Join per claim footnote attribution to OKF v0.2 source entries | docs/plans/41-join-per-claim-footnote-attribution-to-okf-v0-2-source-entries.md | EP-3 | None | Not Started |
 | 5 | Declare and honour okf version in the bundle root index | docs/plans/42-declare-and-honour-okf-version-in-the-bundle-root-index.md | EP-1 | EP-2, EP-3 | Not Started |
 | 6 | Migrate okf documentation examples and fixtures to OKF v0.2 | docs/plans/43-migrate-okf-documentation-examples-and-fixtures-to-okf-v0-2.md | EP-1, EP-2, EP-3, EP-4, EP-5 | None | Not Started |
@@ -274,8 +274,8 @@ section carries the granular work; this list tracks the story.
 - [x] EP-2: `verified` is read as a list, with a bare mapping normalised to one element per §5.2 (2026-07-31)
 - [x] EP-2: `status` and `stale_after` are read, with absent `status` defaulting to `stable` (2026-07-31)
 - [x] EP-2: trust tiers derive per §5.3 and staleness derives per §5.5, both surfaced through the CLI (2026-07-31)
-- [ ] EP-3: `sources` entries and the `usage_window` sibling are read, including per-entry override
-- [ ] EP-3: credibility signals `author`, `usage_count`, `last_modified` are projected and surfaced
+- [x] EP-3: `sources` entries and the `usage_window` sibling are read, including per-entry override (2026-07-31)
+- [x] EP-3: credibility signals `author`, `usage_count`, `last_modified` are projected and surfaced (2026-07-31)
 - [ ] EP-4: footnote parsing is enabled across all three CommonMark call sites without regressing link, log, or schema extraction
 - [ ] EP-4: footnote labels join to `sources[].id`, and unmatched labels are reported
 - [ ] EP-5: root `index.md` carries and round-trips `okf_version`
@@ -378,6 +378,25 @@ not repeat it.* `okf-cli/src/Okf/Cli/Completions.hs` generates its script from t
 `optparse-applicative` parser rather than enumerating command names, so a new command added to
 `commandParser` is picked up automatically with no second registration. EP-2 added
 `okf trust` and verified this.
+
+**From EP-3's implementation, two findings.**
+
+*A transitively available package is not a declared one.* EP-3's natural implementation of the
+`usage_count` integer check reached for `Data.Scientific.floatingOrInteger`, which failed to
+build: `scientific` is a dependency of `aeson` but is absent from `okf-core`'s
+`build-depends`. Since EP-3's plan states "No new package dependencies", the check was
+rewritten on aeson's own `fromJSON` at `Integer`, whose decoder already rejects strings and
+non-integral numbers. EP-4 and EP-5 should expect the same: this repository's cabal files
+declare explicit bounds on everything, and a module being importable in a scratch experiment
+does not mean it is available to the library.
+
+*The `Concept` record is now nine typed projections wide.* EP-3 added `sources` and
+`usageWindow`, bringing the count to `type_`, `title`, `description`, `resource`, `tags`,
+`generated`, `verified`, `status`, `staleAfter`, `sources`, `usageWindow`. Every one is a
+faithful restatement of frontmatter; none is a derivation. EP-4 joins footnote labels to
+`sources[].id`, which is a *relation between* the body and frontmatter rather than a
+frontmatter fact, so it should follow EP-2's `Okf.Trust` precedent — a function over
+`conceptSources` and the parsed body — rather than adding a twelfth field.
 
 The Integration Points note on the `Concept` projection record is now settled in practice:
 EP-2 added three more projections (`verified`, `status`, `staleAfter`) and deliberately added

@@ -59,7 +59,10 @@ import Okf.Document
     Frontmatter (..),
     Generated (..),
     OKFDocument (..),
+    Source (..),
+    UsageWindow (..),
     body,
+    effectiveUsageWindow,
     renderStatus,
   )
 import Okf.Graph (buildGraph)
@@ -131,6 +134,7 @@ data Command
   | GraphCommand GraphOptions
   | ShowConcept ShowOptions
   | Trust TrustOptions
+  | Sources SourcesOptions
   | Id IdOptions
   | Config ConfigCommand
   | Profile ProfileCommand
@@ -190,6 +194,11 @@ data ShowOptions = ShowOptions
   deriving stock (Show, Eq)
 
 data TrustOptions = TrustOptions
+  { bundlePath :: !FilePath
+  }
+  deriving stock (Show, Eq)
+
+data SourcesOptions = SourcesOptions
   { bundlePath :: !FilePath
   }
   deriving stock (Show, Eq)
@@ -278,6 +287,7 @@ commandParser =
         <> command "graph" (info (GraphCommand <$> graphOptionsParser <**> helper) (progDesc "Print a bundle graph"))
         <> command "show" (info (ShowConcept <$> showOptionsParser <**> helper) (progDesc "Show one concept"))
         <> command "trust" (info (Trust <$> trustOptionsParser <**> helper) (progDesc "Report trust tiers, status, and staleness for every concept"))
+        <> command "sources" (info (Sources <$> sourcesOptionsParser <**> helper) (progDesc "List the provenance recorded by each concept"))
         <> command "id" (info (Id <$> idOptionsParser <**> helper) (progDesc "Allocate and list document IDs"))
         <> command "config" (info (Config <$> configCommandParser <**> helper) (progDesc "Show and manage okf configuration"))
         <> command "profile" (info (Profile <$> profileCommandParser <**> helper) (progDesc "List and inspect profiles published by a registry"))
@@ -553,6 +563,9 @@ bundleArgument =
 trustOptionsParser :: Parser TrustOptions
 trustOptionsParser = TrustOptions <$> bundleArgument
 
+sourcesOptionsParser :: Parser SourcesOptions
+sourcesOptionsParser = SourcesOptions <$> bundleArgument
+
 runCommand :: Command -> IO ()
 runCommand = \case
   Validate options -> runValidate options
@@ -561,6 +574,7 @@ runCommand = \case
   GraphCommand options -> runGraph options
   ShowConcept options -> runShow options
   Trust options -> runTrust options
+  Sources options -> runSources options
   Id options -> runId options
   Config configCommand -> runConfig configCommand
   Profile profileCommand -> runProfile profileCommand
@@ -1271,6 +1285,62 @@ runTrust TrustOptions {bundlePath} = do
         renderStaleness (staleness today (conceptStaleAfter concept))
       )
 
+-- | List the OKF v0.2 @sources@ provenance recorded by each concept
+-- (specification §5.1), with the credibility signals that frame it.
+--
+-- Concepts with no sources are skipped so the report shows only what has
+-- provenance. Output is sorted by concept ID, which 'walkBundle' guarantees, so
+-- the listing is stable and diffable in pipelines and CI.
+--
+-- Entries are printed in the order the document declares them and are never
+-- sorted or ranked by @usage_count@. §5.1 warns that a count is a coarse signal
+-- to be read "as liveness and trend, not as a score", and a ranked listing
+-- would imply a precision the signal does not carry.
+runSources :: SourcesOptions -> IO ()
+runSources SourcesOptions {bundlePath} = do
+  concepts <- loadBundleOrExit bundlePath
+  let withSources = [concept | concept <- concepts, not (null (conceptSources concept))]
+      labelWidth = maximum (0 : [Text.length (sourceLabel source) | concept <- withSources, source <- conceptSources concept])
+  mapM_ (renderConceptSources labelWidth) withSources
+
+renderConceptSources :: Int -> Concept -> IO ()
+renderConceptSources labelWidth concept = do
+  Text.IO.putStrLn (renderConceptId (conceptIdOf concept))
+  mapM_ renderSource (conceptSources concept)
+  where
+    documentWindow = conceptUsageWindow concept
+    renderSource source = do
+      Text.IO.putStrLn ("  " <> pad labelWidth (sourceLabel source) <> "  " <> sourceResource source)
+      -- Only signals actually present are named, so an entry with none prints
+      -- no signals line rather than an empty one.
+      case sourceSignals (effectiveUsageWindow documentWindow source) source of
+        [] -> pure ()
+        signals -> Text.IO.putStrLn ("  " <> pad labelWidth "" <> "  " <> Text.intercalate ", " signals)
+    pad width cell = cell <> Text.replicate (width - Text.length cell) " "
+
+-- | An entry's @id@, or a placeholder when it has none. §5.1 makes @id@
+-- optional but recommends it when the body cites the source.
+sourceLabel :: Source -> Text
+sourceLabel Source {sourceId} = fromMaybe "(no id)" sourceId
+
+-- | The credibility signals §5.1 defines, as display phrases, omitting each one
+-- the entry does not carry. A @usage_count@ is always shown with the window
+-- that frames it, since §5.1 makes a count without a window meaningless.
+sourceSignals :: Maybe UsageWindow -> Source -> [Text]
+sourceSignals window Source {sourceAuthor, sourceUsageCount, sourceLastModified} =
+  concat
+    [ ["author " <> renderActor author | Just author <- [sourceAuthor]],
+      ["used " <> Text.pack (show count) <> " times" <> windowPhrase | Just count <- [sourceUsageCount]],
+      ["modified " <> modified | Just modified <- [sourceLastModified]]
+    ]
+  where
+    windowPhrase =
+      case window of
+        Just (UsageWindow (Just windowFrom) (Just windowTo)) -> " in " <> windowFrom <> ".." <> windowTo
+        Just (UsageWindow (Just windowFrom) Nothing) -> " since " <> windowFrom
+        Just (UsageWindow Nothing (Just windowTo)) -> " until " <> windowTo
+        _ -> ""
+
 -- | Use the given bundle, or ask the user to pick one.
 resolveBundlePath :: FzfConfig -> Maybe FilePath -> IO FilePath
 resolveBundlePath _ (Just path) = pure path
@@ -1717,6 +1787,8 @@ renderValidationErrorText = \case
   FieldMustBeListOfText fieldName -> "field must be a list of text values: " <> fieldName
   MissingGeneratedField -> "missing generated field (or legacy timestamp)"
   GeneratedMustHaveActor -> "generated must carry a by actor"
+  SourceMissingResource entryIndex -> "sources entry is missing resource: index " <> Text.pack (show entryIndex)
+  DuplicateSourceId sourceId -> "duplicate sources id: " <> sourceId
 
 renderLogValidationError :: Log.LogValidationError -> Text
 renderLogValidationError = \case
@@ -1766,6 +1838,11 @@ renderConcept concept = do
   case staleness today staleAfterRaw of
     NoStaleAfter -> pure ()
     stale -> Text.IO.putStrLn ("stale_after: " <> renderStaleAfterDetail staleAfterRaw stale)
+  case length (conceptSources concept) of
+    0 -> pure ()
+    sourceCount ->
+      Text.IO.putStrLn
+        ("sources: " <> countPhrase sourceCount "source" <> " (see `okf sources`)")
   Text.IO.putStrLn ""
   Text.IO.putStr (bodyText concept)
 

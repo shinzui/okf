@@ -13,6 +13,8 @@ module Okf.Validation
   )
 where
 
+import Data.Aeson.Key qualified as AesonKey
+import Data.Aeson.KeyMap qualified as KeyMap
 import Data.List qualified as List
 import Data.Text qualified as Text
 import Data.Vector qualified as Vector
@@ -42,6 +44,12 @@ data ValidationError
   | -- | @generated@ is present but carries no textual @by@ actor, which
     -- specification §5.2 marks REQUIRED within the mapping.
     GeneratedMustHaveActor
+  | -- | A @sources@ entry omits the @resource@ that specification §5.1 marks
+    -- REQUIRED within an entry. Carries the entry's zero-based index in the raw
+    -- YAML list, which is the only way to name an entry that may have no @id@.
+    SourceMissingResource Int
+  | -- | Two @sources@ entries in one document share an @id@.
+    DuplicateSourceId Text
   deriving stock (Generic, Eq, Show)
 
 -- | A whole-bundle validation problem.
@@ -112,6 +120,50 @@ validateDocument profile document =
       StrictAuthoring ->
         foldMap (requireNonEmptyText MissingRecommendedField `flip` document) ["title", "description"]
           <> requireGenerated document
+          <> checkSources document
+
+-- | Strict-mode checks on the OKF v0.2 @sources@ family (specification §5.1).
+--
+-- Both diagnostics fire only when @sources@ is present, and only under
+-- 'StrictAuthoring': §11 forbids rejecting a bundle for a missing optional
+-- family, and @sources@ is optional.
+--
+-- Note this inspects the __raw YAML list__ rather than 'readSources' output.
+-- 'readSources' has already dropped entries without a @resource@, so the parsed
+-- list cannot report them, and an index into it would not match the index a
+-- person sees in the file.
+--
+-- No check resolves a @resource@ or reports it as dangling. §5.1 permits a
+-- resource to name "a population or scope descriptor" a consumer cannot follow,
+-- such as @all queries in BigQuery project X@.
+checkSources :: OKFDocument -> [ValidationError]
+checkSources OKFDocument {frontmatter} =
+  case frontmatterLookup "sources" frontmatter of
+    Just (Array entries) -> missingResource entries <> duplicateIds entries
+    _ -> []
+  where
+    missingResource entries =
+      [ SourceMissingResource entryIndex
+      | (entryIndex, Object entryFields) <- zip [0 ..] (Vector.toList entries),
+        isNothing (entryTextField "resource" entryFields)
+      ]
+    -- Scoped to one document. §5.1 does not require ids to be unique across a
+    -- bundle, only that a label unambiguously names one entry where it is used.
+    duplicateIds entries =
+      DuplicateSourceId
+        <$> appearingMoreThanOnce
+          [ entryId
+          | Object entryFields <- Vector.toList entries,
+            Just entryId <- [entryTextField "id" entryFields]
+          ]
+    entryTextField key entryFields =
+      case KeyMap.lookup (AesonKey.fromText key) entryFields of
+        Just (String value) | not (Text.null (Text.strip value)) -> Just value
+        _ -> Nothing
+    appearingMoreThanOnce values =
+      List.nub [value | (value, count) <- countOccurrences values, count > (1 :: Int)]
+    countOccurrences values =
+      [(value, length (filter (== value) values)) | value <- List.nub values]
 
 -- | Strict-mode check for the OKF v0.2 @generated@ family (specification §5.2).
 --

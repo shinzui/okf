@@ -70,14 +70,40 @@ this plan makes readable. That joining is a sibling plan,
 
 - [x] Milestone 1: `sources` entries read, with `resource` and the optional keys projected (2026-07-31)
 - [x] Milestone 2: `usage_window` reads at document scope with per-entry override (2026-07-31)
-- [ ] Milestone 3: strict validation reports entries missing `resource` and duplicate entry ids
+- [x] Milestone 3: strict validation reports entries missing `resource` and duplicate entry ids (2026-07-31)
 - [x] Milestone 4: authoring API can write `sources` and `usage_window`; round-trip proven (2026-07-31) — done alongside Milestones 1-2 since it edits the same file
-- [ ] Milestone 5: `okf sources` command surfaces provenance with its credibility signals
+- [x] Milestone 5: `okf sources` command surfaces provenance with its credibility signals (2026-07-31)
 
 
 ## Surprises & Discoveries
 
-(None yet. Record unexpected behavior, with short evidence such as test output, as you go.)
+The plan's Interfaces section states "No new package dependencies" while the natural way to
+read a YAML integer out of an Aeson `Value` is `Data.Scientific.floatingOrInteger`. Writing
+that produced a build failure, because `scientific` is a transitive dependency of `aeson` but
+is not in `okf-core`'s `build-depends`:
+
+```text
+src/Okf/Document.hs:61:1: error: [GHC-87110]
+    Could not load module 'Data.Scientific'.
+    It is a member of the hidden package 'scientific-0.3.8.1'.
+```
+
+Rather than add the dependency, `objectInteger` uses aeson's own `fromJSON` at `Integer`,
+whose decoder already rejects both strings and non-integral numbers — exactly the semantics
+Milestone 1 asks for. The lesson generalises: a package being available at the GHC level
+because a dependency pulled it in is not the same as it being declared, and this repository's
+`-Wall`-clean, explicitly-bounded cabal files mean the plan's "no new dependencies" claim was
+worth honouring rather than quietly widening.
+
+The plan's Idempotence section names three hazards to avoid — resolving a `resource`,
+computing a credibility score, adding a lineage field — and all three were avoidable simply by
+not doing them. The one real friction was again name shadowing, as EP-2's retrospective
+predicted for a different word: `repeated`, `from`, and `to` are all exported by
+`Okf.Prelude`'s lens re-exports, and a natural local binding for each collided. EP-2's note
+that "`-Wname-shadowing` warnings in this repository are worth reading rather than
+suppressing" held: `from` and `to` shadowing `Control.Lens.Iso.from` and
+`Control.Lens.Getter.to` inside `UsageWindow` pattern matches is exactly the kind of thing
+that reads fine and confuses later.
 
 
 ## Decision Log
@@ -121,13 +147,102 @@ this plan makes readable. That joining is a sibling plan,
   documents minimal, consistent with `setGenerated` and `setVerified`.
   Date: 2026-07-31
 
-(Add further decisions as you make them. Milestone 3 ends with a decision this plan requires
-you to record.)
+- Decision: `DuplicateSourceId` is scoped to one document and is reported even though §5.1
+  states no such rule.
+  Rationale: §5.1 explains that attribution labels are keyed rather than positional precisely
+  because "a positional index misattributes silently the moment the list is reordered,
+  whereas a stable `id` survives reordering". An `id` appearing twice reintroduces exactly the
+  silent misattribution the keyed design exists to prevent. It also matters concretely for
+  `docs/plans/41-join-per-claim-footnote-attribution-to-okf-v0-2-source-entries.md`, which
+  joins footnote labels to these ids: a duplicate makes that join ill-defined. Scoped to one
+  document because §5.1 requires a label to name one entry *where it is used*, not across a
+  bundle — two unrelated concepts may each cite their own `ga4-schema`.
+  Date: 2026-07-31
+
+- Decision: `checkSources` inspects the raw YAML list rather than the `[Source]` that
+  `readSources` returns, and `SourceMissingResource` carries the raw-list index.
+  Rationale: `readSources` has already dropped entries without a `resource`, so the parsed
+  list cannot report them at all, and an index into it would not match what a person counts
+  in the file. Verified end to end: in a five-entry list whose fourth entry lacks a
+  `resource`, the diagnostic reads `index 3`.
+  Date: 2026-07-31
+
+- Decision: No check resolves `sources[].resource` against the bundle or reports it as
+  dangling.
+  Rationale: §5.1 explicitly permits a resource to name "a population or scope descriptor"
+  a consumer cannot follow, such as `all queries in BigQuery project X`. A dangling-reference
+  check would reject a legal document. Resolving the subset that genuinely are paths is
+  `docs/masterplans/9-support-okf-v0-2-attested-computations.md`.
+  Date: 2026-07-31
+
+- Decision: `okf sources` prints entries in declaration order and never sorts or ranks by
+  `usage_count`.
+  Rationale: §5.1 warns a count is coarse — "comparable at the alive-versus-dead and
+  order-of-magnitude level ... but not as a precise cross-kind ranking" — and asks consumers
+  to read it "as liveness and trend, not as a score". A ranked listing would imply a
+  precision the signal does not carry.
+  Date: 2026-07-31
 
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+All five milestones are complete and every acceptance criterion in Validation and Acceptance
+holds. Both test suites pass with every pre-existing assertion still passing.
+
+`okf sources` reproduces the Purpose section's transcript against a scratch bundle:
+
+```text
+tables/orders
+  ga4-schema   https://developers.google.com/analytics/bigquery/export-schema
+               author team:ga4-docs, used 5000 times in 2026-06-01..2026-06-30, modified 2026-05-30
+  exec-dash    dashboards/exec-revenue
+               used 12 times in 2026-01-01..2026-01-31
+  broad-scope  all queries in BigQuery project X
+```
+
+Three things in that output are the load-bearing proofs. `ga4-schema` shows the
+document-scope window `2026-06-01..2026-06-30` while `exec-dash` shows its own
+`2026-01-01..2026-01-31` — two different windows in one listing is the §5.1 override rule
+working. `broad-scope` is listed cleanly with a resource no consumer can follow, proving the
+implementation never treats a `resource` as a path, which §5.1 explicitly permits it not to
+be. And `broad-scope` prints no signals line at all rather than an empty one, because it
+carries none.
+
+Validation reports exactly the two problems and only under strict:
+
+```text
+$ okf validate <bundle> --strict
+tables/orders: sources entry is missing resource: index 3
+tables/orders: duplicate sources id: ga4-schema
+exit=1
+
+$ okf validate <bundle>
+OK: 1 concepts
+exit=0
+```
+
+`index 3` is the position in the raw YAML list, which is what a person counts in the file —
+`readSources` had already dropped that entry, so an index into the parsed list would have
+pointed at the wrong place. `okf validate okf-core/test/fixtures/valid-bundle --strict` still
+prints `OK: 4 concepts`; that fixture carries no `sources`, and under §11 nothing added here
+may fire on it.
+
+Milestone 4 was implemented alongside Milestones 1 and 2 rather than after Milestone 3,
+because all three edit `okf-core/src/Okf/Document.hs` and splitting them would have meant
+touching the same export list three times for no review benefit. The milestone ordering in
+the plan is otherwise as written.
+
+Two notes for EP-4, which hard-depends on this plan.
+
+`sourceId` is `Maybe Text` and the `DuplicateSourceId` check is in place, so the footnote-label
+join EP-4 needs is unambiguous by construction — a label matching an id can name at most one
+entry per document. EP-4 should join against `conceptSources` and report a label matching no
+id; it does not need to re-check uniqueness.
+
+The `okf sources` output deliberately shows `(no id)` for an entry without one. EP-4 should
+treat such entries as unjoinable rather than inventing a positional fallback: §5.1's whole
+rationale for keyed attribution is that "a positional index misattributes silently the moment
+the list is reordered".
 
 
 ## Context and Orientation
