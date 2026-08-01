@@ -45,6 +45,16 @@ Generations are tried newest-first, and when every decoder fails the **current**
 decoder's error is the one reported, because an author wants to know how their
 descriptor differs from today's schema rather than from a retired one.
 
+In both functions the generations are a *list*, newest first, so inserting one is
+a single line at the top. `loadProfileFile` was a nested `case` staircase until it
+reached fourteen levels and roughly fifty-five columns of indentation, at which
+point adding a generation meant re-indenting the whole chain — a mechanical edit
+with nowhere for the compiler to catch a mistake, in the one function whose whole
+job is not silently mis-decoding a pinned descriptor. It is now a short-circuiting
+fold over `[IO (Maybe ProfileSpec)]`; each entry is inferred at its own result
+type, fixed by the `upgrade*` function it names. Keep it that way. Order in the
+list is load-bearing, and the twelve frozen-fixture tests are what prove it.
+
 **A frozen fixture must never be edited.** It is deliberately unannotated — it
 does not end `: okf.Profile` against the published schema — and spells out its
 record types inline rather than importing them, precisely so it keeps

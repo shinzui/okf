@@ -1964,62 +1964,42 @@ loadProfileFile path = do
   current <- tryDecode (Dhall.inputFile auto path)
   case current of
     Right spec -> pure (Right spec)
-    Left currentError -> do
-      preBundleVersion <- tryDecode (Dhall.inputFile auto path)
-      case preBundleVersion of
-        Right preBundleVersionSpec -> pure (Right (upgradePreBundleVersionProfile preBundleVersionSpec))
-        Left _preBundleVersionError -> do
-          prePath <- tryDecode (Dhall.inputFile auto path)
-          case prePath of
-            Right prePathSpec -> pure (Right (upgradePrePathProfile prePathSpec))
-            Left _prePathError -> do
-              preActor <- tryDecode (Dhall.inputFile auto path)
-              case preActor of
-                Right preActorSpec -> pure (Right (upgradePreActorProfile preActorSpec))
-                Left _preActorError -> do
-                  preObject <- tryDecode (Dhall.inputFile auto path)
-                  case preObject of
-                    Right preObjectSpec -> pure (Right (upgradePreObjectProfile preObjectSpec))
-                    Left _preObjectError -> do
-                      referenceAware <- tryDecode (Dhall.inputFile auto path)
-                      case referenceAware of
-                        Right referenceSpec -> pure (Right (upgradeReferenceProfile referenceSpec))
-                        Left _referenceError -> do
-                          conditional <- tryDecode (Dhall.inputFile auto path)
-                          case conditional of
-                            Right conditionalSpec -> pure (Right (upgradeConditionalProfile conditionalSpec))
-                            Left _conditionalError -> do
-                              nested <- tryDecode (Dhall.inputFile auto path)
-                              case nested of
-                                Right nestedSpec -> pure (Right (upgradeNestedProfile nestedSpec))
-                                Left _nestedError -> do
-                                  formatted <- tryDecode (Dhall.inputFile auto path)
-                                  case formatted of
-                                    Right formatSpec -> pure (Right (upgradeFormatProfile formatSpec))
-                                    Left _formatError -> do
-                                      cardinality <- tryDecode (Dhall.inputFile auto path)
-                                      case cardinality of
-                                        Right cardinalitySpec -> pure (Right (upgradeCardinalityProfile cardinalitySpec))
-                                        Left _cardinalityError -> do
-                                          vocabulary <- tryDecode (Dhall.inputFile auto path)
-                                          case vocabulary of
-                                            Right vocabularySpec -> pure (Right (upgradeVocabularyProfile vocabularySpec))
-                                            Left _vocabularyError -> do
-                                              typeAware <- tryDecode (Dhall.inputFile auto path)
-                                              case typeAware of
-                                                Right typeAwareSpec -> pure (Right (upgradeTypeAwareProfile typeAwareSpec))
-                                                Left _typeAwareError -> do
-                                                  described <- tryDecode (Dhall.inputFile auto path)
-                                                  case described of
-                                                    Right describedSpec -> pure (Right (upgradeDescribedProfile describedSpec))
-                                                    Left _describedError -> do
-                                                      legacy <- tryDecode (Dhall.inputFile auto path)
-                                                      pure $ case legacy of
-                                                        Right legacySpec -> Right (upgradeLegacyProfile legacySpec)
-                                                        Left _legacyError -> Left currentError
+    -- Only the current decoder's error is kept. An author wants to know how
+    -- their descriptor differs from today's schema, not from a retired one.
+    Left currentError -> maybe (Left currentError) Right <$> firstFrozen frozenDecoders
   where
-    -- The fourteen calls look identical but are inferred at distinct result
-    -- types; @auto@ picks the corresponding current or frozen decoder.
+    -- Newest generation first. Each entry looks identical but is inferred at a
+    -- distinct result type, fixed by the upgrade function it names; @auto@ then
+    -- picks that generation's decoder. Adding a generation is one line here.
+    frozenDecoders :: [IO (Maybe ProfileSpec)]
+    frozenDecoders =
+      [ attempt upgradePreBundleVersionProfile,
+        attempt upgradePrePathProfile,
+        attempt upgradePreActorProfile,
+        attempt upgradePreObjectProfile,
+        attempt upgradeReferenceProfile,
+        attempt upgradeConditionalProfile,
+        attempt upgradeNestedProfile,
+        attempt upgradeFormatProfile,
+        attempt upgradeCardinalityProfile,
+        attempt upgradeVocabularyProfile,
+        attempt upgradeTypeAwareProfile,
+        attempt upgradeDescribedProfile,
+        attempt upgradeLegacyProfile
+      ]
+
+    -- Short-circuiting, so a descriptor that decodes at the first frozen
+    -- generation costs one extra parse rather than thirteen.
+    firstFrozen :: [IO (Maybe ProfileSpec)] -> IO (Maybe ProfileSpec)
+    firstFrozen [] = pure Nothing
+    firstFrozen (decoder : remaining) =
+      decoder >>= \case
+        Just spec -> pure (Just spec)
+        Nothing -> firstFrozen remaining
+
+    attempt :: (FromDhall a) => (a -> ProfileSpec) -> IO (Maybe ProfileSpec)
+    attempt upgrade = either (const Nothing) (Just . upgrade) <$> tryDecode (Dhall.inputFile auto path)
+
     tryDecode :: IO a -> IO (Either Text a)
     tryDecode action =
       (Right <$> action)
