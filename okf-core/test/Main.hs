@@ -108,6 +108,7 @@ main = do
         test "rendered concept link round-trips through extractConceptLinks" testConceptLinkRoundTrip,
         test "over-escaping relative links do not resolve inside bundle" testRejectOverEscapingRelativeLink,
         test "classifyPathReference implements the specification section 6.2 grammar" testClassifyPathReference,
+        test "resolvePathReference decides existence against a bundle inventory" testResolvePathReference,
         test "every versioned field name is a core frontmatter field" testVersionedFieldsAreCoreFields,
         test "versionGate applies specification section 12 best-effort reading" testVersionGate,
         test "declared v0.2 reports a legacy timestamp that an undeclared bundle tolerates" testLegacyFieldInDeclaredV2,
@@ -1167,6 +1168,44 @@ testClassifyPathReference = do
   assertEqual (Just "references/policy.md") (collapseBundlePath "references/./policy.md")
   assertEqual (Just "policy.md") (collapseBundlePath "references/../policy.md")
   assertEqual Nothing (collapseBundlePath "../policy.md")
+
+-- | The seam 'Okf.Path' deliberately left open: classification says what shape a
+-- value has, resolution says whether the thing it names is there. The predicate
+-- stands in for a 'BundleInventory' so the two can be tested apart.
+testResolvePathReference :: Either Text ()
+testResolvePathReference = do
+  deep <- parseTestConceptId "metrics/finance/revenue"
+  shallow <- parseTestConceptId "revenue"
+  let present =
+        [ "references/policy.md",
+          "references/attesters/revenue.py",
+          "metrics/finance/policy.md",
+          "sibling.md"
+        ]
+      exists = (`elem` present)
+      resolve = resolvePathReference exists
+  -- Every scheme counts, not only the three 'Okf.Graph.isExternalUrl' knows
+  -- about, and okf never fetches any of them.
+  assertEqual (ResolvedExternal "https") (resolve deep "https://wiki.acme/revenue")
+  assertEqual (ResolvedExternal "bigquery") (resolve deep "bigquery://analytics.tables.orders")
+  -- A leading slash resolves from the bundle root wherever the concept lives.
+  assertEqual (ResolvedInBundle "references/policy.md") (resolve deep "/references/policy.md")
+  assertEqual (ResolvedInBundle "references/policy.md") (resolve shallow "/references/policy.md")
+  -- A relative path resolves against the carrying concept's own directory.
+  assertEqual (ResolvedInBundle "metrics/finance/policy.md") (resolve deep "policy.md")
+  assertEqual (ResolvedInBundle "sibling.md") (resolve shallow "./sibling.md")
+  -- The case this whole plan exists for: a non-Markdown target resolves, which
+  -- is only possible because the inventory sees more than concepts.
+  assertEqual
+    (ResolvedInBundle "references/attesters/revenue.py")
+    (resolve deep "/references/attesters/revenue.py")
+  -- Nothing there under that name.
+  assertEqual (DanglingInBundle "references/deleted.md") (resolve deep "/references/deleted.md")
+  assertEqual (DanglingInBundle "metrics/computations/revenue.md") (resolve deep "../computations/revenue.md")
+  -- Distinct outcomes for a value that could never name anything in the bundle.
+  assertEqual UnresolvableEscape (resolve shallow "../../etc/passwd")
+  assertEqual UnresolvableMalformed (resolve deep "")
+  assertEqual UnresolvableMalformed (resolve deep "   ")
 
 -- | The version-metadata lists name keys okf actually owns. Nothing else would
 -- catch a typo in one of those string literals: a misspelled entry simply never

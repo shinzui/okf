@@ -19,6 +19,8 @@ module Okf.Path
   ( PathReference (..),
     classifyPathReference,
     collapseBundlePath,
+    PathResolution (..),
+    resolvePathReference,
   )
 where
 
@@ -69,6 +71,46 @@ classifyPathReference sourceConcept rawValue
     candidatePath
       | "/" `Text.isPrefixOf` cleanText = dropWhile (== '/') cleanPath
       | otherwise = sourceDirectory </> cleanPath
+
+-- | The outcome of resolving a path-valued frontmatter field against a bundle:
+-- 'classifyPathReference' plus the one question it deliberately does not answer.
+data PathResolution
+  = -- | An absolute URL, carrying its case-folded scheme. okf never fetches it,
+    -- so this is as resolved as an external target gets.
+    ResolvedExternal !Text
+  | -- | Names a file the bundle contains, at the given bundle-relative path.
+    ResolvedInBundle !FilePath
+  | -- | Looks exactly like a bundle path, and the bundle holds no such file.
+    DanglingInBundle !FilePath
+  | -- | Climbs above the bundle root, so there is nothing in the bundle it
+    -- could name.
+    UnresolvableEscape
+  | -- | Empty, whitespace, or otherwise unusable as either a URL or a path.
+    UnresolvableMalformed
+  deriving stock (Generic, Eq, Ord, Show)
+
+-- | Resolve one raw path-valued value written on the given concept, asking the
+-- supplied predicate whether a bundle-relative path names a file that exists.
+--
+-- The predicate is a plain function rather than a bundle type so that this
+-- module stays below 'Okf.Bundle' in the import graph; a caller holding a
+-- 'Okf.Bundle.BundleInventory' passes
+-- @flip Okf.Bundle.bundleInventoryMember inventory@.
+--
+-- Deliberately a thin composition over 'classifyPathReference'. Its value is
+-- that the five outcomes are named once, so every caller agrees on what they
+-- mean — in particular that an external URL is /resolved/ rather than skipped,
+-- and that a path which escapes the bundle is a different finding from one that
+-- simply is not there.
+resolvePathReference :: (FilePath -> Bool) -> ConceptId -> Text -> PathResolution
+resolvePathReference exists sourceConcept rawValue =
+  case classifyPathReference sourceConcept rawValue of
+    ExternalUrl scheme -> ResolvedExternal scheme
+    BundlePath target
+      | exists target -> ResolvedInBundle target
+      | otherwise -> DanglingInBundle target
+    EscapesBundle -> UnresolvableEscape
+    MalformedPath -> UnresolvableMalformed
 
 -- | The case-folded scheme of an absolute URL, or 'Nothing' for anything that
 -- is not one. A bundle-absolute path such as @\/references\/policy.md@ has no
