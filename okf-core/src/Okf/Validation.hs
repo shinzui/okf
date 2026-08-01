@@ -23,6 +23,7 @@ import Okf.ConceptId (ConceptId)
 import Okf.Document
 import Okf.Graph (danglingReferences, duplicateConceptIds)
 import Okf.Log (Log (logDays), LogDay (logDate), LogValidationError, validateLog)
+import Okf.Markdown (extractFootnoteLabels, footnoteLabelsUsed)
 import Okf.Prelude
 import System.FilePath qualified as FilePath
 
@@ -50,6 +51,15 @@ data ValidationError
     SourceMissingResource Int
   | -- | Two @sources@ entries in one document share an @id@.
     DuplicateSourceId Text
+  | -- | The body attributes a claim with a footnote label that names no
+    -- @sources@ entry in the same document, so the attribution resolves to
+    -- nothing. Specification §5.1 makes the label the join key into @sources@.
+    FootnoteLabelNotInSources Text
+  | -- | A @sources@ entry carries an @id@ that no footnote in the body cites.
+    -- A lint rather than a defect: §5.1 says an @id@ SHOULD be present when the
+    -- body cites the source, which implies an id exists in order to be cited,
+    -- but never requires the citation.
+    SourceIdNotCited Text
   deriving stock (Generic, Eq, Show)
 
 -- | A whole-bundle validation problem.
@@ -121,6 +131,7 @@ validateDocument profile document =
         foldMap (requireNonEmptyText MissingRecommendedField `flip` document) ["title", "description"]
           <> requireGenerated document
           <> checkSources document
+          <> checkFootnoteAttribution document
 
 -- | Strict-mode checks on the OKF v0.2 @sources@ family (specification §5.1).
 --
@@ -164,6 +175,67 @@ checkSources OKFDocument {frontmatter} =
       List.nub [value | (value, count) <- countOccurrences values, count > (1 :: Int)]
     countOccurrences values =
       [(value, length (filter (== value) values)) | value <- List.nub values]
+
+-- | Strict-mode checks joining the body's footnote labels to @sources@ entry
+-- ids (specification §5.1's per-claim attribution).
+--
+-- §5.1: "The footnote label is the join key into @sources@; consumers resolve
+-- attribution through the matching entry, not by parsing the footnote prose."
+-- Labels are keyed rather than positional because agents rewrite these documents
+-- constantly and a positional index misattributes silently the moment the list
+-- is reordered. The join is therefore worth checking in both directions, at two
+-- different severities.
+--
+-- Each direction is gated on the other side having opted into per-claim
+-- attribution, and the two gates are the same rule seen from opposite ends.
+--
+-- Labels are checked only when the document has a @sources@ key. Markdown
+-- footnotes are legal prose used for ordinary purposes, and a document that has
+-- not opted into structured provenance is making no attribution claim;
+-- reporting every footnote in such a body would make the check hostile.
+--
+-- Ids are checked only when the body cites at least one footnote label. §5.1
+-- asks for an @id@ "when the body cites the source", so an id in a body that
+-- cites nothing is simply not being used for per-claim attribution — the same
+-- reason an entry with no @id@ at all is never reported. Without this gate every
+-- @sources@ document that uses no footnotes, which is the common shape, would
+-- emit one lint per entry.
+--
+-- The join is document-local, matching §5.1. Ids are not required to be unique
+-- across a bundle, so a label naming an id in some other document means nothing.
+-- Within one document 'DuplicateSourceId' already guarantees "the matching
+-- entry" is well defined.
+--
+-- Both diagnostics are strict-mode only, per §11's rule that a consumer must not
+-- reject a bundle over optional frontmatter.
+checkFootnoteAttribution :: OKFDocument -> [ValidationError]
+checkFootnoteAttribution OKFDocument {frontmatter, body} =
+  case frontmatterLookup "sources" frontmatter of
+    Nothing -> []
+    Just sourcesValue ->
+      let entryIds = sourceIdsOf sourcesValue
+          labels = footnoteLabelsUsed (extractFootnoteLabels body)
+       in [FootnoteLabelNotInSources label | label <- labels, label `notElem` entryIds]
+            <> [ SourceIdNotCited entryId
+               | not (null labels),
+                 entryId <- entryIds,
+                 entryId `notElem` labels
+               ]
+  where
+    -- Read ids from the raw YAML list rather than 'readSources', for the same
+    -- reason 'checkSources' does: 'readSources' drops entries with no
+    -- @resource@, and an id the author wrote should still join even when the
+    -- entry holding it is separately malformed.
+    sourceIdsOf = \case
+      Array entries ->
+        List.nub
+          [ entryId
+          | Object entryFields <- Vector.toList entries,
+            Just (String rawId) <- [KeyMap.lookup (AesonKey.fromText "id") entryFields],
+            let entryId = Text.strip rawId,
+            not (Text.null entryId)
+          ]
+      _ -> []
 
 -- | Strict-mode check for the OKF v0.2 @generated@ family (specification §5.2).
 --

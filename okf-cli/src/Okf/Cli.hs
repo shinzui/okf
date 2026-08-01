@@ -1789,6 +1789,8 @@ renderValidationErrorText = \case
   GeneratedMustHaveActor -> "generated must carry a by actor"
   SourceMissingResource entryIndex -> "sources entry is missing resource: index " <> Text.pack (show entryIndex)
   DuplicateSourceId sourceId -> "duplicate sources id: " <> sourceId
+  FootnoteLabelNotInSources label -> "footnote label has no matching sources id: " <> label
+  SourceIdNotCited sourceId -> "lint: sources id is never cited by a footnote: " <> sourceId
 
 renderLogValidationError :: Log.LogValidationError -> Text
 renderLogValidationError = \case

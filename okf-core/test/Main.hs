@@ -85,6 +85,8 @@ main = do
         test "frontmatter builder round-trips through serialize and parse" testFrontmatterBuilderRoundTrip,
         test "serializeDocument emits deterministic key order" testSerializeDeterministicKeyOrder,
         test "serializeDocument orders generated before the superseded timestamp" testSerializeGeneratedBeforeTimestamp,
+        test "strict validation joins footnote labels to sources ids in both directions" testFootnoteAttributionJoin,
+        test "footnote attribution is skipped entirely when a document has no sources" testFootnoteAttributionSkippedWithoutSources,
         test "footnote parsing is enabled, so a definition is not paragraph text" testFootnotesEnabled,
         test "enabling footnotes leaves log parsing and link extraction unchanged" testFootnotesDoNotRegressLogsOrLinks,
         test "extractFootnoteLabels ignores footnote syntax inside code" testExtractFootnoteLabelsIgnoresCode,
@@ -1172,6 +1174,70 @@ sourcesFixtureDocument =
       "",
       "# Orders"
     ]
+
+-- | Specification §5.1 makes the footnote label the join key into @sources@, so
+-- strict validation checks it in both directions: a label naming no entry is a
+-- defect, and an entry whose id nothing cites is a lint. Neither fires in
+-- permissive mode, because §11 forbids rejecting a bundle over optional
+-- frontmatter.
+testFootnoteAttributionJoin :: Either Text ()
+testFootnoteAttributionJoin = do
+  let document mistyped =
+        Text.unlines
+          [ "---",
+            "type: BigQuery Table",
+            "title: Orders",
+            "description: Order fact table.",
+            "generated: { by: okf-agent/1.0, at: 2026-07-31T00:00:00Z }",
+            "sources:",
+            "  - id: ga4-schema",
+            "    resource: https://developers.google.com/analytics/bigquery/export-schema",
+            "  - id: uncited-policy",
+            "    resource: https://wiki.acme/finance/revenue-recognition",
+            "---",
+            "",
+            "Sharded daily.[^" <> mistyped <> "]",
+            "",
+            "[^" <> mistyped <> "]: GA4 BigQuery Export schema"
+          ]
+  mistypedDocument <- firstShow (parseDocument (document "ga4-schmea"))
+  assertEqual
+    [ FootnoteLabelNotInSources "ga4-schmea",
+      SourceIdNotCited "ga4-schema",
+      SourceIdNotCited "uncited-policy"
+    ]
+    (validateDocument StrictAuthoring mistypedDocument)
+  assertEqual [] (validateDocument PermissiveConformance mistypedDocument)
+  -- Correcting the citation clears the defect and one of the two lints.
+  correctedDocument <- firstShow (parseDocument (document "ga4-schema"))
+  assertEqual
+    [SourceIdNotCited "uncited-policy"]
+    (validateDocument StrictAuthoring correctedDocument)
+
+-- | Markdown footnotes are ordinary prose used for ordinary purposes. A document
+-- that has not opted into structured provenance is making no attribution claim,
+-- so a body full of footnotes must report nothing in either mode.
+testFootnoteAttributionSkippedWithoutSources :: Either Text ()
+testFootnoteAttributionSkippedWithoutSources = do
+  document <-
+    firstShow
+      ( parseDocument
+          ( Text.unlines
+              [ "---",
+                "type: BigQuery Table",
+                "title: Orders",
+                "description: Order fact table.",
+                "generated: { by: okf-agent/1.0, at: 2026-07-31T00:00:00Z }",
+                "---",
+                "",
+                "An aside.[^aside] Another.[^undefined]",
+                "",
+                "[^aside]: just a footnote, not an attribution"
+              ]
+          )
+      )
+  assertEqual [] (validateDocument StrictAuthoring document)
+  assertEqual [] (validateDocument PermissiveConformance document)
 
 testReadSources :: Either Text ()
 testReadSources = do

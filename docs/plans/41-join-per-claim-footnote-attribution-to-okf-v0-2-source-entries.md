@@ -73,8 +73,8 @@ spike that resolves this before anything else is built.
 - [x] Milestone 1 (spike): determine how a footnote label can be recovered; choose one of three candidate approaches and record the evidence (2026-07-31) — chose Approach C, an AST-guided source scan; see Decision Log
 - [x] Milestone 2: enable footnote parsing at all three CommonMark call sites without regressing link, log, or schema extraction (2026-07-31) — shared `markdownOptions` in a new `Okf.Markdown`; `okf graph --json`, `okf log`, and `okf validate --strict` on the valid-bundle fixture are byte-identical before and after
 - [x] Milestone 3: extract footnote labels from a concept body via the chosen approach (2026-07-31) — `extractFootnoteLabels` in `Okf.Markdown`, plus `footnoteLabelsUsed`
-- [ ] Milestone 4: join labels to `sources[].id` and report unmatched labels under strict validation
-- [ ] Milestone 5: report uncited source ids as a distinct, weaker signal
+- [x] Milestone 4: join labels to `sources[].id` and report unmatched labels under strict validation (2026-07-31) — `FootnoteLabelNotInSources`
+- [x] Milestone 5: report uncited source ids as a distinct, weaker signal (2026-07-31) — `SourceIdNotCited`, gated on the body citing at least one label
 
 
 ## Surprises & Discoveries
@@ -283,6 +283,19 @@ in an OKF concept body is dead weight the Milestone 5 lint already discourages.
   case is one the Milestone 5 lint already flags from the other direction.
   Date: 2026-07-31
 
+- Decision: Fire `SourceIdNotCited` only when the body cites at least one footnote label,
+  a gate the plan did not specify.
+  Rationale: without it, every document that has a `sources` list and uses no footnotes —
+  the common shape, and one specification §5.1 fully permits — emits one lint per entry
+  under `--strict`. The existing sources tests from the sibling provenance plan caught this
+  immediately, reporting two extra lines for a fixture whose body is just `# Orders`. The
+  gate is the mirror of the Milestone 4 rule that skips label checking when a document has
+  no `sources`: each direction is checked only once the other side has opted into per-claim
+  attribution. It also matches the plan's own stated reason for never reporting an entry
+  with no `id`, applied at document level rather than entry level. §5.1 asks for an `id`
+  "when the body cites the source", so an id in a body that cites nothing is not a lapse.
+  Date: 2026-07-31
+
 - Decision: Keep the CommonMark *extension* list per call site rather than sharing it, and
   share only the option list as `markdownOptions`.
   Rationale: the three call sites are not uniform in extensions, which the plan did not
@@ -295,7 +308,45 @@ in an OKF concept body is dead weight the Milestone 5 lint already discourages.
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+All five milestones are complete and the plan's acceptance criteria hold as written.
+
+What exists now that did not before. `Okf.Markdown` is a new module in `okf-core` that owns
+two things: `markdownOptions`, the CommonMark option list all three body-parsing call sites
+now share, and `extractFootnoteLabels`, which recovers the footnote labels a body uses.
+`Okf.Validation` gained `FootnoteLabelNotInSources` and `SourceIdNotCited`, both
+strict-mode only, and `okf-cli/src/Okf/Cli.hs` renders them. Running
+`cabal run okf -- validate <bundle> --strict` against a body citing `[^ga4-schmea]` when
+`sources` holds `ga4-schema` reports the mistyped label; correcting the typo clears it and
+leaves only the uncited-entry lint; running without `--strict` reports neither.
+
+The plan's regression contract held exactly. `okf graph --json`, `okf log`, and
+`okf validate --strict` on `okf-core/test/fixtures/valid-bundle` produce byte-identical
+output before and after enabling footnotes, and both test suites pass.
+
+The lesson worth carrying. This plan's design rested on a claim about a dependency that had
+been carefully researched, written into the plan, the mori upstream-issue catalog, and a
+Decision Log entry promoting one approach over two others — and it was wrong. Reading
+`cbits/blocks.c` correctly established that cmark-gfm overwrites a matched reference's
+literal with an ordinal; what no amount of reading revealed is that the case the reading
+concluded was safe, an unmatched reference keeping its label, never reaches that code at all
+because the parser has already reverted it to plain text. Ten minutes in `cabal repl`
+settled it. The plan was right to open with a spike and right to insist the spike confirm
+the ordinal behavior "by experiment — not by reading alone"; what it could not anticipate is
+that the experiment would invalidate the question rather than answer it.
+
+The narrower lesson, for any later plan that walks a Markdown tree: cmark-gfm's parse tree
+is a rendering of what a document *means*, not a record of what its author *typed*. It
+deletes constructs that resolve to nothing. Any check whose purpose is to catch an author
+mistake must read source text, because a parse tree has already erased the mistake.
+
+What remains. Nothing in this plan's scope. Two follow-ons are noted for the plans after it.
+`docs/plans/42-declare-and-honour-okf-version-in-the-bundle-root-index.md` should decide
+whether footnote attribution checking is gated on a declared `okf_version` of 0.2; it is
+currently unconditional, which is the tolerance the MasterPlan's Integration Points section
+asked earlier plans to implement. And
+`docs/plans/43-migrate-okf-documentation-examples-and-fixtures-to-okf-v0-2.md` should
+consider adding a fixture concept that uses per-claim attribution, since no fixture
+exercises it end to end today.
 
 
 ## Context and Orientation
@@ -455,9 +506,12 @@ neither check here is fatal in permissive mode.
 `PermissiveConformance` versus `StrictAuthoring` — is the single mode value shared between
 core and profile validation. Do not add a third mode.
 
-No existing ADR covers Markdown parse configuration. Milestone 2 changes it globally, and if
-the spike chooses Approach C it changes a third-party dependency; either outcome may deserve
-a short ADR, which Milestone 1's decision should consider.
+No existing ADR covered Markdown parse configuration when this plan was written. One does
+now: `docs/adr/9-one-markdown-parse-configuration-and-source-scanned-authoring-checks.md`,
+written by this plan. It records that `Okf.Markdown.markdownOptions` is the single option
+list every body parse uses, why footnotes are enabled and what that costs, and the general
+rule the spike produced — that a check meant to catch an author's mistake must read source
+text, because a CommonMark parse tree has already erased the mistake.
 
 
 ## Plan of Work
@@ -840,3 +894,30 @@ One sibling MasterPlan depends on the parse configuration established here.
 `docs/masterplans/9-support-okf-v0-2-attested-computations.md` adds a second body inspector
 (for the `# Computation` section) and requires it to route through the same
 `markdownOptions` rather than a fresh literal list. Keep `markdownOptions` exported.
+
+
+## Revision note (2026-07-31)
+
+Revised during implementation, after the Milestone 1 spike invalidated the plan's central
+assumption about the `cmark-gfm` binding. The plan had recorded that an unmatched footnote
+reference keeps its label, and reasoned from that to promote patching the binding to leading
+candidate. Measurement showed the parser reverts an unmatched reference to plain text and
+deletes a definition nothing cites, so no parse-tree approach can see either mistake the
+plan exists to catch.
+
+Changed as a result: Milestone 1 is complete with Approach C chosen and the earlier
+promotion of Approach A reversed; Surprises & Discoveries carries the four measurements with
+transcripts; Milestone 3's prose now describes the source scan, its byte-offset requirement,
+and the label rule, and its acceptance now expects the labels the parser erases; the ordinal
+guard is kept but re-justified, since under a source scan it holds by construction.
+
+Also revised: Milestone 5 gained a gate the plan did not specify, firing `SourceIdNotCited`
+only when the body cites at least one label, because the sibling provenance plan's existing
+tests showed the ungated rule lints every `sources` document that uses no footnotes. And the
+Relevant ADRs subsection now names
+`docs/adr/9-one-markdown-parse-configuration-and-source-scanned-authoring-checks.md`, which
+this plan wrote, where it previously said no ADR covered parse configuration.
+
+The mori upstream-issue entry `cmark-gfm-hs-drops-footnote-labels` was corrected in the same
+change and left `Active` rather than moved to `Workaround`: the binding limitation is real
+and still worth fixing upstream, but it is no longer on okf's path.
