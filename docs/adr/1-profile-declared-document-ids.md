@@ -12,7 +12,7 @@ the `.md` suffix. That identity is appropriate for named assets, but
 sequence-shaped records such as architecture decisions, RFCs, and incidents
 also need short references that survive file renames.
 
-OKF v0.1 permits producer-defined frontmatter fields, and profiles already
+OKF permits producer-defined frontmatter fields, and profiles already
 describe team conventions without changing OKF conformance. This makes a
 profile the appropriate place to opt into stable handles while keeping the core
 format permissive.
@@ -81,3 +81,11 @@ records directly. The changelogs call out the required migration.
 
 This ADR was amended on 2026-07-29 to cover profile-declared document-reference
 policies and the offline local/external resolution boundary.
+
+This ADR was amended on 2026-07-31 to drop a version number from the Context.
+It previously read "OKF v0.1 permits producer-defined frontmatter fields", which
+named a version okf no longer targets. OKF v0.2 §13.2 carries the permission
+forward unchanged, so the claim itself stands; only the version reference was
+stale. The permissive-core principle this ADR establishes is what keeps every
+v0.2 frontmatter family optional in okf's core validation — see
+`docs/adr/7-okf-v0-1-legacy-fallback-policy.md`.

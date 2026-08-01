@@ -82,7 +82,7 @@ rather than inventing their own.
 - [x] Milestone 4: strict validation accepts `generated`, falls back to `timestamp`, and reports a v0.2-shaped message (2026-07-31)
 - [x] Milestone 5: log staleness reads `generated.at` first; CLI wording no longer says "timestamp" (2026-07-31)
 - [x] Milestone 6: authoring API can write `generated`; round-trip test proves it survives serialize-then-parse (2026-07-31)
-- [ ] Milestone 7: ADR written on the version 0.1 legacy-fallback policy
+- [x] Milestone 7: ADR written on the version 0.1 legacy-fallback policy (2026-07-31) — `docs/adr/7-okf-v0-1-legacy-fallback-policy.md`
 
 
 ## Surprises & Discoveries
@@ -180,7 +180,64 @@ requires you to record.)
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+All seven milestones are complete and every acceptance criterion in Validation and Acceptance
+holds. Both test suites pass with every pre-existing assertion still passing, which was the
+plan's primary regression guard: the fixture bundle at `okf-core/test/fixtures/valid-bundle`
+is v0.1 throughout and still validates in both modes untouched.
+
+The user-visible outcome is real rather than internal. A concept carrying only `generated`
+now passes strict validation, and removing it produces the v0.2-shaped failure:
+
+```text
+$ okf validate <scratch-bundle> --strict
+OK: 1 concepts
+
+$ okf validate <scratch-bundle> --strict     # after deleting the generated line
+tables/orders: missing generated field (or legacy timestamp)
+```
+
+`okf show` reports the generating actor, and `okf log --check-stale` reads `generated.at`
+with v0.2 wording, flagging a v0.2 concept that carries no `timestamp` at all — a document
+that under v0.1 reading had no date and was silently skipped:
+
+```text
+tables/orders: generated date 2026-06-20 is newer than log.md newest entry 2026-06-01
+```
+
+Three things went beyond the written plan and are worth flagging to the sibling plans.
+
+The plan's milestone list did not mention the CLI, but the Purpose section promised a user
+could ask who generated a concept. A projection nothing renders does not deliver that, so
+`okf show` gained a `generated` line, recorded as its own Progress entry rather than folded
+silently into Milestone 3. Sibling plans adding `verified`, `status`, `stale_after`, and
+`sources` should expect the same gap between "projected" and "visible" and budget for it.
+
+The staleness fallback is slightly looser than Milestone 5's wording implies — it reaches
+`timestamp` whenever `generated` yields no usable date, not only when `generated` is absent.
+The reasoning is in Surprises & Discoveries; the short version is that §5.2 does not require
+`at` within `generated`, so the stricter reading would silently discard the only date some
+documents have.
+
+Two claims drafted into the ADR turned out to be wrong and were corrected before commit,
+which is the lesson most worth carrying forward. The first was inherited from
+`docs/adr/5-compile-profile-rules-before-validation.md`, which records that Mori must handle
+new constructors — true of `ProfileViolation`, but `mori-cli/src/Mori/Okf/Advisory.hs`
+imports only `ValidationProfile (PermissiveConformance)` from `Okf.Validation` and does not
+match `ValidationError` at all, so the two new constructors do not affect it. The second was
+the plan's own Idempotence warning that `okf index --write` would reshuffle a real bundle's
+frontmatter; it does not, because it writes only `index.md` files. Concept re-serialization
+reaches users through `Okf.Bundle.writeBundle` and `okf profile document --write`, which
+writes concepts okf generated itself. Both were checked rather than trusted, and the ADR
+states the verified position.
+
+What remains for the initiative: everything this plan deliberately scaffolded but did not
+use. `coreFrontmatterFieldOrder` already carries `status`, `verified`, `stale_after`,
+`sources`, and `usage_window`, and `Okf.Actor` already exports the `human:` test that §5.3
+makes load-bearing, so
+`docs/plans/39-read-the-okf-v0-2-verified-status-and-stale-after-fields-and-derive-trust-tiers.md`
+and
+`docs/plans/40-read-the-okf-v0-2-sources-provenance-family-with-credibility-signals.md`
+should import both rather than re-editing or re-deriving them.
 
 
 ## Context and Orientation

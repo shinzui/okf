@@ -149,7 +149,7 @@ from the signals ... not stored") and a boundary later work will be tempted to c
 
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
-| 1 | Migrate the concept timestamp to the OKF v0.2 generated field | docs/plans/38-migrate-the-concept-timestamp-to-the-okf-v0-2-generated-field.md | None | None | In Progress |
+| 1 | Migrate the concept timestamp to the OKF v0.2 generated field | docs/plans/38-migrate-the-concept-timestamp-to-the-okf-v0-2-generated-field.md | None | None | Complete |
 | 2 | Read the OKF v0.2 verified status and stale after fields and derive trust tiers | docs/plans/39-read-the-okf-v0-2-verified-status-and-stale-after-fields-and-derive-trust-tiers.md | EP-1 | None | Not Started |
 | 3 | Read the OKF v0.2 sources provenance family with credibility signals | docs/plans/40-read-the-okf-v0-2-sources-provenance-family-with-credibility-signals.md | EP-1 | EP-2 | Not Started |
 | 4 | Join per claim footnote attribution to OKF v0.2 source entries | docs/plans/41-join-per-claim-footnote-attribution-to-okf-v0-2-source-entries.md | EP-3 | None | Not Started |
@@ -268,9 +268,9 @@ agree, and the reconciliation happens in EP-5.
 Milestone-level progress across all six child plans. Each child plan's own Progress
 section carries the granular work; this list tracks the story.
 
-- [ ] EP-1: `Okf.Actor` parses and classifies the three specification §7 actor shapes
-- [ ] EP-1: `generated: { by, at }` is read, written, and ordered canonically, with all six concept-level 0.2 keys added to the key order in one edit
-- [ ] EP-1: strict validation requires `generated` and falls back to legacy `timestamp`; log staleness reads `generated.at`
+- [x] EP-1: `Okf.Actor` parses and classifies the three specification §7 actor shapes (2026-07-31)
+- [x] EP-1: `generated: { by, at }` is read, written, and ordered canonically, with all six concept-level 0.2 keys added to the key order in one edit (2026-07-31)
+- [x] EP-1: strict validation requires `generated` and falls back to legacy `timestamp`; log staleness reads `generated.at` (2026-07-31)
 - [ ] EP-2: `verified` is read as a list, with a bare mapping normalised to one element per §5.2
 - [ ] EP-2: `status` and `stale_after` are read, with absent `status` defaulting to `stable`
 - [ ] EP-2: trust tiers derive per §5.3 and staleness derives per §5.5, both surfaced through the CLI
@@ -328,6 +328,40 @@ Separately and regardless of approach: footnotes are currently *off*, so a body 
 `[^label]: some prose` today parses as ordinary paragraph text. Enabling the option changes
 existing parse trees at all three `commonmarkToNode` call sites.
 
+**From EP-1's implementation, three findings that change other plans' assumptions.**
+
+*A projection nobody renders is not a user-visible outcome.* EP-1's milestone list named
+`Okf.Document`, `Okf.Bundle`, and `Okf.Validation` but not the CLI, while its Purpose
+section promised a user could ask who generated a concept. Delivering that needed a
+`generated` line in `okf show` and a `renderGenerated` helper in
+`okf-cli/src/Okf/Cli.hs`. EP-2 and EP-3 have the same gap between projecting a family and
+surfacing it — the MasterPlan Progress list already says EP-2's trust tiers and EP-3's
+credibility signals must be "surfaced through the CLI", but neither child plan's milestones
+name `renderConcept`. Both should budget for it rather than discovering it at acceptance.
+
+*The Concept projection record now has six typed fields, and `okf show` renders them in a
+fixed order.* EP-2 and EP-3 each add theirs after `generated`. Adding a field to
+`Okf.Bundle.Concept` is a three-part edit — the record at `okf-core/src/Okf/Bundle.hs:44`,
+the `conceptAt` builder, and an accessor in the export list — and `Concept` derives `Eq`, so
+any test constructing one by hand needs updating. EP-1 avoided that cost by adding a
+`testConceptWithFrontmatter` helper in `okf-core/test/Main.hs` that builds a concept from
+raw frontmatter text; EP-2 and EP-3 should use it rather than extending `OkfCommon`.
+
+*Two documented cross-plan claims were wrong and were corrected by checking.* The first:
+`docs/adr/5-compile-profile-rules-before-validation.md` records that Mori must handle new
+constructors before moving its okf pin, which is true of `ProfileViolation` but not of
+`Okf.Validation.ValidationError` — `mori-cli/src/Mori/Okf/Advisory.hs` imports only
+`ValidationProfile (PermissiveConformance)` and never matches `ValidationError`, so EP-1's
+two new constructors did not affect it. Later plans adding `ValidationError` constructors
+inherit that freedom; plans touching `ProfileViolation` (which is MasterPlan 8's territory)
+do not. The second: EP-1's own Idempotence section warned that `okf index --write` would
+reshuffle a real bundle's frontmatter mid-implementation. It does not — that command writes
+only `index.md` files. No okf command rewrites a user's existing concept documents; concept
+re-serialization reaches users through `Okf.Bundle.writeBundle` and
+`okf profile document --write`, which writes concepts okf generated itself. The
+key-order hazard EP-1's Milestone 2 flagged is therefore smaller than written, which matters
+to EP-6 when it migrates fixtures.
+
 
 ## Decision Log
 
@@ -363,6 +397,25 @@ existing parse trees at all three `commonmarkToNode` call sites.
   scattering version tests.
   Rationale: a gate cannot be specified before the things it gates exist. Making earlier
   plans version-unaware keeps them simple and gives EP-5 a single place to route.
+  Date: 2026-07-31
+
+- Decision: The first of the two planned ADRs is written and accepted as
+  `docs/adr/7-okf-v0-1-legacy-fallback-policy.md`, and it covers more than the fallback
+  policy alone: it also records the closed-profile widening decision that the Integration
+  Points section flagged as a cross-plan question, and the strict-only placement rule that
+  every later family's checks must follow.
+  Rationale: the three are one policy seen from three angles — what okf does with a v0.1
+  construct, which keys the format itself owns, and what a consumer may reject a bundle for.
+  Splitting them across records would have made each unreadable without the others. EP-2
+  still owes the second ADR, on derived-not-stored trust and credibility.
+  Date: 2026-07-31
+
+- Decision: `docs/adr/1-profile-declared-document-ids.md` was amended in the same change to
+  drop the version number from "OKF v0.1 permits producer-defined frontmatter fields",
+  which the Decomposition Strategy above predicted would go stale.
+  Rationale: v0.2 §13.2 carries the permission forward unchanged, so the claim stands and
+  only the version reference was wrong. Amending in place with a dated note was cheaper than
+  leaving a known-stale sentence for a later plan to trip over.
   Date: 2026-07-31
 
 - Decision: This initiative will produce two new ADRs, to be written by the plans that
