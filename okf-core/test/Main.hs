@@ -105,6 +105,8 @@ main = do
         test "enabling footnotes leaves log parsing and link extraction unchanged" testFootnotesDoNotRegressLogsOrLinks,
         test "extractFootnoteLabels ignores footnote syntax inside code" testExtractFootnoteLabelsIgnoresCode,
         test "extractFootnoteLabels keeps labels the parser erases and never ordinals" testExtractFootnoteLabelsKeepsErasedLabels,
+        test "computationBlocks accepts both spellings and bounds its section" testComputationBlocks,
+        test "computationBlocks cannot see a block inside an uncited footnote definition" testComputationBlocksFootnoteHazard,
         test "rendered concept link round-trips through extractConceptLinks" testConceptLinkRoundTrip,
         test "over-escaping relative links do not resolve inside bundle" testRejectOverEscapingRelativeLink,
         test "classifyPathReference implements the specification section 6.2 grammar" testClassifyPathReference,
@@ -1093,6 +1095,82 @@ testExtractFootnoteLabelsKeepsErasedLabels = do
   where
     looksLikeInteger label =
       not (Text.null label) && Text.all (`Text.elem` "0123456789") label
+
+-- | Specification §10.3's prose says "fenced" and §10.2's own worked example
+-- writes an indented block, so both count; and the section is bounded at the
+-- next heading of the same or a shallower level, so a fenced block under a later
+-- @# Notes@ heading is not a second computation while one under a nested
+-- @## Subsection@ still belongs to the section.
+testComputationBlocks :: Either Text ()
+testComputationBlocks = do
+  assertEqual
+    ["SELECT 1\n"]
+    (computationBlocks (Text.unlines ["# Computation", "", "    SELECT 1"]))
+  assertEqual
+    ["SELECT 1\n"]
+    (computationBlocks (Text.unlines ["# Computation", "", "```sql", "SELECT 1", "```"]))
+  assertEqual
+    ["SELECT 1\n"]
+    ( computationBlocks
+        ( Text.unlines
+            [ "# Computation",
+              "",
+              "    SELECT 1",
+              "",
+              "# Notes",
+              "",
+              "```sql",
+              "SELECT 2",
+              "```"
+            ]
+        )
+    )
+  assertEqual
+    ["SELECT 1\n", "SELECT 2\n"]
+    ( computationBlocks
+        ( Text.unlines
+            [ "# Computation",
+              "",
+              "    SELECT 1",
+              "",
+              "## Explanation",
+              "",
+              "```sql",
+              "SELECT 2",
+              "```"
+            ]
+        )
+    )
+  assertEqual
+    ["SELECT 1\n", "SELECT 2\n"]
+    ( computationBlocks
+        ( Text.unlines
+            ["# Computation", "", "```sql", "SELECT 1", "```", "", "```sql", "SELECT 2", "```"]
+        )
+    )
+  assertEqual
+    []
+    (computationBlocks (Text.unlines ["# Notes", "", "```sql", "SELECT 1", "```"]))
+  assertEqual
+    ["SELECT 1\n"]
+    (computationBlocks (Text.unlines ["##  computation ", "", "    SELECT 1"]))
+
+-- | The one erasure that reaches 'computationBlocks', pinned so that meeting it
+-- later is recognized rather than investigated. Per
+-- @docs/adr/9-one-markdown-parse-configuration-and-source-scanned-authoring-checks.md@,
+-- okf parses every body with footnotes enabled and cmark-gfm deletes a footnote
+-- definition nothing cites, content and all — so a computation hidden inside one
+-- is invisible here. The document is malformed in a second, unrelated way, so
+-- this is an accepted cost rather than a bug to work around.
+testComputationBlocksFootnoteHazard :: Either Text ()
+testComputationBlocksFootnoteHazard =
+  assertEqual
+    []
+    ( computationBlocks
+        ( Text.unlines
+            ["# Computation", "", "[^unused]: a definition nothing cites", "", "    SELECT 1"]
+        )
+    )
 
 testConceptLinkRoundTrip :: Either Text ()
 testConceptLinkRoundTrip = do

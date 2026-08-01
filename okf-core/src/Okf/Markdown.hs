@@ -1,10 +1,12 @@
--- | The CommonMark configuration okf parses every body with, and footnote
--- label extraction for OKF v0.2 per-claim attribution.
+-- | The CommonMark configuration okf parses every body with, footnote label
+-- extraction for OKF v0.2 per-claim attribution, and the @# Computation@ body
+-- section of an OKF v0.2 attested computation.
 module Okf.Markdown
   ( markdownOptions,
     FootnoteLabels (..),
     extractFootnoteLabels,
     footnoteLabelsUsed,
+    computationBlocks,
   )
 where
 
@@ -38,6 +40,60 @@ import Okf.Prelude
 -- call sites read neither tables nor any other extension construct.
 markdownOptions :: [CMarkGFM.CMarkOption]
 markdownOptions = [CMarkGFM.optFootnotes]
+
+-- | The literal contents of every code block in the first @# Computation@
+-- section of a body, in document order.
+--
+-- A /section/ runs from a heading whose text is @computation@, trimmed and
+-- compared case-insensitively, to the next heading at the same or a shallower
+-- level, or to the end of the document. CommonMark makes every heading and block
+-- a sibling, so the boundary is drawn here rather than read off the tree.
+-- @schemaSectionColumns@ in "Okf.Profile" is the neighbouring inspector and does
+-- /not/ bound its section, which is tolerable for asking whether a schema table
+-- exists and is not tolerable here: specification §10.3 counts computations, and
+-- a fenced block under a later @# Notes@ heading is not a second one.
+--
+-- Both spellings of a code block count. Specification §10.3 says "a single
+-- fenced code block" and §10.2's own worked example writes an indented one;
+-- cmark-gfm reports both as @CODE_BLOCK@ and the tolerant reading is the only
+-- one that does not report the specification's own example as broken.
+--
+-- Unlike 'extractFootnoteLabels' this reads the parse tree rather than the
+-- source text, and that is deliberate rather than an oversight of
+-- @docs\/adr\/9-one-markdown-parse-configuration-and-source-scanned-authoring-checks.md@.
+-- That record's rule is that a check catching an author's /mistake/ must read
+-- what the author wrote, because the tree erases unresolvable syntax. "Is there
+-- a code block under this heading" is a question about structure, which is
+-- exactly what the tree records. The one erasure that reaches this function is
+-- the ADR's accepted cost: a code block inside a footnote definition nothing
+-- cites is deleted along with its definition, so it is invisible here.
+computationBlocks :: Text -> [Text]
+computationBlocks markdown =
+  let CMarkGFM.Node _ _ topLevel = CMarkGFM.commonmarkToNode markdownOptions [] markdown
+   in case dropWhile (not . isComputationHeading) topLevel of
+        (CMarkGFM.Node _ (CMarkGFM.HEADING level) _ : rest) ->
+          codeBlockLiterals (takeWhile (not . closesSection level) rest)
+        _ -> []
+  where
+    isComputationHeading (CMarkGFM.Node _ (CMarkGFM.HEADING _) inner) =
+      Text.toLower (Text.strip (inlineText inner)) == "computation"
+    isComputationHeading _ = False
+
+    -- A smaller level is a shallower heading, so @## @ inside a @# @ section
+    -- keeps the section open and the next @# @ closes it.
+    closesSection level (CMarkGFM.Node _ (CMarkGFM.HEADING other) _) = other <= level
+    closesSection _ _ = False
+
+    codeBlockLiterals nodes =
+      [literal | CMarkGFM.Node _ (CMarkGFM.CODE_BLOCK _ literal) _ <- nodes]
+
+-- | Concatenate all @TEXT@ and @CODE@ literals under a node list, recursively.
+inlineText :: [CMarkGFM.Node] -> Text
+inlineText = foldMap go
+  where
+    go (CMarkGFM.Node _ (CMarkGFM.TEXT literal) _) = literal
+    go (CMarkGFM.Node _ (CMarkGFM.CODE literal) _) = literal
+    go (CMarkGFM.Node _ _ inner) = inlineText inner
 
 -- | The footnote labels a concept body uses, split by how it uses them.
 --

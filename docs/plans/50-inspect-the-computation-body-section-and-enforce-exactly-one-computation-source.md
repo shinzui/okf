@@ -80,8 +80,8 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] Milestone 1: `Okf.Markdown.computationBlocks` extracts the code blocks under a `# Computation` heading, bounded at the next heading of the same or shallower level
-- [ ] Milestone 1: the cmark-gfm footnote hazard is pinned by a fixture — a code block inside an uncited footnote definition is deleted by the parser and therefore invisible
+- [x] Milestone 1 (2026-08-01): `Okf.Markdown.computationBlocks` extracts the code blocks under a `# Computation` heading, bounded at the next heading of the same or shallower level
+- [x] Milestone 1 (2026-08-01): the cmark-gfm footnote hazard is pinned by a fixture — a code block inside an uncited footnote definition is deleted by the parser and therefore invisible
 - [ ] Milestone 2: `Okf.Document.ComputationSource` and `readComputationSources` report every computation a document offers, and `Okf.Bundle.Concept` projects it
 - [ ] Milestone 3: `okf validate --strict` reports a concept of this type that declares no computation, one that declares two, and one whose `# Computation` section holds more than one block
 - [ ] Milestone 3: no other `type` is affected, and permissive validation reports none of the three
