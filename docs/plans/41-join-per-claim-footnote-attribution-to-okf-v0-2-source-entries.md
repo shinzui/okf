@@ -70,7 +70,7 @@ spike that resolves this before anything else is built.
 
 ## Progress
 
-- [ ] Milestone 1 (spike): determine how a footnote label can be recovered; choose one of three candidate approaches and record the evidence
+- [x] Milestone 1 (spike): determine how a footnote label can be recovered; choose one of three candidate approaches and record the evidence (2026-07-31) — chose Approach C, an AST-guided source scan; see Decision Log
 - [ ] Milestone 2: enable footnote parsing at all three CommonMark call sites without regressing link, log, or schema extraction
 - [ ] Milestone 3: extract footnote labels from a concept body via the chosen approach
 - [ ] Milestone 4: join labels to `sources[].id` and report unmatched labels under strict validation
@@ -149,6 +149,70 @@ definition it matched. This is why Approach C below is the leading candidate rat
 last resort, and why the patch can be offered upstream to `kivikakk/cmark-gfm-hs` instead of
 requiring a vendored fork.
 
+**The spike overturned the plan's central assumption: cmark-gfm never shows you an
+author's mistake.** This is the single most important thing the spike found, and it
+invalidates Approaches A and B for this plan's purpose. Four measurements, all made in
+`cabal repl okf-core` against bodies written to `/tmp/okf-fn/`.
+
+*An unmatched footnote reference is not a footnote node at all.* The plan (and the mori
+upstream-issue entry) assumed a reference cited but never defined would survive in the tree
+carrying its label. It does not survive in any form. Parsing
+
+```markdown
+Unmatched cite here.[^never-defined]
+```
+
+with `commonmarkToNode [optFootnotes] []` yields an ordinary paragraph:
+
+```text
+PARAGRAPH [TEXT "Unmatched cite here.[^never-defined]"]
+```
+
+cmark-gfm reverts an unresolved reference to literal text. The ordinal question the plan
+told the implementer to confirm by experiment is therefore moot: the binding never sees an
+unmatched reference, so it can never see either its label or an ordinal in its place.
+
+*An uncited footnote definition is dropped entirely.* A body defining five footnotes and
+citing three produced exactly three `FOOTNOTE_DEFINITION` nodes; the definition
+`[^unused]: defined but never cited` appeared in neither the AST nor the rendered HTML.
+The definition's text is gone, not merely unlabelled.
+
+Together these two facts mean the parser only ever reveals labels that are **both cited and
+defined** — precisely the labels that are already internally consistent. The two author
+mistakes this plan exists to catch, a citation whose label is typed wrong and a definition
+that nothing cites, are exactly the two cases the parser erases. Approach A (patch the
+binding to read `cmark_node_get_literal`) and Approach B (scrape the rendered HTML) both
+read the same tree and are both blind in the same way, so neither can implement the check.
+
+*Position information is byte-based, and it is enough to exclude code.* Every inline `CODE`
+and every `CODE_BLOCK` node carries a usable `PosInfo`, and those columns count **bytes,
+not characters**. Parsing `Café — naïve `[^in-code]` and [^real].` puts the `CODE` node at
+`startColumn = 19`, which is the byte offset of the code span's content, not its 15th
+character. A scanner that excludes code regions must therefore index lines by byte.
+
+*With footnotes off, a footnote definition can be silently misread as a link reference
+definition.* Also from the unicode body above: with the current `commonmarkToNode [] []`
+configuration, `[^real]: def` parses as a CommonMark link reference definition with label
+`^real` and destination `def`, so the citation `[^real]` in the paragraph becomes
+`LINK "def" ""`. That phantom link reaches `Okf.Graph.extractMarkdownLinks` and would be
+checked for referential integrity like any other. It only bites when the definition's text
+is a single token — `[^ga4-schema]: GA4 BigQuery Export schema` has trailing prose and so
+is not a valid link reference definition — but it is a live source of false
+`DanglingReference` errors today, and Milestone 2 fixes it.
+
+*Enabling footnotes has one cost, measured.* Given a body citing `[^cited]` and also
+defining an uncited `[^uncited]`, where both definitions contain Markdown links:
+
+```text
+footnotes OFF: ["../a/cited.md","../a/uncited.md"]
+footnotes ON:  ["../a/cited.md"]
+```
+
+The link inside the uncited definition disappears from the graph along with the definition
+that held it. This is accepted rather than avoided — see the Decision Log — because the
+alternative is the phantom-link misparse above, and because an uncited footnote definition
+in an OKF concept body is dead weight the Milestone 5 lint already discourages.
+
 (Record further discoveries here as you work, with short evidence such as test output.)
 
 
@@ -182,7 +246,51 @@ requiring a vendored fork.
   also small enough and general enough to offer upstream rather than fork.
   Date: 2026-07-31
 
-(Milestone 1 must end with a decision recording which approach was chosen and why.)
+- Decision: Choose **Approach C**, a scan of the body's raw source text with code regions
+  excluded using the parsed tree's position information. Reject Approach A (patch the
+  `cmark-gfm` binding) and Approach B (scrape rendered HTML).
+  Rationale: the spike established that both rejected approaches read the same parse tree,
+  and that tree only contains labels which are both cited and defined. A citation whose
+  label is typed wrong is reverted to plain text, and a definition nothing cites is deleted
+  outright, so neither approach can see either of the two mistakes this plan exists to
+  catch. Approach A would additionally have cost a forked `cmark-gfm-hs` carried in two
+  build systems — `cabal.project` needs a `source-repository-package` and `nix/haskell.nix`
+  needs an overlay — to buy a capability that does not answer the question. Approach C reads
+  every label the author actually wrote. Its stated disadvantage, that a naive text scan
+  matches inside code, is removed by taking the code regions from the real parse rather than
+  from a hand-rolled fence tracker.
+  Date: 2026-07-31
+
+- Decision: Reverse the earlier decision that promoted patching the binding (Approach A) to
+  leading candidate, and leave the mori upstream-issue entry
+  `cmark-gfm-hs-drops-footnote-labels` at status `Active` rather than moving it to
+  `Workaround`.
+  Rationale: the promotion rested on "definitions plus unmatched references cover every
+  label a document uses", which the spike disproved — there are no unmatched references in
+  the tree to cover anything. The binding limitation is real and still worth fixing
+  upstream for other consumers, but it is no longer on okf's path, so the entry's summary
+  and revisit trigger are corrected rather than closed.
+  Date: 2026-07-31
+
+- Decision: Enable footnotes at the shared parse configuration anyway, accepting that links
+  inside an uncited footnote definition disappear from the concept graph.
+  Rationale: Approach C does not need footnotes enabled, so this is a decision about
+  correctness elsewhere rather than about this plan's feature. Leaving them off keeps a
+  measured misparse in which a single-token footnote definition becomes a link reference
+  definition and its citation becomes a phantom link with a bogus destination, which
+  `okf validate` then reports as dangling. Trading a false error a user cannot act on for a
+  missed link inside a definition nothing cites is the better bargain, and the missed link
+  case is one the Milestone 5 lint already flags from the other direction.
+  Date: 2026-07-31
+
+- Decision: Keep the CommonMark *extension* list per call site rather than sharing it, and
+  share only the option list as `markdownOptions`.
+  Rationale: the three call sites are not uniform in extensions, which the plan did not
+  record: `schemaSectionColumns` in `okf-core/src/Okf/Profile.hs` passes
+  `[CMarkGFM.extTable]` because it reads a GitHub-flavored table, while the other two pass
+  `[]`. Folding the table extension into a shared list would make `Okf.Log` and `Okf.Graph`
+  parse tables they do not read, changing their trees for no reason.
+  Date: 2026-07-31
 
 
 ## Outcomes & Retrospective
@@ -441,7 +549,21 @@ definition as ordinary paragraph text.
 
 ### Milestone 3 — extract labels from a body
 
-Scope: one function, implemented by the approach the spike chose.
+Scope: one function, implemented by Approach C — the approach the spike chose.
+
+The implementation scans the body's raw text for footnote syntax and uses the parsed tree
+only to decide which byte ranges are code. Concretely: parse the body once with
+`markdownOptions`, walk it collecting the `PosInfo` of every `CODE` and `CODE_BLOCK` node,
+and turn those into excluded byte ranges; then walk the body line by line, treating a line
+that begins (after at most three spaces) with `[^label]:` as a definition and every other
+`[^label]` occurrence as a reference, skipping any occurrence that falls inside an excluded
+range. Index lines by **byte**, not character: the spike measured that cmark-gfm's
+`PosInfo` columns are byte offsets, so a body containing any non-ASCII character before a
+code span would otherwise mis-align the exclusion.
+
+A label matches cmark-gfm's own lexical rule closely enough for this purpose: one or more
+characters that are not whitespace and not `[` or `]`. The spike confirmed cmark rejects
+`[^has space]` as a footnote, and this rule rejects it too.
 
 Add to `okf-core/src/Okf/Document.hs` or a small new module, exported:
 
@@ -460,27 +582,26 @@ define `[^x]` without citing it, and the two cases mean different things to an a
 the join in Milestone 4, treat the union of the two lists as "labels this document uses",
 because either form names a source.
 
-**`footnoteReferences` must hold labels, never ordinals.** As recorded in Surprises &
-Discoveries, cmark-gfm overwrites a *matched* reference's literal with its ordinal number,
-so a naive implementation of Approach A will put `"1"` and `"2"` in this field, every one of
-which will then be reported by Milestone 4 as a label with no matching source. That failure
-is loud rather than silent, which is fortunate, but guard against it explicitly: this field
-must contain only labels recovered from *unmatched* references, and a matched reference
-contributes nothing here because the definition it matched already contributes its label to
-`footnoteDefinitions`. The union is unaffected, which is why the join in Milestone 4 stays
-correct.
+**`footnoteReferences` must hold labels, never ordinals.** Under Approach C this holds by
+construction, because labels come from the source text rather than from a parse tree in
+which cmark-gfm has renumbered them. Keep the guard anyway: write a test over a body with
+one matched footnote and one whose citation has no definition, asserting that both labels
+appear and that no element of either field parses as a bare integer. It costs nothing and
+it pins the property if the extraction is ever moved back onto the AST.
 
-Write a test that pins this directly — a body with one matched footnote and one unmatched
-one, asserting that no element of either field parses as a bare integer. Without it, a
-future upgrade of the binding could reintroduce ordinals unnoticed.
+That same test carries the plan's other load-bearing property. Because the spike found that
+cmark-gfm deletes an uncited definition and reverts an undefined citation to plain text, a
+test showing both survive extraction is what proves the scan is reading source rather than
+tree.
 
 Return labels in document order with duplicates removed, so that diagnostics are
 deterministic — the same concern that makes `Okf.Document.frontmatterKeys` sort its output
 rather than expose the key map's internal order.
 
-Acceptance: a test over the body from Milestone 1 returning exactly one label, `ga4-schema`,
-from the definition, and nothing from the code span or the indented code block; plus the
-ordinal-guard test above.
+Acceptance: a test over the body from Milestone 1 returning `ga4-schema` as both a
+reference and a definition, returning the undefined citation `never-defined` as a reference,
+and returning nothing at all from the code span, the indented code block, or the fenced
+code block; plus the guard test above.
 
 ### Milestone 4 — join labels to source ids
 
