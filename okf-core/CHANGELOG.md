@@ -7,57 +7,6 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
-### Added
-
-- `Okf.Profile.Documentation.defaultDocumentationActor`, the actor
-  `defaultDocumentationOptions` names as the producer of a generated
-  documentation bundle: `ProcessActor "okf-profile-document"`. Deliberately
-  version-free, so generated output stays byte-identical across okf releases.
-- A profile may require its bundle to declare an OKF version.
-  `ProfileSpec.requireBundleVersion` holds a minimum as `Just "0.2"`, and the new
-  `Okf.Profile.validateProfileVersion` reports an undeclared, older, or
-  unparseable declaration as `RequiredBundleVersionUnmet`. Specification §12
-  makes the declaration a MAY, so `validateBundle` still never asks for one; this
-  is the house-convention half, inert until a profile author writes the field.
-  `compiledProfileRequiredBundleVersion` reads the parsed minimum off a compiled
-  profile. See
-  `docs/adr/10-okf-version-declaration-and-best-effort-reading.md`.
-- `validateProfileVersion` is a new entry point rather than a parameter on
-  `validateProfile` or `validateProfileWith`, whose signatures are unchanged: the
-  check consults no concepts, and adding a parameter would break every caller.
-- The generated profile documentation bundle gains a `Required bundle version`
-  bullet in its `## Settings` list, so a profile setting cannot be a silent hole
-  in its own documentation. Regenerating a committed documentation bundle
-  produces that one added line.
-
-### Changed
-
-- `Okf.Profile.Documentation.DocumentationOptions` gains a `generated ::
-  Maybe Generated` field carrying the OKF v0.2 `generated` family written on
-  every generated document, and `defaultDocumentationOptions` now supplies one.
-  `Nothing` omits the key. Generation still reads no clock: `generatedAt` is
-  caller-supplied and absent by default.
-- **Breaking for record-literal callers.** A consumer that constructs
-  `DocumentationOptions` as a record literal rather than by overriding
-  `defaultDocumentationOptions` must add the new field. The module Haddock has
-  always directed callers to start from `defaultDocumentationOptions` for
-  exactly this reason; a call site that does so is unaffected.
-- **Breaking for exhaustive matchers and record-literal callers**, from
-  `requireBundleVersion`. `ProfileSpec` gains a field, so a consumer building one
-  as a record literal must add it. `ProfileViolation` gains
-  `RequiredBundleVersionUnmet` — the first violation that carries no `ConceptId`,
-  so a consumer grouping violations by concept needs a case for it — and
-  `ProfileDefinitionError` gains `InvalidRequiredBundleVersion`. Handle all three
-  before moving an okf pin. `okf profile show --json` gains a
-  `requireBundleVersion` key for the same reason.
-- The published Dhall schema `okf-core/dhall/Profile.dhall` gains
-  `requireBundleVersion : Optional Text`, defaulted to `None Text` in
-  `okf-core/dhall/defaults/Profile.dhall`. A descriptor written as
-  `Profile::{ … }` is unaffected; one written as a bare record literal annotated
-  `: Profile` must add the member, and one pinned at an earlier release keeps
-  decoding through a new frozen generation
-  (`okf-core/test/fixtures/profiles/pre-bundle-version.dhall`).
-
 ## [0.5.0.0] - 2026-08-01
 
 ### Added
@@ -175,6 +124,26 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   for a computation, and one concept that is core-clean and deviates only from a
   house profile. `okf-core/test/fixtures/profiles/attested-computation-house.dhall`
   is that house profile, and is the descriptor `docs/user/profiles.md` documents.
+- `Okf.Profile.Documentation.defaultDocumentationActor`, the actor
+  `defaultDocumentationOptions` names as the producer of a generated
+  documentation bundle: `ProcessActor "okf-profile-document"`. Deliberately
+  version-free, so generated output stays byte-identical across okf releases.
+- A profile may require its bundle to declare an OKF version.
+  `ProfileSpec.requireBundleVersion` holds a minimum as `Just "0.2"`, and the new
+  `Okf.Profile.validateProfileVersion` reports an undeclared, older, or
+  unparseable declaration as `RequiredBundleVersionUnmet`. Specification §12
+  makes the declaration a MAY, so `validateBundle` still never asks for one; this
+  is the house-convention half, inert until a profile author writes the field.
+  `compiledProfileRequiredBundleVersion` reads the parsed minimum off a compiled
+  profile. See
+  `docs/adr/10-okf-version-declaration-and-best-effort-reading.md`.
+- `validateProfileVersion` is a new entry point rather than a parameter on
+  `validateProfile` or `validateProfileWith`, whose signatures are unchanged: the
+  check consults no concepts, and adding a parameter would break every caller.
+- The generated profile documentation bundle gains a `Required bundle version`
+  bullet in its `## Settings` list, so a profile setting cannot be a silent hole
+  in its own documentation. Regenerating a committed documentation bundle
+  produces that one added line.
 
 ### Changed
 
@@ -243,6 +212,31 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   a link reference definition, producing a phantom dangling link.
 - `setTimestamp`, `OkfCommon`'s `commonTimestamp`, and reading a v0.1
   `timestamp` are all retained. Writing v0.1 on purpose stays supported.
+- `Okf.Profile.Documentation.DocumentationOptions` gains a `generated ::
+  Maybe Generated` field carrying the OKF v0.2 `generated` family written on
+  every generated document, and `defaultDocumentationOptions` now supplies one.
+  `Nothing` omits the key. Generation still reads no clock: `generatedAt` is
+  caller-supplied and absent by default.
+- **Breaking for record-literal callers.** A consumer that constructs
+  `DocumentationOptions` as a record literal rather than by overriding
+  `defaultDocumentationOptions` must add the new field. The module Haddock has
+  always directed callers to start from `defaultDocumentationOptions` for
+  exactly this reason; a call site that does so is unaffected.
+- **Breaking for exhaustive matchers and record-literal callers**, from
+  `requireBundleVersion`. `ProfileSpec` gains a field, so a consumer building one
+  as a record literal must add it. `ProfileViolation` gains
+  `RequiredBundleVersionUnmet` — the first violation that carries no `ConceptId`,
+  so a consumer grouping violations by concept needs a case for it — and
+  `ProfileDefinitionError` gains `InvalidRequiredBundleVersion`. Handle all three
+  before moving an okf pin. `okf profile show --json` gains a
+  `requireBundleVersion` key for the same reason.
+- The published Dhall schema `okf-core/dhall/Profile.dhall` gains
+  `requireBundleVersion : Optional Text`, defaulted to `None Text` in
+  `okf-core/dhall/defaults/Profile.dhall`. A descriptor written as
+  `Profile::{ … }` is unaffected; one written as a bare record literal annotated
+  `: Profile` must add the member, and one pinned at an earlier release keeps
+  decoding through a new frozen generation
+  (`okf-core/test/fixtures/profiles/pre-bundle-version.dhall`).
 
 ### Fixed
 

@@ -7,47 +7,6 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
-### Added
-
-- **A profile can require its bundles to declare which OKF version they target.**
-  A bundle may say `okf_version: "0.2"` in its root `index.md`, and the
-  specification makes that optional, so okf itself never asks for it — which
-  means an undeclared bundle quietly opts out of every v0.2-only check,
-  including the report of concepts still carrying the superseded `timestamp`
-  key. A team past that migration now writes `requireBundleVersion = Some "0.2"`
-  in its profile, and `okf validate --profile` reports a bundle that declares
-  nothing, declares something older, or declares something unreadable:
-
-  ```text
-  profile: bundle does not declare okf_version; this profile requires 0.2 or later
-  ```
-
-  Advisory like every other profile deviation, fatal with `--profile-enforce`,
-  and fixed with `okf index BUNDLE --write --okf-version 0.2`. A higher declared
-  version is not a deviation. The shipped `docs/profiles/postgresql.dhall`
-  adopts the requirement; `docs/profiles/okf-v0-2.dhall` deliberately does not,
-  because a format-level profile that demanded what the format merely permits
-  would advise against the specification.
-
-### Changed
-
-- **`okf profile document` now produces bundles that pass `okf validate --strict`
-  with no extra flags.** Every generated page records its producer as
-  `generated.by: process:okf-profile-document`, the OKF v0.2 provenance key,
-  where previously a generated bundle carried no provenance at all and strict
-  validation reported a missing `generated` field on every page. Pass
-  `--generated-by ACTOR` to name a different producer and `--generated-at
-  RFC3339` to record when; neither is written unless asked, so regenerating the
-  same profile still produces byte-identical output and remains usable as a
-  `git diff --exit-code` CI drift check.
-- `okf profile document --okf-version MAJOR.MINOR` declares the OKF version in
-  the generated bundle's root index, so a conformant bundle takes one command
-  rather than a follow-up `okf index --write --okf-version`. Omitting the flag
-  preserves any declaration the destination already carries.
-- The shipped `docs/profiles/profile-documentation.dhall` declares
-  `okfVersion = "0.2"` and requires the `generated` family, and the committed
-  worked example `examples/postgresql-profile/` was regenerated to match.
-
 ## [0.5.0.0] - 2026-08-01
 
 ### Added
@@ -149,6 +108,26 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   `docs/adr/12-frontmatter-path-resolution.md` and
   `docs/adr/13-the-references-convention-and-non-markdown-files.md`.
 
+- **A profile can require its bundles to declare which OKF version they target.**
+  A bundle may say `okf_version: "0.2"` in its root `index.md`, and the
+  specification makes that optional, so okf itself never asks for it — which
+  means an undeclared bundle quietly opts out of every v0.2-only check,
+  including the report of concepts still carrying the superseded `timestamp`
+  key. A team past that migration now writes `requireBundleVersion = Some "0.2"`
+  in its profile, and `okf validate --profile` reports a bundle that declares
+  nothing, declares something older, or declares something unreadable:
+
+  ```text
+  profile: bundle does not declare okf_version; this profile requires 0.2 or later
+  ```
+
+  Advisory like every other profile deviation, fatal with `--profile-enforce`,
+  and fixed with `okf index BUNDLE --write --okf-version 0.2`. A higher declared
+  version is not a deviation. The shipped `docs/profiles/postgresql.dhall`
+  adopts the requirement; `docs/profiles/okf-v0-2.dhall` deliberately does not,
+  because a format-level profile that demanded what the format merely permits
+  would advise against the specification.
+
 ### Changed
 
 - **The embedded `okf help` topics describe OKF v0.2 rather than v0.1.** Those
@@ -177,6 +156,22 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   `timestamp` still asks for it, which is the core-versus-profile split working
   as intended; extending the descriptor language is
   `docs/masterplans/8-extend-okf-profiles-for-v0-2-field-families.md`.
+- **`okf profile document` now produces bundles that pass `okf validate --strict`
+  with no extra flags.** Every generated page records its producer as
+  `generated.by: process:okf-profile-document`, the OKF v0.2 provenance key,
+  where previously a generated bundle carried no provenance at all and strict
+  validation reported a missing `generated` field on every page. Pass
+  `--generated-by ACTOR` to name a different producer and `--generated-at
+  RFC3339` to record when; neither is written unless asked, so regenerating the
+  same profile still produces byte-identical output and remains usable as a
+  `git diff --exit-code` CI drift check.
+- `okf profile document --okf-version MAJOR.MINOR` declares the OKF version in
+  the generated bundle's root index, so a conformant bundle takes one command
+  rather than a follow-up `okf index --write --okf-version`. Omitting the flag
+  preserves any declaration the destination already carries.
+- The shipped `docs/profiles/profile-documentation.dhall` declares
+  `okfVersion = "0.2"` and requires the `generated` family, and the committed
+  worked example `examples/postgresql-profile/` was regenerated to match.
 
 ### Fixed
 
