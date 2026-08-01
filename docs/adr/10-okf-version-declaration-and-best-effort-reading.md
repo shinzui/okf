@@ -104,6 +104,30 @@ author's text in exactly the case where the lint is telling them to look at it.
 and it is explicit.
 
 
+**A profile's declared version is read by a deliberately different rule, and the
+difference is not an oversight.** `ProfileSpec.okfVersion` is also
+`<major>.<minor>`, and `Okf.Profile.effectiveProfileVersion` clamps a higher
+minor exactly as `versionGate` does — a minor bump is backward-compatible
+additions, so a v0.9 profile expresses only rules okf already understands. On an
+unknown **major** the two diverge: a bundle is read best-effort, and a profile is
+rejected with `ProfileOkfVersionNotUnderstood`.
+
+The divergence follows from what §12's instruction is *about*. It says consumers
+that do not understand a declared version SHOULD attempt best-effort consumption
+rather than refusing **the bundle**, and that is right because a bundle is
+content, often from a third party okf cannot ask. A profile is not content okf is
+asked to read. It is an instruction to okf about what to check, written by an
+author who is present and can fix the file, and it is not part of the OKF
+standard at all. Silently ignoring an instruction okf cannot interpret would mean
+running a weaker set of checks than the author asked for without telling them,
+which is the failure this whole record exists to avoid on the bundle side.
+
+The code carries a comment saying so, because the next reader will otherwise file
+it as a bug. See
+[ADR 5](5-compile-profile-rules-before-validation.md) for the other three version
+checks and for the two that were deliberately not added.
+
+
 ## Consequences
 
 Consumers that exhaustively match `Okf.Validation.BundleValidationError` must

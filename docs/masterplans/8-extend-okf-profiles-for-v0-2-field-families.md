@@ -220,7 +220,7 @@ upgrade shims.
 | 1 | Validate nested rules on scalar object fields | docs/plans/44-validate-nested-rules-on-scalar-object-fields.md | None | None | Complete |
 | 2 | Add the actor field format and non-textual value constraints | docs/plans/45-add-the-actor-field-format-and-non-textual-value-constraints.md | EP-1 | None | Complete |
 | 3 | Add path valued reference rules distinct from document handles | docs/plans/46-add-path-valued-reference-rules-distinct-from-document-handles.md | EP-1 | EP-2 | Complete |
-| 4 | Enforce the profile declared okfVersion and ship a v0.2 reference profile | docs/plans/47-enforce-the-profile-declared-okfversion-and-ship-a-v0-2-reference-profile.md | EP-1, EP-2, EP-3 | None | In Progress |
+| 4 | Enforce the profile declared okfVersion and ship a v0.2 reference profile | docs/plans/47-enforce-the-profile-declared-okfversion-and-ship-a-v0-2-reference-profile.md | EP-1, EP-2, EP-3 | None | Complete |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
 Hard Deps and Soft Deps reference other rows by their # prefix (e.g., EP-1, EP-3).
@@ -385,9 +385,9 @@ section carries the granular work; this list tracks the story.
 - [x] EP-2: the frozen five-alternative `FieldFormat` union still loads through every earlier generation (2026-08-01)
 - [x] EP-3: a profile can require a path-valued field to resolve inside the bundle or to an allowed external scheme, at top-level, nested, and object scope (2026-08-01)
 - [x] EP-3: `Okf.Path` exports the specification §6.2 grammar and `Okf.Graph` behaviour is unchanged (2026-08-01)
-- [ ] EP-4: a profile whose declared `okfVersion` contradicts the rules it uses is rejected at compile time, in both directions
-- [ ] EP-4: the shipped PostgreSQL profile and the shipped PostgreSQL example bundle agree again
-- [ ] EP-4: a shipped v0.2 reference profile validates `examples/ddd-ordering` end to end, under test
+- [x] EP-4: a profile whose declared `okfVersion` contradicts the rules it uses is rejected at compile time (2026-08-01) — in one direction and two vocabularies, not "both directions": rejecting a v0.1 profile for *naming* a v0.2 key was implemented and withdrawn as a false positive on house-convention key names
+- [x] EP-4: the shipped PostgreSQL profile and the shipped PostgreSQL example bundle agree again (2026-08-01)
+- [x] EP-4: a shipped v0.2 reference profile validates `examples/ddd-ordering` end to end, under test (2026-08-01)
 
 
 ## Surprises & Discoveries
@@ -585,6 +585,55 @@ work with no scope-specific code, which is EP-1's one-body decision paying off a
 EP-2's "expect two commits, not five" was close. EP-3 took three: the `Okf.Path` extraction
 is genuinely green on its own, the schema event is one commit for the reason EP-1 found, and
 documentation is the third. **EP-4, which freezes no generation, should expect one or two.**
+
+**EP-4 delivered, and its central finding is the most durable thing this MasterPlan produced.**
+The plan specified five compile-time version checks. Four shipped. The fifth —
+`FieldRequiresOkfVersion`, rejecting a profile that declares v0.1 and names a key OKF v0.2
+introduced — was implemented exactly as written, rejected ten of this repository's own
+fixtures, and failed 31 tests. It was withdrawn because **the fixtures were right**:
+
+```dhall
+field.documented "status" "One of: proposed, accepted, superseded."
+```
+
+That is `decisions.dhall` declaring an ADR lifecycle, which shares only a spelling with v0.2's
+§5.4 `status`. **A profile key name does not imply the OKF core key of that name**, and
+`docs/adr/1-profile-declared-document-ids.md` makes constraining keys the core format does not
+own the *purpose* of profiles. `sources` and `verified` carry identical exposure. Narrowing the
+list to the "distinctive" names was rejected as moving the false positive somewhere harder to
+predict rather than removing it.
+
+**The general finding is that `docs/adr/11-growing-the-profile-descriptor-language.md`
+protected the wrong property, and this MasterPlan wrote that ADR.** Its whole discipline —
+freeze a generation, write an `upgrade*`, add a fixture — guarantees that a pinned descriptor
+keeps *decoding*. What users have is `okf validate --profile <pinned>`, and between decoding
+and working sits `compileProfile`, where **every `ProfileDefinitionError` is a way for a
+descriptor that decoded perfectly to stop working**. The frozen chain structurally cannot help:
+nothing about the descriptor's shape changed, so there is no generation to freeze and no
+upgrade to write. ADR 11 now carries the rule that follows — a new definition error must be
+**non-retroactive or unambiguous** — and records that EP-1's `ObjectFieldsRequireObjectShape`
+and EP-3's `PathReferenceWithHandleReference` were safe by being non-retroactive rather than by
+anyone having checked. Each needs a member that did not previously exist, so neither can fire
+on an older descriptor.
+
+**The frozen fixtures were under-testing, which is why three plans passed before anyone
+noticed.** Eight of the nine generation tests stopped at `loadProfileFile` and never called
+`compileProfile`, so a retroactive definition error could be introduced without the
+*compatibility* suite objecting — the 31 failures surfaced in documentation and optional-field
+tests instead, a far worse signal. The same gap had already let EP-3's own frozen fixture ship
+in a state where it decoded and could never compile. `testFrozenFixturesCompile` now asserts
+the stronger property over every generation fixture and was verified by negative control. One
+pre-existing defect is recorded rather than repaired: `document-references-ep3.dhall` declares
+a profile-scope `when` condition on a key declared only at type scope, and repairing it means
+adding a rule its own test asserts the count of.
+
+**Two smaller EP-4 findings.** *A description is echoed into diagnostics, so it must be short.*
+The reference profile's first draft explained the no-path-rule decision inside
+`sources[].resource`'s prose, and the missing-field advisory then printed the whole paragraph;
+the explanation moved to a Dhall comment. And *the plan's own verification loop did not run* —
+it used `okf profile show <path>`, which takes a registry handle rather than a file path, so
+every line printed `FAILED` for an unrelated reason. The working form is
+`okf validate <bundle> --profile <path>`, and the durable form is a test.
 
 **Three lessons inherited from MasterPlan 7 are written into every child plan rather than
 left to be rediscovered.** A projection nobody renders is not a user-visible outcome, which
@@ -807,6 +856,30 @@ which is why EP-4's reference profile ships with a test that validates it agains
   Date: 2026-08-01
 
 
+- Decision: A new `ProfileDefinitionError` must be non-retroactive or unambiguous, and every
+  frozen fixture must compile rather than merely decode. Both are recorded in
+  `docs/adr/11-growing-the-profile-descriptor-language.md`.
+  Rationale: discovered while implementing EP-4, whose fifth check rejected ten fixtures that
+  were correct. The frozen chain guarantees a pinned descriptor keeps *decoding*; users need it
+  to keep *working*, and `compileProfile` sits between, where a definition error can reject a
+  descriptor for what it always said. The chain cannot protect that — nothing about the
+  descriptor's shape changed. The definition errors EP-1 and EP-3 added were safe by being
+  non-retroactive, which nobody had noticed was the reason. Enforcing the rule requires the
+  fixtures to compile, which eight of nine were not doing, and which is why the breakage
+  surfaced in unrelated tests.
+  Date: 2026-08-01
+
+- Decision: Withdraw EP-4's `FieldRequiresOkfVersion` check. okf ships four version definition
+  errors, not five, and does not judge a profile by its frontmatter key names.
+  Rationale: a profile key name does not imply the OKF core key of that name.
+  `docs/adr/1-profile-declared-document-ids.md` makes constraining keys the core format does
+  not own the purpose of profiles, and `status`, `sources`, and `verified` are ordinary words
+  teams were already using — `decisions.dhall` declares `status` for an ADR lifecycle. Value
+  *formats* are checked in its place, because a format is an okf descriptor feature with no
+  house-convention reading. This supersedes the plan's own Decision Log claim that keying on
+  three tables "catches every real mistake and invents no taxonomy"; it did invent one.
+  Date: 2026-08-01
+
 ## Outcomes & Retrospective
 
 Summarize outcomes, gaps, and lessons learned at major milestones or at completion.
@@ -886,6 +959,57 @@ and that non-Markdown existence checking is deliberately unfinished and belongs 
 `Okf.Graph` behaviour is byte-identical before and after, which is the only evidence that
 claim is worth anything.
 
+
+**EP-4 complete, 2026-08-01, in four commits (`5b531ba` through the documentation commit).
+The MasterPlan is complete.** All four expressiveness gaps named in Vision & Scope are closed,
+and the initiative's payoff shipped: `docs/profiles/okf-v0-2.dhall` is a descriptor that could
+not have been written before EP-1, EP-2, and EP-3 landed. It constrains the members of
+`generated`, demands the §7 actor convention on `generated.by`, accepts both §5.2 spellings of
+`verified`, and requires `usage_count` to be a non-negative integer — and it accepts all
+nineteen concepts of `examples/ddd-ordering` under strict authoring, asserted by a test rather
+than by a command in a document. The drift between the shipped PostgreSQL profile and the
+shipped PostgreSQL bundle, which MasterPlan 7 recorded as "correct until MasterPlan 8", is
+resolved.
+
+Measured against the original vision, the result is what was promised with one correction. A
+profile author can now require `generated.by` to be a well-formed actor, require `verified`
+entries to carry both `by` and `at` in either spelling §5.2 permits, constrain `status` to the
+three lifecycle values, require `usage_count` to be a non-negative integer, and require a
+path-valued field to resolve inside the bundle or to an allowed external scheme. Version
+enforcement shipped in one direction rather than two, for a reason the vision could not have
+anticipated and which is now the initiative's most transferable output.
+
+**The coordination judgments this MasterPlan made were tested four times and held.** Splitting
+by descriptor concept kept one schema shape in flight at a time, and each frozen fixture had
+one obvious thing to prove. The ordering constraint held through three consecutive schema
+events with no rework of the chain. Doing object rules first paid three times: EP-2 reached
+`generated.by`, EP-3 got object-scope path checking for free from EP-1's shared member-checking
+body, and EP-4's reference profile needed object rules for four of its seven rules. And
+scheduling EP-4 last was right for the reason given — a reference profile written before the
+primitives existed would have been a wish list.
+
+**The decomposition was wrong about one thing, and it was wrong in the plans rather than in the
+code.** Every child plan was researched and written before any was implemented, and three of
+the four were substantially accurate. EP-4 was not: its central check was specified in a way
+that reading could not falsify and running falsified in one command. The plans were strongest
+where they quoted the working tree and weakest where they reasoned from the specification about
+what a profile *ought* to reject. That is a useful boundary to know for the next MasterPlan.
+
+**Two things are left open and are written down rather than left true.** `okf profile show`
+renders no `objectFields` block, which is an EP-1 hole EP-3 found and EP-4 did not close.
+`document-references-ep3.dhall` decodes and has never compiled, and is excluded from
+`testFrozenFixturesCompile` with the defect named. Neither is urgent; both are now scheduled
+work rather than invisible defects.
+
+**Durable context has been distilled into `docs/adr/`.**
+`docs/adr/11-growing-the-profile-descriptor-language.md` is this initiative's own ADR and
+carries the record-versus-union distinction, the frozen-fixture rules including the union
+literal repair, the object-rules-as-a-distinct-field decision, the whole-descriptor freezing
+unit, and now the non-retroactive-or-unambiguous rule for definition errors.
+`docs/adr/5-compile-profile-rules-before-validation.md` is amended by all four child plans.
+`docs/adr/10-okf-version-declaration-and-best-effort-reading.md` records the deliberate
+profile-side divergence on unknown majors. Task-local execution detail stays in the four child
+plans.
 
 ## Revision note — 2026-08-01
 
@@ -1022,3 +1146,35 @@ in compatibility terms; and object scope needed no scope-specific validation cod
 EP-1 built list-element and object member checking as one shared body. EP-2's "expect two
 commits" was close — EP-3 took three, the extra one being documentation — and **EP-4, which
 freezes no generation, should expect one or two.**
+
+
+## Revision note — 2026-08-01 (EP-4 complete, MasterPlan complete)
+
+`docs/plans/47-enforce-the-profile-declared-okfversion-and-ship-a-v0-2-reference-profile.md`
+is Complete, in four commits from `5b531ba`. All four child plans are Complete and this
+MasterPlan is closed. The Exec-Plan Registry, the Progress list, Surprises & Discoveries, the
+Decision Log, and Outcomes & Retrospective are all updated;
+`docs/adr/5-compile-profile-rules-before-validation.md`,
+`docs/adr/10-okf-version-declaration-and-best-effort-reading.md`, and
+`docs/adr/11-growing-the-profile-descriptor-language.md` are all amended.
+
+One thing changed in this document that changes the initiative's own conclusions rather than
+only recording them. EP-4 shipped four version definition errors where its plan specified five.
+`FieldRequiresOkfVersion` — rejecting a profile that declares v0.1 and names a key v0.2
+introduced — was implemented as written, rejected ten fixtures, failed 31 tests, and was
+withdrawn because the fixtures were right: a profile key *name* does not imply the OKF core key
+of that name, and `decisions.dhall` declaring `status` for an ADR lifecycle is exactly what
+`docs/adr/1-profile-declared-document-ids.md` says profiles are for. The Progress item that
+promised enforcement "in both directions" is corrected in place rather than quietly checked off.
+
+That produced the ADR amendment this MasterPlan's Decomposition Strategy did not anticipate
+owing. ADR 11 guaranteed that a pinned descriptor keeps *decoding*; it now also states that a
+new `ProfileDefinitionError` must be **non-retroactive or unambiguous**, because a descriptor
+that decodes can stop compiling and the frozen chain cannot protect against that. Enforcing it
+required `testFrozenFixturesCompile`, since eight of nine generation fixtures were only being
+decoded — which is why three earlier plans passed without exposing the gap, and why EP-3's own
+fixture had shipped decoding and never compiling.
+
+Two open items are recorded rather than closed: `okf profile show` still renders no
+`objectFields` block, and `document-references-ep3.dhall` decodes and has never compiled and is
+excluded from the new test with its defect named.

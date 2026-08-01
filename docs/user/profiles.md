@@ -86,7 +86,7 @@ let TypeRule = ../../okf-core/dhall/defaults/TypeRule.dhall
 in  { name = "shinzui-postgresql"
     , description = Some
         "Conventions for documenting a PostgreSQL database as an OKF bundle."
-    , okfVersion = "0.1"
+    , okfVersion = "0.2"
     , frontmatter =
       { required =
         [ field.documented
@@ -131,7 +131,7 @@ The fields:
 |-------|------|---------|
 | `name` | `Text` | A label for the profile. |
 | `description` | `Optional Text` | Prose documenting the profile as a whole. Shown by `okf profile show` and in the `DESCRIPTION` column of `okf profile list`. Documentary only — never checked against a bundle. |
-| `okfVersion` | `Text` | The OKF version the conventions target. |
+| `okfVersion` | `Text` | The OKF version the conventions target, as `<major>.<minor>`. Checked against the rules the profile declares; see [the declared OKF version](#the-declared-okf-version). |
 | `frontmatter.required` | `List FieldRule` | Frontmatter keys every concept must have as a non-empty value. A missing or empty key is reported as `missing profile-required field`. |
 | `frontmatter.recommended` | `List FieldRule` | Keys checked only by `okf validate --strict`; a missing value is reported as `missing profile-recommended field`. |
 | `frontmatter.optional` | `List FieldRule` | Keys the profile knows about but never demands. Absence is never reported, in any mode. Every constraint the rule declares still applies whenever the key is present, and the key counts as declared under `allowUnknownFields = False`. See [Optional fields](#optional-fields). |
@@ -513,6 +513,111 @@ inside one type rule does **not** switch the recommendation off for that type:
 merged presence clauses accumulate, so a type rule can narrow what the profile
 demands but never silently weaken it. To make a key optional profile-wide, move
 it in the scope that declared it.
+
+### The declared OKF version
+
+Every profile declares which version of the format its conventions target:
+
+```dhall
+okfVersion = "0.2"
+```
+
+That string used to be documentation. It is now checked against the rules the
+profile declares, because a profile and the bundle it describes can drift apart
+without either being wrong on its own — which is exactly what had happened to
+this repository's own shipped pair, where the bundle recorded provenance the v0.2
+way and the profile still asked for the v0.1 key.
+
+Four things are rejected at compile time, before any bundle is read:
+
+```text
+okfVersion is not <major>.<minor>: banana
+okfVersion 1.0 names an OKF major version this okf does not implement (supported: 0.2)
+profile frontmatter: declared okfVersion 0.2 supersedes the frontmatter key timestamp (OKF 0.2); move it to the optional list or replace it with generated
+profile frontmatter: declared okfVersion 0.1 does not support the format actor at author, which OKF 0.2 introduced
+```
+
+A higher **minor** is clamped rather than rejected: a profile declaring `"0.9"`
+compiles and behaves exactly as one declaring `"0.2"`, because §12 defines a
+minor bump as backward-compatible additions, so every rule such a profile can
+express is one okf already understands. Diagnostics then name the effective
+version rather than the declared one.
+
+An unknown **major** is rejected, and this deliberately differs from how okf
+treats a *bundle*. §12 asks a consumer to read an unknown-version bundle
+best-effort rather than refuse it, and okf does. A profile is not a document okf
+is asked to read; it is an instruction to okf about what to check, written by an
+author who is present to fix it, and silently ignoring an instruction okf cannot
+interpret is worse than saying so.
+
+**Migrating a corpus.** `timestamp` is superseded by `generated.at` (§13.1), so a
+v0.2 profile that *demands* it is asking authors to write a retired key. That is
+an error in `required` and `recommended` and legal in `optional` — which is
+precisely how you describe a migration in progress:
+
+```dhall
+, required = [ field.record "generated" trustMembers ]
+, optional = [ field.rfc3339Utc "timestamp" ]
+```
+
+Documents that still carry `timestamp` are not reported for it, and its format is
+still checked when it is there.
+
+**What is deliberately not checked.** okf does **not** reject a profile for
+naming a frontmatter key that a later OKF version introduced. A profile key name
+does not imply the OKF core key of that name, and constraining keys the core
+format does not own is what profiles are *for*: a v0.1 profile declaring
+
+```dhall
+field.enum "status" [ "proposed", "accepted", "superseded" ]
+```
+
+means an ADR lifecycle, not OKF v0.2's `status` (§5.4, `draft`/`stable`/
+`deprecated`), and `sources` and `verified` are equally ordinary words. Value
+*formats* are checked instead, because a format is an okf descriptor feature with
+no house-convention reading — `FieldFormat.Actor` is §7 and nothing else.
+
+okf also does not compare the profile's `okfVersion` against the bundle's
+`okf_version`. Profile validation reports per-concept deviations, and a
+bundle-level version mismatch belongs to neither that vocabulary nor that scope.
+
+## The shipped v0.2 reference profile
+
+`docs/profiles/okf-v0-2.dhall` is a reference profile for the OKF v0.2
+frontmatter families. Point `--profile` at it directly, or copy it as the
+starting point for a house profile:
+
+```bash
+okf validate BUNDLE --profile docs/profiles/okf-v0-2.dhall --strict
+```
+
+It covers `generated` (required, with `by` carrying the `actor` format),
+`verified`, `status`, `stale_after`, `sources` with its per-entry members, and
+`usage_window`. It is a *format-level* profile: `allowUnknownTypes` and
+`allowUnknownFields` are both `True` and it declares no type rules at all,
+because it says how the v0.2 families must look when present and nothing about
+which concept types a team has. A house profile adds those; this one would be
+wrong to.
+
+It is checked against a real bundle by a test rather than by a command in a
+document — `examples/ddd-ordering`, all nineteen concepts, under strict
+authoring, with no deviations.
+
+Two omissions are deliberate, and are commented in the descriptor so a reader
+does not think they were forgotten.
+
+**`verified` is optional, not recommended.** §11 forbids treating a missing
+optional family as a deficiency, so a reference profile that made `--strict`
+complain about every unverified concept would advise the opposite of the
+specification. A team that wants verification demanded moves the rule into
+`required` or `recommended` in their own profile.
+
+**`sources[].resource` carries no path rule.** §5.1 says that field names "either
+a concrete artifact a consumer can follow … or a population or scope descriptor
+it cannot", and `examples/ddd-ordering` uses the second form
+(`resource: all order-domain terms agreed in the ordering team's glossary
+reviews`). Demanding a followable path is a legitimate house convention and is
+not a v0.2 rule; see [path-valued fields](#path-valued-fields) for how to add it.
 
 ## Profile registries
 

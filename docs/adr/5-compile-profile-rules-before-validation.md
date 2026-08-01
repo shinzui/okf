@@ -302,6 +302,52 @@ reports one the profile did not permit. The two want opposite defaults, so they
 are two functions.
 
 
+**The profile's declared `okfVersion` is checked, and the checks are chosen so
+none of them can misread a house convention.** The field was decoded, displayed,
+and never checked, which let a shipped profile and the shipped bundle it
+describes drift apart without either being wrong on its own. Four definition
+errors close that: `InvalidProfileOkfVersion` for a string that is not
+`<major>.<minor>`, `ProfileOkfVersionNotUnderstood` for an unknown major,
+`FieldSupersededInOkfVersion` for a `required` or `recommended` rule naming a key
+the declared version supersedes, and `FormatRequiresOkfVersion` for a value
+format the declared version predates.
+
+A higher **minor** within a known major is clamped to okf's supported version,
+which reads the same as `Okf.Validation.versionGate` and for the same reason:
+specification §12 defines a minor bump as backward-compatible additions, so every
+rule such a profile can express is one okf already understands. An unknown
+**major** is rejected, which deliberately does *not* read the same — see
+[ADR 10](10-okf-version-declaration-and-best-effort-reading.md).
+
+A superseded key is an error only in `required` and `recommended`, never in
+`optional`. A team migrating a corpus wants `generated` required and `timestamp`
+tolerated but not demanded, and the optional list says exactly that; making it an
+error everywhere would leave no way to describe a migration. This is the third
+occasion on which the third presence classification has been the right answer for
+a case its authors did not foresee.
+
+**Two checks were deliberately not added.** okf does not reject a profile for
+naming a frontmatter key that a later OKF version introduced. That check was
+implemented and withdrawn: it rejected ten of this repository's own fixtures, and
+they were right — `decisions.dhall` declares `status` for an ADR lifecycle of
+`proposed, accepted, superseded`, which shares only a spelling with v0.2's §5.4
+key. **A profile key name does not imply the OKF core key of that name**, and
+[ADR 1](1-profile-declared-document-ids.md) makes constraining keys the core
+format does not own the *purpose* of profiles; `sources` and `verified` carry the
+same exposure. Value formats are checked in its place because a format is an okf
+descriptor feature with no house-convention reading: `FieldFormat.Actor` is §7
+and nothing else. The general rule this produced —
+a new definition error must be non-retroactive or unambiguous — is recorded in
+[ADR 11](11-growing-the-profile-descriptor-language.md).
+
+okf also does not compare the profile's `okfVersion` against the bundle's
+`okf_version`. It sounds useful and is the wrong shape: `validateProfile`
+receives concepts and produces per-concept violations, and a bundle-level version
+mismatch belongs to neither that vocabulary nor that scope. It would also
+duplicate a judgment `Okf.Validation.versionGate` already owns. If a motivating
+case appears, the natural home is `okf validate`'s own reporting.
+
+
 ## Consequences
 
 Library consumers must call `compileProfile`, handle definition errors, and pass
@@ -386,6 +432,18 @@ This is also the first check of its kind anywhere in okf: before it, a
 frontmatter value naming a file that had been deleted was invisible to every
 check okf performed, because `Okf.Graph` reads links out of concept bodies and
 never looks at a frontmatter value.
+
+Version enforcement adds four `ProfileDefinitionError` constructors —
+`InvalidProfileOkfVersion`, `ProfileOkfVersionNotUnderstood`,
+`FieldSupersededInOkfVersion`, and `FormatRequiresOkfVersion` — and no
+`ProfileViolation`. Exhaustive consumers, including Mori's advisory renderer,
+must handle all four before moving their okf pin. It adds no published schema
+field, so it freezes no generation and adds no compatibility fixture; it is the
+first change under
+`docs/masterplans/8-extend-okf-profiles-for-v0-2-field-families.md` for which
+that is true. It is nevertheless a compatibility event of the kind
+[ADR 11](11-growing-the-profile-descriptor-language.md) now names: a descriptor
+that decodes can stop compiling, which the frozen chain cannot protect against.
 
 Later profile constraints extend the compiled field rule rather than scanning
 raw declarations again. Human and JSON profile display continue to preserve the

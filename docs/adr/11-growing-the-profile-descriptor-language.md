@@ -123,7 +123,9 @@ reason to split is reviewability, which is a different argument.
 
 **Not every plan is a schema event.** A change that adds only a compile-time
 check, a shipped descriptor, or a renderer freezes no generation and adds no
-fixture. Requiring a fixture of such a change would be cargo cult.
+fixture. Requiring a fixture of such a change would be cargo cult. Version
+enforcement is the worked example: it added four definition errors, a shipped
+reference profile, and no published field, so it froze nothing.
 
 **But a compile-time check is a compatibility event of its own kind, and the
 frozen chain cannot help with it.** Everything above protects one property: a

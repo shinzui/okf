@@ -79,7 +79,7 @@ This section must always reflect the actual current state of the work.
 - [x] Milestone 2a (added): harden the frozen-fixture suite to assert compilation, not merely decoding, and repair the EP-3 fixture that gap had let through (2026-08-01).
 - [x] Milestone 3: migrate the shipped `docs/profiles/postgresql.dhall` to v0.2 and regenerate its committed documentation example (2026-08-01).
 - [x] Milestone 4: write and ship `docs/profiles/okf-v0-2.dhall`, proved against `examples/ddd-ordering` (2026-08-01).
-- [ ] Milestone 5: document version enforcement and the reference profile, and close out the MasterPlan's ADR obligations.
+- [x] Milestone 5: document version enforcement and the reference profile, and close out the MasterPlan's ADR obligations (2026-08-01).
 
 
 ## Surprises & Discoveries
@@ -268,7 +268,51 @@ Compare the result against the original purpose. Before marking the plan complet
 distill durable project context from the Decision Log, Surprises & Discoveries, and
 this section into docs/adr/. Keep task-local execution details here.
 
-(To be filled during and after implementation.)
+**Complete on 2026-08-01, in four commits (`5b531ba` through the documentation commit).**
+Both halves of the purpose are met, and the first one is met by a different route than the
+plan drew.
+
+`compileProfile` now rejects a profile whose declared version and declared rules contradict
+each other, and every documented diagnostic was run rather than composed:
+
+```text
+okfVersion is not <major>.<minor>: banana
+okfVersion 1.0 names an OKF major version this okf does not implement (supported: 0.2)
+profile frontmatter: declared okfVersion 0.2 supersedes the frontmatter key timestamp (OKF 0.2); move it to the optional list or replace it with generated
+profile frontmatter: declared okfVersion 0.1 does not support the format actor at author, which OKF 0.2 introduced
+```
+
+The drift the plan was built on is gone:
+`okf validate examples/postgresql-sample --profile docs/profiles/postgresql.dhall --strict
+--profile-enforce` exits 0 with no `profile:` lines. And `docs/profiles/okf-v0-2.dhall` ships,
+accepting all nineteen concepts of `examples/ddd-ordering` under strict authoring — asserted by
+a test rather than by a command in a document, which is what
+`docs/masterplans/7-adopt-okf-v0-2-core-semantics.md` asked for. A negative-control bundle
+exercising every rule produces nine deviations across all four of the MasterPlan's primitives,
+including `verified.by` on the *bare mapping* spelling, so the clean pass is not vacuous.
+
+**The plan specified five checks and four shipped.** `FieldRequiresOkfVersion` was implemented
+exactly as written, rejected ten fixtures and failed 31 tests, and was withdrawn — not because
+the tests broke, but because the fixtures were right. That is recorded above and in ADR 11.
+The lesson worth carrying is about the *shape* of the mistake rather than the mistake: the
+plan's own Decision Log claimed this approach "invents no taxonomy", and it did invent one —
+it assumed a frontmatter key **name** implies the OKF core key of that name. The plan was
+wrong in a way that reading it could not reveal and running it revealed in one command.
+
+Three things went as the plan predicted, and are worth confirming because each was a judgment
+made in advance. **Version enforcement as a compile-time concern** was right: a profile that
+declares v0.2 and demands `timestamp` is incoherent whatever bundle it meets, and reporting it
+per concept would have been noise. **The optional-list exemption** was right and is what makes
+a migration describable at all. **The meta-profile needed no change** — it declares
+`okfVersion = "0.1"` with `timestamp` in `optional`, which the plan predicted would stay legal
+and which the new check now proves legal rather than merely tolerates.
+
+One thing the plan asked for could not be run as written. Its fixture-verification loop uses
+`okf profile show <path>`, but that command takes a *registry handle*, not a file path, so
+every line printed `FAILED` for a reason that had nothing to do with the fixtures. The working
+form is `okf validate <bundle> --profile <path>`, and the durable form is
+`testFrozenFixturesCompile`, which is now a test rather than a loop someone has to remember to
+run.
 
 
 ## Context and Orientation
