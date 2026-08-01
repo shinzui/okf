@@ -54,7 +54,14 @@ import Okf.Cli.Help (HelpCommand, handleHelpCommand, helpCommandParser)
 import Okf.Cli.Kit (KitCommand, handleKitCommand, kitCommandParser)
 import Okf.Cli.Version (appVersionWithGit)
 import Okf.ConceptId
-import Okf.Document (DocumentParseError (..), Frontmatter (..), Generated (..), OKFDocument (..), body)
+import Okf.Document
+  ( DocumentParseError (..),
+    Frontmatter (..),
+    Generated (..),
+    OKFDocument (..),
+    body,
+    renderStatus,
+  )
 import Okf.Graph (buildGraph)
 import Okf.Index
 import Okf.Log qualified as Log
@@ -99,6 +106,14 @@ import Okf.Profile.Registry
     resolveRegistryRef,
     rootExportLabel,
   )
+import Okf.Trust
+  ( Staleness (..),
+    latestVerification,
+    renderStaleness,
+    renderTrustTier,
+    staleness,
+    trustTier,
+  )
 import Okf.Validation
 import Options.Applicative
 import System.Directory (createDirectoryIfMissing, doesFileExist)
@@ -115,6 +130,7 @@ data Command
   | Log LogOptions
   | GraphCommand GraphOptions
   | ShowConcept ShowOptions
+  | Trust TrustOptions
   | Id IdOptions
   | Config ConfigCommand
   | Profile ProfileCommand
@@ -170,6 +186,11 @@ data ShowOptions = ShowOptions
   { bundlePath :: !(Maybe FilePath),
     conceptIdText :: !(Maybe Text),
     profilePath :: !(Maybe FilePath)
+  }
+  deriving stock (Show, Eq)
+
+data TrustOptions = TrustOptions
+  { bundlePath :: !FilePath
   }
   deriving stock (Show, Eq)
 
@@ -256,6 +277,7 @@ commandParser =
         <> command "log" (info (Log <$> logOptionsParser <**> helper) (progDesc "Preview and check log.md files"))
         <> command "graph" (info (GraphCommand <$> graphOptionsParser <**> helper) (progDesc "Print a bundle graph"))
         <> command "show" (info (ShowConcept <$> showOptionsParser <**> helper) (progDesc "Show one concept"))
+        <> command "trust" (info (Trust <$> trustOptionsParser <**> helper) (progDesc "Report trust tiers, status, and staleness for every concept"))
         <> command "id" (info (Id <$> idOptionsParser <**> helper) (progDesc "Allocate and list document IDs"))
         <> command "config" (info (Config <$> configCommandParser <**> helper) (progDesc "Show and manage okf configuration"))
         <> command "profile" (info (Profile <$> profileCommandParser <**> helper) (progDesc "List and inspect profiles published by a registry"))
@@ -528,6 +550,9 @@ bundleArgument :: Parser FilePath
 bundleArgument =
   strArgument (metavar "BUNDLE" <> help "Path to an OKF bundle directory")
 
+trustOptionsParser :: Parser TrustOptions
+trustOptionsParser = TrustOptions <$> bundleArgument
+
 runCommand :: Command -> IO ()
 runCommand = \case
   Validate options -> runValidate options
@@ -535,6 +560,7 @@ runCommand = \case
   Log options -> runLog options
   GraphCommand options -> runGraph options
   ShowConcept options -> runShow options
+  Trust options -> runTrust options
   Id options -> runId options
   Config configCommand -> runConfig configCommand
   Profile profileCommand -> runProfile profileCommand
@@ -1001,8 +1027,8 @@ runValidate ValidateOptions {bundlePath, strictMode, profilePath, profileEnforce
       coreErrors = validateBundle coreProfile concepts <> validateBundleLogs logs
   mapM_ (Text.IO.hPutStrLn stderr . renderBundleValidationError) coreErrors
 
-  let staleness = logStaleness concepts logs
-  mapM_ (Text.IO.hPutStrLn stderr . ("log: " <>) . renderLogStaleness) staleness
+  let logStalenessReport = logStaleness concepts logs
+  mapM_ (Text.IO.hPutStrLn stderr . ("log: " <>) . renderLogStaleness) logStalenessReport
 
   profileViolations <- case profilePath of
     Nothing -> pure []
@@ -1026,7 +1052,7 @@ runValidate ValidateOptions {bundlePath, strictMode, profilePath, profileEnforce
 
   let coreFailed = any bundleValidationErrorIsFailure coreErrors
       profileFailed = profileEnforce && not (null profileViolations)
-      logFailed = logEnforce && (any bundleValidationErrorIsAdvisory coreErrors || not (null staleness))
+      logFailed = logEnforce && (any bundleValidationErrorIsAdvisory coreErrors || not (null logStalenessReport))
   if coreFailed || profileFailed || logFailed
     then exitFailure
     else do
@@ -1037,10 +1063,10 @@ runValidate ValidateOptions {bundlePath, strictMode, profilePath, profileEnforce
               <> Text.pack (show (length profileViolations))
               <> " advisory deviation(s) (use --profile-enforce to fail)"
           )
-      unless (null staleness) $
+      unless (null logStalenessReport) $
         Text.IO.putStrLn
           ( "log: "
-              <> Text.pack (show (length staleness))
+              <> Text.pack (show (length logStalenessReport))
               <> " stale concept advisory/advisories (use --log-enforce to fail)"
           )
 
@@ -1065,13 +1091,13 @@ runLog LogOptions {bundlePath, checkStale, sinceRef, logSub = LogPreview} = do
   case sinceRef of
     Nothing -> pure ()
     Just ref -> runGitDriftCheck bundlePath ref logs
-  staleness <-
+  logStalenessReport <-
     if checkStale
       then do
         concepts <- loadBundleOrExit bundlePath
         pure (logStaleness concepts logs)
       else pure []
-  mapM_ (Text.IO.hPutStrLn stderr . ("log: " <>) . renderLogStaleness) staleness
+  mapM_ (Text.IO.hPutStrLn stderr . ("log: " <>) . renderLogStaleness) logStalenessReport
   when (any bundleValidationErrorIsFailure logErrors) exitFailure
 runLog LogOptions {bundlePath, logSub = LogAdd addOptions} =
   runLogAdd bundlePath addOptions
@@ -1204,6 +1230,46 @@ runShow ShowOptions {bundlePath, conceptIdText, profilePath} = do
         ConceptSelectionCancelled -> exitWith (ExitFailure 130)
         ConceptSelectionUnavailable -> dieNoPicker "CONCEPT_ID"
         ConceptSelectionError message -> dieFzf message
+
+-- | Report the OKF v0.2 trust tier (§5.3), lifecycle status (§5.4), and
+-- staleness (§5.5) for every concept in a bundle, one aligned line each.
+--
+-- Reads the clock exactly once and passes the day to 'staleness' for every
+-- concept, so a run that straddles midnight cannot report two concepts against
+-- different notions of "today". @okf-core@ never reads the clock itself; see
+-- @docs\/adr\/8-derived-not-stored-trust-and-credibility.md@.
+--
+-- Output is sorted by concept ID, which 'walkBundle' already guarantees, so the
+-- report is stable and diffable in pipelines and CI.
+runTrust :: TrustOptions -> IO ()
+runTrust TrustOptions {bundlePath} = do
+  concepts <- loadBundleOrExit bundlePath
+  today <- utctDay <$> getCurrentTime
+  let rows = trustRow today <$> concepts
+      widthOf column = maximum (0 : map (Text.length . column) rows)
+      (idWidth, tierWidth, statusWidth) =
+        (widthOf (\(a, _, _, _) -> a), widthOf (\(_, b, _, _) -> b), widthOf (\(_, _, c, _) -> c))
+  mapM_
+    ( \(conceptId, tier, status, stale) ->
+        Text.IO.putStrLn
+          ( Text.intercalate
+              "  "
+              [ pad idWidth conceptId,
+                pad tierWidth tier,
+                pad statusWidth status,
+                stale
+              ]
+          )
+    )
+    rows
+  where
+    pad width cell = cell <> Text.replicate (width - Text.length cell) " "
+    trustRow today concept =
+      ( renderConceptId (conceptIdOf concept),
+        renderTrustTier (trustTier (conceptVerified concept)),
+        renderStatus (conceptStatus concept),
+        renderStaleness (staleness today (conceptStaleAfter concept))
+      )
 
 -- | Use the given bundle, or ask the user to pick one.
 resolveBundlePath :: FzfConfig -> Maybe FilePath -> IO FilePath
@@ -1690,6 +1756,16 @@ renderConcept concept = do
   traverse_ (Text.IO.putStrLn . ("resource: " <>)) (conceptResource concept)
   unless (null (conceptTags concept)) (Text.IO.putStrLn ("tags: " <> Text.intercalate ", " (conceptTags concept)))
   traverse_ (Text.IO.putStrLn . ("generated: " <>) . renderGenerated) (conceptGenerated concept)
+  Text.IO.putStrLn ("trust: " <> renderTrustTier (trustTier (conceptVerified concept)))
+  traverse_ (Text.IO.putStrLn . ("verified: " <>)) (latestVerification (conceptVerified concept))
+  Text.IO.putStrLn ("status: " <> renderStatus (conceptStatus concept))
+  -- Staleness is a comparison against today, so this is the one line that needs
+  -- the clock. okf-core never reads it; the CLI does, here and in `okf trust`.
+  today <- utctDay <$> getCurrentTime
+  let staleAfterRaw = conceptStaleAfter concept
+  case staleness today staleAfterRaw of
+    NoStaleAfter -> pure ()
+    stale -> Text.IO.putStrLn ("stale_after: " <> renderStaleAfterDetail staleAfterRaw stale)
   Text.IO.putStrLn ""
   Text.IO.putStr (bodyText concept)
 
@@ -1698,6 +1774,19 @@ renderConcept concept = do
 renderGenerated :: Generated -> Text
 renderGenerated Generated {generatedBy, generatedAt} =
   renderActor generatedBy <> maybe "" (" at " <>) generatedAt
+
+-- | Render staleness for a single concept, showing the deadline itself rather
+-- than the summary phrase @okf trust@ uses in its column.
+-- The raw value is shown in every case, so the line always says what the
+-- document actually declares, with the verdict as a suffix.
+renderStaleAfterDetail :: Maybe Text -> Staleness -> Text
+renderStaleAfterDetail rawValue = \case
+  NoStaleAfter -> ""
+  Fresh -> raw <> " (ok)"
+  Stale _ -> raw <> " (stale)"
+  StaleAfterUnparseable _ -> raw <> " (unparseable)"
+  where
+    raw = fromMaybe "" rawValue
 
 bodyText :: Concept -> Text
 bodyText concept =

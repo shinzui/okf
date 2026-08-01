@@ -68,13 +68,41 @@ the separate "profile" mechanism.
 - [x] Milestone 2: `status` and `stale_after` read, with absent `status` defaulting to stable (2026-07-31)
 - [x] Milestone 3: trust tiers derive from `verified` per specification §5.3 (2026-07-31)
 - [x] Milestone 4: staleness derives from `stale_after` against a caller-supplied date (2026-07-31)
-- [ ] Milestone 5: `okf trust` command and `okf show` additions surface all four derivations
+- [x] Milestone 5: `okf trust` command and `okf show` additions surface all four derivations (2026-07-31)
 - [ ] Milestone 6: ADR written on derived-not-stored trust and credibility
 
 
 ## Surprises & Discoveries
 
-(None yet. Record unexpected behavior, with short evidence such as test output, as you go.)
+`okf-cli/src/Okf/Cli.hs` already used `staleness` as a local binding name in two places inside
+`runValidate` and `runLog`, both holding the result of `Okf.Validation.logStaleness` — an
+entirely different notion of staleness (a concept newer than its change log, not a concept
+past its `stale_after`). Importing `Okf.Trust.staleness` shadowed both, and the resulting
+`-Wname-shadowing` warnings pointed at a real readability trap rather than a style nit: two
+unrelated meanings of the same word in one module. The locals were renamed to
+`logStalenessReport`.
+
+The plan did not anticipate this because it treats `Okf.Trust` as new surface area, which it
+is, but the *word* was taken. EP-3 should expect the same collision on `sources`, which is
+plausible as a local name for a list of anything.
+
+The completions hazard the plan flags in Idempotence and Recovery turned out not to exist.
+`okf-cli/src/Okf/Cli/Completions.hs` generates its script from `optparse-applicative`'s own
+parser rather than enumerating command names, so adding `trust` to `commandParser` was
+sufficient:
+
+```text
+$ grep -n "show\|validate\|graph" okf-cli/src/Okf/Cli/Completions.hs
+11:-- protocol (@word<TAB>description@) so each candidate shows its @progDesc@ text.
+80:-- | Zsh completion script. Uses the enriched protocol and @_describe@ to show
+```
+
+The §5.5 boundary was verified against the real clock rather than only in a unit test. With
+today being 2026-07-31, a concept whose `stale_after` is exactly `2026-07-31` reports stale:
+
+```text
+tables/orders     human-reviewed     stable  stale since 2026-07-31
+```
 
 
 ## Decision Log
