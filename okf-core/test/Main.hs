@@ -79,6 +79,7 @@ main = do
         testIO "fixture missing type reports validation error" testFixtureMissingType,
         test "frontmatter builder round-trips through serialize and parse" testFrontmatterBuilderRoundTrip,
         test "serializeDocument emits deterministic key order" testSerializeDeterministicKeyOrder,
+        test "serializeDocument orders generated before the superseded timestamp" testSerializeGeneratedBeforeTimestamp,
         test "rendered concept link round-trips through extractConceptLinks" testConceptLinkRoundTrip,
         test "over-escaping relative links do not resolve inside bundle" testRejectOverEscapingRelativeLink,
         test "validateBundle reports a dangling reference" testValidateBundleDanglingReference,
@@ -687,7 +688,22 @@ testSerializeDeterministicKeyOrder = do
           $ emptyFrontmatter
       rendered = serializeDocument (OKFDocument frontmatterValue "# Demo\n")
       expectedOrder =
-        ["type:", "title:", "description:", "timestamp:", "resource:", "tags:", "alpha:", "zeta:"]
+        ["type:", "title:", "description:", "resource:", "tags:", "timestamp:", "alpha:", "zeta:"]
+  keyIndices <- traverse (\key -> maybe (Left ("missing key " <> key)) Right (substringIndex key rendered)) expectedOrder
+  assertBool ("keys not in deterministic order: " <> Text.pack (show keyIndices)) (strictlyIncreasing keyIndices)
+
+-- | The v0.2 @generated@ family sorts before the v0.1 @timestamp@ it supersedes
+-- (specification section 13.1), so a document carrying both reads with the
+-- current field first.
+testSerializeGeneratedBeforeTimestamp :: Either Text ()
+testSerializeGeneratedBeforeTimestamp = do
+  let frontmatterValue =
+        setTimestamp "2026-06-16T00:00:00Z"
+          . setField "generated" (object ["by" .= ("human:ahormati" :: Text), "at" .= ("2026-06-20T22:53:05Z" :: Text)])
+          . setType "Recipe"
+          $ emptyFrontmatter
+      rendered = serializeDocument (OKFDocument frontmatterValue "# Demo\n")
+      expectedOrder = ["type:", "generated:", "timestamp:"]
   keyIndices <- traverse (\key -> maybe (Left ("missing key " <> key)) Right (substringIndex key rendered)) expectedOrder
   assertBool ("keys not in deterministic order: " <> Text.pack (show keyIndices)) (strictlyIncreasing keyIndices)
 

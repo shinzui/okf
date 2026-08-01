@@ -157,9 +157,9 @@ parseDocument input =
         else Right (OKFDocument emptyFrontmatter input)
 
 -- | Serialize to a normalized YAML-frontmatter Markdown document. Frontmatter
--- keys are emitted in a deterministic order (the six common OKF fields first —
--- @type, title, description, timestamp, resource, tags@ — then every other key
--- in ascending alphabetical order) so regenerating a bundle yields minimal diffs.
+-- keys are emitted in a deterministic order ('coreFrontmatterFieldOrder' first,
+-- in that fixed order, then every other key in ascending alphabetical order) so
+-- regenerating a bundle yields minimal diffs.
 serializeDocument :: OKFDocument -> Text
 serializeDocument OKFDocument {frontmatter, body} =
   Text.unlines ["---", renderedYaml, "---", ""] <> ensureTrailingNewline body
@@ -175,9 +175,9 @@ renderOrderedYaml (Frontmatter rawFields) =
   where
     config = YamlPretty.setConfCompare (comparing okfKeyRank) YamlPretty.defConfig
 
--- | Sort key for deterministic frontmatter ordering: the six common OKF fields
--- come first in their fixed order; every other key sorts after them
--- alphabetically by its text form.
+-- | Sort key for deterministic frontmatter ordering: the core OKF fields come
+-- first in their fixed 'coreFrontmatterFieldOrder'; every other key sorts after
+-- them alphabetically by its text form.
 okfKeyRank :: Text -> (Int, Text)
 okfKeyRank keyText =
   case lookup keyText commonRanks of
@@ -186,8 +186,28 @@ okfKeyRank keyText =
   where
     commonRanks = zip coreFrontmatterFieldOrder [0 ..]
 
+-- | The deterministic OKF concept-level key order: identity first, then the
+-- v0.2 lifecycle and trust families (§5.2 through §5.5), then the v0.2
+-- provenance family (§5.1), then the v0.1 @timestamp@ superseded by
+-- @generated.at@ (§13.1).
+--
+-- @okf_version@ is deliberately absent: it is an index-level key that appears
+-- only in a bundle-root @index.md@ (§12), never on a concept.
 coreFrontmatterFieldOrder :: [Text]
-coreFrontmatterFieldOrder = ["type", "title", "description", "timestamp", "resource", "tags"]
+coreFrontmatterFieldOrder =
+  [ "type",
+    "title",
+    "description",
+    "resource",
+    "tags",
+    "status",
+    "generated",
+    "verified",
+    "stale_after",
+    "sources",
+    "usage_window",
+    "timestamp"
+  ]
 
 parseFrontmatterDocument :: ByteString.ByteString -> Either DocumentParseError OKFDocument
 parseFrontmatterDocument inputBytes =

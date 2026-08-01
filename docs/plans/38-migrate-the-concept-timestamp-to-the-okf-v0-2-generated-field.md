@@ -76,7 +76,7 @@ rather than inventing their own.
 ## Progress
 
 - [x] Milestone 1: `Okf.Actor` module exists, parses the three actor shapes, and is covered by tests (2026-07-31)
-- [ ] Milestone 2: `coreFrontmatterFieldOrder` carries the six version 0.2 concept keys in a settled order; serialization tests updated
+- [x] Milestone 2: `coreFrontmatterFieldOrder` carries the six version 0.2 concept keys in a settled order; serialization tests updated (2026-07-31)
 - [ ] Milestone 3: `generated` is readable through `Okf.Document` and projected onto `Okf.Bundle.Concept`
 - [ ] Milestone 4: strict validation accepts `generated`, falls back to `timestamp`, and reports a v0.2-shaped message
 - [ ] Milestone 5: log staleness reads `generated.at` first; CLI wording no longer says "timestamp"
@@ -113,8 +113,33 @@ rather than inventing their own.
   on every input, which the serializer depends on so it never rewrites a producer's text.
   Date: 2026-07-31
 
-(Add further decisions as you make them. Milestones 2 and 7 below each end with a decision
-this plan requires you to record.)
+- Decision: Widening `coreFrontmatterFields` to the six v0.2 concept keys is intended, and a
+  closed profile (`allowUnknownFields = False`) will therefore no longer report `generated`,
+  `verified`, `status`, `stale_after`, `sources`, or `usage_window` as undeclared without
+  redeclaring them.
+  Rationale: the set exists to name the keys the *format itself* defines, and §13.2 makes
+  all six part of OKF v0.2. Requiring a profile to redeclare format-defined keys just to
+  stay closed would make closure a maintenance tax that grows with every specification
+  revision, and it would break every existing closed profile the moment a producer adopts
+  v0.2. A team that wants to *forbid* one of these families still can, by declaring the key
+  with constraints under MasterPlan 8's profile work; closure is about unknown keys, not
+  about disallowing known ones. Recorded durably in
+  `docs/adr/7-okf-v0-1-legacy-fallback-policy.md`.
+  Date: 2026-07-31
+
+- Decision: `coreFrontmatterFieldOrder` groups keys as identity (`type`, `title`,
+  `description`, `resource`, `tags`), then lifecycle and trust (`status`, `generated`,
+  `verified`, `stale_after`), then provenance (`sources`, `usage_window`), with the
+  superseded v0.1 `timestamp` last.
+  Rationale: putting `timestamp` last rather than leaving it in its v0.1 position beside
+  `description` makes a v0.1 remnant visually distinct from current fields, and puts
+  `generated` — its replacement — ahead of it in every serialized document. All six v0.2
+  keys were added in this one edit even though this plan implements only `generated`, so
+  the three sibling plans that add the others do not each re-edit one shared list.
+  Date: 2026-07-31
+
+(Add further decisions as you make them. Milestone 7 below ends with a decision this plan
+requires you to record.)
 
 
 ## Outcomes & Retrospective
