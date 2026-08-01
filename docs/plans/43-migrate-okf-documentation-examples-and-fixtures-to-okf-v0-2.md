@@ -58,15 +58,46 @@ something documented does not actually work.
 - [x] Milestone 1: README and the user guide describe OKF v0.2 (2026-08-01)
 - [ ] Milestone 2: `docs/user/format.md` documents every v0.2 family with worked examples
 - [ ] Milestone 3: `docs/user/cli.md` and `docs/user/authoring.md` cover the new commands and setters
-- [ ] Milestone 4: the example bundles migrate to v0.2 and declare `okf_version`
+- [x] Milestone 4: the example bundles migrate to v0.2 and declare `okf_version` (2026-08-01)
 - [ ] Milestone 5: test fixtures migrate, with a designated v0.1 fixture retained and labelled
 - [ ] Milestone 6: CHANGELOG entries written for both packages
 
 
 ## Surprises & Discoveries
 
-(None yet. Record unexpected behavior — especially any place where documented behavior turns
-out not to work — with short evidence.)
+Four discoveries from Milestones 1 and 4.
+
+*`examples/ddd-ordering` did not pass `--strict` before this plan touched it.* Two bounded
+contexts carried a type-specific `purpose` key but no OKF `description`, so
+`okf validate examples/ddd-ordering --strict` reported
+`contexts/billing: missing recommended field: description` and the same for
+`contexts/ordering`. This plan's acceptance requires `--strict` to pass on the example
+bundles, so both now carry `description` alongside `purpose`. This was a pre-existing gap
+rather than anything the v0.2 work caused.
+
+*`examples/postgresql-sample` carried no date at all*, on either of its two concepts, so it
+had no `timestamp` to rename. Both now carry a `generated` block dated from when the files
+were added to the repository (`git log --diff-filter=A`), which is the honest date.
+
+*There is a third example bundle the plan does not mention, and it must not be edited.*
+`examples/postgresql-profile/` is **generated output** from `okf profile document` and is
+byte-compared by a drift test — see `docs/adr/6-generated-profile-documentation.md`. Its
+`OKF version: 0.1` line is rendered from the profile descriptor's `okfVersion` field, which
+this plan's scope exclusions already leave alone. Hand-editing it would break the drift
+test and would be undone by the next regeneration. Left untouched.
+
+*`okf index --write` preserves a version declaration but still replaces the index body, and
+that is content loss for a hand-written index.* Running
+`okf index examples/postgresql-sample --write --okf-version 0.2`, exactly as the plan's
+Milestone 4 instructs, replaced two hand-written index files that carried explanatory prose
+and a `--profile` invocation with generated `# Subdirectories` listings. The plan's own
+instruction to run `git diff examples/` immediately afterwards is what caught it. Both
+files were restored with `git checkout` and the declaration was added by hand to the root
+index instead. The sibling plan
+`docs/plans/42-declare-and-honour-okf-version-in-the-bundle-root-index.md` fixed the
+destruction of the *declaration*, which was silent and unrecoverable; replacing the body is
+the documented purpose of `index --write` and is visible in `git diff`. Worth knowing
+before pointing that command at a bundle whose indexes someone wrote by hand.
 
 
 ## Decision Log

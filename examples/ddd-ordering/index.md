@@ -1,3 +1,7 @@
+---
+okf_version: "0.2"
+---
+
 # Subdirectories
 
 - [aggregates/](aggregates/index.md)

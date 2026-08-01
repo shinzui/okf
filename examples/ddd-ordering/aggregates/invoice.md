@@ -13,6 +13,9 @@ throughputPerDay: 500
 generated:
   by: human:nadeem
   at: 2026-06-18T00:00:00Z
+verified:
+  by: human:nadeem
+  at: 2026-06-21T00:00:00Z
 tags: [ddd, aggregate, billing]
 ---
 

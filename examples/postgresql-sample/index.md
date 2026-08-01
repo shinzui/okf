@@ -1,3 +1,7 @@
+---
+okf_version: "0.2"
+---
+
 # postgresql-sample
 
 A small OKF bundle that conforms to the `shinzui-postgresql` house profile
