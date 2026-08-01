@@ -188,6 +188,9 @@ main = do
         testIO "profile documentation renders inherited rules for a bare type" testProfileDocumentationInheritedRules,
         testIO "generated profile documentation round-trips through serialize and parse" testProfileDocumentationRoundTrip,
         testIO "generated profile documentation validates permissively and strictly" testProfileDocumentationValidates,
+        testIO "generated profile documentation carries the default generated actor" testProfileDocumentationDefaultGenerated,
+        testIO "generated profile documentation honours an explicit generated family" testProfileDocumentationExplicitGenerated,
+        testIO "generated profile documentation omits generated on request" testProfileDocumentationOmittedGenerated,
         testIO "generated profile documentation has no dangling references" testProfileDocumentationLinksResolve,
         testIO "generated profile documentation is byte-stable across renders" testProfileDocumentationByteStable,
         testIO "generated profile documentation survives a filesystem round trip" testProfileDocumentationFilesystemRoundTrip,
@@ -5792,12 +5795,68 @@ testProfileDocumentationValidates = do
       "profiles/optional-fields.dhall"
       defaultDocumentationOptions
       (\_compiled concepts -> assertEqual [] (validateInMemoryBundle PermissiveConformance VersionUndeclared concepts))
+  -- The default options carry a @generated@ family, so strict validation of
+  -- default output passes with no extra flag: that is the whole point of the
+  -- default. The v0.1 @timestamp@ spelling still satisfies strict authoring too.
   strictResult <-
     withRenderedProfileDocumentation
       "profiles/optional-fields.dhall"
-      defaultDocumentationOptions {timestamp = Just "2026-07-31T00:00:00Z"}
+      defaultDocumentationOptions
       (\_compiled concepts -> assertEqual [] (validateInMemoryBundle StrictAuthoring VersionUndeclared concepts))
-  pure (permissive >> strictResult)
+  strictLegacyResult <-
+    withRenderedProfileDocumentation
+      "profiles/optional-fields.dhall"
+      defaultDocumentationOptions {generated = Nothing, timestamp = Just "2026-07-31T00:00:00Z"}
+      (\_compiled concepts -> assertEqual [] (validateInMemoryBundle StrictAuthoring VersionUndeclared concepts))
+  pure (permissive >> strictResult >> strictLegacyResult)
+
+-- | Re-parse the serialized document, so the assertion proves the family
+-- survives serialization rather than merely living in the in-memory value.
+reparsedGenerated :: Concept -> Either Text (Maybe Generated)
+reparsedGenerated concept = do
+  reparsed <- firstShow (parseDocument (serializeConcept concept))
+  pure (readGenerated (reparsed ^. #frontmatter))
+
+testProfileDocumentationDefaultGenerated :: IO (Either Text ())
+testProfileDocumentationDefaultGenerated =
+  withRenderedProfileDocumentation
+    "profiles/optional-fields.dhall"
+    defaultDocumentationOptions
+    ( \_compiled concepts -> for_ concepts $ \concept -> do
+        assertEqual
+          (Just (Generated (ProcessActor "okf-profile-document") Nothing))
+          (conceptGenerated concept)
+        roundTripped <- reparsedGenerated concept
+        assertEqual
+          (Just (Generated (ProcessActor "okf-profile-document") Nothing))
+          roundTripped
+    )
+
+testProfileDocumentationExplicitGenerated :: IO (Either Text ())
+testProfileDocumentationExplicitGenerated =
+  withRenderedProfileDocumentation
+    "profiles/optional-fields.dhall"
+    defaultDocumentationOptions
+      { generated = Just (Generated (HumanActor "nadeem") (Just "2026-08-01T00:00:00Z"))
+      }
+    ( \_compiled concepts -> for_ concepts $ \concept -> do
+        roundTripped <- reparsedGenerated concept
+        assertEqual
+          (Just (Generated (HumanActor "nadeem") (Just "2026-08-01T00:00:00Z")))
+          roundTripped
+    )
+
+-- | The escape hatch: a caller who wants no provenance at all gets none.
+testProfileDocumentationOmittedGenerated :: IO (Either Text ())
+testProfileDocumentationOmittedGenerated =
+  withRenderedProfileDocumentation
+    "profiles/optional-fields.dhall"
+    defaultDocumentationOptions {generated = Nothing}
+    ( \_compiled concepts -> for_ concepts $ \concept -> do
+        assertEqual Nothing (conceptGenerated concept)
+        roundTripped <- reparsedGenerated concept
+        assertEqual Nothing roundTripped
+    )
 
 testProfileDocumentationLinksResolve :: IO (Either Text ())
 testProfileDocumentationLinksResolve =
