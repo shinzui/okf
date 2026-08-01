@@ -78,6 +78,8 @@ main = do
         testIO "extractLinks ignores external markdown URLs" testExtractLinksIgnoresExternalUrls,
         testIO "buildGraph includes only edges to existing concepts" testBuildGraphIncludesKnownEdges,
         testIO "writeBundleIndexes is deterministic" testWriteBundleIndexesDeterministic,
+        testIO "readBundleVersion reads a declared, absent, or unparseable okf_version" testReadBundleVersion,
+        testIO "readBundleVersion accepts the unquoted YAML number form" testReadBundleVersionUnquoted,
         testIO "fixture valid bundle validates and graphs expected edges" testFixtureValidBundle,
         testIO "fixture graph JSON shape is stable" testFixtureGraphJsonShape,
         testIO "fixture unterminated frontmatter reports parse error" testFixtureUnterminatedFrontmatter,
@@ -664,6 +666,35 @@ testWriteBundleIndexesDeterministic =
               assertBool "tables index has BigQuery Table section" ("# BigQuery Table" `Text.isInfixOf` secondIndex)
           )
     )
+
+-- | Specification §12 permits a bundle-root @index.md@ to declare the version
+-- it targets. Every shape of that declaration is readable and none is fatal.
+testReadBundleVersion :: IO (Either Text ())
+testReadBundleVersion = do
+  declared <- versionOf [("index.md", "---\nokf_version: \"0.2\"\n---\n\n# Root\n")]
+  noKey <- versionOf [("index.md", "---\ntitle: Root\n---\n\n# Root\n")]
+  noFrontmatter <- versionOf [("index.md", "# Root\n")]
+  noIndex <- versionOf [("kb.md", "# Not an index\n")]
+  unparseable <- versionOf [("index.md", "---\nokf_version: \"zero point two\"\n---\n\n# Root\n")]
+  malformed <- versionOf [("index.md", "---\nokf_version: \"0.2\"\n\n# Root\n")]
+  pure $ do
+    assertEqual (Right (VersionDeclared (OkfVersion 0 2))) declared
+    assertEqual (Right VersionUndeclared) noKey
+    assertEqual (Right VersionUndeclared) noFrontmatter
+    assertEqual (Right VersionUndeclared) noIndex
+    assertEqual (Right (VersionUnparseable "zero point two")) unparseable
+    assertEqual (Right VersionUndeclared) malformed
+
+-- | A careless author writes @okf_version: 0.2@ without quotes, which YAML
+-- reads as a float. A bundle should not be unreadable over missing quotes.
+testReadBundleVersionUnquoted :: IO (Either Text ())
+testReadBundleVersionUnquoted = do
+  unquoted <- versionOf [("index.md", "---\nokf_version: 0.2\n---\n\n# Root\n")]
+  pure (assertEqual (Right (VersionDeclared (OkfVersion 0 2))) unquoted)
+
+versionOf :: [(FilePath, Text)] -> IO (Either BundleError VersionDeclaration)
+versionOf files =
+  withDiscoveryTree "okf-version" files readBundleVersion
 
 testFixtureValidBundle :: IO (Either Text ())
 testFixtureValidBundle = do

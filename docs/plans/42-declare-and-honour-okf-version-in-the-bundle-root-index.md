@@ -66,7 +66,7 @@ plan is what makes it possible to say so.
 
 ## Progress
 
-- [ ] Milestone 1: a bundle-root `index.md` declaration is parsed into a typed version value
+- [x] Milestone 1: a bundle-root `index.md` declaration is parsed into a typed version value (2026-08-01)
 - [ ] Milestone 2: index generation preserves an existing declaration and can write one
 - [ ] Milestone 3: the declared version is reported by the CLI
 - [ ] Milestone 4: v0.1 fallbacks route through one gate that consults the declaration
@@ -96,6 +96,32 @@ land in the same change that makes the declaration meaningful.
   Rationale: it is the published specification this project tracks and it is on disk, so
   every requirement can be checked rather than recalled.
   Date: 2026-07-31
+
+- Decision: A root `index.md` whose frontmatter does not parse yields
+  `VersionUndeclared` rather than an error or a `VersionUnparseable`.
+  Rationale: the plan lists four non-fatal cases and this is a fifth the plan did not
+  name. `VersionUnparseable` carries the declared *value*, and a document whose
+  frontmatter block never terminates has no value to carry. Nothing in okf parsed
+  `index.md` at all before this plan, so treating a malformed one as "declares nothing"
+  is exactly today's behaviour rather than a regression. Only genuine IO failure yields
+  `Left`.
+  Date: 2026-08-01
+
+- Decision: Accept the unquoted YAML number form `okf_version: 0.2` as well as the
+  quoted `"0.2"` the specification writes, but always *write* the quoted form.
+  Rationale: §12 shows the quoted form, and an unquoted `0.2` is a YAML float whose text
+  form no serializer guarantees to preserve — `0.10` unquoted is the float `0.1` and is
+  unrecoverable. Refusing to read the unquoted form would make a bundle unreadable over a
+  missing pair of quotes, which serves nobody; writing it would propagate the hazard.
+  Date: 2026-08-01
+
+- Decision: Add `parseOkfVersion` and `supportedOkfVersion` to `Okf.Index`'s exports
+  beyond the five names the Interfaces section fixes.
+  Rationale: the CLI's `--okf-version` flag must parse a user-supplied string with exactly
+  the same rule `readBundleVersion` applies, and Milestone 5's gate must compare against a
+  single named "highest version okf understands" rather than an inline literal. Both are
+  additions; every signature the plan fixes is unchanged.
+  Date: 2026-08-01
 
 (Add further decisions as you make them. Milestones 4 and 5 each end with a decision this
 plan requires you to record.)
