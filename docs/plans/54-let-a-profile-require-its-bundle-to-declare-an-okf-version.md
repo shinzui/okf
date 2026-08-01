@@ -98,6 +98,11 @@ is still fully OKF-conformant.
       `docs/user/profiles.md` and `okf-cli/help/profiles.md` document the setting, and all
       three changelogs record it. `README.md` needed no change: it lists commands and their
       flags, and this feature adds no flag.
+- [x] Follow-up (2026-08-01), added during implementation and done in its own commit
+      `2e63997`: `loadProfileFile`'s nested-`case` fallback chain is flattened into a
+      short-circuiting fold over `[IO (Maybe ProfileSpec)]`, and ADR 11's checklist is
+      corrected to describe the list rather than the staircase it told contributors to insert
+      a rung into.
 
 
 ## Surprises & Discoveries
@@ -210,6 +215,17 @@ is still fully OKF-conformant.
   profile that demanded what §12 permits would advise against the specification.
   Date: 2026-08-01
 
+- Decision: `loadProfileFile`'s fallback chain was flattened, but only after the feature had
+  landed and its tests were green, and in a separate commit.
+  Rationale: Adding this plan's generation took the nested `case` staircase to fourteen levels
+  and forced a re-indent of the whole chain — a mechanical edit the compiler cannot check, in
+  the function whose entire job is not silently mis-decoding a pinned descriptor. Doing the
+  refactor in the same commit would have made a compatibility-critical diff unreviewable;
+  leaving it to a future plan would have made it permanent, since the next contributor would
+  face the same disincentive. Behavior is unchanged and the twelve frozen-fixture tests are
+  what prove it.
+  Date: 2026-08-01
+
 - Decision: One new `ProfileViolation` constructor,
   `RequiredBundleVersionUnmet Text (Maybe Text)`, carrying the required version and whatever
   the bundle declared, with `Nothing` meaning undeclared.
@@ -246,8 +262,16 @@ independent of `okfVersion`, separate entry point).
 version enforcement froze nothing, this version feature froze a generation, and the
 distinguishing question is never what a change is *about* but whether it publishes a field.
 
-What remains, and is deliberately not done here: the fallback-staircase flattening described in
-Surprises, which belongs in its own commit before the next generation is added.
+The fallback-staircase flattening described in Surprises was first deferred and then done, in
+its own commit after the feature had landed and its tests were green — which is the sequence
+that made it safe. Nothing remains.
+
+The lesson worth carrying forward is about that sequence rather than about either change. The
+staircase was not a problem anyone had noticed until a plan had to add a rung to it; the cost
+of the refactor was then obvious, and so was the reason not to fold it into the same commit as
+a compatibility-critical change. Deferring it to a follow-up commit rather than to a future
+plan is what stopped it becoming permanent — a `while I am here` that ships an hour later, with
+the feature's own tests standing behind it, is not scope creep.
 
 
 ## Context and Orientation
