@@ -80,14 +80,31 @@ rather than inventing their own.
 - [x] Milestone 3: `generated` is readable through `Okf.Document` and projected onto `Okf.Bundle.Concept` (2026-07-31)
 - [x] Milestone 3 (added): `okf show` renders the generating actor, delivering the user-visible outcome the Purpose section promises (2026-07-31)
 - [x] Milestone 4: strict validation accepts `generated`, falls back to `timestamp`, and reports a v0.2-shaped message (2026-07-31)
-- [ ] Milestone 5: log staleness reads `generated.at` first; CLI wording no longer says "timestamp"
+- [x] Milestone 5: log staleness reads `generated.at` first; CLI wording no longer says "timestamp" (2026-07-31)
 - [ ] Milestone 6: authoring API can write `generated`; round-trip test proves it survives serialize-then-parse
 - [ ] Milestone 7: ADR written on the version 0.1 legacy-fallback policy
 
 
 ## Surprises & Discoveries
 
-(None yet. Record unexpected behavior, with short evidence such as test output, as you go.)
+`conceptGeneratedDate` falls back to `timestamp` when `generated` is present but its `at`
+is absent or too short to carry a date, not only when `generated` itself is absent. The
+plan's Milestone 5 wording ("read `generated.at` first and fall back to `timestamp`") admits
+both readings. The looser one was chosen because §5.2 does not require `at` within
+`generated`, so a concept can legitimately carry `generated: { by: ... }` alongside a v0.1
+`timestamp`; treating the presence of `generated` as suppressing the fallback would silently
+drop the only date such a document has, and staleness would stop reporting it.
+
+Note this is a narrower rule than the one Milestone 7's ADR states for the *general* case:
+there, `generated.at` wins and `timestamp` is ignored. The two agree whenever `generated.at`
+actually carries a date, which is the case the ADR is about. The fallback only reaches
+`timestamp` when `generated.at` yields no date at all. Evidence, from the test added in this
+milestone: a concept carrying `generated.at` of `2026-06-24` and a `timestamp` of
+`2026-01-01` is flagged with the June date, not the January one.
+
+```text
+PASS logStaleness reads generated.at ahead of the legacy timestamp
+```
 
 
 ## Decision Log

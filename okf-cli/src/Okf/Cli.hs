@@ -1661,7 +1661,7 @@ renderLogValidationError = \case
 renderLogStaleness :: LogStaleness -> Text
 renderLogStaleness LogStaleness {staleConcept, staleConceptDate, staleLogPath, staleLogDate} =
   renderConceptId staleConcept
-    <> ": timestamp date "
+    <> ": generated date "
     <> staleConceptDate
     <> case (staleLogPath, staleLogDate) of
       (Nothing, Nothing) -> " has no enclosing log.md"

@@ -56,7 +56,7 @@ data BundleValidationError
     LogInvalid FilePath LogValidationError
   deriving stock (Generic, Eq, Show)
 
--- | A concept whose timestamp appears newer than its nearest covering log.
+-- | A concept whose generated date appears newer than its nearest covering log.
 data LogStaleness = LogStaleness
   { staleConcept :: !ConceptId,
     staleConceptDate :: !Text,
@@ -92,12 +92,12 @@ validateLogs logFiles =
     err <- validateLog (logContent logFile)
   ]
 
--- | Find concepts whose timestamp date is newer than their nearest enclosing log.
+-- | Find concepts whose generated date is newer than their nearest enclosing log.
 logStaleness :: [Concept] -> [LogFile] -> [LogStaleness]
 logStaleness concepts logs =
   [ staleness
   | concept <- concepts,
-    Just conceptDate <- [conceptTimestampDate concept],
+    Just conceptDate <- [conceptGeneratedDate concept],
     let nearest = nearestEnclosingLog (conceptSourcePath concept) logs,
     Just staleness <- [staleIfNeeded concept conceptDate nearest]
   ]
@@ -157,12 +157,25 @@ optionalListOfText key OKFDocument {frontmatter} =
     isString (String _) = True
     isString _ = False
 
-conceptTimestampDate :: Concept -> Maybe Text
-conceptTimestampDate concept =
-  case frontmatterLookup "timestamp" (frontmatter (conceptDocument concept)) of
-    Just (String timestamp)
-      | Text.length timestamp >= 10 -> Just (Text.take 10 timestamp)
-    _ -> Nothing
+-- | The @YYYY-MM-DD@ date a concept's content last changed, read from the OKF
+-- v0.2 @generated.at@ (specification §5.2) in preference to the legacy v0.1
+-- @timestamp@ it supersedes (§13.1). When both are present @generated.at@ wins.
+--
+-- An ISO 8601 datetime carries the date in its first ten characters, so
+-- anything shorter is not a usable date and yields 'Nothing'.
+conceptGeneratedDate :: Concept -> Maybe Text
+conceptGeneratedDate concept =
+  datePrefix (generatedAt =<< readGenerated conceptFrontmatter)
+    <|> datePrefix (legacyTimestamp conceptFrontmatter)
+  where
+    conceptFrontmatter = frontmatter (conceptDocument concept)
+    legacyTimestamp frontmatterValue =
+      case frontmatterLookup "timestamp" frontmatterValue of
+        Just (String timestamp) -> Just timestamp
+        _ -> Nothing
+    datePrefix = \case
+      Just value | Text.length value >= 10 -> Just (Text.take 10 value)
+      _ -> Nothing
 
 staleIfNeeded :: Concept -> Text -> Maybe LogFile -> Maybe LogStaleness
 staleIfNeeded concept conceptDate nearest =

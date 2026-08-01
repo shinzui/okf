@@ -67,6 +67,7 @@ main = do
         test "validateLog flags out-of-order days" testValidateLogOutOfOrder,
         testIO "walkLogs discovers nested log.md files" testWalkLogsDiscoversNested,
         test "logStaleness flags a concept newer than its nearest log" testLogStalenessFlagsNewerConcept,
+        test "logStaleness reads generated.at ahead of the legacy timestamp" testLogStalenessReadsGeneratedAt,
         test "logStaleness prefers the deepest enclosing log" testLogStalenessPrefersDeepestLog,
         test "appendLogEntry inserts newest-first and prepends within a day" testAppendLogEntry,
         testIO "generateIndex groups documents by frontmatter type" testGenerateIndexGroupsByType,
@@ -504,6 +505,29 @@ testLogStalenessFlagsNewerConcept = do
     ]
     (logStaleness [staleConcept, currentConcept] logs)
 
+-- | Staleness reads the v0.2 `generated.at` (specification section 5.2), and
+-- prefers it over the legacy `timestamp` it supersedes when both are present.
+testLogStalenessReadsGeneratedAt :: Either Text ()
+testLogStalenessReadsGeneratedAt = do
+  generatedOnlyId <- parseTestConceptId "generated-only"
+  bothId <- parseTestConceptId "both"
+  generatedOnly <-
+    testConceptWithFrontmatter
+      "generated-only"
+      "type: Test\ngenerated: { by: human:ahormati, at: 2026-06-23T00:00:00Z }\n"
+  -- `generated.at` wins over `timestamp`: the stale date must be the June 24
+  -- from `generated`, not the January 1 from the legacy key.
+  both <-
+    testConceptWithFrontmatter
+      "both"
+      "type: Test\ngenerated: { by: human:ahormati, at: 2026-06-24T00:00:00Z }\ntimestamp: 2026-01-01T00:00:00Z\n"
+  let logs = [LogFile "log.md" (parseLog "# Log\n\n## 2026-06-01\n* **Update**: logged.\n")]
+  assertEqual
+    [ LogStaleness bothId "2026-06-24" (Just "log.md") (Just "2026-06-01"),
+      LogStaleness generatedOnlyId "2026-06-23" (Just "log.md") (Just "2026-06-01")
+    ]
+    (logStaleness [both, generatedOnly] logs)
+
 testLogStalenessPrefersDeepestLog :: Either Text ()
 testLogStalenessPrefersDeepestLog = do
   usersId <- parseTestConceptId "tables/users"
@@ -806,6 +830,14 @@ testConcept rawId bodyText = do
               commonTimestamp = Just "2026-06-16T00:00:00Z"
             }
   pure (conceptFromDocument conceptId (OKFDocument frontmatterValue bodyText))
+
+-- | Build a concept from raw frontmatter text, for cases where the frontmatter
+-- carries families the 'OkfCommon' builder does not cover.
+testConceptWithFrontmatter :: Text -> Text -> Either Text Concept
+testConceptWithFrontmatter rawId frontmatterText = do
+  conceptId <- parseTestConceptId rawId
+  document <- firstShow (parseDocument ("---\n" <> frontmatterText <> "---\n\n# Test\n"))
+  pure (conceptFromDocument conceptId document)
 
 testConceptWithTimestamp :: Text -> Text -> Either Text Concept
 testConceptWithTimestamp rawId timestamp = do
