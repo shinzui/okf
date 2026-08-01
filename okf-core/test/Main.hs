@@ -18,6 +18,7 @@ import Okf.Document
 import Okf.Graph
 import Okf.Index
 import Okf.Log
+import Okf.Markdown
 import Okf.Prelude hiding (List, setField, (.=))
 import Okf.Profile
 import Okf.Profile.Documentation
@@ -84,6 +85,10 @@ main = do
         test "frontmatter builder round-trips through serialize and parse" testFrontmatterBuilderRoundTrip,
         test "serializeDocument emits deterministic key order" testSerializeDeterministicKeyOrder,
         test "serializeDocument orders generated before the superseded timestamp" testSerializeGeneratedBeforeTimestamp,
+        test "footnote parsing is enabled, so a definition is not paragraph text" testFootnotesEnabled,
+        test "enabling footnotes leaves log parsing and link extraction unchanged" testFootnotesDoNotRegressLogsOrLinks,
+        test "extractFootnoteLabels ignores footnote syntax inside code" testExtractFootnoteLabelsIgnoresCode,
+        test "extractFootnoteLabels keeps labels the parser erases and never ordinals" testExtractFootnoteLabelsKeepsErasedLabels,
         test "rendered concept link round-trips through extractConceptLinks" testConceptLinkRoundTrip,
         test "over-escaping relative links do not resolve inside bundle" testRejectOverEscapingRelativeLink,
         test "validateBundle reports a dangling reference" testValidateBundleDanglingReference,
@@ -778,6 +783,106 @@ testSerializeGeneratedBeforeTimestamp = do
       expectedOrder = ["type:", "generated:", "timestamp:"]
   keyIndices <- traverse (\key -> maybe (Left ("missing key " <> key)) Right (substringIndex key rendered)) expectedOrder
   assertBool ("keys not in deterministic order: " <> Text.pack (show keyIndices)) (strictlyIncreasing keyIndices)
+
+-- | Footnotes are enabled at every parse site, and the observable proof is a
+-- link that no longer appears.
+--
+-- With footnotes disabled a single-token footnote definition such as
+-- @[^src]: tables\/orders.md@ is read as a CommonMark /link reference
+-- definition/, which turns its citation @[^src]@ into a link whose destination
+-- is that token. That phantom link reached 'extractConceptLinks' and was then
+-- reported as a dangling reference. Enabling footnotes removes it while leaving
+-- an ordinary link in the same body alone.
+testFootnotesEnabled :: Either Text ()
+testFootnotesEnabled = do
+  ordersId <- parseTestConceptId "tables/orders"
+  usersId <- parseTestConceptId "tables/users"
+  concept <-
+    testConcept
+      "source"
+      ( "See the note.[^src] Also see "
+          <> renderConceptLink usersId "users"
+          <> ".\n\n[^src]: tables/orders.md\n"
+      )
+  assertEqual [usersId] (extractConceptLinks concept)
+  assertBool
+    "footnote definition must not become a link reference definition"
+    (ordersId `notElem` extractConceptLinks concept)
+
+-- | Enabling footnotes changes the parse tree every body walker sees, so pin
+-- the two walkers that do not care about footnotes at all: log parsing and link
+-- extraction. Bracket-heavy prose in a log bullet must still yield one entry
+-- with its text intact, and a body whose links sit inside a /cited/ footnote
+-- definition must still contribute those links to the graph.
+testFootnotesDoNotRegressLogsOrLinks :: Either Text ()
+testFootnotesDoNotRegressLogsOrLinks = do
+  let parsed = parseLog "# Log\n\n## 2026-06-23\n* **Update**: renamed [orders] to [^orders].\n"
+  -- The backslashes are 'Okf.Log.renderInlineNodes' round-tripping inline nodes
+  -- through @nodeToCommonmark@, which escapes brackets so the text re-parses to
+  -- itself. That predates footnotes and is unchanged by them: an uncited
+  -- @[^orders]@ is plain text under either parse configuration.
+  assertEqual
+    [LogDay "2026-06-23" [LogEntry (Just "Update") "renamed \\[orders\\] to \\[^orders\\]."]]
+    (logDays parsed)
+  usersId <- parseTestConceptId "tables/users"
+  concept <-
+    testConcept
+      "source"
+      ( "Attributed claim.[^cited]\n\n[^cited]: See "
+          <> renderConceptLink usersId "users"
+          <> " for detail.\n"
+      )
+  assertEqual [usersId] (extractConceptLinks concept)
+
+-- | Labels come from a real parse, not a naive text scan: footnote syntax
+-- inside an inline code span, an indented code block, or a fenced code block
+-- yields nothing.
+testExtractFootnoteLabelsIgnoresCode :: Either Text ()
+testExtractFootnoteLabelsIgnoresCode = do
+  let body =
+        Text.unlines
+          [ "Sharded daily.[^ga4-schema] Not a footnote: `[^inline-code]`.",
+            "",
+            "    [^indented-block]: not a footnote either",
+            "",
+            "```sql",
+            "SELECT 1 -- [^fenced-block]: not a footnote",
+            "```",
+            "",
+            "Undefined citation.[^never-defined]",
+            "",
+            "[^ga4-schema]: GA4 BigQuery Export schema"
+          ]
+      labels = extractFootnoteLabels body
+  assertEqual ["ga4-schema", "never-defined"] (footnoteReferences labels)
+  assertEqual ["ga4-schema"] (footnoteDefinitions labels)
+  assertEqual ["ga4-schema", "never-defined"] (footnoteLabelsUsed labels)
+
+-- | The two labels cmark-gfm erases are exactly the two an author most needs
+-- reported, so extraction must keep both: a citation with no definition (which
+-- the parser reverts to plain text) and a definition nothing cites (which the
+-- parser deletes outright). The ordinal guard is the same test's second job —
+-- cmark-gfm renumbers a matched reference to @"1"@, so a label that parses as a
+-- bare integer would mean extraction had drifted back onto the parse tree.
+testExtractFootnoteLabelsKeepsErasedLabels :: Either Text ()
+testExtractFootnoteLabelsKeepsErasedLabels = do
+  let body =
+        Text.unlines
+          [ "Matched.[^matched] Undefined.[^undefined]",
+            "",
+            "[^matched]: a definition that is cited",
+            "",
+            "[^uncited]: a definition that nothing cites"
+          ]
+      labels = extractFootnoteLabels body
+  assertEqual ["matched", "undefined"] (footnoteReferences labels)
+  assertEqual ["matched", "uncited"] (footnoteDefinitions labels)
+  assertBool
+    "no extracted label may be a bare ordinal"
+    (not (any looksLikeInteger (footnoteLabelsUsed labels)))
+  where
+    looksLikeInteger label =
+      not (Text.null label) && Text.all (`Text.elem` "0123456789") label
 
 testConceptLinkRoundTrip :: Either Text ()
 testConceptLinkRoundTrip = do

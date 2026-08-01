@@ -108,6 +108,7 @@ import Okf.Bundle
   )
 import Okf.ConceptId (ConceptId, renderConceptId)
 import Okf.Document (Frontmatter, coreFrontmatterFields, frontmatterKeys, frontmatterLookup)
+import Okf.Markdown (markdownOptions)
 import Okf.Prelude hiding (List, (.=))
 import Okf.Validation (ValidationProfile (..))
 import "generic-lens" Data.Generics.Labels ()
@@ -2617,7 +2618,7 @@ checkSchema cid ctype rule concept
 -- or no following table. Columns are trimmed.
 schemaSectionColumns :: Text -> Maybe [Text]
 schemaSectionColumns markdown =
-  let CMarkGFM.Node _ _ topLevel = CMarkGFM.commonmarkToNode [] [CMarkGFM.extTable] markdown
+  let CMarkGFM.Node _ _ topLevel = CMarkGFM.commonmarkToNode markdownOptions [CMarkGFM.extTable] markdown
    in firstTableAfterSchema topLevel
 
 firstTableAfterSchema :: [CMarkGFM.Node] -> Maybe [Text]

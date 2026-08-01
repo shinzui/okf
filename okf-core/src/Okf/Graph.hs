@@ -20,6 +20,7 @@ import Data.Text qualified as Text
 import Okf.Bundle
 import Okf.ConceptId
 import Okf.Document (body)
+import Okf.Markdown (markdownOptions)
 import Okf.Prelude hiding ((.=))
 import System.FilePath ((</>))
 import System.FilePath qualified as FilePath
@@ -135,7 +136,7 @@ conceptNode concept =
 
 extractMarkdownLinks :: Text -> [Text]
 extractMarkdownLinks markdown =
-  walk (CMarkGFM.commonmarkToNode [] [] markdown)
+  walk (CMarkGFM.commonmarkToNode markdownOptions [] markdown)
   where
     walk (CMarkGFM.Node _ nodeType childNodes) =
       case nodeType of

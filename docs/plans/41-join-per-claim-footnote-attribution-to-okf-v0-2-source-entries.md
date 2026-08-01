@@ -71,8 +71,8 @@ spike that resolves this before anything else is built.
 ## Progress
 
 - [x] Milestone 1 (spike): determine how a footnote label can be recovered; choose one of three candidate approaches and record the evidence (2026-07-31) — chose Approach C, an AST-guided source scan; see Decision Log
-- [ ] Milestone 2: enable footnote parsing at all three CommonMark call sites without regressing link, log, or schema extraction
-- [ ] Milestone 3: extract footnote labels from a concept body via the chosen approach
+- [x] Milestone 2: enable footnote parsing at all three CommonMark call sites without regressing link, log, or schema extraction (2026-07-31) — shared `markdownOptions` in a new `Okf.Markdown`; `okf graph --json`, `okf log`, and `okf validate --strict` on the valid-bundle fixture are byte-identical before and after
+- [x] Milestone 3: extract footnote labels from a concept body via the chosen approach (2026-07-31) — `extractFootnoteLabels` in `Okf.Markdown`, plus `footnoteLabelsUsed`
 - [ ] Milestone 4: join labels to `sources[].id` and report unmatched labels under strict validation
 - [ ] Milestone 5: report uncited source ids as a distinct, weaker signal
 

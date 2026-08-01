@@ -17,6 +17,7 @@ import CMarkGFM qualified
 import Data.Char qualified as Char
 import Data.Text qualified as Text
 import Data.Time (Day, defaultTimeLocale, parseTimeM)
+import Okf.Markdown (markdownOptions)
 import Okf.Prelude
 
 -- | One parsed @log.md@ file.
@@ -58,7 +59,7 @@ parseLog markdown =
   finish (foldl' step emptyBuild topLevelNodes)
   where
     topLevelNodes =
-      case CMarkGFM.commonmarkToNode [] [] markdown of
+      case CMarkGFM.commonmarkToNode markdownOptions [] markdown of
         CMarkGFM.Node _ _ documentChildren -> documentChildren
 
 -- | Render a log deterministically with a trailing newline.
