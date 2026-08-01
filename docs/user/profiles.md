@@ -147,9 +147,10 @@ Each `FieldRule` — one frontmatter key, and optionally what it is for:
 | `field` | `Text` | The frontmatter key. |
 | `description` | `Optional Text` | Prose explaining what the key should contain. Printed by `okf profile show`, and repeated in missing required or recommended advisories. Documentary only. |
 | `allowedValues` | `List Text` | Legal textual values. `[]` means unconstrained. Strings and lists of strings are checked whenever present, including recommended fields outside strict mode. |
-| `cardinality` | `Cardinality` | `Any` preserves legacy presence behavior; `Scalar` accepts non-blank text, numbers, and booleans; `List` accepts arrays. Objects and null do not satisfy explicit cardinality. |
+| `cardinality` | `Cardinality` | `Any` preserves legacy presence behavior; `Scalar` accepts non-blank text, numbers, and booleans; `List` accepts arrays. Null satisfies no explicit cardinality. A mapping satisfies none of the three either — declare `objectFields` instead, which refines the key to the compiled `object` shape. |
 | `format` | `Optional FieldFormat` | A parser-backed textual contract: UTC RFC3339 timestamp, calendar date, absolute URI, URI with a required scheme, or document handle. `None` means unconstrained. |
 | `elementFields` | `Optional NestedRules` | When present, the field must be a list whose elements are flat records checked with nested required, recommended, and optional rules. `None` means no element schema. |
+| `objectFields` | `Optional NestedRules` | When present, the field's value must itself be a mapping, whose members are checked with the same nested rules. Declaring it alongside `elementFields` accepts either spelling and checks both against the same members. `None` means no object schema. |
 | `reference` | `Optional HandleReferenceRule` | Declares that present top-level values are local handles with one prefix or absolute external URIs using an explicitly allowed scheme. Local handles must resolve inside the bundle. |
 | `when` | `Optional FieldCondition` | Gates only this rule's required or recommended presence check on a same-scope scalar sibling having one of `hasValue`. Present values are still constrained when the condition is false. Rejected on an `optional` rule, which has no presence check to gate. |
 
@@ -209,6 +210,102 @@ Diagnostics carry the complete path, including the list index, for example
 `reviews[2].outcome`. Extra keys inside each record remain allowed. The profile
 does not compare records, capture top-level fields, or validate a second nested
 level.
+
+### Object-valued keys
+
+Use `objectFields` when one frontmatter key's value *is* a record rather than a
+list of records. Several OKF v0.2 frontmatter families are shaped this way —
+`generated`, `usage_window`, `executor`, and `attester` — and without an object
+rule a profile cannot say anything about them, not even that the key must be
+present: a mapping does not satisfy `Any`, `Scalar`, or `List` cardinality.
+
+`objectFields` takes the same `NestedRules` value as `elementFields` and its
+members are checked the same way. The two differ only in what they describe:
+`elementFields` describes the record inside *each element of a list*, while
+`objectFields` describes the record that *is* the value.
+
+```dhall
+let field = ../../okf-core/dhall/mk/FieldRule.dhall
+
+let NestedFieldRule = ../../okf-core/dhall/defaults/NestedFieldRule.dhall
+
+let FieldFormat = ../../okf-core/dhall/FieldFormat.dhall
+
+in  field.record
+      "generated"
+      { required =
+        [ NestedFieldRule::{
+          , field = "by"
+          , description = Some "Who or what produced this content."
+          }
+        ]
+      , recommended =
+        [ NestedFieldRule::{ field = "at", format = Some FieldFormat.Rfc3339Utc } ]
+      , optional = [] : List NestedFieldRule.Type
+      }
+```
+
+Declaring `objectFields` refines the key's `Any` cardinality to `object`, so the
+value must be a mapping; an explicit `Scalar` or `List` alongside it is a
+profile-definition error, reported as `objectFields at generated cannot be
+combined with cardinality scalar`. An empty mapping counts as absent, exactly as
+an empty list does under `List`. To demand a mapping without constraining its
+members, declare `objectFields` with three empty lists.
+
+Diagnostics name the member without an index, because there is no index:
+
+```text
+$ okf validate ./bundle --profile ./provenance.dhall --strict
+profile: thing: missing profile-required field: generated.by (Who or what produced this content.)
+```
+
+#### Keys that accept either spelling
+
+OKF v0.2 says a single verifier may be written either as a one-element list or
+as a bare mapping, and that a consumer must treat the bare mapping as a
+one-element list. Declare both `objectFields` and `elementFields` to accept
+both, which `field.recordOrList` does in one line:
+
+```dhall
+field.recordOrList
+  "verified"
+  { required =
+    [ NestedFieldRule::{
+      , field = "by"
+      , description = Some "Who confirmed this content."
+      }
+    ]
+  , recommended = [] : List NestedFieldRule.Type
+  , optional = [] : List NestedFieldRule.Type
+  }
+```
+
+A rule declaring both stays at `Any` cardinality, so neither spelling is a
+cardinality mismatch, and both are checked against the same member rules. Only
+the reported path differs:
+
+```text
+$ okf validate ./bundle --profile ./provenance.dhall --strict
+profile: thing: missing profile-required field: verified.by (Who confirmed this content.)
+```
+
+against a bundle whose `verified` is a bare mapping, and
+
+```text
+$ okf validate ./bundle --profile ./provenance.dhall --strict
+profile: thing: missing profile-required field: verified[1].by (Who confirmed this content.)
+```
+
+against one whose `verified` is a list whose second entry omits `by`.
+
+#### The one-level limit applies here too
+
+`NestedFieldRule` has neither an `elementFields` nor an `objectFields` member, so
+the schema still cannot recurse. A document-scope `usage_window` is at depth one
+and is fully expressible; a per-entry `usage_window` *inside* a `sources`
+element, which OKF v0.2 also permits, is at depth two and is not. A profile can
+require `sources` to be a list of records and can constrain each record's own
+keys, but cannot reach `sources[0].usage_window.from`.
 
 ### Same-scope conditional presence
 
@@ -562,6 +659,12 @@ Cardinality is a shape constraint, separate from textual vocabularies.
 `field.list "tags"` requires an array. Empty text and an empty required list
 remain missing rather than becoming shape mismatches. `Any` is the default and
 retains the older non-empty-text-or-non-empty-list presence rule.
+
+There is a fourth shape, `object`, which an author never writes directly:
+declaring `objectFields` refines the key to it. It behaves like the others — an
+empty mapping is missing rather than a shape mismatch, and a non-mapping value
+produces one cardinality diagnostic naming `object`. See
+[object-valued keys](#object-valued-keys).
 
 At profile and type scope, `Any` is the identity and matching explicit
 cardinalities agree. A `Scalar`/`List` contradiction is rejected as a profile
@@ -1068,6 +1171,8 @@ in  [ -- 1. constructors — the form to reach for
 | `uriWithScheme` | `Text -> Text -> FieldRule` | A key constrained to an absolute URI with the given scheme. |
 | `documentHandle` | `Text -> Text -> FieldRule` | A key constrained to a canonical document handle with the given prefix. |
 | `recordList` | `Text -> NestedRules -> FieldRule` | A list field whose flat record elements follow the given nested rules. |
+| `record` | `Text -> NestedRules -> FieldRule` | A field whose value is itself a flat record following the given nested rules. |
+| `recordOrList` | `Text -> NestedRules -> FieldRule` | A field written either as one flat record or as a list of them, both checked against the given nested rules. |
 | `conditional` | `FieldRule -> FieldCondition -> FieldRule` | Attach a same-scope presence condition to an existing rule. |
 | `localReference` | `Text -> Text -> FieldRule` | A local-only reference field with the given handle prefix. |
 | `localOrExternalReference` | `Text -> Text -> List Text -> FieldRule` | A local reference field with explicit external URI-scheme alternatives. |

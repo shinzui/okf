@@ -59,6 +59,16 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   display names `renderCardinalityName` and `renderFieldFormatName`. All
   additive: no constructor was added to `ProfileViolation` or
   `ProfileDefinitionError`, so exhaustive consumers need no change.
+- **A profile can describe an object-valued frontmatter key.** Several OKF v0.2
+  families are mappings rather than lists — `generated`, `usage_window`,
+  `executor`, `attester` — and a profile previously could not say anything about
+  one, not even that the key had to be present. A rule may now carry
+  `objectFields`, whose members are checked exactly as list-element members are
+  and reported at paths such as `generated.by`. Declaring it alongside
+  `elementFields` accepts either spelling and checks both against the same
+  members, which is how a profile describes `verified`: OKF v0.2 permits it as a
+  list of mappings or as one bare mapping. Write it with `field.record` or
+  `field.recordOrList`. Profiles remain advisory; core validation is unchanged.
 
 ### Changed
 

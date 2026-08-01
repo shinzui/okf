@@ -25,9 +25,21 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   its staleness verdict, and a `sources` count.
 - `okf validate` renders the new core diagnostics, including the join between a
   body's footnote labels and its `sources` ids in both directions.
+- `okf validate --profile` reports deviations inside an object-valued
+  frontmatter key, at paths such as `generated.by`, and refuses a descriptor that
+  pairs `objectFields` with an explicit scalar or list cardinality:
+  `objectFields at generated cannot be combined with cardinality scalar`.
+  `okf profile document` renders the new rule kind as an `- Object fields:`
+  bullet, which changes generated output for every profile; the committed
+  `examples/postgresql-profile/` bundle is regenerated accordingly.
 
 ### Changed
 
+- A missing member of a nested record now carries the member's `description`
+  prose in parentheses — `missing profile-required field: generated.by (Who or
+  what produced this content.)` — as a missing top-level key already did. This
+  applies to list-element members too, and adds nothing where a member declares
+  no description.
 - **`okf validate` names a declared OKF version in its success line**:
   `OK: 4 concepts (okf_version 0.2)`. The suffix appears only when the bundle's
   root `index.md` declares a version, so a bundle that declares nothing prints

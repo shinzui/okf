@@ -53,9 +53,47 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   `docs/adr/9-one-markdown-parse-configuration-and-source-scanned-authoring-checks.md`.
 - `okf-core/test/fixtures/v01-legacy-bundle`, a deliberately unmigrated v0.1
   bundle that keeps the legacy fallback under test. Do not migrate it.
+- **Object rules on profile field rules.** `FieldRule` gains
+  `objectFields :: Maybe NestedRules`, describing the record that *is* a key's
+  value, as distinct from `elementFields`, which describes the record inside each
+  element of a list. Both take the same `NestedRules` value and their members are
+  checked identically; only the reported `FieldPath` differs (`generated.by`
+  against `reviews[0].kind`). Declaring both accepts either spelling, which is how
+  a profile describes the OKF v0.2 `verified` key. `NestedFieldRule` gains
+  neither member, so the descriptor stays depth-bounded.
+  `EffectiveFieldRule` gains the `fieldRuleObjectFields` accessor, and generated
+  profile documentation gains an `- Object fields:` bullet. Declaring
+  `objectFields` and no explicit cardinality refines the rule to the new
+  compiled-only `Cardinality` constructor `Object`; pairing it with an explicit
+  `Scalar` or `List` is the new definition error
+  `ObjectFieldsRequireObjectShape`. See
+  `docs/adr/11-growing-the-profile-descriptor-language.md`.
+- `okf-core/test/fixtures/profiles/object-fields-mp8-ep1.dhall`, the frozen
+  descriptor generation from immediately before `objectFields` existed. Do not
+  edit it.
 
 ### Changed
 
+- **Breaking for exhaustive consumers.** `Cardinality` gains a fourth
+  constructor, `Object`, and `ProfileDefinitionError` gains
+  `ObjectFieldsRequireObjectShape`. The `Cardinality` addition is the wider of
+  the two: that type appears in `ConflictingCardinality`,
+  `ElementFieldsRequireList`, `ConditionFieldNotScalar`, and
+  `CardinalityMismatch`, so a consumer that renders a cardinality needs a new
+  case even if it declares no object rules. `Object` is deliberately unreachable
+  from Dhall — the published union in `okf-core/dhall/Cardinality.dhall` keeps
+  exactly its three alternatives — so no pinned descriptor changes type. No
+  `ProfileViolation` constructor was added.
+- Adding `objectFields` to the closed Dhall `FieldRule` record is a schema
+  event. The complete optional-presence generation is frozen before it and
+  upgrades with `objectFields = None`, so descriptors written with record
+  completion or the `mk` constructors are unaffected; a descriptor that annotates
+  itself against okf's current schema by relative path must add the field, since
+  Dhall rejects the annotation before any fallback decoder runs.
+- A missing member of a nested record now carries the member's `description`
+  prose in parentheses, as a missing top-level key already did. This applies to
+  list elements as well as object members, and emits nothing where a member
+  declares no description.
 - **Breaking for exhaustive consumers.** `validateBundle` takes a
   `VersionDeclaration` between the profile and the concepts:
   `ValidationProfile -> VersionDeclaration -> [Concept] -> [BundleValidationError]`.

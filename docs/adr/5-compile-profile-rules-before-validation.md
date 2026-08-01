@@ -163,6 +163,42 @@ presence clause declared at the other, because merged clauses accumulate
 precisely so a type rule can narrow but never silently weaken a profile-wide
 expectation. An author makes a key optional in the scope that declared it.
 
+Object-valued keys are a second nested shape beside list elements, added because
+several OKF v0.2 frontmatter families — `generated`, `usage_window`, `executor`,
+`attester` — are mappings rather than lists, and no cardinality accepted a
+mapping at all. A `FieldRule` may carry `objectFields : Maybe NestedRules`
+alongside `elementFields`, taking the same `NestedRules` value. `elementFields`
+describes the record inside each element of a list; `objectFields` describes the
+record that *is* the value. `NestedFieldRule` gains neither member, so the
+descriptor stays depth-bounded: a document-scope `usage_window` is expressible
+and a per-entry `usage_window` inside a `sources` element is not.
+
+`Cardinality` gains a fourth constructor, `Object`, which is deliberately
+unreachable from Dhall — the published union in `okf-core/dhall/Cardinality.dhall`
+stays at three alternatives and okf hand-writes the decoder. Declaring
+`objectFields` and no explicit cardinality refines the key to `Object`, mirroring
+the existing `elementFields`-refines-to-`List` rule; declaring it alongside an
+explicit `Scalar` or `List` is the definition error
+`ObjectFieldsRequireObjectShape`, mirroring `ElementFieldsRequireList`. An empty
+mapping counts as absent, exactly as an empty list does under `List`, so an
+author demands a mapping without constraining its members by declaring
+`objectFields` with three empty lists.
+
+Declaring both members means either spelling of the value is accepted and both
+are checked against the same member rules, which is how a profile describes the
+OKF v0.2 `verified` key: the specification permits a list of mappings or one bare
+mapping and requires a consumer to treat the bare mapping as a one-element list.
+Such a rule stays at `Any` cardinality, so neither spelling is a shape mismatch.
+Because the two walks share one member-checking body and a definition error names
+a path such as `verified.by` that does not distinguish them, compile-time checks
+over both shapes deduplicate.
+
+Object members reuse the existing nested violation constructors — a missing
+member is `MissingNestedProfileField` with a two-segment `FieldPath` such as
+`generated.by`, against `reviews[2].outcome` for a list element — because those
+payloads already say exactly the right thing and every added `ProfileViolation`
+constructor is a breaking change for exhaustive consumers.
+
 
 ## Consequences
 
@@ -205,6 +241,18 @@ complete reference-aware generation is frozen before this addition and upgrades
 with `optional = []` at both levels, but a descriptor that annotates itself
 against okf's current schema by relative path must add the field, since Dhall
 rejects the annotation before any fallback decoder runs.
+
+Object rules add `ObjectFieldsRequireObjectShape` to `ProfileDefinitionError` and
+`Object` to `Cardinality`; exhaustive consumers, including Mori's advisory
+renderer, must handle both before moving their okf pin. Adding a `Cardinality`
+constructor is the wider of the two, because that type appears in
+`ConflictingCardinality`, `ElementFieldsRequireList`, `ConditionFieldNotScalar`,
+and `CardinalityMismatch`, so a consumer that renders a cardinality must gain a
+case even though it declares no object rules. No `ProfileViolation` constructor
+is added. Adding `objectFields` to `FieldRule` is a closed-record Dhall
+migration: the complete optional-presence generation is frozen before this
+addition and upgrades with `objectFields = Nothing`, and every descriptor in this
+repository already used record completion, so none needed editing.
 
 Later profile constraints extend the compiled field rule rather than scanning
 raw declarations again. Human and JSON profile display continue to preserve the

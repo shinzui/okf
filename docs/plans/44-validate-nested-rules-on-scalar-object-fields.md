@@ -79,7 +79,8 @@ This section must always reflect the actual current state of the work.
 - [x] Milestone 3: compile `objectFields` into the effective rule, with the compiled-only `Object` cardinality and the new definition error. (2026-08-01)
 - [x] Milestone 4: validate an object value's members and report a `FieldPath` such as `generated.by`. (2026-08-01)
 - [x] Milestone 5: render the new rule kind in generated profile documentation, regenerate the committed example, and extend the CLI diagnostic vocabulary. (2026-08-01)
-- [ ] Milestone 6: document the feature in `docs/user/profiles.md` and write the descriptor-growth ADR.
+- [x] Milestone 6: document the feature in `docs/user/profiles.md` and write the descriptor-growth ADR. (2026-08-01)
+- [x] Record the change in all three changelogs, following the project convention MasterPlan 7 established. (2026-08-01)
 
 
 ## Surprises & Discoveries
@@ -309,7 +310,49 @@ Compare the result against the original purpose. Before marking the plan complet
 distill durable project context from the Decision Log, Surprises & Discoveries, and
 this section into docs/adr/. Keep task-local execution details here.
 
-(To be filled during and after implementation.)
+**The plan delivered what its Purpose promised, and the purpose was stated correctly.** A
+profile author can now write `field.record "generated" …` and have
+`okf validate --profile` report `thing: missing profile-required field: generated.by (Who or
+what produced this content.)` against a document whose mapping omits the member, and nothing
+at all against one that carries it. `field.recordOrList "verified" …` accepts both spellings
+OKF v0.2 §5.2 permits, reporting `verified.by` for the bare mapping and `verified[1].by` for
+the list. Every acceptance criterion in Validation and Acceptance holds, including the two
+that were most at risk: the frozen fixture loads unedited through the fallback decoder
+(verified by a negative control, not by assertion), and
+`okf validate okf-core/test/fixtures/valid-bundle --strict` is byte-identical before and after.
+
+**Six milestones became five commits.** Milestones 1 and 2 could not be separated, because the
+frozen generation's upgrade function constructs a current-shape `FieldRule` and so does not
+compile without the member it is frozen against. The plan's instinct — make the
+schema-breaking change its own reviewable commit — was right, and the commit message names
+both milestones so the schema event is still findable. A future plan freezing a generation
+should expect the same coupling.
+
+**Two things the plan asserted turned out to be wrong, both in the safe direction.** It
+predicted that adding a field to the closed `FieldRule` record would break three named
+descriptors; none broke, because every descriptor in this repository already uses record
+completion. And its Milestone 4 said to reuse `MissingNestedProfileField` "unchanged" while
+its acceptance criterion demanded member prose in the diagnostic — the violation constructor
+indeed needed no change, but the CLI renderer did, and no nested member had ever explained
+itself, for list elements either. Fixing that is the one place this plan changed behavior
+beyond object rules, and it is recorded as a decision rather than smuggled in.
+
+**What remains for the sibling plans.** EP-2 hard-depends on this and can now reach
+`generated.by` and `verified[].by`, which was the whole reason for the dependency. Three
+things this plan learned are worth carrying forward. Naming a `Cardinality` or `FieldFormat`
+constructor after an aeson `Value` constructor collides in four files and costs a compile cycle
+each to find. `cabal build` reports `Up to date` and skips recompiling even after `touch`, so a
+`-Wincomplete-patterns` warning can be missed simply by not rebuilding — and grepping build
+output for `error:` hides warnings entirely, which nearly happened here. And a rule declaring
+the same members under both nested shapes will double-report every definition error unless the
+walk deduplicates; the two helpers this plan added (`declaredNestedRuleSets`,
+`pairedNestedRuleMaps`) are the place to hang any further per-shape check rather than adding a
+third parallel comprehension.
+
+**The depth bound is unchanged and is now documented rather than discoverable.**
+`sources[0].usage_window.from` remains inexpressible, stated plainly in
+`docs/user/profiles.md` under "The one-level limit applies here too". The document-scope
+`usage_window`, which is the common case, is at depth one and is fully expressible.
 
 
 ## Context and Orientation
