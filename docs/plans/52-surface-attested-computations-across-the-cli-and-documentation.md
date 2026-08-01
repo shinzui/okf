@@ -80,12 +80,12 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] Milestone 1: every `okf` command is run against an attested computation and what it does is recorded in Surprises & Discoveries, one entry per command, with the transcript
-- [ ] Milestone 1: each gap the audit finds is either scheduled into a milestone below or recorded in the Decision Log as deliberately left alone, with the reason
+- [x] Milestone 1 (2026-08-01): every `okf` command is run against an attested computation and what it does is recorded in Surprises & Discoveries, one entry per command, with the transcript
+- [x] Milestone 1 (2026-08-01): each gap the audit finds is either scheduled into a milestone below or recorded in the Decision Log as deliberately left alone, with the reason — five new Decision Log entries, one new file scheduled into Milestone 4
 - [ ] Milestone 2: `okf computations BUNDLE` lists every attested computation in a bundle, one aligned row each, in the house style of `okf trust` and `okf sources`
 - [ ] Milestone 3: `okf profile show` renders `objectFields`, so a profile constraining `executor.resource` displays the rule it enforces
-- [ ] Milestone 3: any further gap Milestone 1 scheduled is closed
-- [ ] Milestone 4: the embedded `okf help format` and `okf help validation` topics describe OKF v0.2 rather than v0.1, including the attested computation type
+- [x] Milestone 3 (2026-08-01): any further gap Milestone 1 scheduled is closed — the audit scheduled none into this milestone; `okf profile document` already renders object fields
+- [ ] Milestone 4: the embedded `okf help format`, `okf help validation`, and `okf help okf` topics describe OKF v0.2 rather than v0.1, including the attested computation type
 - [ ] Milestone 5: `docs/user/cli.md` documents the new command, and `docs/user/profiles.md` carries a worked §10 house-convention descriptor with a fixture proving it compiles and validates
 - [ ] Milestone 5: every `okf` transcript in `docs/` that this plan perturbs is re-run and corrected
 - [ ] Milestone 5: the parent MasterPlan's Outcomes & Retrospective is filled in and its ADR distillation pass is run
@@ -159,6 +159,137 @@ remains for this plan is only what one command's vantage could not settle: wheth
 free `type` grouping is wanted, which Milestone 1 must decide with evidence rather than assume.
 
 
+### Milestone 1 audit — every command run against an attested computation (2026-08-01)
+
+All three pre-implementation findings above were re-run and all three held. The tree was green
+before the audit started (`cabal test all`, 1 of 1 test suites passed), and the audit changed no
+file. The command set is what `okf --help` lists; `kit`, `assist`, `completions`, and `config`
+read no bundle and are dispositioned together at the end.
+
+**`okf validate` — no gap.** Both bundles report exactly what the sibling plans built, and the
+diagnostics name the concept, the type, and the rule. Against `examples/ddd-ordering --strict`,
+`OK: 22 concepts (okf_version 0.2)` with only pre-existing `log:` advisories. Against the fixture
+bundle, all four §10 diagnostics fire and nothing else:
+
+```text
+computations/both-computations: Attested Computation declares a computation both inline and by path; exactly one is permitted
+computations/margin: Attested Computation concepts must declare runtime
+computations/no-computation: Attested Computation declares no computation: add a code block under a # Computation heading, or a computation path
+computations/two-blocks: Attested Computation has 2 code blocks under # Computation; exactly one is permitted
+```
+
+**`okf show` — no gap.** The full §10.2 contract renders in §10.2's own field order, and
+`--computation` reads the computation itself rather than printing a path:
+
+```text
+$ cabal run -v0 okf -- show examples/ddd-ordering computations/order-total
+id: computations/order-total
+type: Attested Computation
+title: Order total for a placed order
+description: Sanctioned computation of an order's total from its lines.
+tags: ddd, ordering, attested-computation
+runtime: postgres
+parameters: order_id (uuid, required)
+computation: inline (3 lines)
+executor: /references/skills/run-on-postgres.md, receipt: statement_id, executed_sql, result
+attester: /references/attesters/order-total.py
+generated: human:nadeem at 2026-08-01T00:00:00Z
+trust: unverified
+status: stable
+```
+
+**`okf graph` — no gap, and adding one would cost more than it is worth.** The §10.1 link from a
+`Metric` to the computation it uses is already an edge, and the node already carries the type
+string a consumer discovers by:
+
+```text
+{"source":"metrics/order-total-value","target":"computations/order-total"}
+{"description":"Sanctioned computation of an order's total from its lines.","id":"computations/order-total","label":"Order total for a placed order","resource":null,"tags":["ddd","ordering","attested-computation"],"type":"Attested Computation"}
+```
+
+That is §10.5 step 1 answered — discover by `type`, or reach it by following a link — with no code
+change. See the Decision Log for why the contract does not join the node.
+
+**`okf index` — no gap; both halves are already delivered.** `Okf.Index.renderIndex` groups by
+`type` and produces the §10.5 heading for free, and the one-byte-index wart a sibling plan found
+is gone, because `docs/plans/51-adopt-the-references-convention-for-executors-and-attesters.md`
+now lists a directory's non-Markdown files:
+
+```text
+--- computations/index.md
+# Attested Computation
+
+- [Order total for a placed order](order-total.md) - Sanctioned computation of an order's total from its lines.
+
+--- references/attesters/index.md
+# Files
+
+- [order-total.py](order-total.py)
+```
+
+**`okf trust` — no gap, and nothing in it can be read as a claim about a run.** Its three columns
+are the trust tier derived from `verified`, `status`, and staleness against `stale_after`.
+`computations/order-total` prints `unverified  stable  ok`, which is §10.6's doc-level half and
+says nothing about attestation. The vocabulary cannot collide either: no tier, status, or
+staleness phrase contains the word "attest".
+
+**`okf sources` — no gap.** It skips concepts with no `sources`, so `computations/order-total`
+does not appear, which is correct rather than missing: that concept declares no provenance. §10.6
+makes provenance and attestation different questions, and this report answers only the first.
+
+**`okf log` and `okf id` — no gap and nothing to add.** `okf log examples/ddd-ordering` prints
+nothing because the bundle has no `log.md`; staleness advisories reach attested computations
+through `okf validate` exactly as they reach every other type. `okf id list` requires
+`--profile` and concerns profile-declared document IDs
+(`docs/adr/1-profile-declared-document-ids.md`), which is orthogonal to this type.
+
+**`okf profile show` — the gap this plan closes.** Confirmed against the shipped v0.2 profile:
+`objectFields` appears zero times in its 140 lines of output, while `path:`, `reference:`,
+`elementFields:` and the rest all print. Milestone 3.
+
+**`okf profile document` — no gap, and the two renderers differ for a findable reason.** The plan
+asked whether this command shares `okf profile show`'s omission. It does not:
+
+```text
+$ cabal run -v0 okf -- profile document --registry docs/profiles/okf-v0-2.dhall | grep -c "Object fields"
+9
+```
+
+`Okf.Profile.Documentation.renderFieldRule` at `okf-core/src/Okf/Profile/Documentation.hs:403`
+emits an `Object fields:` bullet beside its `Element fields:` bullet, with a comment naming the
+distinction. So Milestone 3 closes one renderer rather than two, and the divergence is a fact
+about *when* each was written: `Documentation.hs` post-dates `objectFields` and was built against
+the compiled `EffectiveFieldRule`, while `Okf.Cli.renderFieldRule` renders the raw `FieldRule`
+from the descriptor and was not revisited when the member was added.
+
+**`okf help` — the widest staleness, and worse than the pre-implementation finding recorded.**
+That finding named `format.md` and `validation.md`. A third topic is stale too:
+
+```text
+$ grep -n "v0.1" okf-cli/help/okf.md
+59:  v0.1 specification (the knowledge-catalog okf SPEC.md).
+```
+
+`okf-cli/help/okf.md` states that the tool tracks OKF **v0.1**, which has been untrue since
+`docs/masterplans/7-adopt-okf-v0-2-core-semantics.md` landed, and its "WHAT THE okf TOOL DOES"
+list stops at `show` — omitting `trust`, `sources`, and `profile`, all of which ship.
+`okf-cli/help/validation.md` is stale in three further places the finding did not name: it lists
+`timestamp` as a `--strict` requirement, it says "OKF v0.1 conformance itself is permissive", and
+its OUTPUT block shows `OK: 4 concepts` where the tool now prints
+`OK: 4 concepts (okf_version 0.2)`. Milestone 4 widens by one file accordingly.
+
+**`okf kit`, `okf assist`, `okf completions`, `okf config` — out of scope by construction.** None
+reads a bundle or a profile; they install skills, launch an agent session, emit a completion
+script, and print configuration. Nothing about a concept type can reach them.
+
+**The one gap the audit found that no milestone had:** there is no way to ask a bundle what
+attested computations it holds. Every command above either takes one concept (`show`), reports
+every concept (`trust`), or reports a different family (`sources`). §10.5 step 1 is "discover via
+`type: Attested Computation`", and the only discovery surfaces okf offers today are reading
+`index.md` by hand or grepping `okf graph --json`. That is Milestone 2, which was already
+scheduled — the audit confirms the need rather than revising it.
+
+
 ## Decision Log
 
 Record every decision made while working on the plan.
@@ -218,6 +349,62 @@ Record every decision made while working on the plan.
   specification. Demanding that every parameter carry a `type` is a house convention, not a v0.2
   rule, and putting one into the reference profile would misrepresent the format to every team
   that adopts it. Demanding `runtime` there would duplicate a core check and double-report.
+  Date: 2026-08-01
+
+- Decision: `okf graph --json` does not gain the §10 contract. The node keeps its six members.
+  Rationale: this is one of the four questions Milestone 1 was scheduled to settle, and the audit
+  settles it against evidence rather than preference. §10.5 step 1 asks a consumer to discover a
+  computation "via `type: Attested Computation`, a frontmatter signal … or by following a link
+  from a concept that uses it", and both already work: the node carries `type` verbatim and the
+  `Metric` → computation edge appears without any code. Step 2, loading the contract, is a
+  per-concept question that `okf show` answers in §10.2's own field order. Adding `runtime`,
+  `parameters`, `executor`, and `attester` to `Node` would change a JSON shape every downstream
+  consumer parses, in order to duplicate a command that already exists, and would put four keys
+  on all twenty-two nodes of `examples/ddd-ordering` to serve one. A graph is about relations
+  between concepts; the contract is about one concept's interior.
+  Date: 2026-08-01
+
+- Decision: The generated index gains nothing beyond the free `type` grouping — no bundle-root
+  listing of attested computations, no per-type roll-up.
+  Rationale: the second of Milestone 1's four questions. §10.5 calls `type` "a frontmatter signal
+  liftable into `index.md`" and `Okf.Index.renderIndex` already lifts it, producing an
+  `# Attested Computation` heading in `computations/index.md`. A bundle-root listing would be a
+  new *kind* of index entry — one that reaches across directories — and `Okf.Index`'s whole
+  design is per-directory progressive disclosure. It would also privilege one type in a generator
+  that deliberately knows no taxonomy, which `docs/adr/1-profile-declared-document-ids.md` and
+  §4.1 both forbid in their own registers. The cross-directory question a reader actually has —
+  "what computations does this bundle hold" — is what `okf computations` answers in Milestone 2,
+  and answering it in a generated file as well would mean two answers that can disagree.
+  Date: 2026-08-01
+
+- Decision: `okf profile document` needs no change; Milestone 3 closes one renderer, not two.
+  Rationale: the third of Milestone 1's four questions, and the answer is the opposite of what
+  the plan expected. `Okf.Profile.Documentation.renderFieldRule` already emits an
+  `Object fields:` bullet — nine of them against the shipped v0.2 profile. The two renderers
+  differ because they were written at different times against different inputs: the
+  documentation renderer post-dates `objectFields` and consumes the compiled
+  `EffectiveFieldRule`, while `Okf.Cli.renderFieldRule` consumes the raw descriptor `FieldRule`
+  and was not revisited when the member landed. Closing the CLI gap therefore makes the two
+  consistent rather than making them diverge in a new way, which is what the plan asked to check.
+  Date: 2026-08-01
+
+- Decision: `okf trust` says nothing misleading about an attested computation and is left alone.
+  Rationale: the fourth of Milestone 1's four questions. §10.6 distinguishes `verified` — "doc
+  level, slow, recorded in the bundle" — from attestation — "per-call, runtime, not stored in the
+  bundle". `okf trust` reports only the first, in three columns whose whole vocabulary
+  (`unverified`/`machine-confirmed`/`human-reviewed`, `draft`/`stable`/`deprecated`/`superseded`,
+  `ok`/`stale since <date>`) contains no word that could be read as a verdict about a run. The
+  risk the question guards against would be real if a column were added; none is.
+  Date: 2026-08-01
+
+- Decision: Milestone 4 widens by one file: `okf-cli/help/okf.md` joins `format.md` and
+  `validation.md`.
+  Rationale: the audit found that topic asserting the tool "tracks Google's Open Knowledge Format
+  v0.1 specification", which three MasterPlans of v0.2 work have made false, and listing five
+  commands where the tool ships fourteen. This is the same widening the parent MasterPlan already
+  made once for this plan and on the same reasoning: a coherence plan that corrected two of three
+  stale help topics would be performing the neglect it exists to correct. It remains an editing
+  pass with no code behind it.
   Date: 2026-08-01
 
 - Decision: This plan does not write an ADR of its own, but it does run the parent MasterPlan's
