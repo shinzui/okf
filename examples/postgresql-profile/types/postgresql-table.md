@@ -2,6 +2,8 @@
 type: OKF Profile Type
 title: PostgreSQL Table
 description: One physical table in a schema, including its column list.
+generated:
+  by: process:okf-profile-document
 ---
 
 # PostgreSQL Table

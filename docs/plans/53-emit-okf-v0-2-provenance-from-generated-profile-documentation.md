@@ -88,9 +88,12 @@ committed worked example `examples/postgresql-profile/` will be regenerated to m
       reproduces exactly: default output plus `--okf-version 0.2` validates strict-clean with
       `OK: 4 concepts (okf_version 0.2)`. As the plan predicted, `cabal test okf-cli` now
       fails on the drift check alone, resolved by Milestone 3.
-- [ ] Milestone 3: `docs/profiles/profile-documentation.dhall` declares `okfVersion = "0.2"`
-      and requires `generated`; `examples/postgresql-profile/` is regenerated; both
-      `okf-cli/test/Main.hs` drift and conformance tests pass against the new shape.
+- [x] Milestone 3 (2026-08-01): `docs/profiles/profile-documentation.dhall` declares
+      `okfVersion = "0.2"` and requires `generated`; `examples/postgresql-profile/` is
+      regenerated; both `okf-cli/test/Main.hs` drift and conformance tests pass against the
+      new shape. `cabal test all` passes, and
+      `okf validate examples/postgresql-profile --profile docs/profiles/profile-documentation.dhall --profile-enforce --strict`
+      prints `OK: 4 concepts (okf_version 0.2)` and exits 0.
 - [ ] Milestone 4: `docs/adr/6-generated-profile-documentation.md` is amended, and
       `okf-cli/help/profiles.md`, `docs/user/profiles.md`, `README.md`, and the three
       changelogs describe the new behavior.
@@ -117,6 +120,40 @@ committed worked example `examples/postgresql-profile/` will be regenerated to m
   The private helper was deleted and the exported one used instead, which is strictly better:
   it reads the projected `Concept` field that real consumers read, rather than re-deriving it
   from frontmatter.
+
+
+- `okf profile show` has no `--profile` flag, so the Milestone 3 verification command in this
+  plan does not run as written:
+
+  ```text
+  $ okf profile show --profile docs/profiles/profile-documentation.dhall
+  Invalid option `--profile'
+  Usage: okf profile show [--registry REGISTRY] [EXPORT] [--json]
+  ```
+
+  A bare descriptor file is loadable as a registry publishing one root export, so
+  `okf profile show --registry docs/profiles/profile-documentation.dhall` is the working
+  spelling and prints `export: (root)` followed by the profile. This is a plan error, not a
+  product gap: `okf profile document` takes `--profile`, `okf profile show` takes
+  `--registry`, and the plan carried the former's spelling over to the latter.
+
+- Declaring `generated.at` as `recommended` in the meta-profile — which is what
+  `docs/profiles/okf-v0-2.dhall` does and what this plan's Milestone 3 instructed — makes
+  okf's own default output fail its own meta-profile under `--strict`:
+
+  ```text
+  stamped output deviates from the meta-profile under --strict:
+    [MissingRecommendedNestedProfileField (ConceptId "profile") (FieldPath generated.at) Nothing,
+     MissingRecommendedNestedProfileField (ConceptId "types/postgresql-schema") …, …]
+  ```
+
+  The cause is the determinism promise: generation never reads the clock, so `at` is absent
+  unless the caller passed `--generated-at`. `at` was therefore declared `optional` instead,
+  which keeps its RFC3339 format checked when present without demanding it. This is the same
+  argument the file already makes for `timestamp`, and it is why the two descriptors
+  legitimately differ: `okf-v0-2.dhall` describes the format in general, where a producer
+  that does know the time should record it; `profile-documentation.dhall` describes okf's own
+  clock-free output.
 
 
 ## Decision Log
@@ -181,6 +218,17 @@ committed worked example `examples/postgresql-profile/` will be regenerated to m
   example, while `testProfileDocumentationStrictWithTimestamp` deliberately validates against
   `VersionUndeclared` — declaring 0.2 there would make the legacy-`timestamp` lint fire and
   turn a test about strict authoring into a test about version migration.
+  Date: 2026-08-01
+
+
+- Decision: In `docs/profiles/profile-documentation.dhall`, the nested `generated.at` member
+  is `optional`, not `recommended` as this plan's Milestone 3 instructed.
+  Rationale: See the Surprises entry. `recommended` is checked under `--strict`, and okf's
+  own generator deliberately never writes `at`, so `recommended` would make every bundle okf
+  generates deviate from okf's own meta-profile. Deviating from
+  `docs/profiles/okf-v0-2.dhall` here is correct rather than an inconsistency: the two
+  descriptors describe different things, and the plan's own instruction to write the rule out
+  rather than import it exists precisely so they can differ.
   Date: 2026-08-01
 
 

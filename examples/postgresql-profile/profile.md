@@ -2,6 +2,8 @@
 type: OKF Profile
 title: shinzui-postgresql
 description: Conventions for documenting a PostgreSQL database as an OKF bundle.
+generated:
+  by: process:okf-profile-document
 ---
 
 # shinzui-postgresql

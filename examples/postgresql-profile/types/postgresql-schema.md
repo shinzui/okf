@@ -2,6 +2,8 @@
 type: OKF Profile Type
 title: PostgreSQL Schema
 description: 'One namespace: the tables and views under it, and why they belong together.'
+generated:
+  by: process:okf-profile-document
 ---
 
 # PostgreSQL Schema

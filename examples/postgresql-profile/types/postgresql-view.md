@@ -2,6 +2,8 @@
 type: OKF Profile Type
 title: PostgreSQL View
 description: 'One view: the columns it projects and the question it answers.'
+generated:
+  by: process:okf-profile-document
 ---
 
 # PostgreSQL View

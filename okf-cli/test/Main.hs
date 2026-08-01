@@ -866,7 +866,7 @@ testProfileDocumentationMatchesCommittedExample =
       scratch <- createTempDirectory temporaryDirectory "okf-cli-profile-doc-drift"
       bracket (pure scratch) removeDirectoryRecursive $ \root -> do
         let destination = root </> "regenerated"
-        runCommand (Profile (ProfileDocument (exampleDocumentOptions descriptor destination Nothing Nothing)))
+        runCommand (Profile (ProfileDocument (exampleDocumentOptions descriptor destination Nothing (Just "0.2"))))
         regenerated <- readMarkdownTree destination
         let changed = [path | (path, content) <- committed, lookup path regenerated /= Just content]
             added = [path | (path, _) <- regenerated, path `notElem` map fst committed]
@@ -875,7 +875,7 @@ testProfileDocumentationMatchesCommittedExample =
           putStrLn
             ( "examples/postgresql-profile is stale or the generator changed; differing files: "
                 <> unwords differing
-                <> "\nregenerate with: okf profile document --profile docs/profiles/postgresql.dhall --out examples/postgresql-profile --write"
+                <> "\nregenerate with: okf profile document --profile docs/profiles/postgresql.dhall --out examples/postgresql-profile --write --okf-version 0.2"
             )
         pure (null differing)
 
@@ -891,15 +891,23 @@ testProfileDocumentationConformsToMetaProfile =
     $ \metaProfilePath committedRoot -> do
       loaded <- loadProfileFile metaProfilePath
       walked <- walkBundle committedRoot
-      case (loaded, walked) of
-        (Left err, _) -> reportFailure ("failed to load the meta-profile: " <> Text.unpack err)
-        (_, Left bundleError) -> reportFailure ("failed to walk the committed example: " <> show bundleError)
-        (Right spec, Right concepts) ->
+      -- Read the declaration out of the committed bundle rather than
+      -- constructing it, so this also proves the committed root index really
+      -- carries `okf_version: "0.2"`. Validating against the declared version
+      -- is what makes the legacy-`timestamp` lint reachable: the committed
+      -- example passing means it carries no retired key.
+      declaredVersion <- readBundleVersion committedRoot
+      case (loaded, walked, declaredVersion) of
+        (Left err, _, _) -> reportFailure ("failed to load the meta-profile: " <> Text.unpack err)
+        (_, Left bundleError, _) -> reportFailure ("failed to walk the committed example: " <> show bundleError)
+        (_, _, Left bundleError) -> reportFailure ("failed to read the committed example's version: " <> show bundleError)
+        (_, _, Right VersionUndeclared) -> reportFailure "the committed example declares no okf_version; regenerate it with --okf-version 0.2"
+        (Right spec, Right concepts, Right declared) ->
           case compileProfile spec of
             Left definitionErrors -> reportFailure ("meta-profile does not compile: " <> show definitionErrors)
             Right compiled -> do
               let profileViolations = validateProfile PermissiveConformance compiled concepts
-                  structuralErrors = validateBundle PermissiveConformance VersionUndeclared (bundleInventoryOfConcepts concepts) concepts
+                  structuralErrors = validateBundle PermissiveConformance declared (bundleInventoryOfConcepts concepts) concepts
               unless (null profileViolations) $
                 putStrLn ("committed example deviates from the meta-profile: " <> show profileViolations)
               unless (null structuralErrors) $
