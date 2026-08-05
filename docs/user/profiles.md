@@ -1078,8 +1078,20 @@ definition error before any bundle is traversed.
 
 Set `allowUnknownFields = False` to close field names. The allowed set is built
 for each concept type, so a field declared only by type A is rejected on type B.
-The core keys `type`, `title`, `description`, `timestamp`, `resource`, and
-`tags`, plus the configured `idField`, remain legal without redundant rules.
+Every key okf itself owns, plus the configured `idField`, remains legal without
+a redundant rule — that is all seventeen core keys, not just the v0.1 ones:
+
+```text
+type, title, description, resource, tags,
+status, runtime, parameters, computation, executor, attester,
+generated, verified, stale_after, sources, usage_window,
+timestamp
+```
+
+So closing field names never forces a profile to re-declare the v0.2 families in
+order to keep them writable. A profile still *may* declare one — that is how it
+constrains the family rather than merely permitting it, which is what
+[the shipped v0.2 reference profile](#the-shipped-v02-reference-profile) does.
 
 Cardinality is a shape constraint, separate from textual vocabularies.
 `field.scalar "domain"` accepts `domain: false` as present, while

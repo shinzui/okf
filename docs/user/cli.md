@@ -245,8 +245,12 @@ cabal run okf -- log add BUNDLE [CONCEPT_ID] --kind Update -m "Refreshed schema"
 * **Update**: Refreshed schema
 ```
 
-`--check-stale` reports concepts whose frontmatter `timestamp` date is newer
-than the nearest enclosing `log.md` entry. `--since REF` uses git to report
+`--check-stale` reports concepts whose date is newer than the newest entry in
+the nearest enclosing `log.md` — the content changed and the log did not say so.
+That date is `generated.at` when the concept has one, falling back to the v0.1
+`timestamp` otherwise, so a v0.2 concept carrying no `timestamp` at all is
+still checked. It is the same check `okf validate` runs, where `--log-enforce`
+turns these advisories into a non-zero exit. `--since REF` uses git to report
 concept `.md` files changed since `REF` when their nearest enclosing `log.md`
 was not changed in the same diff. If git is unavailable or the bundle is not in
 a git checkout, the git drift check is skipped with a message.

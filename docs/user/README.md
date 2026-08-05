@@ -46,7 +46,7 @@ needed. See the [CLI Reference](cli.md#help) for details.
 - [OKF Bundle Format](format.md): directory layout, concept IDs, frontmatter, and links.
 - [Profiles](profiles.md): checking a bundle against house conventions with `--profile`.
 - [Authoring Guide](authoring.md): the producer API for building, constructing, writing, and validating bundles in code.
-- [Fixture Walkthrough](fixtures.md): runnable examples using the repository fixtures.
+- [Fixture Walkthrough](fixtures.md): runnable examples using the repository fixtures and the worked bundles under `examples/`.
 
 
 ## Common Workflow
@@ -59,7 +59,9 @@ needed. See the [CLI Reference](cli.md#help) for details.
 6. Run `okf show <bundle> <concept-id>` to inspect one concept.
 7. Run `okf trust <bundle>` to see each concept's trust tier, status, and
    staleness, and `okf sources <bundle>` to see the provenance it records.
-8. Run `okf profile document --profile <profile.dhall> --out <dir> --write` to
+8. Run `okf computations <bundle>` to list the attested computations it
+   declares, and `okf show <bundle> <concept-id> --computation` to print one.
+9. Run `okf profile document --profile <profile.dhall> --out <dir> --write` to
    generate browsable documentation for the profile you validate against.
 
 ## Shell Completion

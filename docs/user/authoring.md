@@ -132,6 +132,76 @@ Nothing writes a trust tier or a staleness verdict, because neither is a
 frontmatter fact. Both are derived on read by `Okf.Trust` — see
 [ADR 8](../adr/8-derived-not-stored-trust-and-credibility.md).
 
+### Authoring an attested computation
+
+The `Attested Computation` type (v0.2 §10) is the one v0.2 family with **no
+setters**. `Okf.Document` exports readers for its five contract keys —
+`readRuntime`, `readParameters`, `readComputation`, `readExecutor`,
+`readAttester` — and the types they return (`Parameter`, `Executor`,
+`Attester`), but a producer writes the keys with `setField`:
+
+```haskell
+import Data.Aeson (object, toJSON, (.=))
+import Okf.Document
+import Okf.Prelude (Text, Value (String))
+
+computation :: Frontmatter
+computation =
+  setField "attester" (object ["resource" .= ("/references/attesters/order-total.py" :: Text)])
+    . setField
+      "executor"
+      ( object
+          [ "resource" .= ("/references/skills/run-on-postgres.md" :: Text),
+            "receipt" .= (["statement_id", "executed_sql", "result"] :: [Text])
+          ]
+      )
+    . setField
+      "parameters"
+      (toJSON [object ["name" .= ("order_id" :: Text), "type" .= ("uuid" :: Text), "required" .= True]])
+    . setField "runtime" (String "postgres")
+    $ okfCommon
+      OkfCommon
+        { commonType = attestedComputationType,
+          commonTitle = Just "Order total for a placed order",
+          commonDescription = Just "Sanctioned computation of an order's total from its lines.",
+          commonTimestamp = Nothing
+        }
+```
+
+Use `attestedComputationType` rather than writing `"Attested Computation"` by
+hand: okf matches that string exactly and case-sensitively, and it is the only
+thing that selects a concept into `okf computations` and the §10 checks.
+
+Three things a generator should get right at write time, because nothing will
+fix them afterwards:
+
+`required` must be a YAML **boolean**. `readParameters` reads it only from a
+boolean, so the string `"true"` is read as no declaration at all — the same
+strictness `sourceUsageCount` has about integers. A parameter entry with no
+textual `name` is skipped entirely.
+
+**Provide the computation exactly once.** §10.3 permits either a `computation`
+path or a single code block in the body under a `# Computation` heading, never
+both and never neither, and `okf validate --strict` reports all three ways of
+getting it wrong. A generator emitting the body form writes the heading and one
+fenced block; one emitting the file form sets the `computation` key and no
+block. `readComputationSources :: OKFDocument -> [ComputationSource]` returns
+what a document actually offers — `ComputationFile` before `ComputationInline`
+— so a producer can assert on a length of exactly one before writing.
+
+**Write path-valued fields bundle-absolute**, with a leading slash, whenever the
+target sits at the bundle root. `computation`, `executor.resource`, and
+`attester.resource` are §6.2 paths, so a bare `references/...` resolves against
+the *concept's own* directory and `okf validate --strict` reports it as
+dangling. `renderConceptLinkTarget` produces the leading-slash form for a
+concept; for a non-Markdown file such as an attester script, write the `/`
+yourself.
+
+`runtime` is the one key §10.2 marks REQUIRED for this type, and omitting it is
+a strict-mode diagnostic. Nothing here is checked by default validation, and
+okf never runs a computation or attests one — see the [Format
+Guide](format.md#attested-computations).
+
 ### Deterministic serialization
 
 `serializeDocument :: OKFDocument -> Text` renders a document (frontmatter + body)
@@ -139,7 +209,8 @@ to a Markdown string. It emits frontmatter keys in a **deterministic order** —
 
 ```text
 type, title, description, resource, tags,
-status, generated, verified, stale_after, sources, usage_window,
+status, runtime, parameters, computation, executor, attester,
+generated, verified, stale_after, sources, usage_window,
 timestamp
 ```
 
