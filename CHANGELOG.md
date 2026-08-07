@@ -7,6 +7,34 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Changed
+
+- Builds of this repository resolve `cmark-gfm` from
+  [a fork](https://github.com/shinzui/cmark-gfm-hs) pinned by commit in
+  `cabal.project`, rather than from Hackage. The fork makes core-extension
+  registration thread-safe.
+
+  Upstream's `ensurePluginsRegistered` calls a C function that guards itself
+  with a non-atomic check-then-set, so two threads can both register the core
+  extensions; the second registration calls `cmark_register_node_flag` on an
+  already-initialised global, which prints `flag initialization error in
+  cmark_register_node_flag` and `abort()`s. The symptom is SIGABRT — not a
+  catchable exception, and not a failure a test suite can report.
+
+  **okf is not exposed to this today** and no okf behaviour changes: nothing
+  here forks a thread, and both test suites are single-capability. But every
+  bundle read parses Markdown, so it is okf-core's API that carries the hazard
+  to consumers — a consumer walking or validating bundles concurrently inherits
+  the abort. That is how it was found, in `mori://shinzui/shikumi`.
+
+  **The pin does not reach anyone depending on `okf-core` from Hackage.** They
+  resolve stock `cmark-gfm` 0.2.6 — the newest release, so there is nothing to
+  upgrade into — and a concurrent consumer should add the same
+  `source-repository-package` stanza until the fix lands upstream. Full
+  mechanism and revisit conditions: `mori://kivikakk/cmark-gfm-hs`,
+  upstream-issues entry
+  `cmark-gfm-hs-unsafe-concurrent-extension-registration`.
+
 ## [0.5.0.0] - 2026-08-01
 
 ### Added
