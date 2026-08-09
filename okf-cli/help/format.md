@@ -140,6 +140,7 @@ LINKS
 SEE ALSO
 
   okf help validation    How bundles are checked.
+  okf help concepts      Listing and filtering concepts by their frontmatter.
   okf help computations  Listing and printing attested computations.
   okf help trust         Trust tiers, staleness, and recorded provenance.
   okf help index         Generated index.md files, including the # Files section.

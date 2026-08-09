@@ -78,3 +78,6 @@ SEE ALSO
 
   okf help profiles     idField, idPrefix, and reference rules in full.
   okf help format       Concept IDs, the canonical identity.
+  okf help concepts     `okf concepts BUNDLE --show docId` shows each handle
+                        beside its type and title, where `okf id list` gives
+                        the handle and concept ID alone.

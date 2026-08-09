@@ -147,6 +147,13 @@ the exact output shown throughout this plan.
         its help-topic list (2026-08-09).
   - [x] Add `okf-cli/help/concepts.md` and register it in `okf-cli/src/Okf/Cli/Help.hs`
         (2026-08-09), with parser and topic assertions in `okf-cli/test/Main.hs`.
+  - [x] Cross-reference the new topic from the neighbouring ones (2026-08-09). The plan asked
+        only for the topic file, but a topic nothing links to is not findable: `okf.md`'s
+        command list and topic index both omitted `concepts`, and six topics now point at it
+        — `format`, `trust`, `computations`, `profiles`, `graph`, and `ids`. `trust` and
+        `profiles` gained prose rather than a bare link, because each owns one half of a
+        distinction a reader will hit: the derived `status` default, and the hard-error
+        posture of `--profile` on a filter.
   - [x] Add `Unreleased` entries to `CHANGELOG.md`, `okf-core/CHANGELOG.md`, and
         `okf-cli/CHANGELOG.md` (2026-08-09).
   - [x] Run the ADR distillation pass (2026-08-09): wrote

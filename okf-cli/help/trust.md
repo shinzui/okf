@@ -35,6 +35,13 @@ STATUS AND STALENESS
   status shows stable for a concept that declares none, because an absent
   status means stable. The other values are draft, deprecated, and superseded.
 
+  This is the one column okf derives rather than restates, so it is the one
+  place this report and `okf concepts` disagree on purpose. `okf concepts
+  --where status=stable` selects only the concepts whose frontmatter actually
+  says stable; the ones that say nothing appear here as stable and there not at
+  all. Ask this command for the derived reading and that one for what is
+  written down.
+
   The staleness column reads "ok" both for a concept with no stale_after and
   for one whose deadline has not arrived -- okf does not claim a concept is
   fresh, only that nothing says otherwise. A passed deadline prints
@@ -87,3 +94,5 @@ SEE ALSO
   okf help format       The generated, verified, status, and sources families.
   okf help validation   Which provenance problems --strict reports.
   okf help log          Log staleness, which is a different check.
+  okf help concepts     Listing concepts by what their frontmatter says,
+                        without the derived status default this report applies.

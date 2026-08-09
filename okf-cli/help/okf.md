@@ -54,6 +54,7 @@ WHAT THE okf TOOL DOES
   trust         Report each concept's trust tier, status, and staleness.
   sources       List the provenance each concept records.
   computations  List the attested computations a bundle declares.
+  concepts      List the concepts a bundle holds, with optional filters.
   id            Allocate and list profile-declared document IDs.
   profile       List and inspect profiles published by a registry.
   config        Show and manage okf configuration.
@@ -81,6 +82,7 @@ SEE ALSO
   okf help graph         The concept graph and what becomes an edge.
   okf help trust         Trust tiers, staleness, and recorded provenance.
   okf help computations  Listing and printing attested computations.
+  okf help concepts      Listing and filtering the concepts in a bundle.
   okf help ids           Profile-declared document IDs such as ADR-7.
   okf help interactive   Picking a bundle and concept with fzf.
   okf help config        Config files, defaults, and agent settings.

@@ -86,3 +86,7 @@ SEE ALSO
   okf help format       The contract keys and the exactly-one rule.
   okf help validation   Which computation problems --strict reports.
   okf help trust        Trust tiers, staleness, and recorded provenance.
+  okf help concepts     The unrestricted listing, filterable by any key. Where
+                        this report is fixed to one type and five columns,
+                        `okf concepts --type 'Attested Computation' --show
+                        runtime` asks the same question with columns you pick.

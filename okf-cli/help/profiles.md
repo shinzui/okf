@@ -38,6 +38,31 @@ EXAMPLE (ADVISORY)
   OK: 3 concepts
   profile: 1 advisory deviation(s) (use --profile-enforce to fail)
 
+CHECKING A QUESTION RATHER THAN A BUNDLE
+
+  okf concepts BUNDLE --profile PROFILE.dhall
+
+  A profile can also check the command line you just typed. `okf concepts`
+  takes --profile to reject a filter the profile says no concept could satisfy:
+  a frontmatter key it does not declare, a value outside a closed vocabulary,
+  or a --type outside its declared type names.
+
+    okf concepts BUNDLE --profile PROFILE.dhall --where status=acepted
+    okf concepts: no concept can match status=acepted
+    status accepts: proposed, accepted, completed, rejected
+
+  THIS IS A HARD ERROR, not an advisory, and there is no flag to make it one.
+  That is not an inconsistency with the rules above: the subject is different.
+  Validation judges a corpus okf did not write, so it defers to you. Here the
+  subject is a question you asked one second ago, and a wrong guess is
+  invisible -- --where status=acepted and --where status=withdrawn both print
+  nothing, but one is a typo. An advisory would print a warning and then the
+  empty listing that caused the confusion.
+
+  The profile is used for nothing else there. `okf concepts` never reports a
+  bundle deviation, so the two commands cannot disagree about severity for the
+  same finding. See "okf help concepts".
+
 DOCUMENT IDS
 
   A profile may name an idField such as "docId" and give selected type rules an
@@ -394,6 +419,7 @@ SEE ALSO
   okf help validation   Structural validation and referential integrity.
   okf help ids          Document IDs: idField, idPrefix, and okf id.
   okf help index        Declaring okf_version to satisfy requireBundleVersion.
+  okf help concepts     Filtering a bundle, and how --profile checks a filter.
 
   The full descriptor schema, and the upgrade steps above in detail, are
   documented in docs/user/profiles.md, whose "Generating profile

@@ -46,3 +46,7 @@ SEE ALSO
 
   okf help format       Link spellings and what a dangling reference is.
   okf help validation   Referential integrity checks.
+  okf help concepts     Listing and filtering concepts. Reach for that before
+                        this: a jq expression over these nodes used to be the
+                        only way to ask which concepts match something, and
+                        `okf concepts --where` now asks it directly.
