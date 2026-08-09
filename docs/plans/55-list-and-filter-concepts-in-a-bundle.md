@@ -36,13 +36,17 @@ That gap is concrete in this very repository. `docs/improvement-requests/` is an
 of seven cross-repository improvement requests. Its house **profile** — a Dhall file
 declaring the conventions a team layers on top of OKF, here
 `mori/improvement-requests-profile.dhall`, which resolves to
-`mori://shinzui/okf-profiles` export `coordination.improvementRequests` — declares a
-frontmatter key `status` whose value must be one of exactly seven strings: `proposed`,
-`accepted`, `in-progress`, `completed`, `rejected`, `withdrawn`, `superseded`. That is a
+`mori://shinzui/okf-profiles` export `coordination.improvementRequests` — names the
+frontmatter keys a request must and should carry (`type`, `title`, `description`,
+`timestamp`, `requestId`, `status`, `reviews`, and more), declares exactly one concept type,
+`Improvement Request`, and sets `allowUnknownTypes = False`, which makes that single name a
 **closed vocabulary**: a fixed set of permitted values, declared once in the profile and
-checked by `okf validate --profile`. The profile also declares a nested vocabulary,
-`reviews[].outcome`, restricted to `approved`, `changes-requested`, or `commented`. The tool
-knows all of this and cannot use any of it to help you find things.
+checked by `okf validate --profile`. A profile can close an ordinary frontmatter key the same
+way, with an `allowedValues` list — the fixture profile this plan adds closes `status` to
+four values and `reviews[].outcome` to three, which is the shape a future release of the
+catalog profile is expected to adopt (that is what
+`mori://shinzui/keiro/okf/improvement-requests/concepts/IR-1` asks for). The tool knows all
+of this and cannot use any of it to help you find things.
 
 After this plan, a new command exists:
 
@@ -57,20 +61,37 @@ distinguish-optional-fields-from-authoring-recommendations  Improvement Request 
 express-conditional-field-requirements                      Improvement Request  IR-5  Express field requirements that depend on another field's value
 ```
 
-and, when you hand it the profile, a misspelled filter value fails loudly instead of quietly
+and, when you hand it the profile, a misspelled filter fails loudly instead of quietly
 returning nothing:
 
 ```text
-$ okf concepts docs/improvement-requests --profile mori/improvement-requests-profile.dhall --where status=acepted
-okf concepts: no concept can match status=acepted
-status accepts: proposed, accepted, in-progress, completed, rejected, withdrawn, superseded
+$ okf concepts docs/improvement-requests --profile mori/improvement-requests-profile.dhall --type Reqest
+okf concepts: no concept can match type=Reqest
+type accepts: Improvement Request
+
+$ okf concepts docs/improvement-requests --profile mori/improvement-requests-profile.dhall --where statuz=accepted
+okf concepts: profile declares no frontmatter key named statuz
 ```
 
-That last behaviour is the whole reason the profile is involved. A filter is a *guess about
+and the same holds for a value outside a closed vocabulary, against a profile that declares
+one:
+
+```text
+$ okf concepts okf-core/test/fixtures/concept-filters --profile okf-core/test/fixtures/profiles/concept-filters.dhall --where status=acepted
+okf concepts: no concept can match status=acepted
+status accepts: proposed, accepted, completed, rejected
+```
+
+That behaviour is the whole reason the profile is involved. A filter is a *guess about
 what the data says*, and a wrong guess is invisible: `--where status=acepted` and
 `--where status=withdrawn` both print nothing, but one is a typo and the other is a true
-statement about the corpus. The profile already knows which is which. Without it, a listing
-command silently converts a typo into "there are none".
+statement about the corpus. A profile that closes `status` already knows which is which.
+Without it, a listing command silently converts a typo into "there are none".
+
+The command reports only what the profile actually declares, and never more. The published
+catalog profile leaves `status` unconstrained, so `--where status=acepted` against
+*that* profile is accepted and matches nothing — correctly, because nothing has said it could
+not hold that value. See the Surprises & Discoveries entry recording the measurement.
 
 You will be able to see the work succeed by running the command against two bundles that are
 already checked into this repository — `docs/improvement-requests/` and
@@ -107,14 +128,20 @@ the exact output shown throughout this plan.
         both renderers already took the key list).
   - [x] Add filtered-output tests over both fixture and example bundles (2026-08-09),
         including the `--where status=stable` guard against the derived-default reading.
-- [ ] Milestone 4: `--profile PATH` checks every filter against the compiled profile.
-  - [ ] Add `FilterProfileError` and `checkFiltersAgainstProfile` to `Okf.Query`, consulting
-        profile rules before the core OKF key list.
-  - [ ] Check `type` filters against the profile's declared type names when
-        `allowUnknownTypes = False`.
-  - [ ] Wire `--profile` into `runConcepts` and render the diagnostics.
-  - [ ] Add tests for undeclared keys and out-of-vocabulary values, offline, including the
-        `status` regression guard for the core-key ordering trap.
+- [x] Milestone 4 (2026-08-09): `--profile PATH` checks every filter against the compiled
+      profile.
+  - [x] Add `FilterProfileError` and `checkFiltersAgainstProfile` to `Okf.Query`, consulting
+        profile rules before the core OKF key list (2026-08-09).
+  - [x] Check `type` filters against the profile's declared type names when
+        `allowUnknownTypes = False` (2026-08-09).
+  - [x] Wire `--profile` into `runConcepts` and render the diagnostics (2026-08-09); the
+        check runs before the bundle is walked.
+  - [x] Factor the profile-compilation failure message into `compileProfileOrExit` and move
+        `runValidate` and `runProfileDocument` onto it (2026-08-09).
+  - [x] Add tests for undeclared keys and out-of-vocabulary values, offline, including the
+        `status` regression guard for the core-key ordering trap (2026-08-09).
+  - [x] Add the `noteKind` regression guard for the scope trap discovered during
+        implementation, and restrict the base-rule scope accordingly (2026-08-09).
 - [ ] Milestone 5: documentation, help topic, changelogs, ADR distillation.
   - [ ] Add the `## concepts` section to `docs/user/cli.md` and update its command list.
   - [ ] Add `okf-cli/help/concepts.md` and register it in `okf-cli/src/Okf/Cli/Help.hs`.
@@ -157,6 +184,53 @@ the exact output shown throughout this plan.
   `testConceptsDoesNotApplyStatusDefault` in `okf-cli/test/Main.hs` asserts the real three
   rows. The point the numbers were making is unaffected and if anything sharper: eighteen
   concepts omit `status` and none of them appear. Date: 2026-08-09
+
+- **The published improvement-request profile declares no vocabularies at all.** This plan's
+  Purpose section was written believing `mori/improvement-requests-profile.dhall` closes
+  `status` to seven values and `reviews[].outcome` to three. It does not. That file pins
+  `okf-profiles` v0.6.0, whose `coordination.improvementRequests` export declares field
+  *names* and nothing else — every `allowedValues` list in it is empty, no rule carries
+  `elementFields` or `objectFields`, and its one `TypeRule` has no frontmatter rules of its
+  own:
+
+  ```text
+  $ okf profile show --registry mori/improvement-requests-profile.dhall --json \
+      | jq '[.frontmatter.required[], .frontmatter.recommended[], .frontmatter.optional[]]
+             | map(select((.allowedValues|length)>0) | {field, allowedValues})'
+  []
+  ```
+
+  So `--where status=acepted` against the real profile is *correctly* accepted: nothing has
+  said `status` cannot hold that value. The only vocabulary that profile does close is the
+  concept type, through `allowUnknownTypes = False` and its single declared type, and
+  `--type Reqest` against it does fail as intended. The Purpose section and the manual check
+  in Concrete Steps have been rewritten around what the pinned profile actually says, and the
+  closed-vocabulary demonstration now runs against
+  `okf-core/test/fixtures/profiles/concept-filters.dhall`. Nothing about the implementation
+  changed; the plan's premise did. Date: 2026-08-09
+
+- **Treating the profile-wide rules as a scope of their own silently disables every per-type
+  vocabulary.** Milestone 4's implementation sketch says to include
+  `compiledProfileBaseRules` unconditionally alongside each type's rules, and separately that
+  a key is unconstrained when *any* declaring scope has an empty `allowedValues`. Those two
+  instructions are incompatible. `mergeVocabulary` in `okf-core/src/Okf/Profile.hs` reads
+  `mergeVocabulary [] typeValues = typeValues`, so a key declared plainly profile-wide and
+  closed on one type has an empty list in the base map and the full vocabulary in that type's
+  map — and the empty list would win, every time, for every profile written that way.
+
+  The fixture originally could not catch it, because it declared `status` profile-wide with
+  its vocabulary attached. It now also declares `noteKind` plainly profile-wide and closes it
+  on `Note` alone, which is the shape that bites. With the base map restored as an
+  unconditional scope, that assertion fails and no other does:
+
+  ```text
+  FAIL checkFiltersAgainstProfile rejects undeclared keys and out-of-vocabulary values:
+    expected [FilterValueNotInVocabulary (TopLevelField "noteKind") "bogus" ["scratch","reference"]], got []
+  ```
+
+  The base map is now a scope only where it can actually govern a concept: when the profile
+  declares no types at all, and when `allowUnknownTypes = True`, whose concepts of an
+  undeclared type fall back to exactly those rules. Date: 2026-08-09
 
 - **`idField` alone triggers no document-ID checks.** The fixture profile declares
   `idField = Some "requestId"` for realism, and `notes/scratch` carries no `requestId`, yet
@@ -239,6 +313,27 @@ the exact output shown throughout this plan.
   vocabulary checking entirely — and `status` is the motivating example of this whole plan.
   The core list is a fallback that answers "is this key legitimate at all?" for a key no
   profile scope declares.
+  Date: 2026-08-09
+
+- Decision: The scopes a filter is checked against are one per relevant concept type, and the
+  profile-wide rules are a scope of their own only when the profile declares no types or sets
+  `allowUnknownTypes = True`.
+  Rationale: This overrides Milestone 4's sketch, which said to include the base rules
+  unconditionally. `compiledProfileRulesForType` already merges the profile-wide rules into
+  each type's map, and `mergeVocabulary` lets a type-scope vocabulary stand where the profile
+  scope declared none — so a key declared plainly profile-wide and closed on one type has an
+  empty `allowedValues` in the base map, which under the "an empty list means unconstrained"
+  rule would defeat the check for every profile written that way. The base map governs a real
+  concept only when no type rule does, which is exactly the two cases kept. See the
+  corresponding Surprises & Discoveries entry for the measurement.
+  Date: 2026-08-09
+
+- Decision: The core-OKF-key fallback applies to the *parent* of a nested selector.
+  Rationale: `coreFrontmatterFields` holds top-level key names, so a nested selector has no
+  entry of its own to look for. okf owns the shape of `generated`, `verified`, and `sources`
+  as much as it owns their names — §5.1 through §5.3 define their members — so
+  `--where generated.by=human:nadeem` against a profile that never mentions `generated` is a
+  legitimate question, not an undeclared key.
   Date: 2026-08-09
 
 - Decision: A `type` filter is additionally checked against the profile's declared type names
@@ -1439,18 +1534,32 @@ zero exit would be worse than no diagnostic, because a script would not notice.
 
 The same check against the real profile needs network access on a cold Dhall cache, since
 `mori/improvement-requests-profile.dhall` resolves a hash-pinned URL. Run it once by hand to
-confirm the feature works against a real catalog profile, and do not put it in a test:
+confirm the feature works against a real catalog profile, and do not put it in a test. That
+profile closes only the concept type — see the Surprises & Discoveries entry — so the type
+typo is what it catches:
 
 ```bash
 cabal run okf -- concepts docs/improvement-requests \
-  --profile mori/improvement-requests-profile.dhall \
-  --where status=acepted
+  --profile mori/improvement-requests-profile.dhall --type Reqest
 ```
 
 ```text
-okf concepts: no concept can match status=acepted
-status accepts: proposed, accepted, in-progress, completed, rejected, withdrawn, superseded
+okf concepts: no concept can match type=Reqest
+type accepts: Improvement Request
 ```
+
+```bash
+cabal run okf -- concepts docs/improvement-requests \
+  --profile mori/improvement-requests-profile.dhall --where statuz=accepted
+```
+
+```text
+okf concepts: profile declares no frontmatter key named statuz
+```
+
+Both exit 1. `--where status=acepted` against that same profile exits 0 and prints nothing,
+which is right: it declares no vocabulary for `status`, so nothing has said the value is
+impossible.
 
 Finally, after Milestone 5:
 

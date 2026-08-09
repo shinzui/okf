@@ -336,6 +336,7 @@ main = do
                 presentFields = [],
                 absentFields = [],
                 showFields = [],
+                profilePath = Nothing,
                 json = False
               },
           parseConceptsMatches
@@ -347,6 +348,7 @@ main = do
                 presentFields = [],
                 absentFields = [],
                 showFields = [],
+                profilePath = Nothing,
                 json = True
               },
           parseConceptsMatches
@@ -358,6 +360,7 @@ main = do
                 presentFields = [],
                 absentFields = [],
                 showFields = ["requestId"],
+                profilePath = Nothing,
                 json = False
               },
           parseConceptsMatches
@@ -369,6 +372,7 @@ main = do
                 presentFields = [TopLevelField "completedAt"],
                 absentFields = [NestedField "reviews" "outcome"],
                 showFields = [],
+                profilePath = Nothing,
                 json = False
               },
           -- A filter is rejected before the bundle is walked: no '=' at all, and

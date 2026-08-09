@@ -136,10 +136,14 @@ import Okf.Profile.Registry
 import Okf.Query
   ( ConceptFilter (..),
     FieldSelector (..),
+    FilterProfileError (..),
+    checkFiltersAgainstProfile,
     conceptFieldValues,
     filterConcepts,
     parseFieldEquals,
     parseFieldSelector,
+    renderFieldSelector,
+    renderFilter,
     renderFilterParseError,
     scalarText,
   )
@@ -253,6 +257,7 @@ data ConceptsOptions = ConceptsOptions
     presentFields :: ![FieldSelector],
     absentFields :: ![FieldSelector],
     showFields :: ![Text],
+    profilePath :: !(Maybe FilePath),
     json :: !Bool
   }
   deriving stock (Show, Eq)
@@ -702,6 +707,13 @@ conceptsOptionsParser =
                 <> help "Add a column displaying KEY; repeat for more columns"
             )
       )
+    <*> optional
+      ( strOption
+          ( long "profile"
+              <> metavar "PROFILE"
+              <> help "Path to a Dhall profile descriptor; reject a filter no concept could satisfy"
+          )
+      )
     <*> jsonSwitch
   where
     fieldSelectorReader =
@@ -976,17 +988,7 @@ runProfileDocument
             RegistryEntry {export = foundExport, spec} <-
               selectEntry reference entries requestedExport
             pure (displayExport foundExport, spec)
-        case compileProfile spec of
-          Left definitionErrors ->
-            dieText
-              ( "Failed to load profile "
-                  <> label
-                  <> ": invalid profile definition:\n"
-                  <> Text.intercalate
-                    "\n"
-                    (map (("  - " <>) . renderProfileDefinitionError) (toList definitionErrors))
-              )
-          Right compiled -> pure compiled
+        compileProfileOrExit label spec
 
 -- | Print every file the command would generate, in the same shape
 -- @okf index@ previews its own output, then say what would happen on
@@ -1232,30 +1234,19 @@ runValidate ValidateOptions {bundlePath, strictMode, profilePath, profileEnforce
   profileViolations <- case profilePath of
     Nothing -> pure []
     Just path -> do
-      loaded <- loadProfileFile path
-      case loaded of
-        Left err -> dieText ("Failed to load profile " <> Text.pack path <> ": " <> err)
-        Right spec ->
-          case compileProfile spec of
-            Left definitionErrors ->
-              dieText
-                ( "Failed to load profile "
-                    <> Text.pack path
-                    <> ": invalid profile definition:\n"
-                    <> Text.intercalate "\n" (map (("  - " <>) . renderProfileDefinitionError) (toList definitionErrors))
-                )
-            Right compiled -> do
-              -- With the inventory rather than without it, so a @path@ rule
-              -- naming §6.3's @references/attesters/revenue.py@ is resolved
-              -- rather than accepted unchecked. This command walked a real
-              -- directory, so it can answer the question.
-              -- The version requirement first: a bundle that does not declare
-              -- what the profile demands is context for every line below it.
-              let violations =
-                    validateProfileVersion declaration compiled
-                      <> validateProfileWith inventory coreProfile compiled concepts
-              mapM_ (Text.IO.hPutStrLn stderr . ("profile: " <>) . renderProfileViolation compiled concepts) violations
-              pure violations
+      spec <- loadProfileOrExit path
+      compiled <- compileProfileOrExit (Text.pack path) spec
+      -- With the inventory rather than without it, so a @path@ rule naming
+      -- §6.3's @references/attesters/revenue.py@ is resolved rather than
+      -- accepted unchecked. This command walked a real directory, so it can
+      -- answer the question.
+      -- The version requirement first: a bundle that does not declare what the
+      -- profile demands is context for every line below it.
+      let violations =
+            validateProfileVersion declaration compiled
+              <> validateProfileWith inventory coreProfile compiled concepts
+      mapM_ (Text.IO.hPutStrLn stderr . ("profile: " <>) . renderProfileViolation compiled concepts) violations
+      pure violations
 
   let coreFailed = any bundleValidationErrorIsFailure coreErrors
       profileFailed = profileEnforce && not (null profileViolations)
@@ -1672,8 +1663,10 @@ runConcepts
       presentFields,
       absentFields,
       showFields,
+      profilePath,
       json
     } = do
+    traverse_ checkFiltersWithProfile profilePath
     concepts <- loadBundleOrExit bundlePath
     let selected = filterConcepts allFilters concepts
     if json
@@ -1692,6 +1685,40 @@ runConcepts
           <> fieldFilters
           <> (FieldPresent <$> presentFields)
           <> (FieldAbsent <$> absentFields)
+
+      -- Before the bundle is walked, so a typo is reported instantly on a large
+      -- bundle and the diagnostic is never mixed into a partial listing. The
+      -- profile is used for nothing else: it does not validate the bundle, and
+      -- this command never reports a bundle deviation. That is
+      -- `okf validate --profile`'s job, and duplicating it here would give two
+      -- commands that disagree about severity.
+      checkFiltersWithProfile path = do
+        spec <- loadProfileOrExit path
+        compiled <- compileProfileOrExit (Text.pack path) spec
+        case checkFiltersAgainstProfile compiled conceptTypes allFilters of
+          [] -> pure ()
+          profileErrors -> do
+            -- Every error, not only the first, so one run fixes one command line.
+            mapM_ (Text.IO.hPutStrLn stderr . renderFilterProfileError) profileErrors
+            exitWith (ExitFailure 1)
+
+-- | Why a profile says a filter can never select anything.
+--
+-- The message quotes the __filter__, @status=acepted@, and not the flag the user
+-- typed. @--type Reqest@ desugars into a filter on the @type@ key before any
+-- checking happens, so by the time an error exists there is no flag left to
+-- quote and guessing one would sometimes name a flag the user did not use.
+renderFilterProfileError :: FilterProfileError -> Text
+renderFilterProfileError = \case
+  FilterFieldNotDeclared selector ->
+    "okf concepts: profile declares no frontmatter key named " <> renderFieldSelector selector
+  FilterValueNotInVocabulary selector wanted vocabulary ->
+    "okf concepts: no concept can match "
+      <> renderFilter (FieldEquals selector wanted)
+      <> "\n"
+      <> renderFieldSelector selector
+      <> " accepts: "
+      <> Text.intercalate ", " vocabulary
 
 -- | The lines @okf concepts@ prints, as data: concept ID, @type@, one column per
 -- requested key, and @title@ last. Pure and separate from 'runConcepts' so a
@@ -1895,6 +1922,26 @@ loadProfileOrExit profilePath = do
   case loaded of
     Left err -> dieText ("Failed to load profile " <> Text.pack profilePath <> ": " <> err)
     Right spec -> pure spec
+
+-- | Compile a loaded profile, or exit 1 listing the authoring contradictions
+-- that stopped it. The label is how the profile was named on the command line: a
+-- descriptor path, or a registry export.
+--
+-- Shared by every command that compiles a profile so that the wording cannot
+-- drift between them.
+compileProfileOrExit :: Text -> ProfileSpec -> IO CompiledProfile
+compileProfileOrExit label spec =
+  case compileProfile spec of
+    Left definitionErrors ->
+      dieText
+        ( "Failed to load profile "
+            <> label
+            <> ": invalid profile definition:\n"
+            <> Text.intercalate
+              "\n"
+              (map (("  - " <>) . renderProfileDefinitionError) (toList definitionErrors))
+        )
+    Right compiled -> pure compiled
 
 loadBundleOrExit :: FilePath -> IO [Concept]
 loadBundleOrExit bundlePath = do

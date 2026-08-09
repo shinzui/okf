@@ -274,7 +274,8 @@ main = do
         testIO "optional-field fixture reports only the recommendation and bad values" testOptionalFieldsFixture,
         test "parseFieldEquals and parseFieldSelector read the filter grammar" testParseConceptFilters,
         test "scalarText compares numbers and booleans as JSON, containers as nothing" testQueryScalarText,
-        testIO "filterConcepts selects over lists, nested records, presence, and absence" testFilterConceptsOverFixture
+        testIO "filterConcepts selects over lists, nested records, presence, and absence" testFilterConceptsOverFixture,
+        testIO "checkFiltersAgainstProfile rejects undeclared keys and out-of-vocabulary values" testCheckFiltersAgainstProfile
       ]
   unless (and results) exitFailure
 
@@ -6375,6 +6376,104 @@ testFilterConceptsOverFixture = do
       ( selected
           [ FieldEquals (TopLevelField "status") "accepted",
             FieldAbsent (TopLevelField "status")
+          ]
+      )
+
+-- | A profile checks the /question/, not the bundle: a filter naming a key the
+-- profile does not declare, or a value outside a closed vocabulary, can never
+-- select anything, and saying so is the whole reason @okf concepts@ takes a
+-- @--profile@.
+testCheckFiltersAgainstProfile :: IO (Either Text ())
+testCheckFiltersAgainstProfile = do
+  descriptorPath <- fixtureFilePath "profiles/concept-filters.dhall"
+  loaded <- loadProfileFile descriptorPath
+  pure $ do
+    spec <- first ("failed to load concept-filter profile: " <>) loaded
+    compiled <- firstShow (compileProfile spec)
+    openTypes <- firstShow (compileProfile (spec & #allowUnknownTypes .~ True))
+    let checkAll = checkFiltersAgainstProfile compiled []
+        checkFor wantedTypes = checkFiltersAgainstProfile compiled wantedTypes
+        statusVocabulary = ["proposed", "accepted", "completed", "rejected"]
+        reviewOutcomes = ["approved", "changes-requested", "commented"]
+        typeNames = ["Improvement Request", "Note"]
+
+    -- THE REGRESSION GUARD FOR THE ORDERING TRAP. 'status' is both an OKF v0.2
+    -- core key ('coreFrontmatterFields' holds it) and a key this profile closes
+    -- with four values. A refactor that asks "is this a core key?" before "does
+    -- the profile declare it?" passes every other assertion in this test and
+    -- silently waves the headline typo straight through.
+    assertEqual
+      [FilterValueNotInVocabulary (TopLevelField "status") "acepted" statusVocabulary]
+      (checkAll [FieldEquals (TopLevelField "status") "acepted"])
+    assertEqual [] (checkAll [FieldEquals (TopLevelField "status") "accepted"])
+
+    -- A key no scope declares, whatever question is asked of it.
+    assertEqual
+      [FilterFieldNotDeclared (TopLevelField "statuz")]
+      (checkAll [FieldEquals (TopLevelField "statuz") "x"])
+    assertEqual
+      [FilterFieldNotDeclared (TopLevelField "statuz")]
+      (checkAll [FieldPresent (TopLevelField "statuz")])
+    assertEqual
+      [FilterFieldNotDeclared (TopLevelField "statuz")]
+      (checkAll [FieldAbsent (TopLevelField "statuz")])
+    assertEqual [] (checkAll [FieldPresent (TopLevelField "completedAt")])
+
+    -- A nested member's vocabulary is reached through the parent's
+    -- elementFields; a member declared without one accepts anything.
+    assertEqual
+      [FilterValueNotInVocabulary (NestedField "reviews" "outcome") "approvd" reviewOutcomes]
+      (checkAll [FieldEquals (NestedField "reviews" "outcome") "approvd"])
+    assertEqual [] (checkAll [FieldEquals (NestedField "reviews" "reviewer") "anyone"])
+    assertEqual
+      [FilterFieldNotDeclared (NestedField "reviews" "reviewr")]
+      (checkAll [FieldEquals (NestedField "reviews" "reviewr") "anyone"])
+    -- The other nested shape: objectFields on a record-valued key.
+    assertEqual [] (checkAll [FieldEquals (NestedField "generated" "by") "human:nadeem"])
+
+    -- The core-field fallback, for a key the profile never mentions: 'timestamp'
+    -- is an OKF key, and okf owns the shape of 'verified' as well as its name.
+    assertEqual [] (checkAll [FieldEquals (TopLevelField "timestamp") "2026-08-09T00:00:00Z"])
+    assertEqual [] (checkAll [FieldEquals (NestedField "verified" "by") "human:nadeem"])
+
+    -- 'type' has no allowedValues anywhere; its vocabulary is the profile's
+    -- declared type names, and only while allowUnknownTypes is False.
+    assertEqual
+      [FilterValueNotInVocabulary (TopLevelField "type") "Ghost" typeNames]
+      (checkAll [FieldEquals (TopLevelField "type") "Ghost"])
+    assertEqual [] (checkAll [FieldEquals (TopLevelField "type") "Note"])
+    assertEqual
+      []
+      (checkFiltersAgainstProfile openTypes [] [FieldEquals (TopLevelField "type") "Ghost"])
+
+    -- THE REGRESSION GUARD FOR THE SCOPE TRAP. 'noteKind' is declared plainly
+    -- profile-wide and closed on 'Note' alone. Treating the profile-wide rules
+    -- as a scope of their own would see an empty allowed-value list there, read
+    -- it as "unconstrained", and never report anything for this key at all.
+    -- Asking about 'Note' specifically must report; asking about every type must
+    -- not, because an 'Improvement Request' really may hold any value here.
+    assertEqual
+      [FilterValueNotInVocabulary (TopLevelField "noteKind") "bogus" ["scratch", "reference"]]
+      (checkFor ["Note"] [FieldEquals (TopLevelField "noteKind") "bogus"])
+    assertEqual [] (checkFor ["Note"] [FieldEquals (TopLevelField "noteKind") "scratch"])
+    assertEqual [] (checkAll [FieldEquals (TopLevelField "noteKind") "bogus"])
+
+    -- Restricting to the types the command line named is a real restriction:
+    -- 'targetPlan' is declared only on 'Improvement Request'.
+    assertEqual [] (checkAll [FieldPresent (TopLevelField "targetPlan")])
+    assertEqual [] (checkFor ["Improvement Request"] [FieldPresent (TopLevelField "targetPlan")])
+    assertEqual
+      [FilterFieldNotDeclared (TopLevelField "targetPlan")]
+      (checkFor ["Note"] [FieldPresent (TopLevelField "targetPlan")])
+
+    -- Every error is reported, not only the first.
+    assertEqual
+      [ FilterValueNotInVocabulary (TopLevelField "status") "acepted" statusVocabulary,
+        FilterFieldNotDeclared (TopLevelField "statuz")
+      ]
+      ( checkAll
+          [ FieldEquals (TopLevelField "status") "acepted",
+            FieldEquals (TopLevelField "statuz") "x"
           ]
       )
 

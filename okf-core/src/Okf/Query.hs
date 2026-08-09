@@ -1,3 +1,5 @@
+{-# LANGUAGE PackageImports #-}
+
 -- | Selecting concepts out of a bundle by what their frontmatter says.
 --
 -- A __filter__ is one question asked of one concept: does @status@ hold
@@ -30,6 +32,10 @@ module Okf.Query
     scalarText,
     matchesFilter,
     filterConcepts,
+
+    -- * Checking a filter against a profile
+    FilterProfileError (..),
+    checkFiltersAgainstProfile,
   )
 where
 
@@ -38,12 +44,31 @@ import Data.Aeson.Key qualified as AesonKey
 import Data.Aeson.KeyMap qualified as KeyMap
 import Data.ByteString.Lazy qualified as LazyByteString
 import Data.List qualified as List
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
+import Data.Set qualified as Set
 import Data.Text qualified as Text
 import Data.Text.Encoding qualified as Text.Encoding
 import Data.Vector qualified as Vector
 import Okf.Bundle (Concept, conceptDocument)
-import Okf.Document (OKFDocument (frontmatter), frontmatterLookup)
+import Okf.Document (OKFDocument (frontmatter), coreFrontmatterFields, frontmatterLookup)
 import Okf.Prelude
+-- Imported with an explicit list that leaves out the 'Cardinality'
+-- constructors: two of them are named 'List' and 'Object', which would clash
+-- with aeson's 'Value' constructors of the same names.
+import Okf.Profile
+  ( CompiledProfile,
+    EffectiveFieldRule,
+    ProfileSpec,
+    compiledProfileBaseRules,
+    compiledProfileRulesForType,
+    compiledProfileSpec,
+    compiledProfileTypeNames,
+    fieldRuleAllowedValues,
+    fieldRuleElementFields,
+    fieldRuleObjectFields,
+  )
+import "generic-lens" Data.Generics.Labels ()
 
 -- | Which frontmatter value a filter is about.
 data FieldSelector
@@ -229,3 +254,146 @@ filterGroupKey = \case
   FieldEquals selector _ -> (0, selector)
   FieldPresent selector -> (1, selector)
   FieldAbsent selector -> (2, selector)
+
+-- | Why a profile says a filter can never select anything.
+data FilterProfileError
+  = -- | The filter names a key no type in the profile declares.
+    FilterFieldNotDeclared !FieldSelector
+  | -- | The filter names a value outside the key's closed vocabulary. The list
+    -- is the vocabulary, and it is never empty.
+    FilterValueNotInVocabulary !FieldSelector !Text ![Text]
+  deriving stock (Generic, Eq, Show)
+
+-- | Check filters against a compiled profile, restricted to the concept types
+-- the same command line selected (all of the profile's types when it selected
+-- none).
+--
+-- The subject here is the /question/, not the bundle. A filter is a guess about
+-- what the data says, and a wrong guess is invisible: @status=acepted@ and
+-- @status=withdrawn@ both select nothing, but one is a typo and the other is a
+-- true statement about the corpus. A profile already knows which is which, so a
+-- caller can turn what this returns into a hard error without contradicting
+-- @docs\/adr\/1-profile-declared-document-ids.md@, which keeps profile
+-- deviations against a /bundle/ advisory.
+--
+-- Restricting to the requested types makes the check as precise as the question:
+-- if the command line said @--type Note@, a key only @Improvement Request@
+-- declares really is unusable for that query.
+--
+-- Offline and pure, like every other profile check: it receives a compiled
+-- profile and decides, per
+-- @docs\/adr\/5-compile-profile-rules-before-validation.md@.
+checkFiltersAgainstProfile :: CompiledProfile -> [Text] -> [ConceptFilter] -> [FilterProfileError]
+checkFiltersAgainstProfile compiled requestedTypes = concatMap checkFilter
+  where
+    checkFilter = \case
+      FieldEquals selector wanted -> declarationErrors selector <> valueErrors selector wanted
+      FieldPresent selector -> declarationErrors selector
+      FieldAbsent selector -> declarationErrors selector
+
+    -- The scopes a key may be declared in: one per relevant concept type.
+    -- 'compiledProfileRulesForType' already merges the profile-wide rules into
+    -- each type's map, so a type scope is the whole rule for a concept of that
+    -- type and the base map is not a scope of its own.
+    --
+    -- __Adding the base map unconditionally would silently disable every
+    -- per-type vocabulary.__ 'Okf.Profile.mergeVocabulary' lets a type-scope
+    -- vocabulary stand where the profile scope declared none, so a key declared
+    -- plainly profile-wide and closed on one type has an empty allowed-value
+    -- list in the base map and a full one in that type's map — and an empty list
+    -- means unconstrained, which under 'vocabularyFor' would win. The base map
+    -- is therefore a scope only where it can actually govern a concept: when the
+    -- profile declares no types at all, and when it allows types it does not
+    -- declare, whose concepts fall back to exactly these rules.
+    scopes :: [Map Text EffectiveFieldRule]
+    scopes
+      | null typeScopes = [baseRules]
+      | profileSpec ^. #allowUnknownTypes = baseRules : typeScopes
+      | otherwise = typeScopes
+
+    baseRules = compiledProfileBaseRules compiled
+    typeScopes = map (compiledProfileRulesForType compiled) relevantTypes
+
+    relevantTypes
+      | null requestedTypes = compiledProfileTypeNames compiled
+      | otherwise = requestedTypes
+
+    -- Every rule that governs the selected key, across the scopes in play. A
+    -- parent declaring both nested shapes contributes from both, which is what
+    -- a @recordOrList@ rule means.
+    rulesFor :: FieldSelector -> [EffectiveFieldRule]
+    rulesFor = \case
+      TopLevelField key -> [rule | scope <- scopes, Just rule <- [Map.lookup key scope]]
+      NestedField parentKey memberKey ->
+        [ memberRule
+        | scope <- scopes,
+          Just parentRule <- [Map.lookup parentKey scope],
+          Just nested <- [fieldRuleObjectFields parentRule, fieldRuleElementFields parentRule],
+          Just memberRule <- [Map.lookup memberKey nested]
+        ]
+
+    declarationErrors selector
+      | not (null (rulesFor selector)) = []
+      | coreFieldFallback selector = []
+      | otherwise = [FilterFieldNotDeclared selector]
+
+    -- __A core OKF key is a fallback for declaration only, never an escape from
+    -- a vocabulary.__ A profile rule is looked for first and governs when it
+    -- exists; only a key no scope declares is saved from
+    -- 'FilterFieldNotDeclared' by being one okf owns, and then it is
+    -- unconstrained because nothing declared a vocabulary for it.
+    --
+    -- Getting that order wrong destroys the feature and is easy to do.
+    -- @status@ is in 'coreFrontmatterFields' /and/ is the key a house profile is
+    -- most likely to close, so asking "is this a core key?" first would wave
+    -- @status=acepted@ straight through. A nested key falls back on its parent,
+    -- because okf owns the shape of @generated@, @verified@, and @sources@ as
+    -- much as it owns their names.
+    coreFieldFallback = \case
+      TopLevelField key -> Set.member key coreFrontmatterFields
+      NestedField parentKey _ -> Set.member parentKey coreFrontmatterFields
+
+    -- A declared key with a closed vocabulary rejects anything outside it.
+    -- Otherwise, and only for @type@, the profile's declared type names are the
+    -- vocabulary. The vocabulary error wins when both could fire, so a profile
+    -- that closes @type@ with @allowedValues@ as well reports once.
+    valueErrors selector wanted =
+      case vocabularyErrors selector wanted of
+        [] -> conceptTypeErrors selector wanted
+        errors -> errors
+
+    vocabularyErrors selector wanted =
+      case vocabularyFor selector of
+        [] -> []
+        vocabulary
+          | wanted `elem` vocabulary -> []
+          | otherwise -> [FilterValueNotInVocabulary selector wanted vocabulary]
+
+    -- The union of the declaring scopes' vocabularies -- unless any declaring
+    -- scope leaves the key unconstrained, in which case nothing can be
+    -- rejected. That exception is not a nicety: an __empty allowed-value list
+    -- means unconstrained__, so taking the union without it would invent a
+    -- vocabulary out of one type's rule and reject values another type permits.
+    vocabularyFor selector =
+      let vocabularies = map fieldRuleAllowedValues (rulesFor selector)
+       in if null vocabularies || any null vocabularies
+            then []
+            else List.nub (concat vocabularies)
+
+    -- @type@ needs its own check because its vocabulary is not written as
+    -- @allowedValues@: a profile constrains concept types with type rules plus
+    -- the @allowUnknownTypes@ switch. Since @type@ is the one key every concept
+    -- carries and the most likely thing to filter on, leaving the most common
+    -- typo unchecked would undercut the feature. Reusing
+    -- 'FilterValueNotInVocabulary' rather than adding a third constructor keeps
+    -- the rendered message right with no special case.
+    conceptTypeErrors selector wanted
+      | selector /= TopLevelField "type" = []
+      | profileSpec ^. #allowUnknownTypes = []
+      | wanted `elem` typeNames = []
+      | otherwise = [FilterValueNotInVocabulary selector wanted typeNames]
+      where
+        typeNames = compiledProfileTypeNames compiled
+
+    profileSpec :: ProfileSpec
+    profileSpec = compiledProfileSpec compiled

@@ -5,11 +5,15 @@
 -- resolvable entirely from local relative imports so the test suites stay
 -- offline.
 --
--- Two declarations here carry the weight of the `okf concepts --profile` tests.
--- `status` is both an OKF v0.2 core key and a profile-declared closed
+-- Three declarations here carry the weight of the `okf concepts --profile`
+-- tests. `status` is both an OKF v0.2 core key and a profile-declared closed
 -- vocabulary, which is what proves a profile rule outranks the core key list.
 -- `targetPlan` is declared only on `Improvement Request`, which is what proves
 -- that restricting the check to the types `--type` named is a real restriction.
+-- `noteKind` is declared plainly profile-wide and closed on `Note` alone, which
+-- is the shape that catches a check treating the profile-wide rules as a scope
+-- of their own: there `noteKind` has an empty allowed-value list, and an empty
+-- list means unconstrained.
 let Profile = ../../../dhall/Profile.dhall
 
 let FieldRule = ../../../dhall/defaults/FieldRule.dhall
@@ -39,6 +43,7 @@ in    { name = "concept-filters"
             , cardinality = Cardinality.Scalar
             }
           , field.documentHandle "requestId" "IR"
+          , field.plain "noteKind"
           , field.list "tags"
           , field.rfc3339Utc "completedAt"
           , field.record
@@ -90,7 +95,12 @@ in    { name = "concept-filters"
             , optional = [ field.plain "targetPlan" ]
             }
           }
-        , TypeRule::{ type = "Note" }
+        , TypeRule::{
+          , type = "Note"
+          , frontmatter = FrontmatterRules::{
+            , optional = [ field.enum "noteKind" [ "scratch", "reference" ] ]
+            }
+          }
         ]
       }
     : Profile
