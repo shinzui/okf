@@ -7,6 +7,32 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- **`okf concepts` answers the simplest question anyone asks of a corpus:**
+  which concepts are there, and which ones match what I care about. It lists a
+  bundle as one aligned row per concept and narrows that listing with
+  `--type`, `--where KEY=VALUE`, `--has`, and `--missing`, adds columns with
+  `--show`, and emits the same rows as JSON with `--json`. Before it, the
+  whole-bundle reports each answered a narrower question — `okf trust` always
+  prints every concept and always the same four columns, `okf sources` only
+  concepts with provenance, `okf computations` only one `type` — so asking a
+  bundle for its improvement requests that are still proposed meant writing a
+  `jq` expression over `okf graph --json`.
+
+  Repeating a key means "or" and naming different keys means "and", so
+  `okf concepts docs/improvement-requests --where status=accepted --show
+  requestId` lists this repository's accepted requests with their handles, and
+  `--type Policy --where status=draft` lists the policies that are drafts. A key
+  may name one level of nesting, so `--where reviews.outcome=approved` reaches
+  inside a list of review records.
+
+  Passing `--profile` makes a mistyped filter fail loudly instead of quietly
+  returning nothing. A filter is a guess about what the data says, and a wrong
+  guess is invisible: `--where status=acepted` and `--where status=withdrawn`
+  both print nothing, but one is a typo. Against a profile that closes `status`,
+  the first now exits 1 saying which values the key accepts.
+
 ### Changed
 
 - Builds of this repository resolve `cmark-gfm` from

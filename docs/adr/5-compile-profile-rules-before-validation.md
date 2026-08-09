@@ -456,3 +456,13 @@ generations continue to receive their established no-op defaults.
 Mori's direct consumer must update
 `mori-cli/src/Mori/Okf/Advisory.hs` and move the matching okf commit in both
 `cabal.project` and `flake.nix`; those two pins are one integration contract.
+
+The compiled-rule accessors now have a second reader inside okf,
+`Okf.Query.checkFiltersAgainstProfile`, and it reads them differently from every
+consumer before it: across several concept types at once, to answer "could a
+concept of any of these types hold this value" rather than "is this concept
+conformant". Doing that safely turns on a merge detail this record fixes —
+`mergeVocabulary` lets a type-scope vocabulary stand where the profile scope
+declared none — which means the profile-wide map is not a scope of its own for
+such a question. See
+[ADR 15](15-querying-a-bundle-and-where-filter-semantics-live.md).

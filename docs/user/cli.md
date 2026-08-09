@@ -21,6 +21,7 @@ show
 trust
 sources
 computations
+concepts
 id
 config
 profile
@@ -44,13 +45,13 @@ cabal run okf -- help format   # bundle layout, concept IDs, frontmatter, links
 ```
 
 Available topics: `okf`, `format`, `validation`, `profiles`, `computations`,
-`trust`, `index`, `log`, `graph`, `ids`, `interactive`, `config`, `kit`,
-`agents`. Topic lookup is case-insensitive. An unknown topic name prints the
-list of valid topics, and the command still succeeds (exit 0).
+`concepts`, `trust`, `index`, `log`, `graph`, `ids`, `interactive`, `config`,
+`kit`, `agents`. Topic lookup is case-insensitive. An unknown topic name prints
+the list of valid topics, and the command still succeeds (exit 0).
 
 The first four cover the format and how a bundle is checked; `computations`,
-`trust`, `index`, `log`, `graph`, and `ids` are the command-level guides for
-the reports and generators documented below.
+`concepts`, `trust`, `index`, `log`, `graph`, and `ids` are the command-level
+guides for the reports and generators documented below.
 
 
 ## validate
@@ -582,6 +583,129 @@ why the two entries above show different ranges.
 A second line is printed only for the signals an entry actually has. An entry
 with no `id` prints `(no id)` in the label column, because an id is optional and
 matters only when the body cites the entry with a footnote.
+
+
+## concepts
+
+List the concepts a bundle holds, optionally narrowed to the ones whose
+frontmatter says what you are looking for. This is the command for "which
+concepts are there, and which ones match what I care about" — the other
+whole-bundle reports each answer a narrower question.
+
+```bash
+cabal run okf -- concepts BUNDLE
+cabal run okf -- concepts BUNDLE --type TYPE
+cabal run okf -- concepts BUNDLE --where KEY=VALUE
+cabal run okf -- concepts BUNDLE --has KEY --missing KEY
+cabal run okf -- concepts BUNDLE --show KEY --json
+cabal run okf -- concepts BUNDLE --profile PROFILE
+```
+
+```text
+cabal run okf -- concepts examples/ddd-ordering --type Policy
+policies/issue-invoice-on-order  Policy  Issue Invoice On Order
+policies/reserve-stock           Policy  Reserve Stock
+```
+
+The three default columns are the concept ID, the `type`, and the `title` — the
+same three the interactive concept picker shows. `--show KEY` adds a column
+between `type` and `title`, and repeats for more:
+
+```text
+cabal run okf -- concepts examples/ddd-ordering --where status=draft --show status
+policies/reserve-stock  Policy  draft  Reserve Stock
+```
+
+A `--show` column joins several values with `, ` and prints `-` for a key the
+concept does not carry or holds something a table cell cannot show. `--show
+generated` naming a whole mapping is that second case; `--show generated.by` is
+how you ask for what is inside it.
+
+Concepts are ordered by ID, so the output is stable and diffable in a pipeline,
+and column widths are computed over the rows actually printed, so one long
+concept ID elsewhere in the bundle cannot pad a filtered listing.
+
+### The filter grammar
+
+A filter key is either a top-level frontmatter key (`status`) or one level of
+nesting (`reviews.outcome`, `generated.by`). One level is the limit, because one
+level is what a profile can describe. A `--where` value is everything after the
+first `=`, taken verbatim, so a value may contain `=` and its whitespace is
+preserved.
+
+**Repeating a key means "or"; naming different keys means "and".** `--type Policy
+--type Metric` lists both kinds. `--type Policy --where status=draft` lists the
+policies that are drafts. `--type` is sugar for `--where type=…`, so it obeys the
+same rule.
+
+A filter on a list-valued key matches when *any* element matches, which is what
+you want when you ask for one tag on a concept that has three. The same holds one
+level down: `--where reviews.outcome=approved` selects a concept whose second
+review was approved even though its first asked for changes.
+
+`--has KEY` keeps the concepts that carry the key at all, and `--missing KEY` the
+ones that do not.
+
+### Two things that surprise people
+
+**A concept that omits a key never matches a value filter on it**, even where OKF
+supplies a default. `--where status=stable` selects the concepts whose
+frontmatter actually says `stable`, not the ones that say nothing, even though
+OKF v0.2 reads an absent `status` as `stable`. This command restates
+frontmatter; `okf trust` is the command whose `status` column applies the
+default.
+
+**An empty result is not an error.** A filter that matches nothing prints nothing
+and exits 0, as `okf sources` and `okf computations` already do for a bundle with
+nothing to report.
+
+### Checking the question against a profile
+
+A filter is a guess about what the data says, and a wrong guess is invisible:
+`--where status=acepted` and `--where status=withdrawn` both print nothing, but
+one is a typo and the other is a true statement about the corpus. Pass
+`--profile` and okf will tell you which:
+
+```text
+cabal run okf -- concepts okf-core/test/fixtures/concept-filters \
+  --profile okf-core/test/fixtures/profiles/concept-filters.dhall --where status=acepted
+okf concepts: no concept can match status=acepted
+status accepts: proposed, accepted, completed, rejected
+```
+
+```text
+cabal run okf -- concepts okf-core/test/fixtures/concept-filters \
+  --profile okf-core/test/fixtures/profiles/concept-filters.dhall --where statuz=accepted
+okf concepts: profile declares no frontmatter key named statuz
+```
+
+Both print on stderr and exit 1, before the bundle is walked. This is a hard
+error rather than an advisory, unlike `okf validate --profile`, because the
+subject is the command line you just typed rather than the bundle: an advisory
+would print a warning and then the empty listing that caused the confusion in the
+first place.
+
+A `--type` value is checked against the profile's declared type names whenever
+the profile sets `allowUnknownTypes = False`, since that is how a profile spells
+its concept-type vocabulary. Everything else is checked against the `allowedValues`
+of the rules that apply to the types in play — with `--type`, only those types;
+without it, every type the profile declares. A key the profile does not declare
+is reported unless OKF itself owns it.
+
+The profile is used for nothing else here. `okf concepts` never reports a bundle
+deviation; that is `okf validate --profile`'s job.
+
+### JSON output
+
+```bash
+cabal run okf -- concepts examples/ddd-ordering --show status --json
+```
+
+An array of objects with stable keys `id`, `path`, `type`, `title`, and `fields`.
+`title` is `null` when the concept has none, and `fields` is present even when no
+`--show` key was given, so a consumer never has to test for it. The values under
+`fields` are the raw frontmatter values rather than the display text a column
+shows — a list comes back as a list.
 
 
 ## id

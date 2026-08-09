@@ -142,12 +142,18 @@ the exact output shown throughout this plan.
         `status` regression guard for the core-key ordering trap (2026-08-09).
   - [x] Add the `noteKind` regression guard for the scope trap discovered during
         implementation, and restrict the base-rule scope accordingly (2026-08-09).
-- [ ] Milestone 5: documentation, help topic, changelogs, ADR distillation.
-  - [ ] Add the `## concepts` section to `docs/user/cli.md` and update its command list.
-  - [ ] Add `okf-cli/help/concepts.md` and register it in `okf-cli/src/Okf/Cli/Help.hs`.
-  - [ ] Add `Unreleased` entries to `CHANGELOG.md`, `okf-core/CHANGELOG.md`, and
-        `okf-cli/CHANGELOG.md`.
-  - [ ] Run the ADR distillation pass and write `docs/adr/15-*.md` if warranted.
+- [x] Milestone 5 (2026-08-09): documentation, help topic, changelogs, ADR distillation.
+  - [x] Add the `## concepts` section to `docs/user/cli.md` and update its command list and
+        its help-topic list (2026-08-09).
+  - [x] Add `okf-cli/help/concepts.md` and register it in `okf-cli/src/Okf/Cli/Help.hs`
+        (2026-08-09), with parser and topic assertions in `okf-cli/test/Main.hs`.
+  - [x] Add `Unreleased` entries to `CHANGELOG.md`, `okf-core/CHANGELOG.md`, and
+        `okf-cli/CHANGELOG.md` (2026-08-09).
+  - [x] Run the ADR distillation pass (2026-08-09): wrote
+        [`docs/adr/15-querying-a-bundle-and-where-filter-semantics-live.md`](../adr/15-querying-a-bundle-and-where-filter-semantics-live.md)
+        and added a paragraph to
+        [`docs/adr/5-compile-profile-rules-before-validation.md`](../adr/5-compile-profile-rules-before-validation.md)
+        about its second consumer.
 
 
 ## Surprises & Discoveries
@@ -380,7 +386,44 @@ the exact output shown throughout this plan.
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+Completed 2026-08-09. `okf concepts` exists, in five commits, one per milestone.
+
+**What was achieved.** `okf-core` gained `Okf.Query`, which reads a filter, pulls the values
+a filter is about out of a concept, decides whether a concept matches, and — given a compiled
+profile — decides whether a filter could match anything at all. `okf-cli` gained the
+`concepts` subcommand with `--type`, `--where`, `--has`, `--missing`, `--show`, `--json`, and
+`--profile`, plus the `okf help concepts` topic and a `## concepts` section in
+`docs/user/cli.md`. Every transcript in this plan was produced by running the binary, and the
+ones that document behaviour are pinned by tests: four in `okf-cli/test/Main.hs` over the
+fixture and example bundles, and three in `okf-core/test/Main.hs` over the fixture bundle and
+fixture profile. `cabal test all` passes and neither library compiles with a warning.
+
+**What changed from the plan.** Three things, all recorded above in full:
+
+- The plan's motivating transcript could not be produced. The pinned catalog profile declares
+  no `allowedValues` anywhere, so it cannot reject `--where status=acepted`. The Purpose
+  section, Concrete Steps, and Validation now describe what that profile actually constrains
+  — the concept type — and the closed-vocabulary demonstration moved to the fixture profile.
+- Milestone 4's instruction to include `compiledProfileBaseRules` as a scope unconditionally
+  is incompatible with its own "an empty allowed-value list means unconstrained" rule, and
+  together they would have disabled every per-type vocabulary. The fixture gained `noteKind`
+  to catch it and the scope rule is now conditional.
+- The plan miscounted the concepts in `examples/ddd-ordering` that declare `status`. Four do,
+  not three.
+
+**Lessons.** Two are worth carrying forward and are in
+[`docs/adr/15-querying-a-bundle-and-where-filter-semantics-live.md`](../adr/15-querying-a-bundle-and-where-filter-semantics-live.md).
+The third is about plans rather than code: the two bugs this plan nearly shipped were both
+*consistency* failures between two statements the plan itself made, not gaps in it. Writing
+the fixture to make each rule fail on its own — `status` for the precedence rule, `noteKind`
+for the scope rule — is what turned them from prose into assertions, and both regression
+guards fail alone when their rule is reverted, which was checked by reverting each one.
+
+**What remains.** Nothing in scope. The stricter reading of the improvement-request bundle
+waits on the catalog closing its `status` vocabulary, which is
+`mori://shinzui/keiro/okf/improvement-requests/concepts/IR-1`'s subject and not this
+repository's to decide; when it lands, `okf concepts --profile` will start catching that typo
+with no code change here.
 
 
 ## Context and Orientation

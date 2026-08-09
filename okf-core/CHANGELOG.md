@@ -7,6 +7,38 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- `Okf.Query`: selecting concepts out of a walked bundle by what their
+  frontmatter says. `parseFieldEquals` reads a `KEY=VALUE` filter and
+  `parseFieldSelector` a `KEY` or `PARENT.MEMBER` path; `conceptFieldValues`
+  pulls the values a filter is about out of one concept, `matchesFilter` answers
+  one question, and `filterConcepts` answers a list of them, reading repeated
+  keys as any-of and different keys as all-of while preserving `walkBundle`
+  order.
+
+  A filter is **existential** over a list: `tags=cli` selects a concept tagged
+  `[profiles, cli]`, because a person asking for `cli` wants the concepts that
+  mention it. A profile's closed-vocabulary check stays universal for the same
+  key, because there the question is whether the key may *ever* hold that value.
+  A nested selector reads through both shapes a profile can describe, an
+  object-valued key and a list of records, since OKF v0.2 permits `verified` as
+  either spelling.
+
+  Matching lives here rather than in the CLI so a consumer gets it without
+  spawning a subprocess.
+- `Okf.Query.checkFiltersAgainstProfile` checks filters against a
+  `CompiledProfile` and returns `FilterProfileError` values naming a key no
+  relevant type declares, or a value outside a closed vocabulary. It is offline
+  and pure: it receives a compiled profile and decides.
+
+  A profile-declared rule is consulted **before** the core OKF key list, never
+  after — `status` sits in both, and the other order would exempt exactly the key
+  a house profile is most likely to close. A `type` filter is additionally
+  checked against the profile's declared type names when
+  `allowUnknownTypes = False`, since that is how a profile spells its
+  concept-type vocabulary.
+
 ## [0.5.0.0] - 2026-08-01
 
 ### Added

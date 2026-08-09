@@ -200,7 +200,9 @@ main = do
           parseSucceeds ["help"],
           parseSucceeds ["help", "okf"],
           parseSucceeds ["help", "format"],
+          parseSucceeds ["help", "concepts"],
           any ((== "okf") . topicName) helpTopics,
+          any ((== "concepts") . topicName) helpTopics,
           all (not . Text.null . topicContent) helpTopics,
           optsToArgs (withPrompt "bundle> " <> withHeight "40%" <> withNoSort)
             == ["--prompt", "bundle> ", "--height", "40%", "--no-sort"],

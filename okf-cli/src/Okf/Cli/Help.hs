@@ -49,6 +49,7 @@ helpTopics =
     HelpTopic "validation" "How bundles are validated and referential integrity" validationTopicContent,
     HelpTopic "profiles" "Checking a bundle against house conventions" profilesTopicContent,
     HelpTopic "computations" "Listing and printing attested computations" computationsTopicContent,
+    HelpTopic "concepts" "Listing and filtering the concepts in a bundle" conceptsTopicContent,
     HelpTopic "trust" "Trust tiers, staleness, and recorded provenance" trustTopicContent,
     HelpTopic "index" "Generated index.md files and the version declaration" indexTopicContent,
     HelpTopic "log" "log.md upkeep and the two staleness checks" logTopicContent,
@@ -74,6 +75,9 @@ profilesTopicContent = $(embedStringFile "help/profiles.md")
 
 computationsTopicContent :: Text
 computationsTopicContent = $(embedStringFile "help/computations.md")
+
+conceptsTopicContent :: Text
+conceptsTopicContent = $(embedStringFile "help/concepts.md")
 
 trustTopicContent :: Text
 trustTopicContent = $(embedStringFile "help/trust.md")

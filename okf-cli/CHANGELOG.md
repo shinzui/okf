@@ -7,6 +7,35 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- `okf concepts BUNDLE` lists the concepts a bundle holds as one aligned row per
+  concept — concept ID, `type`, `title` — in concept-ID order, and `--json`
+  emits the same rows as an array with stable `id`, `path`, `type`, `title`, and
+  `fields` keys.
+- `okf concepts` filter flags, all repeatable: `--type TYPE`, `--where
+  KEY=VALUE`, `--has KEY`, `--missing KEY`, and `--show KEY` for extra columns.
+  Repeating a key means any-of and naming different keys means all-of, so
+  `--type Policy --type Metric` lists both kinds and `--type Policy --where
+  status=draft` lists the policies that are drafts. A key may name one level of
+  nesting, as in `--where reviews.outcome=approved`.
+
+  A concept that omits a key never matches a value filter on it, even where OKF
+  supplies a default: `--where status=stable` selects the concepts whose
+  frontmatter says so, not the ones that say nothing. `okf trust` is the command
+  whose `status` column applies the default. A filter that matches nothing prints
+  nothing and exits 0.
+- `okf concepts --profile PROFILE` rejects a filter the profile says no concept
+  could satisfy: a key it does not declare, a value outside a closed vocabulary,
+  or a `--type` outside its declared type names. The diagnostic names what is
+  accepted, prints on stderr, and exits 1 before the bundle is walked.
+
+  Unlike `okf validate --profile`, this is a hard error rather than an advisory,
+  because its subject is the command line the user just typed rather than the
+  bundle. An advisory would print a warning and then the empty listing that
+  caused the confusion in the first place.
+- `okf help concepts`, the command-level guide for the above.
+
 ## [0.5.0.0] - 2026-08-01
 
 ### Added
