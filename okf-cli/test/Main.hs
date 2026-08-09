@@ -5,7 +5,7 @@ import Control.Monad (unless)
 import Data.List qualified as List
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text.IO
-import Okf.Bundle (bundleInventoryOfConcepts, conceptAttester, conceptExecutor, conceptFromDocument, conceptIdOf, conceptParameters, conceptRuntime, conceptType, walkBundle, walkBundleInventory)
+import Okf.Bundle (Concept, bundleInventoryOfConcepts, conceptAttester, conceptExecutor, conceptFromDocument, conceptIdOf, conceptParameters, conceptRuntime, conceptType, walkBundle, walkBundleInventory)
 import Okf.Cli
 import Okf.Cli.Assist (AssistOptions (..), buildClaudeCommand)
 import Okf.Cli.Config (AssistSettings (..), ConfigSource (..), KitSettings (..), OkfConfig (..), OkfProvider (..), defaultOkfConfig, exampleConfigText, findConfigSource, loadOkfConfig, okfConfigEnvVar, projectConfigPath)
@@ -45,6 +45,7 @@ main = do
   exampleAttestedComputation <- testExampleAttestedComputationValidates
   computationsReportsFixtures <- testComputationsReportsFixtureBundle
   computationsReportsExample <- testComputationsReportsExampleBundle
+  conceptsReportsFixtures <- testConceptsReportsFixtureBundle
   profileDocStrictWithTimestamp <- testProfileDocumentationStrictWithTimestamp
   let results =
         [ parseSucceeds ["validate", "bundle"],
@@ -319,6 +320,15 @@ main = do
           parseSucceeds ["sources", "bundle"],
           parseSucceeds ["computations", "bundle"],
           parseFails ["computations"],
+          parseSucceeds ["concepts", "bundle"],
+          -- The BUNDLE argument is required: this command never launches fzf.
+          parseFails ["concepts"],
+          parseConceptsMatches
+            ["concepts", "b"]
+            ConceptsOptions {bundlePath = "b", json = False},
+          parseConceptsMatches
+            ["concepts", "b", "--json"]
+            ConceptsOptions {bundlePath = "b", json = True},
           renderRegistryTable sampleRegistryEntries == sampleRegistryTable,
           renderProfileDetail "nested.decisions" sampleDecisionsProfile == sampleProfileDetail,
           renderProfileDetail "" samplePostgresqlProfile == sampleUndocumentedProfileDetail,
@@ -336,6 +346,7 @@ main = do
           exampleAttestedComputation,
           computationsReportsFixtures,
           computationsReportsExample,
+          conceptsReportsFixtures,
           profileDocStrictWithTimestamp,
           configDefaults,
           configProjectPrecedence,
@@ -767,6 +778,12 @@ parseIdMatches args expected =
     Success (Options (Id opts)) -> opts == expected
     _ -> False
 
+parseConceptsMatches :: [String] -> ConceptsOptions -> Bool
+parseConceptsMatches args expected =
+  case execParserPure defaultPrefs parserInfo args of
+    Success (Options (Concepts opts)) -> opts == expected
+    _ -> False
+
 parseShowMatches :: [String] -> ShowOptions -> Bool
 parseShowMatches args expected =
   case execParserPure defaultPrefs parserInfo args of
@@ -1105,6 +1122,46 @@ testComputationsReportsExampleBundle =
   assertComputationReport
     ("examples" </> "ddd-ordering")
     ["computations/order-total  postgres  order_id (uuid, required)  inline  executor + attester"]
+
+-- | @okf concepts@ with no filters over the concept-filter fixture bundle: one
+-- row per concept, three columns, sorted by concept ID. The column widths are
+-- the fixture's own — @requests\/gamma@ at 14 and @Improvement Request@ at 19 —
+-- so the padding is actually exercised, and the untyped-looking @Note@ row
+-- proves the type column is padded rather than the title.
+testConceptsReportsFixtureBundle :: IO Bool
+testConceptsReportsFixtureBundle =
+  assertConceptReport
+    "okf concepts over the concept-filter fixture"
+    ("okf-core" </> "test" </> "fixtures" </> "concept-filters")
+    []
+    id
+    [ "notes/scratch   Note                 Scratch",
+      "requests/alpha  Improvement Request  Alpha",
+      "requests/beta   Improvement Request  Beta",
+      "requests/gamma  Improvement Request  Gamma"
+    ]
+
+-- | Assert the exact lines @okf concepts@ prints for a repository bundle, after
+-- an optional selection over the walked concepts.
+assertConceptReport ::
+  String -> FilePath -> [Text.Text] -> ([Concept] -> [Concept]) -> [Text.Text] -> IO Bool
+assertConceptReport label relativeBundle shown select expected =
+  withRepositoryPath label relativeBundle $ \bundleRoot -> do
+    walked <- walkBundle bundleRoot
+    case walked of
+      Left bundleError -> do
+        putStrLn ("failed to walk " <> relativeBundle <> ": " <> show bundleError)
+        pure False
+      Right concepts -> do
+        let actual = conceptReport shown (select concepts)
+        unless (actual == expected) $
+          putStrLn
+            ( "unexpected okf concepts report for "
+                <> label
+                <> ":\n"
+                <> unlines (map Text.unpack actual)
+            )
+        pure (actual == expected)
 
 assertComputationReport :: FilePath -> [Text.Text] -> IO Bool
 assertComputationReport relativeBundle expected =

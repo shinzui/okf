@@ -93,10 +93,13 @@ the exact output shown throughout this plan.
   - [x] Add `Okf.Query` to `exposed-modules` in `okf-core/okf-core.cabal` (2026-08-09).
   - [x] Add matching tests to `okf-core/test/Main.hs` (2026-08-09): three new assertions
         covering the grammar, `scalarText`, and matching over the fixture bundle.
-- [ ] Milestone 2: `okf concepts BUNDLE` prints an unfiltered listing, plus `--json`.
-  - [ ] Add `Concepts`/`ConceptsOptions` to `okf-cli/src/Okf/Cli.hs` and wire the parser.
-  - [ ] Add the pure renderers `conceptReport` and `conceptReportJson`.
-  - [ ] Add CLI parse tests and a pinned-output test to `okf-cli/test/Main.hs`.
+- [x] Milestone 2 (2026-08-09): `okf concepts BUNDLE` prints an unfiltered listing, plus
+      `--json`.
+  - [x] Add `Concepts`/`ConceptsOptions` to `okf-cli/src/Okf/Cli.hs` and wire the parser
+        (2026-08-09).
+  - [x] Add the pure renderers `conceptReport` and `conceptReportJson`, plus the internal
+        `showSelector` helper that reads a `--show` key as a field selector (2026-08-09).
+  - [x] Add CLI parse tests and a pinned-output test to `okf-cli/test/Main.hs` (2026-08-09).
 - [ ] Milestone 3: filter flags — `--type`, `--where`, `--has`, `--missing`, `--show`.
   - [ ] Extend `ConceptsOptions` and the option parser.
   - [ ] Add the `--show` columns to both renderers.
@@ -225,6 +228,28 @@ the exact output shown throughout this plan.
   likely thing to filter on, leaving the most common typo unchecked would undercut the
   feature. When `allowUnknownTypes = True` the profile has said any type is legitimate, and
   nothing is reported.
+  Date: 2026-08-09
+
+- Decision: `--show KEY` accepts the same one-level nested key a filter does, and a `--show`
+  key that cannot be parsed as a selector renders its column as `-` rather than failing the
+  run.
+  Rationale: The plan's own note that "`--show generated.by` is how you ask for what is
+  inside" only holds if the display path is parsed as a `FieldSelector`, so `conceptReport`
+  and `conceptReportJson` run each key through `parseFieldSelector` via the internal
+  `showSelector` helper. A key too deep to be a selector cannot name a real frontmatter path
+  either, and `--show` asks only for display: nothing about which concepts are listed depends
+  on it, so reporting an empty column is a more proportionate answer than exiting non-zero.
+  A `--where` key, by contrast, decides what the listing *contains*, which is why that one is
+  rejected at parse time.
+  Date: 2026-08-09
+
+- Decision: In `--json`, a top-level `--show` key reports the document's stored value
+  verbatim, while a nested key reports the values it selected (`null`, the single value, or a
+  list).
+  Rationale: A top-level key has one stored value and "raw" can mean it exactly, so
+  `tags: [cli]` comes back as a one-element list rather than a bare string. A nested key such
+  as `reviews.outcome` names one member of every element and has no single stored value, so
+  the selected values are the only honest answer.
   Date: 2026-08-09
 
 - Decision: The default columns are concept ID, `type`, and `title`, with `--show KEY`

@@ -2,6 +2,7 @@
 module Okf.Cli
   ( Command (..),
     ComputationsOptions (..),
+    ConceptsOptions (..),
     GraphOptions (..),
     IdOptions (..),
     IdSub (..),
@@ -18,6 +19,8 @@ module Okf.Cli
     ShowOptions (..),
     ValidateOptions (..),
     computationReport,
+    conceptReport,
+    conceptReportJson,
     parserInfo,
     profileRegistryEnvVar,
     renderProfileDetail,
@@ -37,6 +40,7 @@ import Data.Foldable (toList, traverse_)
 import Data.List qualified as List
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map.Strict qualified as Map
+import Data.Maybe (mapMaybe)
 import Data.Set qualified as Set
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text.IO
@@ -72,6 +76,7 @@ import Okf.Document
     attestedComputationType,
     body,
     effectiveUsageWindow,
+    frontmatterLookup,
     renderStatus,
   )
 import Okf.Graph (buildGraph)
@@ -128,6 +133,12 @@ import Okf.Profile.Registry
     resolveRegistryRef,
     rootExportLabel,
   )
+import Okf.Query
+  ( FieldSelector (..),
+    conceptFieldValues,
+    parseFieldSelector,
+    scalarText,
+  )
 import Okf.Trust
   ( Staleness (..),
     latestVerification,
@@ -155,6 +166,7 @@ data Command
   | Trust TrustOptions
   | Sources SourcesOptions
   | Computations ComputationsOptions
+  | Concepts ConceptsOptions
   | Id IdOptions
   | Config ConfigCommand
   | Profile ProfileCommand
@@ -227,6 +239,12 @@ data SourcesOptions = SourcesOptions
 
 data ComputationsOptions = ComputationsOptions
   { bundlePath :: !FilePath
+  }
+  deriving stock (Show, Eq)
+
+data ConceptsOptions = ConceptsOptions
+  { bundlePath :: !FilePath,
+    json :: !Bool
   }
   deriving stock (Show, Eq)
 
@@ -319,6 +337,7 @@ commandParser =
         <> command "trust" (info (Trust <$> trustOptionsParser <**> helper) (progDesc "Report trust tiers, status, and staleness for every concept"))
         <> command "sources" (info (Sources <$> sourcesOptionsParser <**> helper) (progDesc "List the provenance recorded by each concept"))
         <> command "computations" (info (Computations <$> computationsOptionsParser <**> helper) (progDesc "List the attested computations a bundle declares"))
+        <> command "concepts" (info (Concepts <$> conceptsOptionsParser <**> helper) (progDesc "List the concepts a bundle holds, with optional filters"))
         <> command "id" (info (Id <$> idOptionsParser <**> helper) (progDesc "Allocate and list document IDs"))
         <> command "config" (info (Config <$> configCommandParser <**> helper) (progDesc "Show and manage okf configuration"))
         <> command "profile" (info (Profile <$> profileCommandParser <**> helper) (progDesc "List and inspect profiles published by a registry"))
@@ -634,6 +653,15 @@ sourcesOptionsParser = SourcesOptions <$> bundleArgument
 computationsOptionsParser :: Parser ComputationsOptions
 computationsOptionsParser = ComputationsOptions <$> bundleArgument
 
+-- | The bundle argument is required and this command never launches @fzf@: per
+-- @docs\/adr\/2-interactive-bundle-and-concept-selection.md@, a convenience that
+-- can make a scripted invocation behave differently is not a convenience.
+conceptsOptionsParser :: Parser ConceptsOptions
+conceptsOptionsParser =
+  ConceptsOptions
+    <$> bundleArgument
+    <*> jsonSwitch
+
 runCommand :: Command -> IO ()
 runCommand = \case
   Validate options -> runValidate options
@@ -644,6 +672,7 @@ runCommand = \case
   Trust options -> runTrust options
   Sources options -> runSources options
   Computations options -> runComputations options
+  Concepts options -> runConcepts options
   Id options -> runId options
   Config configCommand -> runConfig configCommand
   Profile profileCommand -> runProfile profileCommand
@@ -1566,6 +1595,112 @@ computationReport concepts =
         (True, False) -> "executor"
         (False, True) -> "attester"
         (False, False) -> "(neither)"
+
+-- | List the concepts a bundle holds, one aligned line each.
+--
+-- The whole-bundle reports that came before this one each answered a narrower
+-- question — @okf trust@ always prints every concept and always the same four
+-- columns, @okf sources@ only concepts with provenance, @okf computations@ only
+-- concepts of one @type@ — so the simplest question anyone asks of a corpus,
+-- \"which concepts are there\", had no answer short of a @jq@ expression over
+-- @okf graph --json@.
+--
+-- Output is sorted by concept ID, which 'walkBundle' already guarantees, so the
+-- listing is stable and diffable in pipelines and CI. A bundle with no concepts
+-- prints nothing and exits zero.
+runConcepts :: ConceptsOptions -> IO ()
+runConcepts ConceptsOptions {bundlePath, json} = do
+  concepts <- loadBundleOrExit bundlePath
+  if json
+    then LazyByteString.putStrLn (Aeson.encode (conceptReportJson shown concepts))
+    else mapM_ Text.IO.putStrLn (conceptReport shown concepts)
+  where
+    -- Grows into the @--show@ keys in the next milestone.
+    shown = []
+
+-- | The lines @okf concepts@ prints, as data: concept ID, @type@, one column per
+-- requested key, and @title@ last. Pure and separate from 'runConcepts' so a
+-- test can assert the whole report rather than only the accessors behind it, as
+-- 'computationReport' and 'renderProfileDetail' already are.
+--
+-- The three default columns are the ones
+-- 'Okf.Cli.Fzf.Selector.conceptCandidates' shows in the interactive concept
+-- picker, so the two listings agree.
+--
+-- @title@ comes last and is never padded, so a long title cannot push anything
+-- off the right edge and a concept with no title simply ends the line. Column
+-- widths are computed over the rows actually printed, so one unrelated long
+-- concept ID elsewhere in the bundle cannot pad a filtered listing.
+conceptReport :: [Text] -> [Concept] -> [Text]
+conceptReport shown concepts =
+  map renderRow rows
+  where
+    rows = conceptRow <$> concepts
+    columnCount = 2 + length shown + 1
+    widths =
+      [ maximum (0 : map (Text.length . (!! column)) rows)
+      | column <- [0 .. columnCount - 1]
+      ]
+    -- One padder per column, in order; the last column is left as it is.
+    padders = replicate (columnCount - 1) padRight <> [\_ cell -> cell]
+    padRight width cell = cell <> Text.replicate (max 0 (width - Text.length cell)) " "
+    renderRow cells = Text.intercalate "  " (zipWith3 id padders widths cells)
+    conceptRow concept =
+      [renderConceptId (conceptIdOf concept), conceptType concept]
+        <> [showCell (showSelector key) concept | key <- shown]
+        <> [fromMaybe "" (conceptTitle concept)]
+    -- A cell restates what the frontmatter says and nothing else. Absent, or
+    -- holding something a table cell cannot show, both read @-@, matching the
+    -- placeholder 'renderRegistryTable' already prints for an absent optional
+    -- column. @--show generated@ naming a whole mapping is the second case:
+    -- @--show generated.by@ is how to ask for what is inside it.
+    showCell selector concept =
+      case mapMaybe scalarText (conceptFieldValues selector concept) of
+        [] -> "-"
+        values -> Text.intercalate ", " values
+
+-- | The rows @okf concepts --json@ emits.
+--
+-- @title@ is @null@ when the concept has none, and @fields@ is present even when
+-- no key was requested, so a consumer never has to test for it. The values under
+-- @fields@ are the raw frontmatter values rather than the display text a column
+-- shows: a JSON consumer wants a list back as a list.
+conceptReportJson :: [Text] -> [Concept] -> Aeson.Value
+conceptReportJson shown concepts =
+  Aeson.toJSON (conceptObject <$> concepts)
+  where
+    conceptObject concept =
+      Aeson.object
+        [ "id" Aeson..= renderConceptId (conceptIdOf concept),
+          "path" Aeson..= conceptSourcePath concept,
+          "type" Aeson..= conceptType concept,
+          "title" Aeson..= conceptTitle concept,
+          "fields"
+            Aeson..= Aeson.object
+              [ AesonKey.fromText key Aeson..= rawField (showSelector key) concept
+              | key <- shown
+              ]
+        ]
+    -- A top-level key reports exactly the value the document carries. A nested
+    -- one has no single stored value — @reviews.outcome@ names one member of
+    -- every element — so it reports the values it selected: nothing as @null@,
+    -- one as itself, several as a list.
+    rawField selector concept =
+      case selector of
+        TopLevelField key ->
+          fromMaybe Aeson.Null (frontmatterLookup key (conceptDocument concept ^. #frontmatter))
+        NestedField _ _ ->
+          case conceptFieldValues selector concept of
+            [] -> Aeson.Null
+            [single] -> single
+            values -> Aeson.toJSON values
+
+-- | Read a @--show@ key as a field selector. A key too deep to be one cannot
+-- name a real frontmatter path either, so it is kept as a top-level key and
+-- reports its column as absent rather than failing the run: @--show@ asks for
+-- display, and nothing about the listing depends on it.
+showSelector :: Text -> FieldSelector
+showSelector key = either (const (TopLevelField key)) Prelude.id (parseFieldSelector key)
 
 -- | Use the given bundle, or ask the user to pick one.
 resolveBundlePath :: FzfConfig -> Maybe FilePath -> IO FilePath
