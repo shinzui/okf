@@ -31,6 +31,7 @@ import Okf.Profile hiding (HumanActor)
 import Okf.Profile qualified as Profile
 import Okf.Profile.Documentation
 import Okf.Profile.Registry
+import Okf.Query
 import Okf.Trust
 import Okf.Validation
 import System.Directory
@@ -270,7 +271,10 @@ main = do
         testIO "nested review fixture validates records with indexed diagnostics" testNestedReviewsFixture,
         testIO "conditional fixture covers ADR, PostgreSQL, and review scopes" testConditionalFieldsFixture,
         testIO "document reference fixture covers local, external, self, and duplicate targets" testDocumentReferencesFixture,
-        testIO "optional-field fixture reports only the recommendation and bad values" testOptionalFieldsFixture
+        testIO "optional-field fixture reports only the recommendation and bad values" testOptionalFieldsFixture,
+        test "parseFieldEquals and parseFieldSelector read the filter grammar" testParseConceptFilters,
+        test "scalarText compares numbers and booleans as JSON, containers as nothing" testQueryScalarText,
+        testIO "filterConcepts selects over lists, nested records, presence, and absence" testFilterConceptsOverFixture
       ]
   unless (and results) exitFailure
 
@@ -6274,6 +6278,105 @@ readBundleInventory root = do
 validateInMemoryBundle :: ValidationProfile -> VersionDeclaration -> [Concept] -> [BundleValidationError]
 validateInMemoryBundle profile declaration concepts =
   validateBundle profile declaration (bundleInventoryOfConcepts concepts) concepts
+
+-- | The filter grammar @okf concepts@ hands to 'parseFieldEquals': one @=@, and
+-- a key that is either top-level or one level deep.
+testParseConceptFilters :: Either Text ()
+testParseConceptFilters = do
+  assertEqual
+    (Right (FieldEquals (TopLevelField "status") "accepted"))
+    (parseFieldEquals "status=accepted")
+  assertEqual
+    (Right (FieldEquals (NestedField "reviews" "outcome") "approved"))
+    (parseFieldEquals "reviews.outcome=approved")
+  -- Split on the first '=' only, so a value carrying its own survives intact.
+  assertEqual
+    (Right (FieldEquals (TopLevelField "resource") "postgres://host/db?a=b"))
+    (parseFieldEquals "resource=postgres://host/db?a=b")
+  -- The value is verbatim: whitespace in a shell argument was typed on purpose.
+  assertEqual
+    (Right (FieldEquals (TopLevelField "title") " "))
+    (parseFieldEquals "title= ")
+  assertEqual (Left (MissingFilterSeparator "status")) (parseFieldEquals "status")
+  assertEqual (Left (FilterKeyTooDeep "a.b.c")) (parseFieldSelector "a.b.c")
+  assertEqual (Left EmptyFilterKey) (parseFieldSelector ".x")
+  assertEqual (Left EmptyFilterKey) (parseFieldSelector "reviews.")
+  assertEqual (Left EmptyFilterKey) (parseFieldSelector "")
+  -- Rendering is the inverse a diagnostic quotes back.
+  assertEqual "status=accepted" (renderFilter (FieldEquals (TopLevelField "status") "accepted"))
+  assertEqual "reviews.outcome" (renderFieldSelector (NestedField "reviews" "outcome"))
+  assertEqual "completedAt" (renderFilter (FieldPresent (TopLevelField "completedAt")))
+  assertEqual "!status" (renderFilter (FieldAbsent (TopLevelField "status")))
+
+-- | A filter compares against text, so every non-textual scalar needs a
+-- spelling. Aeson writes an integral number without a trailing @.0@, which is
+-- what makes @--where usage_count=12@ match a YAML @usage_count: 12@.
+testQueryScalarText :: Either Text ()
+testQueryScalarText = do
+  assertEqual (Just "accepted") (scalarText (String "accepted"))
+  assertEqual (Just "12") (scalarText (Number 12))
+  assertEqual (Just "0.5") (scalarText (Number 0.5))
+  assertEqual (Just "true") (scalarText (Bool True))
+  assertEqual Nothing (scalarText Null)
+  assertEqual Nothing (scalarText (toJSON (["a", "b"] :: [Text])))
+  assertEqual Nothing (scalarText (object ["by" .= ("human:nadeem" :: Text)]))
+
+-- | 'filterConcepts' over the concept-filter fixture bundle, which is built so
+-- that every matching shape appears exactly once: a key present on some
+-- concepts and absent on another, a list-valued key with more elements than the
+-- filter names, a nested key inside a list of records whose elements disagree,
+-- and a nested key inside a plain record.
+testFilterConceptsOverFixture :: IO (Either Text ())
+testFilterConceptsOverFixture = do
+  root <- fixturePath "concept-filters"
+  concepts <- readBundle root
+  pure $ do
+    let selected filters = renderConceptId . conceptIdOf <$> filterConcepts filters concepts
+    assertEqual
+      ["notes/scratch", "requests/alpha", "requests/beta", "requests/gamma"]
+      (selected [])
+    assertEqual ["requests/alpha"] (selected [FieldEquals (TopLevelField "status") "accepted"])
+    -- Existential over a list: alpha is tagged [profiles, cli] and still matches.
+    assertEqual
+      ["requests/alpha", "requests/beta"]
+      (selected [FieldEquals (TopLevelField "tags") "cli"])
+    -- Existential over list elements: gamma's first review is changes-requested.
+    assertEqual
+      ["requests/alpha", "requests/gamma"]
+      (selected [FieldEquals (NestedField "reviews" "outcome") "approved"])
+    -- The other nested shape: a record-valued key rather than a list of records.
+    assertEqual
+      ["notes/scratch", "requests/beta"]
+      (selected [FieldEquals (NestedField "generated" "by") "human:nadeem"])
+    assertEqual ["notes/scratch"] (selected [FieldAbsent (TopLevelField "status")])
+    assertEqual ["requests/gamma"] (selected [FieldPresent (TopLevelField "completedAt")])
+    -- A key no concept carries selects nothing, which is not an error.
+    assertEqual [] (selected [FieldEquals (TopLevelField "status") "withdrawn"])
+    -- Repeating a key is an "or".
+    assertEqual
+      ["requests/alpha", "requests/beta"]
+      ( selected
+          [ FieldEquals (TopLevelField "status") "accepted",
+            FieldEquals (TopLevelField "status") "proposed"
+          ]
+      )
+    -- Different keys are an "and".
+    assertEqual
+      ["requests/beta"]
+      ( selected
+          [ FieldEquals (TopLevelField "type") "Improvement Request",
+            FieldEquals (TopLevelField "status") "proposed"
+          ]
+      )
+    -- Grouping is by question as well as key, so these two are a conjunction of
+    -- two groups and can never both hold.
+    assertEqual
+      []
+      ( selected
+          [ FieldEquals (TopLevelField "status") "accepted",
+            FieldAbsent (TopLevelField "status")
+          ]
+      )
 
 fixturePath :: FilePath -> IO FilePath
 fixturePath name = do

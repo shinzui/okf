@@ -64,6 +64,7 @@ library
     Okf.Profile
     Okf.Profile.Documentation
     Okf.Profile.Registry
+    Okf.Query
     Okf.Trust
     Okf.Validation
 
