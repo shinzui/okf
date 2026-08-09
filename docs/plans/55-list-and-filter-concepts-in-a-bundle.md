@@ -100,10 +100,13 @@ the exact output shown throughout this plan.
   - [x] Add the pure renderers `conceptReport` and `conceptReportJson`, plus the internal
         `showSelector` helper that reads a `--show` key as a field selector (2026-08-09).
   - [x] Add CLI parse tests and a pinned-output test to `okf-cli/test/Main.hs` (2026-08-09).
-- [ ] Milestone 3: filter flags — `--type`, `--where`, `--has`, `--missing`, `--show`.
-  - [ ] Extend `ConceptsOptions` and the option parser.
-  - [ ] Add the `--show` columns to both renderers.
-  - [ ] Add filtered-output tests over both fixture and example bundles.
+- [x] Milestone 3 (2026-08-09): filter flags — `--type`, `--where`, `--has`, `--missing`,
+      `--show`.
+  - [x] Extend `ConceptsOptions` and the option parser (2026-08-09).
+  - [x] Add the `--show` columns to both renderers (2026-08-09; done in Milestone 2, since
+        both renderers already took the key list).
+  - [x] Add filtered-output tests over both fixture and example bundles (2026-08-09),
+        including the `--where status=stable` guard against the derived-default reading.
 - [ ] Milestone 4: `--profile PATH` checks every filter against the compiled profile.
   - [ ] Add `FilterProfileError` and `checkFiltersAgainstProfile` to `Okf.Query`, consulting
         profile rules before the core OKF key list.
@@ -136,6 +139,24 @@ the exact output shown throughout this plan.
   That makes the existential reading load-bearing for two independent reasons rather than one,
   and it is why `notes/scratch` — a concept with no `status` — earns its place in the fixture.
   Date: 2026-08-09
+
+- **Four concepts in `examples/ddd-ordering` declare `status`, not three.** This plan's
+  Context and Orientation and Validation sections were written from a miscount:
+  `computations/order-total` also declares `status: stable`, so `--where status=stable`
+  selects three concepts rather than two.
+
+  ```text
+  $ grep -rn '^status:' examples/ddd-ordering/
+  examples/ddd-ordering/aggregates/order.md:14:status: stable
+  examples/ddd-ordering/metrics/order-total-value.md:7:status: stable
+  examples/ddd-ordering/computations/order-total.md:7:status: stable
+  examples/ddd-ordering/policies/reserve-stock.md:7:status: draft
+  ```
+
+  Both sections have been corrected above, and the pinned test
+  `testConceptsDoesNotApplyStatusDefault` in `okf-cli/test/Main.hs` asserts the real three
+  rows. The point the numbers were making is unaffected and if anything sharper: eighteen
+  concepts omit `status` and none of them appear. Date: 2026-08-09
 
 - **`idField` alone triggers no document-ID checks.** The fixture profile declares
   `idField = Some "requestId"` for realism, and `notes/scratch` carries no `requestId`, yet
@@ -408,9 +429,10 @@ currently `status: accepted`, each with a `requestId` handle from `IR-1` to `IR-
 `reviews` list whose elements carry `kind`, `reviewer`, `outcome`, and more. It has no
 `index.md`, which is fine — `Okf.Bundle.walkBundle` does not require one.
 
-`examples/ddd-ordering/` holds twenty-two concepts across seventeen `type` values. Three of
-them declare `status` (`aggregates/order` and `metrics/order-total-value` are `stable`,
-`policies/reserve-stock` is `draft`) and the rest declare none, which matters: OKF v0.2 says
+`examples/ddd-ordering/` holds twenty-two concepts across seventeen `type` values. **Four** of
+them declare `status` (`aggregates/order`, `computations/order-total`, and
+`metrics/order-total-value` are `stable`, `policies/reserve-stock` is `draft`) and the rest
+declare none, which matters: OKF v0.2 says
 an absent `status` means `stable`, but the *frontmatter* is genuinely absent, and this
 command reports frontmatter rather than derived readings. A concept with no `status` key does
 not match `--where status=stable`. That is a deliberate consequence of ADR 8 and is called
@@ -1465,9 +1487,10 @@ shown in Concrete Steps.
 rows, proving that repeating a key is an "or".
 `cabal run okf -- concepts examples/ddd-ordering --type Policy --where status=draft` prints
 exactly `policies/reserve-stock`, proving that different keys are an "and".
-`cabal run okf -- concepts examples/ddd-ordering --where status=stable` prints exactly two
-rows and **not** the twenty concepts that omit `status` — this is the surprising case, and
-seeing twenty rows means the derived-default reading leaked in where it does not belong.
+`cabal run okf -- concepts examples/ddd-ordering --where status=stable` prints exactly three
+rows and **not** the eighteen concepts that omit `status` — this is the surprising case, and
+seeing eighteen more rows means the derived-default reading leaked in where it does not
+belong.
 
 **Nested filtering works.**
 `cabal run okf -- concepts okf-core/test/fixtures/concept-filters --where reviews.outcome=approved`

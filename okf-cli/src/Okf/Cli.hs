@@ -134,9 +134,13 @@ import Okf.Profile.Registry
     rootExportLabel,
   )
 import Okf.Query
-  ( FieldSelector (..),
+  ( ConceptFilter (..),
+    FieldSelector (..),
     conceptFieldValues,
+    filterConcepts,
+    parseFieldEquals,
     parseFieldSelector,
+    renderFilterParseError,
     scalarText,
   )
 import Okf.Trust
@@ -244,6 +248,11 @@ data ComputationsOptions = ComputationsOptions
 
 data ConceptsOptions = ConceptsOptions
   { bundlePath :: !FilePath,
+    conceptTypes :: ![Text],
+    fieldFilters :: ![ConceptFilter],
+    presentFields :: ![FieldSelector],
+    absentFields :: ![FieldSelector],
+    showFields :: ![Text],
     json :: !Bool
   }
   deriving stock (Show, Eq)
@@ -656,11 +665,47 @@ computationsOptionsParser = ComputationsOptions <$> bundleArgument
 -- | The bundle argument is required and this command never launches @fzf@: per
 -- @docs\/adr\/2-interactive-bundle-and-concept-selection.md@, a convenience that
 -- can make a scripted invocation behave differently is not a convenience.
+--
+-- A malformed filter is rejected here rather than in 'runConcepts', so a typo
+-- fails before the bundle is walked. 'eitherReader' rather than 'maybeReader' so
+-- that the message a user sees is ours: optparse-applicative prints
+-- @option --where: \<message\>@ and exits 1, which is what every other flag in
+-- this tool does with a bad value.
 conceptsOptionsParser :: Parser ConceptsOptions
 conceptsOptionsParser =
   ConceptsOptions
     <$> bundleArgument
+    <*> many
+      ( Text.pack
+          <$> strOption
+            ( long "type"
+                <> metavar "TYPE"
+                <> help "Keep concepts whose type is exactly TYPE; repeat for any-of"
+            )
+      )
+    <*> many
+      ( option
+          (eitherReader (first (Text.unpack . renderFilterParseError) . parseFieldEquals . Text.pack))
+          ( long "where"
+              <> metavar "KEY=VALUE"
+              <> help
+                "Keep concepts whose frontmatter KEY holds VALUE; KEY may be nested one level (reviews.outcome). Repeat the same key for any-of, different keys for all-of"
+          )
+      )
+    <*> many (option fieldSelectorReader (long "has" <> metavar "KEY" <> help "Keep concepts that carry KEY at all"))
+    <*> many (option fieldSelectorReader (long "missing" <> metavar "KEY" <> help "Keep concepts that do not carry KEY"))
+    <*> many
+      ( Text.pack
+          <$> strOption
+            ( long "show"
+                <> metavar "KEY"
+                <> help "Add a column displaying KEY; repeat for more columns"
+            )
+      )
     <*> jsonSwitch
+  where
+    fieldSelectorReader =
+      eitherReader (first (Text.unpack . renderFilterParseError) . parseFieldSelector . Text.pack)
 
 runCommand :: Command -> IO ()
 runCommand = \case
@@ -1605,18 +1650,48 @@ computationReport concepts =
 -- \"which concepts are there\", had no answer short of a @jq@ expression over
 -- @okf graph --json@.
 --
--- Output is sorted by concept ID, which 'walkBundle' already guarantees, so the
--- listing is stable and diffable in pipelines and CI. A bundle with no concepts
--- prints nothing and exits zero.
+-- Output is sorted by concept ID, which 'walkBundle' already guarantees and
+-- 'filterConcepts' preserves, so the listing is stable and diffable in pipelines
+-- and CI. A filter that matches nothing prints nothing and exits zero, as
+-- @okf sources@ and @okf computations@ already do for a bundle with nothing to
+-- report: an empty listing is an answer, not an error.
+--
+-- __A concept that omits a key never matches a filter on it__, even where OKF
+-- supplies a default. @--where status=stable@ selects the concepts whose
+-- frontmatter actually says @stable@ and not the ones that say nothing, even
+-- though OKF v0.2 §5.4 reads an absent @status@ as @stable@. This command
+-- restates frontmatter; a reading derived from absence is derived and not
+-- stored, per @docs\/adr\/8-derived-not-stored-trust-and-credibility.md@.
+-- @okf trust@ is the command whose @status@ column does apply the default.
 runConcepts :: ConceptsOptions -> IO ()
-runConcepts ConceptsOptions {bundlePath, json} = do
-  concepts <- loadBundleOrExit bundlePath
-  if json
-    then LazyByteString.putStrLn (Aeson.encode (conceptReportJson shown concepts))
-    else mapM_ Text.IO.putStrLn (conceptReport shown concepts)
-  where
-    -- Grows into the @--show@ keys in the next milestone.
-    shown = []
+runConcepts
+  ConceptsOptions
+    { bundlePath,
+      conceptTypes,
+      fieldFilters,
+      presentFields,
+      absentFields,
+      showFields,
+      json
+    } = do
+    concepts <- loadBundleOrExit bundlePath
+    let selected = filterConcepts allFilters concepts
+    if json
+      then LazyByteString.putStrLn (Aeson.encode (conceptReportJson showFields selected))
+      else mapM_ Text.IO.putStrLn (conceptReport showFields selected)
+    where
+      -- @--type@ is sugar for a filter on the @type@ key rather than a separate
+      -- mechanism, so there is one matching path to reason about and to test,
+      -- and so that @--type Policy --type Metric@ means "either" for free.
+      typeFilters = [FieldEquals (TopLevelField "type") wanted | wanted <- conceptTypes]
+      -- Order does not affect the result -- 'filterConcepts' groups by selector
+      -- and by question -- but is kept stable so that profile diagnostics report
+      -- in a predictable order.
+      allFilters =
+        typeFilters
+          <> fieldFilters
+          <> (FieldPresent <$> presentFields)
+          <> (FieldAbsent <$> absentFields)
 
 -- | The lines @okf concepts@ prints, as data: concept ID, @type@, one column per
 -- requested key, and @title@ last. Pure and separate from 'runConcepts' so a

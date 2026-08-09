@@ -17,6 +17,7 @@ import Okf.Document (Attester (..), Executor (..), Parameter (..), parseDocument
 import Okf.Index (OkfVersion (..), VersionDeclaration (..), parseOkfVersion, readBundleVersion)
 import Okf.Profile (Cardinality (..), FieldCondition (..), FieldFormat (..), FieldRule (..), FrontmatterRules (..), HandleReferenceRule (..), NestedFieldRule (..), NestedRules (..), PathReferenceRule (..), ProfileSpec (..), TypeRule (..), compileProfile, loadProfileFile, validateProfile, validateProfileVersion)
 import Okf.Profile.Registry (RegistryEntry (..))
+import Okf.Query (ConceptFilter (..), FieldSelector (..), filterConcepts)
 import Okf.Validation (ValidationProfile (..), validateBundle)
 import Options.Applicative
 import System.Directory (createDirectoryIfMissing, doesDirectoryExist, doesFileExist, getCurrentDirectory, getTemporaryDirectory, listDirectory, removeDirectoryRecursive, withCurrentDirectory)
@@ -46,6 +47,9 @@ main = do
   computationsReportsFixtures <- testComputationsReportsFixtureBundle
   computationsReportsExample <- testComputationsReportsExampleBundle
   conceptsReportsFixtures <- testConceptsReportsFixtureBundle
+  conceptsShowsFilteredColumns <- testConceptsShowsFilteredColumns
+  conceptsReportsExample <- testConceptsReportsExampleBundle
+  conceptsKeepsStatusDefaultOut <- testConceptsDoesNotApplyStatusDefault
   profileDocStrictWithTimestamp <- testProfileDocumentationStrictWithTimestamp
   let results =
         [ parseSucceeds ["validate", "bundle"],
@@ -325,10 +329,53 @@ main = do
           parseFails ["concepts"],
           parseConceptsMatches
             ["concepts", "b"]
-            ConceptsOptions {bundlePath = "b", json = False},
+            ConceptsOptions
+              { bundlePath = "b",
+                conceptTypes = [],
+                fieldFilters = [],
+                presentFields = [],
+                absentFields = [],
+                showFields = [],
+                json = False
+              },
           parseConceptsMatches
             ["concepts", "b", "--json"]
-            ConceptsOptions {bundlePath = "b", json = True},
+            ConceptsOptions
+              { bundlePath = "b",
+                conceptTypes = [],
+                fieldFilters = [],
+                presentFields = [],
+                absentFields = [],
+                showFields = [],
+                json = True
+              },
+          parseConceptsMatches
+            ["concepts", "b", "--type", "Policy", "--where", "status=accepted", "--show", "requestId"]
+            ConceptsOptions
+              { bundlePath = "b",
+                conceptTypes = ["Policy"],
+                fieldFilters = [FieldEquals (TopLevelField "status") "accepted"],
+                presentFields = [],
+                absentFields = [],
+                showFields = ["requestId"],
+                json = False
+              },
+          parseConceptsMatches
+            ["concepts", "b", "--has", "completedAt", "--missing", "reviews.outcome"]
+            ConceptsOptions
+              { bundlePath = "b",
+                conceptTypes = [],
+                fieldFilters = [],
+                presentFields = [TopLevelField "completedAt"],
+                absentFields = [NestedField "reviews" "outcome"],
+                showFields = [],
+                json = False
+              },
+          -- A filter is rejected before the bundle is walked: no '=' at all, and
+          -- a key nesting deeper than one level.
+          parseFails ["concepts", "b", "--where", "status"],
+          parseFails ["concepts", "b", "--where", "a.b.c=x"],
+          parseFails ["concepts", "b", "--has", "a.b.c"],
           renderRegistryTable sampleRegistryEntries == sampleRegistryTable,
           renderProfileDetail "nested.decisions" sampleDecisionsProfile == sampleProfileDetail,
           renderProfileDetail "" samplePostgresqlProfile == sampleUndocumentedProfileDetail,
@@ -347,6 +394,9 @@ main = do
           computationsReportsFixtures,
           computationsReportsExample,
           conceptsReportsFixtures,
+          conceptsShowsFilteredColumns,
+          conceptsReportsExample,
+          conceptsKeepsStatusDefaultOut,
           profileDocStrictWithTimestamp,
           configDefaults,
           configProjectPrecedence,
@@ -1139,6 +1189,52 @@ testConceptsReportsFixtureBundle =
       "requests/alpha  Improvement Request  Alpha",
       "requests/beta   Improvement Request  Beta",
       "requests/gamma  Improvement Request  Gamma"
+    ]
+
+-- | @okf concepts --type 'Improvement Request' --show status@ over the fixture
+-- bundle: the type filter drops the one @Note@, and the extra column sits
+-- between @type@ and @title@ and pads to @completed@, its widest value.
+testConceptsShowsFilteredColumns :: IO Bool
+testConceptsShowsFilteredColumns =
+  assertConceptReport
+    "okf concepts --type 'Improvement Request' --show status"
+    ("okf-core" </> "test" </> "fixtures" </> "concept-filters")
+    ["status"]
+    (filterConcepts [FieldEquals (TopLevelField "type") "Improvement Request"])
+    [ "requests/alpha  Improvement Request  accepted   Alpha",
+      "requests/beta   Improvement Request  proposed   Beta",
+      "requests/gamma  Improvement Request  completed  Gamma"
+    ]
+
+-- | @okf concepts --type Policy@ over the shipped example. This is the
+-- transcript @docs\/user\/cli.md@ documents, pinned so the documentation cannot
+-- rot, exactly as 'testComputationsReportsExampleBundle' is.
+testConceptsReportsExampleBundle :: IO Bool
+testConceptsReportsExampleBundle =
+  assertConceptReport
+    "okf concepts examples/ddd-ordering --type Policy"
+    ("examples" </> "ddd-ordering")
+    []
+    (filterConcepts [FieldEquals (TopLevelField "type") "Policy"])
+    [ "policies/issue-invoice-on-order  Policy  Issue Invoice On Order",
+      "policies/reserve-stock           Policy  Reserve Stock"
+    ]
+
+-- | The result that surprises people, pinned: @examples\/ddd-ordering@ has
+-- twenty-two concepts and only three say @status: stable@ in frontmatter, so
+-- those three are what @--where status=stable@ selects. Seeing eighteen more
+-- rows here would mean OKF v0.2's "absent means stable" default had leaked into
+-- a command that reports frontmatter and nothing else.
+testConceptsDoesNotApplyStatusDefault :: IO Bool
+testConceptsDoesNotApplyStatusDefault =
+  assertConceptReport
+    "okf concepts examples/ddd-ordering --where status=stable --show status"
+    ("examples" </> "ddd-ordering")
+    ["status"]
+    (filterConcepts [FieldEquals (TopLevelField "status") "stable"])
+    [ "aggregates/order           Aggregate             stable  Order",
+      "computations/order-total   Attested Computation  stable  Order total for a placed order",
+      "metrics/order-total-value  Metric                stable  Order total value"
     ]
 
 -- | Assert the exact lines @okf concepts@ prints for a repository bundle, after
