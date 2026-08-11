@@ -10,7 +10,7 @@ import Data.Time.Clock (UTCTime (..))
 import Okf.Bundle (Concept, bundleInventoryOfConcepts, conceptAttester, conceptExecutor, conceptFromDocument, conceptIdOf, conceptParameters, conceptRuntime, conceptType, walkBundle, walkBundleInventory)
 import Okf.Cli
 import Okf.Cli.Assist (AssistOptions (..), buildAgentCommand)
-import Okf.Cli.Config (AssistSettings (..), ConfigSource (..), KitSettings (..), OkfConfig (..), OkfProvider (..), defaultOkfConfig, exampleConfigText, findConfigSource, loadOkfConfig, okfConfigEnvVar, projectConfigPath)
+import Okf.Cli.Config (AgentFieldSettings (..), AgentSettings (..), AssistSettings (..), ConfigSource (..), KitSettings (..), OkfConfig (..), OkfProvider (..), agentSharedDefaults, defaultOkfConfig, exampleConfigText, findConfigSource, loadAgentScopes, loadOkfConfig, okfConfigEnvVar, projectConfigPath)
 import Okf.Cli.Fzf (Candidate (..), FzfOpts (..), optsToArgs, parseSelectionIndex, renderCandidateLines, shellQuote, withAnsi, withHeight, withNoSort, withPrompt)
 import Okf.Cli.Fzf.Selector (ConceptOrder (..), conceptCandidates, conceptPreviewCommand, orderConcepts, parseBundleSearchRoots)
 import Okf.Cli.Help (HelpTopic (..), helpTopics)
@@ -18,7 +18,7 @@ import Okf.ConceptId (parseConceptId, renderConceptId)
 import Okf.Document (Attester (..), Executor (..), Parameter (..), parseDocument)
 import Okf.Index (OkfVersion (..), VersionDeclaration (..), parseOkfVersion, readBundleVersion)
 import Okf.Profile (Cardinality (..), FieldCondition (..), FieldFormat (..), FieldRule (..), FrontmatterRules (..), HandleReferenceRule (..), NestedFieldRule (..), NestedRules (..), PathReferenceRule (..), ProfileSpec (..), TypeRule (..), compileProfile, loadProfileFile, validateProfile, validateProfileVersion)
-import Okf.Profile.Registry (RegistryEntry (..))
+import Okf.Profile.Registry (RegistryEntry (..), defaultRegistryReference)
 import Okf.Query (ConceptFilter (..), FieldSelector (..), filterConcepts)
 import Okf.Validation (ValidationProfile (..), validateBundle)
 import Options.Applicative
@@ -35,6 +35,8 @@ main = do
   configProjectPrecedence <- testConfigProjectPrecedence
   configEnvPrecedence <- testConfigEnvPrecedence
   configLegacyWithoutProfiles <- testConfigLegacyWithoutProfiles
+  configLegacyWithoutAgent <- testConfigLegacyWithoutAgent
+  agentScopesLoadsBothFiles <- testAgentScopesLoadsBothFiles
   configInvalidDhall <- testConfigInvalidDhall
   assistCommandBuilder <- testAssistCommandBuilder
   assistModelOverride <- testAssistModelOverride
@@ -441,6 +443,8 @@ main = do
           configProjectPrecedence,
           configEnvPrecedence,
           configLegacyWithoutProfiles,
+          configLegacyWithoutAgent,
+          agentScopesLoadsBothFiles,
           configInvalidDhall,
           assistCommandBuilder,
           assistModelOverride,
@@ -1562,7 +1566,7 @@ testConfigLegacyWithoutProfiles =
     projectPath <- projectConfigPath
     Text.IO.writeFile projectPath legacyConfigText
     loaded <- loadOkfConfig
-    pure (loaded == Right (defaultOkfConfig, SourceProject projectPath))
+    pure (loaded == Right (configWithMappedAssist Nothing, SourceProject projectPath))
 
 -- | Verbatim okf 0.2.0.0 configuration: the record before @profiles@ existed.
 legacyConfigText :: Text.Text
@@ -1577,6 +1581,122 @@ legacyConfigText =
       "        { provider = Provider.Claude",
       "        , model = None Text",
       "        , systemPrompt = None Text",
+      "        }",
+      "    }"
+    ]
+
+-- | A config file written for the release before @agent@ existed has @kit@,
+-- @assist@, and @profiles@. Its per-command @assist@ block must be carried onto
+-- the @agent.assist@ keys that replaced it, so a user who never edits their file
+-- keeps the model they configured.
+testConfigLegacyWithoutAgent :: IO Bool
+testConfigLegacyWithoutAgent =
+  withIsolatedConfigEnv "okf-cli-config-legacy-agent" $ do
+    projectPath <- projectConfigPath
+    Text.IO.writeFile projectPath legacyWithProfilesConfigText
+    loaded <- loadOkfConfig
+    pure (loaded == Right (configWithMappedAssist (Just "legacy-model"), SourceProject projectPath))
+
+-- | The shape okf wrote after @profiles@ arrived and before @agent@ did.
+legacyWithProfilesConfigText :: Text.Text
+legacyWithProfilesConfigText =
+  Text.unlines
+    [ "let Provider = < Claude | Codex >",
+      "in  { kit =",
+      "        { repoUrl = \"https://github.com/shinzui/okf-kit.git\"",
+      "        , providers = [ Provider.Claude ]",
+      "        }",
+      "    , assist =",
+      "        { provider = Provider.Claude",
+      "        , model = Some \"legacy-model\"",
+      "        , systemPrompt = None Text",
+      "        }",
+      "    , profiles =",
+      "        { registry = \"" <> defaultRegistryReference <> "\"",
+      "        }",
+      "    }"
+    ]
+
+-- | Defaults everywhere, except that the old @assist@ block has been mapped
+-- onto @agent.assist@. The provider is 'Just' rather than 'Nothing' because the
+-- old field was required, so every such file states a provider.
+configWithMappedAssist :: Maybe Text.Text -> OkfConfig
+configWithMappedAssist legacyModel =
+  defaultOkfConfig
+    { assist =
+        AssistSettings
+          { provider = ProviderClaude,
+            model = legacyModel,
+            systemPrompt = Nothing
+          },
+      agent =
+        AgentSettings
+          { provider = Nothing,
+            model = Nothing,
+            effort = Nothing,
+            systemPrompt = Nothing,
+            assist =
+              AgentFieldSettings
+                { provider = Just ProviderClaude,
+                  model = legacyModel,
+                  effort = Nothing,
+                  systemPrompt = Nothing
+                }
+          }
+    }
+
+-- | The project file no longer hides the global one. Both scopes are read, and
+-- the resolver decides between them; before this, the project file winning meant
+-- the global file was never opened at all.
+testAgentScopesLoadsBothFiles :: IO Bool
+testAgentScopesLoadsBothFiles =
+  withIsolatedConfigEnv "okf-cli-agent-scopes" $ do
+    projectPath <- projectConfigPath
+    Text.IO.writeFile projectPath (agentModelConfigText "local-model")
+    home <- getCurrentDirectory
+    let globalPath = home </> ".config" </> "okf" </> "config.dhall"
+    createDirectoryIfMissing True (home </> ".config" </> "okf")
+    Text.IO.writeFile globalPath (agentModelConfigText "global-model")
+    scopes <- loadAgentScopes
+    pure $
+      case scopes of
+        Left _ -> False
+        Right (localAgent, globalAgent) ->
+          fmap sharedModel localAgent == Just (Just "local-model")
+            && fmap sharedModel globalAgent == Just (Just "global-model")
+  where
+    sharedModel settings = case agentSharedDefaults settings of
+      AgentFieldSettings {model} -> model
+
+-- | A current-shape configuration file that sets only @agent.model@.
+agentModelConfigText :: Text.Text -> Text.Text
+agentModelConfigText modelName =
+  Text.unlines
+    [ "let Provider = < Claude | Codex >",
+      "let Effort = < Minimal | Low | Medium | High | XHigh | Max >",
+      "in  { kit =",
+      "        { repoUrl = \"https://github.com/shinzui/okf-kit.git\"",
+      "        , providers = [ Provider.Claude ]",
+      "        }",
+      "    , assist =",
+      "        { provider = Provider.Claude",
+      "        , model = None Text",
+      "        , systemPrompt = None Text",
+      "        }",
+      "    , agent =",
+      "        { provider = None Provider",
+      "        , model = Some \"" <> modelName <> "\"",
+      "        , effort = None Effort",
+      "        , systemPrompt = None Text",
+      "        , assist =",
+      "            { provider = None Provider",
+      "            , model = None Text",
+      "            , effort = None Effort",
+      "            , systemPrompt = None Text",
+      "            }",
+      "        }",
+      "    , profiles =",
+      "        { registry = \"" <> defaultRegistryReference <> "\"",
       "        }",
       "    }"
     ]

@@ -104,11 +104,11 @@ Milestone 2 — route `okf assist` through Baikai's interactive launchers:
 
 Milestone 3 — the `agent` configuration block and two-scope loading:
 
-- [ ] Add `OkfEffort`, `AgentFieldSettings`, and `AgentSettings` to `okf-cli/src/Okf/Cli/Config.hs`.
-- [ ] Add the `agent` field to `OkfConfig` and add the two legacy record shapes to the decode fallback chain.
-- [ ] Add `ConfigScopes` and `findConfigScopes` / `loadAgentScopes`, leaving `findConfigSource` and `loadOkfConfig` unchanged.
-- [ ] Update `renderConfig` and `exampleConfigText`.
-- [ ] Add tests for legacy decoding and for both scopes being loaded.
+- [x] Add `OkfEffort`, `AgentFieldSettings`, and `AgentSettings` to `okf-cli/src/Okf/Cli/Config.hs`. (2026-08-11T19:35Z)
+- [x] Add the `agent` field to `OkfConfig` and add the two legacy record shapes to the decode fallback chain. (2026-08-11T19:35Z)
+- [x] Add `ConfigScopes` and `findConfigScopes` / `loadAgentScopes`, leaving `findConfigSource` and `loadOkfConfig` unchanged. (2026-08-11T19:35Z)
+- [x] Update `renderConfig` and `exampleConfigText`. Note: the example keeps its `assist` block for now, because `OkfConfig` still carries that field; Milestone 5 removes both together. (2026-08-11T19:35Z)
+- [x] Add tests for legacy decoding and for both scopes being loaded. (2026-08-11T19:38Z)
 
 Milestone 4 — the provenance-tracking resolver:
 
@@ -337,6 +337,29 @@ Record every decision made while working on the plan.
   effort, where `--` goes, that Codex has no system-prompt flag — in Baikai, which is the
   part the plan's Decision Log actually cares about; only process control, which is not
   vendor-specific at all, stays in okf. Revisit and delete `launchAgent` when IR-5 lands.
+  Date: 2026-08-11
+
+- Decision: `exampleConfigText` keeps its `assist` block through Milestone 3 and loses it
+  in Milestone 5, rather than switching to the plan's final text in Milestone 3.
+  Rationale: the plan's Milestone 3 example drops `assist`, but Milestone 3 also keeps
+  `assist :: !AssistSettings` on `OkfConfig`, and Dhall decodes records strictly — so that
+  file would fail the current shape, fail both fallback shapes (each of which requires
+  `assist`), and error out. `testConfigProjectPrecedence` writes `exampleConfigText` and
+  asserts it decodes to `defaultOkfConfig`, so this would have been caught either way, but
+  the acceptance criterion "`okf config init` followed by `okf config show`" is the point:
+  the example must always be a file okf can read. The two edits move together in
+  Milestone 5.
+  Date: 2026-08-11
+
+- Decision: Legacy `assist.provider` maps to `agent.assist.provider = Just p`, which makes
+  every pre-`agent` configuration file state a provider explicitly rather than inheriting
+  the built-in default.
+  Rationale: this is what the plan specifies, and it is right — the old field was
+  required, so every such file really does state one — but it has a visible consequence
+  worth naming. `testConfigLegacyWithoutProfiles` used to assert that a 0.2.0.0 file
+  decodes to exactly `defaultOkfConfig`; it no longer can, because the decoded config now
+  carries `agent.assist.provider = Just ProviderClaude`. The test was updated to expect
+  the mapped shape rather than relaxed, since the mapping is the behaviour under test.
   Date: 2026-08-11
 
 - Decision: `InteractiveLauncher` gains a `launcherInstallHint` field beyond the four the
