@@ -12,7 +12,6 @@
 module Okf.Cli.Config
   ( OkfConfig (..),
     KitSettings (..),
-    AssistSettings (..),
     ProfileSettings (..),
     AgentFieldSettings (..),
     AgentSettings (..),
@@ -104,8 +103,11 @@ data KitSettings = KitSettings
   deriving stock (Generic, Eq, Show)
   deriving anyclass (FromDhall)
 
--- | Assist-related settings: which provider to launch and optional overrides.
-data AssistSettings = AssistSettings
+-- | The @assist@ block okf carried before the @agent@ block replaced it. It is
+-- no longer part of 'OkfConfig'; it survives only as a decode shape, so that a
+-- configuration file written for an earlier release still loads and its values
+-- are carried onto the keys that replaced them.
+data LegacyAssistSettings = LegacyAssistSettings
   { provider :: !OkfProvider,
     model :: !(Maybe Text),
     systemPrompt :: !(Maybe Text)
@@ -172,19 +174,18 @@ defaultAgentSettings =
 -- | The whole okf configuration.
 data OkfConfig = OkfConfig
   { kit :: !KitSettings,
-    assist :: !AssistSettings,
     agent :: !AgentSettings,
     profiles :: !ProfileSettings
   }
   deriving stock (Generic, Eq, Show)
   deriving anyclass (FromDhall)
 
--- | The configuration record as it stood before the @agent@ block was added.
--- Dhall decodes records strictly, so without this fallback adding a field would
--- stop every existing config file from loading.
+-- | The configuration record as it stood before the @agent@ block replaced
+-- @assist@. Dhall decodes records strictly, so without this fallback changing
+-- the record would stop every existing config file from loading.
 data ConfigShapeWithoutAgent = ConfigShapeWithoutAgent
   { kit :: !KitSettings,
-    assist :: !AssistSettings,
+    assist :: !LegacyAssistSettings,
     profiles :: !ProfileSettings
   }
   deriving stock (Generic, Eq, Show)
@@ -194,7 +195,7 @@ data ConfigShapeWithoutAgent = ConfigShapeWithoutAgent
 -- added.
 data ConfigShapeV020 = ConfigShapeV020
   { kit :: !KitSettings,
-    assist :: !AssistSettings
+    assist :: !LegacyAssistSettings
   }
   deriving stock (Generic, Eq, Show)
   deriving anyclass (FromDhall)
@@ -227,12 +228,6 @@ defaultOkfConfig =
         KitSettings
           { repoUrl = "https://github.com/shinzui/okf-kit.git",
             providers = [ProviderClaude]
-          },
-      assist =
-        AssistSettings
-          { provider = ProviderClaude,
-            model = Nothing,
-            systemPrompt = Nothing
           },
       agent = defaultAgentSettings,
       profiles = defaultProfileSettings
@@ -371,13 +366,12 @@ decodeConfigFile path = do
 
 fromShapeWithoutAgent :: ConfigShapeWithoutAgent -> OkfConfig
 fromShapeWithoutAgent ConfigShapeWithoutAgent {kit, assist, profiles} =
-  OkfConfig {kit, assist, agent = agentSettingsFromAssist assist, profiles}
+  OkfConfig {kit, agent = agentSettingsFromAssist assist, profiles}
 
 fromShapeV020 :: ConfigShapeV020 -> OkfConfig
 fromShapeV020 ConfigShapeV020 {kit, assist} =
   OkfConfig
     { kit,
-      assist,
       agent = agentSettingsFromAssist assist,
       profiles = defaultProfileSettings
     }
@@ -385,8 +379,8 @@ fromShapeV020 ConfigShapeV020 {kit, assist} =
 -- | Carry a pre-@agent@ @assist@ block onto the per-command keys that replaced
 -- it. The old block was per-command by nature, so it maps onto
 -- @agent.assist.*@ rather than onto the shared defaults.
-agentSettingsFromAssist :: AssistSettings -> AgentSettings
-agentSettingsFromAssist AssistSettings {provider, model, systemPrompt} =
+agentSettingsFromAssist :: LegacyAssistSettings -> AgentSettings
+agentSettingsFromAssist LegacyAssistSettings {provider, model, systemPrompt} =
   AgentSettings
     { provider = Nothing,
       model = Nothing,
@@ -427,16 +421,12 @@ renderConfig :: OkfConfig -> Text
 renderConfig
   OkfConfig
     { kit = KitSettings {repoUrl, providers},
-      assist = AssistSettings {provider, model, systemPrompt},
       agent = agentSettings@AgentSettings {assist = agentAssist},
       profiles = ProfileSettings {registry}
     } =
     Text.unlines
       ( [ "kit.repoUrl     = " <> repoUrl,
-          "kit.providers   = " <> renderProviders providers,
-          "assist.provider = " <> renderProvider provider,
-          "assist.model    = " <> fromMaybe "(unset)" model,
-          "assist.systemPrompt = " <> fromMaybe "(unset)" systemPrompt
+          "kit.providers   = " <> renderProviders providers
         ]
           <> renderAgentFields "agent." (agentSharedDefaults agentSettings)
           <> renderAgentFields "agent.assist." agentAssist
@@ -472,11 +462,6 @@ exampleConfigText =
       "in  { kit =",
       "        { repoUrl = \"https://github.com/shinzui/okf-kit.git\"",
       "        , providers = [ Provider.Claude ]",
-      "        }",
-      "    , assist =",
-      "        { provider = Provider.Claude",
-      "        , model = None Text",
-      "        , systemPrompt = None Text",
       "        }",
       "    , agent =",
       "        -- Shared defaults for every agent-launching command.",

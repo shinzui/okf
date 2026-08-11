@@ -119,11 +119,12 @@ Milestone 4 — the provenance-tracking resolver:
 
 Milestone 5 — wire resolution into `okf assist`:
 
-- [ ] Add `--provider`, `--effort`, and `--system-prompt` to `assistOptionsParser`; keep `--model`.
-- [ ] Read `OKF_AGENT_*` environment variables in `Okf.Cli`.
-- [ ] Make `handleAssistCommand` consume a `ResolvedAgent` instead of `OkfConfig`.
-- [ ] Delete the "the Codex provider is not yet supported" refusal; the resolved provider now selects a launcher.
-- [ ] Prove `okf assist --effort max --print-command` emits `--effort max`, and `--provider codex --effort high` emits `-c model_reasoning_effort=high`.
+- [x] Add `--provider`, `--effort`, and `--system-prompt` to `assistOptionsParser`; keep `--model`. (2026-08-11T20:05Z)
+- [x] Read `OKF_AGENT_*` environment variables in `Okf.Cli`. (2026-08-11T20:05Z)
+- [x] Make `handleAssistCommand` consume a `ResolvedAgent`. It keeps its `OkfConfig` argument as well, because `agentDirsForSession` needs the `kit` settings, which are not agent settings. (2026-08-11T20:05Z)
+- [x] Delete the "the Codex provider is not yet supported" refusal; the resolved provider now selects a launcher. (Done in Milestone 2.)
+- [x] Delete the `assist` field from `OkfConfig`; `AssistSettings` survives, unexported, as `LegacyAssistSettings` — the decode shape that keeps every released configuration file loading. (2026-08-11T20:08Z)
+- [x] Prove `okf assist --effort max --print-command` emits `--effort max`, and `--provider codex --effort high` emits `-c model_reasoning_effort=high`. (2026-08-11T20:10Z)
 
 Milestone 6 — the `okf config agent` inspection command:
 
@@ -375,6 +376,44 @@ Record every decision made while working on the plan.
   decodes to exactly `defaultOkfConfig`; it no longer can, because the decoded config now
   carries `agent.assist.provider = Just ProviderClaude`. The test was updated to expect
   the mapped shape rather than relaxed, since the mapping is the behaviour under test.
+  Date: 2026-08-11
+
+- Decision: `AssistSettings` is renamed `LegacyAssistSettings` and kept as an unexported
+  decode shape rather than deleted outright.
+  Rationale: the plan says to delete the record, but the two fallback shapes in the decode
+  chain are records containing an `assist` field, and that field needs a type with a
+  `FromDhall` instance. Deleting it would mean inlining the same three fields into both
+  shapes. The rename says what the type is now for — nothing reads it as configuration,
+  only as a migration source — and the export list still drops it, so the module's public
+  surface matches the plan.
+  Date: 2026-08-11
+
+- Decision: `handleAssistCommand` keeps its `OkfConfig` parameter alongside the new
+  `ResolvedAgent`, giving `handleAssistCommand :: OkfConfig -> ResolvedAgent ->
+  AssistOptions -> IO ()` rather than the plan's two-argument signature.
+  Rationale: `agentDirsForSession (kitConfig config)` supplies the `--add-dir` entries and
+  reads the `kit` block, which this plan deliberately leaves on the single-file resolution
+  model. Dropping the parameter would mean either loading configuration a second time
+  inside `Okf.Cli.Assist` or routing kit settings through `ResolvedAgent`, which would put
+  a non-agent setting inside the agent resolver. `buildAgentCommand` does match the plan's
+  signature exactly, and it is the one the tests use.
+  Date: 2026-08-11
+
+- Decision: An `OKF_AGENT_*` variable set to blank or whitespace is treated as unset
+  rather than as an invalid value.
+  Rationale: the resolver already treats a blank configuration key as absent, and
+  `VAR=` is the conventional way to clear an environment variable for one command. The
+  alternative is that `OKF_AGENT_PROVIDER= okf assist …` fails with `unknown provider ""`,
+  which reports a typo where the user made a deliberate choice. Applying the rule to all
+  four variables keeps one story rather than two.
+  Date: 2026-08-11
+
+- Decision: No decode shape is added for `{kit, assist, agent, profiles}` — the record
+  that existed only between this plan's Milestone 3 and Milestone 5 commits.
+  Rationale: no released okf ever wrote that shape, so nobody outside this branch has such
+  a file. Carrying a permanent fourth fallback for a schema that existed for two commits
+  would be clutter with no user behind it. Every shape a release has written is covered:
+  0.2.0.0's `{kit, assist}` and 0.5.0.0's `{kit, assist, profiles}`.
   Date: 2026-08-11
 
 - Decision: `InteractiveLauncher` gains a `launcherInstallHint` field beyond the four the

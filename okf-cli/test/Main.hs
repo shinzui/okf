@@ -9,9 +9,9 @@ import Data.Time.Calendar (fromGregorian)
 import Data.Time.Clock (UTCTime (..))
 import Okf.Bundle (Concept, bundleInventoryOfConcepts, conceptAttester, conceptExecutor, conceptFromDocument, conceptIdOf, conceptParameters, conceptRuntime, conceptType, walkBundle, walkBundleInventory)
 import Okf.Cli
-import Okf.Cli.Agent.Config (AgentCommandName (..), AgentField (..), AgentOverrides (..), ResolvedAgent (..), ResolvedField (..), agentSourceLabel, noAgentOverrides, parseOkfEffort, parseOkfProvider, resolveAgent)
+import Okf.Cli.Agent.Config (AgentCommandName (..), AgentConfigSource (..), AgentField (..), AgentOverrides (..), ResolvedAgent (..), ResolvedField (..), agentSourceLabel, noAgentOverrides, parseOkfEffort, parseOkfProvider, resolveAgent)
 import Okf.Cli.Assist (AssistOptions (..), buildAgentCommand)
-import Okf.Cli.Config (AgentFieldSettings (..), AgentSettings (..), AssistSettings (..), ConfigSource (..), KitSettings (..), OkfConfig (..), OkfEffort (..), OkfProvider (..), agentSharedDefaults, defaultOkfConfig, exampleConfigText, findConfigSource, loadAgentScopes, loadOkfConfig, okfConfigEnvVar, projectConfigPath)
+import Okf.Cli.Config (AgentFieldSettings (..), AgentSettings (..), ConfigSource (..), OkfConfig (..), OkfEffort (..), OkfProvider (..), agentSharedDefaults, defaultOkfConfig, exampleConfigText, findConfigSource, loadAgentScopes, loadOkfConfig, okfConfigEnvVar, projectConfigPath)
 import Okf.Cli.Fzf (Candidate (..), FzfOpts (..), optsToArgs, parseSelectionIndex, renderCandidateLines, shellQuote, withAnsi, withHeight, withNoSort, withPrompt)
 import Okf.Cli.Fzf.Selector (ConceptOrder (..), conceptCandidates, conceptPreviewCommand, orderConcepts, parseBundleSearchRoots)
 import Okf.Cli.Help (HelpTopic (..), helpTopics)
@@ -450,6 +450,8 @@ main = do
           assistCommandBuilder,
           assistModelOverride,
           assistCodexCommandBuilder,
+          testAssistEffortReachesEachVendor,
+          testAssistUnconfiguredRendersNoFlags,
           testAgentFlagBeatsEverything,
           testAgentEnvBeatsBothScopes,
           testAgentCommandKeyBeatsDefaultKeyInScope,
@@ -1634,13 +1636,7 @@ legacyWithProfilesConfigText =
 configWithMappedAssist :: Maybe Text.Text -> OkfConfig
 configWithMappedAssist legacyModel =
   defaultOkfConfig
-    { assist =
-        AssistSettings
-          { provider = ProviderClaude,
-            model = legacyModel,
-            systemPrompt = Nothing
-          },
-      agent =
+    { agent =
         AgentSettings
           { provider = Nothing,
             model = Nothing,
@@ -1689,11 +1685,6 @@ agentModelConfigText modelName =
       "        { repoUrl = \"https://github.com/shinzui/okf-kit.git\"",
       "        , providers = [ Provider.Claude ]",
       "        }",
-      "    , assist =",
-      "        { provider = Provider.Claude",
-      "        , model = None Text",
-      "        , systemPrompt = None Text",
-      "        }",
       "    , agent =",
       "        { provider = None Provider",
       "        , model = Some \"" <> modelName <> "\"",
@@ -1729,7 +1720,7 @@ testConfigInvalidDhall =
 testAssistCommandBuilder :: IO Bool
 testAssistCommandBuilder =
   pure $
-    buildAgentCommand ProviderClaude assistTestConfig ["/a", "/b"] (AssistOptions "do work" Nothing False)
+    buildAgentCommand (assistTestAgent ProviderClaude Nothing) ["/a", "/b"] (assistPrompt "do work")
       == Right
         ( "claude",
           [ "--model",
@@ -1745,10 +1736,13 @@ testAssistCommandBuilder =
           ]
         )
 
+-- | A resolved model is a resolved model however it was resolved, so this now
+-- asserts that the builder renders whatever won rather than that the flag beats
+-- the file; that ordering is 'resolveAgent'\'s job and is tested there.
 testAssistModelOverride :: IO Bool
 testAssistModelOverride =
   pure $
-    buildAgentCommand ProviderClaude assistTestConfig [] (AssistOptions "do work" (Just "override-model") True)
+    buildAgentCommand (resolvedAgentWith ProviderClaude (Just "override-model") Nothing (Just "Be concise")) [] (assistPrompt "do work")
       == Right
         ( "claude",
           [ "--model",
@@ -1767,7 +1761,7 @@ testAssistModelOverride =
 testAssistCodexCommandBuilder :: IO Bool
 testAssistCodexCommandBuilder =
   pure $
-    case buildAgentCommand ProviderCodex assistTestConfig ["/a"] (AssistOptions "do work" Nothing False) of
+    case buildAgentCommand (assistTestAgent ProviderCodex Nothing) ["/a"] (assistPrompt "do work") of
       Left _ -> False
       Right (executable, argv) ->
         executable == "codex"
@@ -1782,21 +1776,60 @@ testAssistCodexCommandBuilder =
           not (Text.null fromUserPrompt)
             && "Be concise" `Text.isInfixOf` beforeUserPrompt
 
-assistTestConfig :: OkfConfig
-assistTestConfig =
-  defaultOkfConfig
-    { assist =
-        AssistSettings
-          { provider = ProviderClaude,
-            model = Just "claude-opus-4-5",
-            systemPrompt = Just "Be concise"
-          },
-      kit =
-        KitSettings
-          { repoUrl = "file:///tmp/okf-kit",
-            providers = [ProviderClaude]
-          }
+-- | One neutral effort level, two correct vendor renderings, and no vendor
+-- knowledge in okf: Claude Code has no @minimal@ level so Baikai clamps it up to
+-- @low@, while Codex accepts all six spellings and gets it verbatim.
+testAssistEffortReachesEachVendor :: Bool
+testAssistEffortReachesEachVendor =
+  claudeArgs EffortMax == Just ["--effort", "max"]
+    && claudeArgs EffortMinimal == Just ["--effort", "low"]
+    && codexArgs EffortMax == Just ["-c", "model_reasoning_effort=max"]
+    && codexArgs EffortMinimal == Just ["-c", "model_reasoning_effort=minimal"]
+  where
+    claudeArgs level = effortArgsOf ProviderClaude level
+    codexArgs level = effortArgsOf ProviderCodex level
+    effortArgsOf okfProvider level =
+      case buildAgentCommand (assistTestAgent okfProvider (Just level)) [] (assistPrompt "x") of
+        Left _ -> Nothing
+        -- The model arguments come first and the effort arguments straight
+        -- after, so drop the two model ones and keep the next two.
+        Right (_, argv) -> Just (take 2 (drop 2 argv))
+
+-- | Nothing configured anywhere renders no flags at all beyond the agent
+-- directories, so upgrading okf cannot change anyone's token spend.
+testAssistUnconfiguredRendersNoFlags :: Bool
+testAssistUnconfiguredRendersNoFlags =
+  buildAgentCommand (resolvedAgentWith ProviderClaude Nothing Nothing Nothing) ["/a"] (assistPrompt "x")
+    == Right ("claude", ["--add-dir", "/a", "--", "x"])
+
+assistPrompt :: Text.Text -> AssistOptions
+assistPrompt promptText =
+  AssistOptions
+    { prompt = promptText,
+      providerOverride = Nothing,
+      modelOverride = Nothing,
+      effortOverride = Nothing,
+      systemPromptOverride = Nothing,
+      printCommand = False
     }
+
+assistTestAgent :: OkfProvider -> Maybe OkfEffort -> ResolvedAgent
+assistTestAgent okfProvider level =
+  resolvedAgentWith okfProvider (Just "claude-opus-4-5") level (Just "Be concise")
+
+-- | A 'ResolvedAgent' as the resolver would produce it. The sources are
+-- arbitrary here: the command builder reads values, not provenance.
+resolvedAgentWith ::
+  OkfProvider -> Maybe Text.Text -> Maybe OkfEffort -> Maybe Text.Text -> ResolvedAgent
+resolvedAgentWith okfProvider modelName level systemPromptText =
+  ResolvedAgent
+    { provider = ResolvedField {resolvedValue = okfProvider, resolvedSource = SourceLocalCommand},
+      model = resolvedLocal <$> modelName,
+      effort = resolvedLocal <$> level,
+      systemPrompt = resolvedLocal <$> systemPromptText
+    }
+  where
+    resolvedLocal resolvedValue = ResolvedField {resolvedValue, resolvedSource = SourceLocalCommand}
 
 withIsolatedConfigEnv :: String -> IO Bool -> IO Bool
 withIsolatedConfigEnv name runTest = do

@@ -9,6 +9,7 @@
 module Okf.Cli.Assist
   ( AssistOptions (..),
     assistOptionsParser,
+    assistAgentOverrides,
     handleAssistCommand,
     buildAgentCommand,
   )
@@ -21,11 +22,20 @@ import Baikai.Provider.Claude.Interactive (claudeInteractiveCommand, defaultClau
 import Baikai.Provider.OpenAI.Interactive (codexInteractiveCommand, defaultCodexInteractiveConfig)
 import Control.Exception (IOException, try)
 import Control.Lens ((&), (.~))
+import Data.Bifunctor (first)
 import Data.Generics.Labels ()
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text.IO
-import Okf.Cli.Config (AssistSettings (..), OkfConfig (..), OkfProvider (..))
+import Okf.Cli.Agent.Config
+  ( AgentOverrides (..),
+    ResolvedAgent (..),
+    ResolvedField (..),
+    parseOkfEffort,
+    parseOkfProvider,
+    thinkingLevelOf,
+  )
+import Okf.Cli.Config (OkfConfig, OkfEffort, OkfProvider (..))
 import Okf.Cli.Kit.Config (kitConfig)
 import Options.Applicative
 import System.Exit (ExitCode (..), exitWith)
@@ -34,7 +44,10 @@ import System.Process (createProcess, delegate_ctlc, proc, waitForProcess)
 
 data AssistOptions = AssistOptions
   { prompt :: !Text,
+    providerOverride :: !(Maybe OkfProvider),
     modelOverride :: !(Maybe Text),
+    effortOverride :: !(Maybe OkfEffort),
+    systemPromptOverride :: !(Maybe Text),
     printCommand :: !Bool
   }
   deriving stock (Show, Eq)
@@ -44,10 +57,47 @@ assistOptionsParser =
   AssistOptions
     <$> (Text.pack <$> strArgument (metavar "PROMPT" <> help "The task or question to start the agent session with"))
     <*> optional
+      ( option
+          (eitherReader (first Text.unpack . parseOkfProvider . Text.pack))
+          ( long "provider"
+              <> metavar "PROVIDER"
+              <> help "Agent CLI to launch: claude or codex"
+          )
+      )
+    <*> optional
       ( Text.pack
           <$> strOption (long "model" <> metavar "MODEL" <> help "Override the assist model from config")
       )
+    <*> optional
+      ( option
+          (eitherReader (first Text.unpack . parseOkfEffort . Text.pack))
+          ( long "effort"
+              <> metavar "LEVEL"
+              <> help "Reasoning effort: minimal, low, medium, high, xhigh, or max"
+          )
+      )
+    <*> optional
+      ( Text.pack
+          <$> strOption
+            ( long "system-prompt"
+                <> metavar "TEXT"
+                <> help "Extra system prompt, appended to the agent's own"
+            )
+      )
     <*> switch (long "print-command" <> help "Print the agent command line instead of launching it")
+
+-- | The flag layer of the precedence chain. Values are already parsed, so
+-- @--effort medum@ fails during argument parsing with the list of valid levels
+-- rather than reaching resolution as a string nobody can use.
+assistAgentOverrides :: AssistOptions -> AgentOverrides
+assistAgentOverrides
+  AssistOptions {providerOverride, modelOverride, effortOverride, systemPromptOverride} =
+    AgentOverrides
+      { provider = providerOverride,
+        model = modelOverride,
+        effort = effortOverride,
+        systemPrompt = systemPromptOverride
+      }
 
 -- | Everything that differs between the agent CLIs okf can launch.
 --
@@ -94,36 +144,38 @@ launcherFor ProviderCodex =
 -- empty renders no flag at all, so an unconfigured okf produces the command
 -- line it has always produced.
 assistLaunchRequest ::
-  InteractiveLauncher -> OkfConfig -> [FilePath] -> AssistOptions -> InteractiveLaunchRequest
+  InteractiveLauncher -> ResolvedAgent -> [FilePath] -> AssistOptions -> InteractiveLaunchRequest
 assistLaunchRequest
   launcher
-  OkfConfig {assist = AssistSettings {model = configModel, systemPrompt}}
+  ResolvedAgent {model, effort, systemPrompt}
   agentDirs
-  AssistOptions {prompt, modelOverride} =
-    applySystemPrompt launcher systemPrompt $
+  AssistOptions {prompt} =
+    applySystemPrompt launcher (resolvedValue <$> systemPrompt) $
       interactiveLaunchRequest prompt
-        & #modelId .~ (modelOverride <|> configModel)
+        & #modelId .~ (resolvedValue <$> model)
+        & #effort .~ (thinkingLevelOf . resolvedValue <$> effort)
         & #extraDirs .~ agentDirs
 
--- | Render the agent argv from config, discovered kit agent dirs, and command
--- options. A 'Left' means the request asked for something the chosen vendor
--- cannot express, and no process should be started.
+-- | Render the agent argv from the resolved settings, discovered kit agent
+-- dirs, and command options. A 'Left' means the request asked for something the
+-- chosen vendor cannot express, and no process should be started.
 buildAgentCommand ::
-  OkfProvider ->
-  OkfConfig ->
+  ResolvedAgent ->
   [FilePath] ->
   AssistOptions ->
   Either AgentRenderError (FilePath, [String])
-buildAgentCommand provider config agentDirs options =
-  let launcher = launcherFor provider
-   in buildCommand launcher (assistLaunchRequest launcher config agentDirs options)
+buildAgentCommand resolved agentDirs options =
+  let launcher = launcherFor (resolvedProviderOf resolved)
+   in buildCommand launcher (assistLaunchRequest launcher resolved agentDirs options)
 
-handleAssistCommand :: OkfConfig -> AssistOptions -> IO ()
-handleAssistCommand config options = do
-  let chosenProvider = provider (assist config)
-      launcher = launcherFor chosenProvider
+resolvedProviderOf :: ResolvedAgent -> OkfProvider
+resolvedProviderOf ResolvedAgent {provider = ResolvedField {resolvedValue}} = resolvedValue
+
+handleAssistCommand :: OkfConfig -> ResolvedAgent -> AssistOptions -> IO ()
+handleAssistCommand config resolved options = do
+  let launcher = launcherFor (resolvedProviderOf resolved)
   agentDirs <- agentDirsForSession (kitConfig config)
-  case buildAgentCommand chosenProvider config agentDirs options of
+  case buildAgentCommand resolved agentDirs options of
     Left renderError -> do
       Text.IO.hPutStrLn stderr ("okf assist: " <> renderAgentRenderError renderError)
       exitWith (ExitFailure 2)

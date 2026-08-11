@@ -47,7 +47,17 @@ import Data.Text.IO qualified as Text.IO
 import Data.Time (defaultTimeLocale, formatTime, getCurrentTime, utctDay)
 import Okf.Actor (parseActor, renderActor)
 import Okf.Bundle
-import Okf.Cli.Assist (AssistOptions, assistOptionsParser, handleAssistCommand)
+import Okf.Cli.Agent.Config
+  ( AgentCommandName (..),
+    AgentField (..),
+    AgentOverrides (..),
+    ResolvedAgent,
+    agentFieldEnvVar,
+    parseOkfEffort,
+    parseOkfProvider,
+    resolveAgent,
+  )
+import Okf.Cli.Assist (AssistOptions, assistAgentOverrides, assistOptionsParser, handleAssistCommand)
 import Okf.Cli.Completions (CompletionsShell, completionsParser, handleCompletions)
 import Okf.Cli.Config
 import Okf.Cli.Fzf (FzfConfig, detectFzfConfig)
@@ -752,7 +762,8 @@ runCommand = \case
     handleKitCommand config kitCommand
   Assist assistOptions -> do
     config <- loadConfigOrDie
-    handleAssistCommand config assistOptions
+    resolved <- resolveAgentOrDie AgentCmdAssist (assistAgentOverrides assistOptions)
+    handleAssistCommand config resolved assistOptions
   Completions shell -> handleCompletions shell
   Help helpCommand -> handleHelpCommand helpCommand
 
@@ -784,6 +795,52 @@ loadConfigWithSourceOrDie = do
   case result of
     Left err -> dieText ("Failed to load config: " <> err)
     Right loaded -> pure loaded
+
+-- | Resolve one agent command's settings across flags, environment, and both
+-- configuration scopes, terminating with a message if any input is unusable.
+resolveAgentOrDie :: AgentCommandName -> AgentOverrides -> IO ResolvedAgent
+resolveAgentOrDie agentCommand flagOverrides = do
+  envOverrides <- readAgentEnvOverrides
+  scopes <- loadAgentScopes
+  case scopes of
+    Left err -> dieText err
+    Right (localAgent, globalAgent) ->
+      pure (resolveAgent agentCommand flagOverrides envOverrides localAgent globalAgent)
+
+-- | Read the @OKF_AGENT_*@ variables. A variable set to blank is treated as
+-- unset, matching how a blank configuration key is treated, so clearing one
+-- with @OKF_AGENT_MODEL=@ works rather than failing to parse.
+readAgentEnvOverrides :: IO AgentOverrides
+readAgentEnvOverrides = do
+  providerValue <- lookupParsedEnv ProviderField parseOkfProvider
+  modelValue <- lookupEnvText ModelField
+  effortValue <- lookupParsedEnv EffortField parseOkfEffort
+  systemPromptValue <- lookupEnvText SystemPromptField
+  pure
+    AgentOverrides
+      { provider = providerValue,
+        model = modelValue,
+        effort = effortValue,
+        systemPrompt = systemPromptValue
+      }
+  where
+    lookupEnvText agentField = do
+      raw <- lookupEnv (agentFieldEnvVar agentField)
+      pure (nonBlankEnv =<< raw)
+
+    lookupParsedEnv agentField parse = do
+      raw <- lookupEnv (agentFieldEnvVar agentField)
+      case nonBlankEnv =<< raw of
+        Nothing -> pure Nothing
+        Just rawValue ->
+          case parse rawValue of
+            -- Name the variable, so a user with four of them set knows which to fix.
+            Left message -> dieText (Text.pack (agentFieldEnvVar agentField) <> ": " <> message)
+            Right parsed -> pure (Just parsed)
+
+    nonBlankEnv raw =
+      let stripped = Text.strip (Text.pack raw)
+       in if Text.null stripped then Nothing else Just stripped
 
 -- | Environment override for the registry @okf profile@ reads.
 profileRegistryEnvVar :: String
