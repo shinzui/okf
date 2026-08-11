@@ -14,11 +14,31 @@ KIT COMMANDS
 
 ASSIST
 
-  okf assist "PROMPT"               Launch an interactive Claude session with your
-                                    installed okf skills on its path, starting from
-                                    PROMPT.
+  okf assist "PROMPT"               Launch an interactive agent session with your
+                                    installed okf skills on its path, starting
+                                    from PROMPT.
   okf assist --print-command "PROMPT"
-                                    Print the Claude command line without launching.
+                                    Print the agent command line without
+                                    launching it.
+
+  Both Claude Code and Codex can be launched. The provider you choose is the CLI
+  okf runs, so that CLI must be installed: 'claude' for Provider.Claude and
+  'codex' for Provider.Codex. A missing binary exits 127 and names the one it
+  looked for.
+
+  Flags, each overriding whatever configuration resolved:
+
+    --provider PROVIDER             claude or codex.
+    --model MODEL                   Model to pass to the agent.
+    --effort LEVEL                  minimal, low, medium, high, xhigh, or max.
+    --system-prompt TEXT            Extra system prompt, appended to the agent's
+                                    own rather than replacing it.
+
+  The effort levels are the same six for both providers; okf renders whichever
+  the chosen CLI actually accepts. Claude Code has no 'minimal' level, so
+  '--effort minimal' reaches it as '--effort low', while Codex takes all six
+  verbatim as '-c model_reasoning_effort=...'. Use --print-command to see what
+  will run.
 
 CONFIGURATION
 
@@ -30,9 +50,27 @@ CONFIGURATION
 
     kit.repoUrl
     kit.providers
-    assist.provider
-    assist.model
-    assist.systemPrompt
+    agent.provider                  Shared defaults for every command that
+    agent.model                     launches an agent.
+    agent.effort
+    agent.systemPrompt
+    agent.assist.provider           Per-command settings for 'okf assist'.
+    agent.assist.model              These win over the shared defaults above.
+    agent.assist.effort
+    agent.assist.systemPrompt
+
+  Environment overrides, which beat both files and are deliberately not
+  per-command:
+
+    OKF_AGENT_PROVIDER
+    OKF_AGENT_MODEL
+    OKF_AGENT_EFFORT
+    OKF_AGENT_SYSTEM_PROMPT
+
+  Unlike kit.* and profiles.*, agent settings are read from the project file and
+  the global file together, so a project can change one field and inherit the
+  rest. Run 'okf config agent' to see what each setting resolved to and which
+  key or flag supplied it. See 'okf help config' for the full precedence order.
 
 PUBLISHING YOUR OWN SKILL
 

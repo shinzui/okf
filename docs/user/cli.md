@@ -860,3 +860,124 @@ the same inputs produces byte-identical output, which makes
 See [profiles.md](./profiles.md) for what a registry is in more detail, and its
 [Generating profile documentation](./profiles.md#generating-profile-documentation)
 section for what the generated pages contain.
+
+
+## assist
+
+Launch an interactive agent session with your installed okf skills on its path,
+starting from a prompt.
+
+```bash
+cabal run okf -- assist "list the concepts in this bundle"
+```
+
+okf hands the terminal to the agent CLI and returns when the session ends, with
+the agent's exit status. Ctrl-C inside a session goes to the agent, not to okf.
+
+Both Claude Code and Codex can be launched, and the provider you choose is the
+CLI okf runs, so that CLI must be installed. A missing binary exits 127 and names
+the one it looked for.
+
+`--print-command` shows what would run instead of running it, which is the
+fastest way to check what your configuration resolved to:
+
+```bash
+cabal run okf -- assist --print-command "audit this bundle"
+# claude --add-dir ~/.config/okf/agents/.claude -- 'audit this bundle'
+```
+
+| Flag | Meaning |
+|------|---------|
+| `--provider PROVIDER` | `claude` or `codex`. |
+| `--model MODEL` | Model to pass to the agent. |
+| `--effort LEVEL` | Reasoning effort: `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. |
+| `--system-prompt TEXT` | Extra system prompt, appended to the agent's own rather than replacing it. |
+| `--print-command` | Print the command line instead of launching it. |
+
+The six effort levels are the same for both providers, and okf renders whichever
+spelling the chosen CLI accepts. Claude Code has no `minimal` level, so okf sends
+it `low`; Codex takes all six verbatim:
+
+```bash
+cabal run okf -- assist --effort minimal --print-command "x"
+# claude --effort low -- x
+
+cabal run okf -- assist --provider codex --effort minimal --print-command "x"
+# codex -c model_reasoning_effort=minimal -- x
+```
+
+An invalid value fails before anything launches, naming every level okf accepts:
+
+```bash
+cabal run okf -- assist --effort medum --print-command "x"
+# option --effort: unknown effort "medum"; expected one of: minimal, low, medium, high, xhigh, max
+```
+
+### Configuring assist across two files
+
+Every flag above has a configuration key and an environment variable behind it.
+Unlike `kit` and `profiles`, where the first configuration file found supplies
+everything, agent settings are resolved key by key across *both* the project file
+and the global one — so a project can change one setting and inherit the rest.
+
+Put the model you always want in `~/.config/okf/config.dhall`:
+
+```dhall
+, agent =
+    { provider = None Provider
+    , model = Some "claude-opus-4-8"
+    , effort = None Effort
+    , systemPrompt = None Text
+    , assist =
+        { provider = None Provider
+        , model = None Text
+        , effort = None Effort
+        , systemPrompt = None Text
+        }
+    }
+```
+
+and ask for more deliberation on one project, in its `./okf-config.dhall`:
+
+```dhall
+, agent =
+    { provider = None Provider
+    , model = None Text
+    , effort = None Effort
+    , systemPrompt = None Text
+    , assist =
+        { provider = None Provider
+        , model = None Text
+        , effort = Some Effort.Max
+        , systemPrompt = None Text
+        }
+    }
+```
+
+Both apply, which is the point:
+
+```bash
+cabal run okf -- assist --print-command "x"
+# claude --model claude-opus-4-8 --effort max -- x
+```
+
+`okf config agent` prints what resolved and the key that supplied it, so you
+never have to work the rules out by hand:
+
+```bash
+cabal run okf -- config agent
+#   assist  provider      claude             [built-in default]
+#           model         claude-opus-4-8    [global: agent.model]
+#           effort        max                [local: agent.assist.effort]
+#           systemPrompt  (unset)            [built-in default]
+```
+
+The full precedence order, and the rule that scope beats specificity across
+scopes while specificity beats scope within one, is in `okf help config`.
+
+| Exit code | Meaning |
+|-----------|---------|
+| `0` | the command line was printed, or the session ran and exited zero |
+| the agent's own | the session ran and exited non-zero |
+| `2` | the request asked for something the chosen provider cannot express |
+| `127` | the provider's CLI is not installed |

@@ -35,6 +35,36 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   bundle. An advisory would print a warning and then the empty listing that
   caused the confusion in the first place.
 - `okf help concepts`, the command-level guide for the above.
+- An `agent` configuration block carrying `provider`, `model`, `effort`, and
+  `systemPrompt` as shared defaults, plus an `agent.assist` sub-record whose keys
+  win over them. `agent` settings are resolved across the project file and the
+  global file together, so a project can override one field and inherit the rest;
+  `kit` and `profiles` keep the first-found-wins rule.
+- `okf assist --provider`, `--effort`, and `--system-prompt`, beside the existing
+  `--model`, and the `OKF_AGENT_PROVIDER`, `OKF_AGENT_MODEL`, `OKF_AGENT_EFFORT`,
+  and `OKF_AGENT_SYSTEM_PROMPT` environment variables. Flags beat environment
+  variables, which beat both configuration scopes; within that, scope beats
+  specificity across scopes and specificity beats scope within one.
+- Reasoning effort as one neutral dial — `minimal`, `low`, `medium`, `high`,
+  `xhigh`, `max` — rendered in whichever vocabulary the chosen agent accepts.
+  Claude Code has no `minimal` level and receives `low`; Codex takes all six
+  verbatim. Unset by default, so an unconfigured okf renders no effort flag.
+- `okf config agent`, which prints the resolved value of every agent setting with
+  the key or flag that supplied it, followed by the precedence order.
+
+### Changed
+
+- `okf assist` renders its command line through `baikai-claude` and
+  `baikai-openai` rather than assembling it directly. The printed command line
+  gained a `--` separator before the prompt.
+- The `assist` configuration block is replaced by `agent.assist`. Files written
+  for okf 0.2.0.0 and 0.5.0.0 still load; their `assist` values are read as
+  `agent.assist.*`.
+
+### Fixed
+
+- `agent.provider = Codex` launches a real `codex` session. It previously exited
+  2 with "the Codex provider is not yet supported".
 
 ## [0.5.0.0] - 2026-08-01
 

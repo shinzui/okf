@@ -33,7 +33,81 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   both print nothing, but one is a typo. Against a profile that closes `status`,
   the first now exits 1 saying which values the key accepts.
 
+- **`okf assist` is configurable per command, and reasoning effort is one of the
+  things you can configure.** Before, one configuration file won and every other
+  one was ignored, so a project that wanted to change the assist model had to
+  restate every setting the user's global file already carried. There was no way
+  to ask an agent to think harder. And `agent.provider` could be set to `Codex`
+  and then refused at launch with "the Codex provider is not yet supported" — a
+  setting with exactly one usable value is not a setting.
+
+  Now a global `~/.config/okf/config.dhall` can set the model everywhere while a
+  project's `./okf-config.dhall` overrides only the effort, and both apply:
+
+  ```text
+  $ okf assist --print-command "x"
+  claude --model claude-opus-4-8 --effort max -- x
+  ```
+
+  The new `agent` block carries `provider`, `model`, `effort`, and
+  `systemPrompt` as shared defaults, with an `agent.assist` sub-record that wins
+  over them. `OKF_AGENT_PROVIDER`, `OKF_AGENT_MODEL`, `OKF_AGENT_EFFORT`, and
+  `OKF_AGENT_SYSTEM_PROMPT` beat both files, and `okf assist --provider
+  --model --effort --system-prompt` beat everything. Scope beats specificity
+  across scopes and specificity beats scope within one, so a local `agent.model`
+  wins over a global `agent.assist.model`.
+
+  Effort is one neutral dial — `minimal` through `max` — that okf renders in
+  whichever vocabulary the chosen agent accepts. Claude Code has no `minimal`
+  level, so it receives `low`; Codex takes all six verbatim. Nothing is pinned by
+  default: an unconfigured okf renders no effort flag at all, so upgrading cannot
+  change anyone's token spend.
+
+  Codex sessions work. Choosing `codex` launches the real thing, with the same
+  model and effort dials pointing at it.
+
+- **`okf config agent` prints what okf resolved and why.** With settings arriving
+  from four flags, four environment variables, and four keys in each of two
+  files, "which model will assist use, and why that one?" had become a question
+  you answered by simulating the rules in your head. One row per setting, with
+  the winning key named, and the precedence list printed underneath it:
+
+  ```text
+    assist  provider      claude           [built-in default]
+            model         claude-opus-4-8  [local: agent.assist.model]
+            effort        max              [env: OKF_AGENT_EFFORT]
+            systemPrompt  (unset)          [built-in default]
+  ```
+
 ### Changed
+
+- **`okf assist` builds its command line with Baikai rather than by hand**, via
+  the new `baikai-claude` and `baikai-openai` dependencies. Every vendor detail —
+  which flag carries reasoning effort, how the neutral levels map onto each
+  vendor's accepted values, that a variadic `--add-dir` means the prompt must be
+  fenced off behind `--`, that Codex has no system-prompt flag at all — now lives
+  in one library instead of being copied into okf.
+
+  The visible consequence is that the printed command line gained a `--`
+  separator before the prompt. `okf assist --print-command "hello"` now ends
+  `-- 'hello'`.
+
+- **A project configuration file no longer hides the global file's `agent`
+  settings.** `kit` and `profiles` keep the first-found-wins rule unchanged, so a
+  user with a single configuration file sees no difference at all. Setting
+  `OKF_CONFIG` replaces the project file but deliberately does not suppress the
+  global one: it names a file, not the only file.
+
+- The `assist` configuration block is replaced by `agent.assist`. A file written
+  for any earlier okf still loads — its `assist` values are read as
+  `agent.assist.*` — so nothing needs editing on upgrade.
+
+### Fixed
+
+- `agent.provider = Codex` launches Codex. Previously it was accepted by the
+  configuration file and then refused at launch with exit code 2 and "the Codex
+  provider is not yet supported", so the configuration surface promised something
+  the tool did not deliver.
 
 - **The `okf show` concept menu is ordered most recently modified first**,
   rather than by concept ID. The picker exists to answer "which concept did I

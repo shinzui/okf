@@ -85,7 +85,7 @@ SEE ALSO
   okf help concepts      Listing and filtering the concepts in a bundle.
   okf help ids           Profile-declared document IDs such as ADR-7.
   okf help interactive   Picking a bundle and concept with fzf.
-  okf help config        Config files, defaults, and agent settings.
+  okf help config        Config files, precedence, and agent settings.
   okf help kit           Installing and publishing agent skills and subagents.
   okf help agents        Installing agent skills and launching assist.
 
