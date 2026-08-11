@@ -7,21 +7,28 @@ module Okf.Cli.Fzf.Selector
     parseBundleSearchRoots,
     bundleSearchRoots,
     conceptCandidates,
+    conceptModificationTimes,
     conceptPreviewCommand,
     selectBundle,
     selectConcept,
+    sortConceptsByModified,
   )
 where
 
+import Control.Exception (IOException, try)
 import Data.List qualified as List
 import Data.Maybe (fromMaybe)
+import Data.Ord (Down (..))
 import Data.Text (Text)
 import Data.Text qualified as Text
-import Okf.Bundle (Concept, conceptIdOf, conceptTitle, conceptType)
+import Data.Time.Clock (UTCTime)
+import Okf.Bundle (Concept, conceptIdOf, conceptSourcePath, conceptTitle, conceptType)
 import Okf.Cli.Fzf
 import Okf.ConceptId (renderConceptId)
 import Okf.Discovery (defaultDiscoveryOptions, discoverBundleRoots)
+import System.Directory (getModificationTime)
 import System.Environment (getExecutablePath, lookupEnv)
+import System.FilePath ((</>))
 
 -- | Outcome of asking the user to pick a bundle.
 data BundleSelection
@@ -98,18 +105,49 @@ selectConcept fzfConfig bundlePath concepts
   | null concepts = pure ConceptNoCandidates
   | otherwise = do
       executablePath <- getExecutablePath
+      -- The menu is ordered by how recently each concept file changed, so the
+      -- work in progress is at the top. @--no-sort@ is what makes fzf honour
+      -- it: without it fzf would impose its own order on the unfiltered list.
+      recentFirst <- sortConceptsByModified <$> conceptModificationTimes bundlePath concepts
       let opts =
             withPrompt "concept> "
               <> withHeader (Text.pack bundlePath)
               <> withHeight "60%"
               <> withNoSort
               <> withPreview (conceptPreviewCommand executablePath bundlePath)
-      result <- runFzf fzfConfig opts (conceptCandidates concepts)
+      result <- runFzf fzfConfig opts (conceptCandidates recentFirst)
       pure $ case result of
         FzfSelected concept -> ConceptChosen concept
         FzfNoMatch -> ConceptNoCandidates
         FzfCancelled -> ConceptSelectionCancelled
         FzfError message -> ConceptSelectionError message
+
+-- | Pair every concept with the modification time of the file it was read
+-- from, resolved against the bundle root because 'conceptSourcePath' is
+-- bundle-relative.
+--
+-- A file that cannot be stat'd -- deleted between the walk and the menu, or
+-- unreadable -- yields 'Nothing' rather than an exception: an unknown timestamp
+-- costs the concept its place in the ordering, never the whole menu.
+conceptModificationTimes :: FilePath -> [Concept] -> IO [(Concept, Maybe UTCTime)]
+conceptModificationTimes bundlePath =
+  traverse $ \concept -> do
+    modified <-
+      try @IOException (getModificationTime (bundlePath </> conceptSourcePath concept))
+    pure (concept, either (const Nothing) Just modified)
+
+-- | Most recently modified first, with concepts whose time is unknown last.
+--
+-- Concept ID breaks ties, so bundles written in one checkout -- where every
+-- file shares a timestamp -- still get the stable alphabetical order
+-- 'Okf.Bundle.walkBundle' guarantees rather than an arbitrary one.
+sortConceptsByModified :: [(Concept, Maybe UTCTime)] -> [Concept]
+sortConceptsByModified = map fst . List.sortOn sortKey
+  where
+    -- 'Down' over 'Maybe' reverses both halves at once: later times sort before
+    -- earlier ones, and 'Just' before 'Nothing'.
+    sortKey (concept, modified) =
+      (Down modified, renderConceptId (conceptIdOf concept))
 
 -- | One candidate per concept, displayed as three tab-separated columns --
 -- concept ID, type, title -- with the first two padded so the list lines up.

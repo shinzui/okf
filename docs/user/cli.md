@@ -426,6 +426,13 @@ previews the highlighted concept in a pane on the right, showing exactly what
 `okf show BUNDLE CONCEPT_ID` would print. Typing filters across all three
 columns.
 
+Concepts are ordered by the modification time of their files, most recent
+first, so the one you were last working on is at the top. Concepts whose files
+share a timestamp — a fresh checkout writes every file at once — fall back to
+concept ID, and a concept whose file cannot be read is listed last. The
+whole-bundle reports (`okf concepts`, `okf trust`, `okf sources`) are unaffected
+and stay sorted by concept ID, so their output remains diffable.
+
 Exit status when a menu is involved:
 
 | Status | Meaning |

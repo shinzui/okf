@@ -54,8 +54,8 @@ library
   autogen-modules: Paths_okf_cli
   build-depends:
     , aeson                 >=2.2      && <2.4
-    , baikai                ^>=0.3.0
-    , baikai-kit            ^>=0.1.0.1
+    , baikai                ^>=0.5.0
+    , baikai-kit            ^>=0.1.0.4
     , base                  >=4.20     && <5
     , bytestring            >=0.11     && <0.13
     , containers            >=0.6      && <0.8
@@ -86,6 +86,7 @@ test-suite okf-cli-test
     , optparse-applicative  >=0.18
     , temporary
     , text                  ^>=2.1
+    , time                  >=1.12     && <1.15
 
 executable okf
   import:         common-options

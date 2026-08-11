@@ -35,6 +35,17 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
+- **The `okf show` concept menu is ordered most recently modified first**,
+  rather than by concept ID. The picker exists to answer "which concept did I
+  mean", and in a bundle being actively written the answer is nearly always
+  something touched in the last few minutes — which alphabetical order buries
+  in the middle of the list. The order comes from the modification time of each
+  concept's file; concepts that share a timestamp, as they do in a fresh
+  checkout, still fall back to concept ID, so the list stays stable rather than
+  arbitrary. A concept whose file cannot be stat'd is listed last instead of
+  failing the menu. Nothing else changes: `okf concepts`, `okf trust`, and the
+  other whole-bundle reports remain sorted by concept ID and diffable.
+
 - Builds of this repository resolve `cmark-gfm` from
   [a fork](https://github.com/shinzui/cmark-gfm-hs) pinned by commit in
   `cabal.project`, rather than from Hackage. The fork makes core-extension

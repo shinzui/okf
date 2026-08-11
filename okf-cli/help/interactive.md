@@ -43,6 +43,12 @@ THE CONCEPT MENU
   and the pane on the right previews the highlighted concept exactly as
   'okf show BUNDLE CONCEPT_ID' would print it.
 
+  The most recently modified concept is at the top, so whatever you were last
+  working on is the first thing offered. The order comes from the modification
+  time of each concept file; ties, such as a bundle whose files were all
+  written by one checkout, fall back to concept ID. A concept whose file
+  cannot be read is listed last rather than dropped.
+
   Typing filters on the concept ID, type, and title together.
 
 KEYS

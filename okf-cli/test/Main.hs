@@ -5,12 +5,14 @@ import Control.Monad (unless)
 import Data.List qualified as List
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text.IO
+import Data.Time.Calendar (fromGregorian)
+import Data.Time.Clock (UTCTime (..))
 import Okf.Bundle (Concept, bundleInventoryOfConcepts, conceptAttester, conceptExecutor, conceptFromDocument, conceptIdOf, conceptParameters, conceptRuntime, conceptType, walkBundle, walkBundleInventory)
 import Okf.Cli
 import Okf.Cli.Assist (AssistOptions (..), buildClaudeCommand)
 import Okf.Cli.Config (AssistSettings (..), ConfigSource (..), KitSettings (..), OkfConfig (..), OkfProvider (..), defaultOkfConfig, exampleConfigText, findConfigSource, loadOkfConfig, okfConfigEnvVar, projectConfigPath)
 import Okf.Cli.Fzf (Candidate (..), FzfOpts (..), optsToArgs, parseSelectionIndex, renderCandidateLines, shellQuote, withAnsi, withHeight, withNoSort, withPrompt)
-import Okf.Cli.Fzf.Selector (conceptCandidates, conceptPreviewCommand, parseBundleSearchRoots)
+import Okf.Cli.Fzf.Selector (conceptCandidates, conceptModificationTimes, conceptPreviewCommand, parseBundleSearchRoots, sortConceptsByModified)
 import Okf.Cli.Help (HelpTopic (..), helpTopics)
 import Okf.ConceptId (parseConceptId, renderConceptId)
 import Okf.Document (Attester (..), Executor (..), Parameter (..), parseDocument)
@@ -20,7 +22,7 @@ import Okf.Profile.Registry (RegistryEntry (..))
 import Okf.Query (ConceptFilter (..), FieldSelector (..), filterConcepts)
 import Okf.Validation (ValidationProfile (..), validateBundle)
 import Options.Applicative
-import System.Directory (createDirectoryIfMissing, doesDirectoryExist, doesFileExist, getCurrentDirectory, getTemporaryDirectory, listDirectory, removeDirectoryRecursive, withCurrentDirectory)
+import System.Directory (createDirectoryIfMissing, doesDirectoryExist, doesFileExist, getCurrentDirectory, getTemporaryDirectory, listDirectory, removeDirectoryRecursive, setModificationTime, withCurrentDirectory)
 import System.Environment (lookupEnv, setEnv, unsetEnv)
 import System.Exit (exitFailure)
 import System.FilePath ((</>))
@@ -51,6 +53,7 @@ main = do
   conceptsReportsExample <- testConceptsReportsExampleBundle
   conceptsKeepsStatusDefaultOut <- testConceptsDoesNotApplyStatusDefault
   profileDocStrictWithTimestamp <- testProfileDocumentationStrictWithTimestamp
+  conceptMenuOrdersByMtime <- testConceptMenuOrdersByModificationTime
   let results =
         [ parseSucceeds ["validate", "bundle"],
           parseSucceeds ["validate", "bundle", "--strict"],
@@ -404,6 +407,7 @@ main = do
           conceptsReportsExample,
           conceptsKeepsStatusDefaultOut,
           profileDocStrictWithTimestamp,
+          conceptMenuOrdersByMtime,
           configDefaults,
           configProjectPrecedence,
           configEnvPrecedence,
@@ -423,10 +427,14 @@ sampleConceptDisplays = map candidateDisplay (conceptCandidates [longConcept, sh
   where
     longConcept = buildConcept "tables/orders" "---\ntype: Table\ntitle: Orders\n---\n\n# Orders\n"
     shortConcept = buildConcept "x" "---\ntype:\n---\n\n# x\n"
-    buildConcept idText source =
-      case (parseConceptId idText, parseDocument source) of
-        (Right conceptId, Right document) -> conceptFromDocument conceptId document
-        _ -> error ("sample concept did not parse: " <> Text.unpack idText)
+
+-- | An in-memory concept from its identifier and document source, for tests
+-- that need a concept without a bundle on disk to walk.
+buildConcept :: Text.Text -> Text.Text -> Concept
+buildConcept idText source =
+  case (parseConceptId idText, parseDocument source) of
+    (Right conceptId, Right document) -> conceptFromDocument conceptId document
+    _ -> error ("sample concept did not parse: " <> Text.unpack idText)
 
 parseSucceeds :: [String] -> Bool
 parseSucceeds args =
@@ -1447,6 +1455,35 @@ testLogAddWritesFile = do
     ( "## 2026-06-23" `Text.isInfixOf` written
         && "* **Update**: Refreshed schema" `Text.isInfixOf` written
     )
+
+-- | Three concepts written in alphabetical order and stamped with mtimes that
+-- disagree with it, so the ordering can only come from the filesystem. A fourth
+-- concept has no file at all: it must land last instead of aborting the walk.
+testConceptMenuOrdersByModificationTime :: IO Bool
+testConceptMenuOrdersByModificationTime = do
+  temporaryDirectory <- getTemporaryDirectory
+  root <- createTempDirectory temporaryDirectory "okf-cli-concept-order"
+  createDirectoryIfMissing True (root </> "tables")
+  let write name = Text.IO.writeFile (root </> "tables" </> (name <> ".md")) (conceptSource name)
+      conceptSource name =
+        Text.unlines ["---", "type: Table", "---", "", "# " <> Text.pack name]
+      stamp name day =
+        setModificationTime
+          (root </> "tables" </> (name <> ".md"))
+          (UTCTime (fromGregorian 2026 6 day) 0)
+  mapM_ write ["alpha", "beta", "gamma"]
+  stamp "alpha" 1
+  stamp "beta" 20
+  stamp "gamma" 10
+  walked <- walkBundle root
+  ordered <- case walked of
+    Left _ -> pure []
+    Right concepts -> do
+      let unwritten = buildConcept "tables/delta" "---\ntype: Table\n---\n\n# delta\n"
+      times <- conceptModificationTimes root (concepts <> [unwritten])
+      pure (map (renderConceptId . conceptIdOf) (sortConceptsByModified times))
+  removeDirectoryRecursive root
+  pure (ordered == ["tables/beta", "tables/gamma", "tables/alpha", "tables/delta"])
 
 testConfigDefaults :: IO Bool
 testConfigDefaults =
