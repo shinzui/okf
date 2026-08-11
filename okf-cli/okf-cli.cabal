@@ -40,6 +40,7 @@ library
   hs-source-dirs:  src
   exposed-modules:
     Okf.Cli
+    Okf.Cli.Agent.Config
     Okf.Cli.Assist
     Okf.Cli.Completions
     Okf.Cli.Config

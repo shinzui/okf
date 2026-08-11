@@ -9,8 +9,9 @@ import Data.Time.Calendar (fromGregorian)
 import Data.Time.Clock (UTCTime (..))
 import Okf.Bundle (Concept, bundleInventoryOfConcepts, conceptAttester, conceptExecutor, conceptFromDocument, conceptIdOf, conceptParameters, conceptRuntime, conceptType, walkBundle, walkBundleInventory)
 import Okf.Cli
+import Okf.Cli.Agent.Config (AgentCommandName (..), AgentField (..), AgentOverrides (..), ResolvedAgent (..), ResolvedField (..), agentSourceLabel, noAgentOverrides, parseOkfEffort, parseOkfProvider, resolveAgent)
 import Okf.Cli.Assist (AssistOptions (..), buildAgentCommand)
-import Okf.Cli.Config (AgentFieldSettings (..), AgentSettings (..), AssistSettings (..), ConfigSource (..), KitSettings (..), OkfConfig (..), OkfProvider (..), agentSharedDefaults, defaultOkfConfig, exampleConfigText, findConfigSource, loadAgentScopes, loadOkfConfig, okfConfigEnvVar, projectConfigPath)
+import Okf.Cli.Config (AgentFieldSettings (..), AgentSettings (..), AssistSettings (..), ConfigSource (..), KitSettings (..), OkfConfig (..), OkfEffort (..), OkfProvider (..), agentSharedDefaults, defaultOkfConfig, exampleConfigText, findConfigSource, loadAgentScopes, loadOkfConfig, okfConfigEnvVar, projectConfigPath)
 import Okf.Cli.Fzf (Candidate (..), FzfOpts (..), optsToArgs, parseSelectionIndex, renderCandidateLines, shellQuote, withAnsi, withHeight, withNoSort, withPrompt)
 import Okf.Cli.Fzf.Selector (ConceptOrder (..), conceptCandidates, conceptPreviewCommand, orderConcepts, parseBundleSearchRoots)
 import Okf.Cli.Help (HelpTopic (..), helpTopics)
@@ -448,7 +449,17 @@ main = do
           configInvalidDhall,
           assistCommandBuilder,
           assistModelOverride,
-          assistCodexCommandBuilder
+          assistCodexCommandBuilder,
+          testAgentFlagBeatsEverything,
+          testAgentEnvBeatsBothScopes,
+          testAgentCommandKeyBeatsDefaultKeyInScope,
+          testAgentLocalDefaultBeatsGlobalCommandKey,
+          testAgentGlobalCommandKeyBeatsGlobalDefaultKey,
+          testAgentBuiltinDefaults,
+          testAgentBlankValueFallsThrough,
+          testAgentEffortParseError,
+          testAgentEffortParsesEveryLevel,
+          testAgentProviderParsing
         ]
   unless (and results) exitFailure
 
@@ -1809,6 +1820,132 @@ withIsolatedConfigEnv name runTest = do
     setMaybeEnv key = \case
       Nothing -> unsetEnv key
       Just envValue -> setEnv key envValue
+
+-- Agent resolution. Every case below is one tier of the precedence chain
+-- printed by @okf config agent@; together they pin the whole ordering, so
+-- reordering any two candidate entries in 'resolveAgent' fails a named test.
+
+-- | An 'AgentSettings' with the given shared-default and per-command models.
+agentScopeWithModels :: Maybe Text.Text -> Maybe Text.Text -> AgentSettings
+agentScopeWithModels sharedModel commandModel =
+  AgentSettings
+    { provider = Nothing,
+      model = sharedModel,
+      effort = Nothing,
+      systemPrompt = Nothing,
+      assist = AgentFieldSettings {provider = Nothing, model = commandModel, effort = Nothing, systemPrompt = Nothing}
+    }
+
+modelOverrides :: Maybe Text.Text -> AgentOverrides
+modelOverrides modelName = AgentOverrides {provider = Nothing, model = modelName, effort = Nothing, systemPrompt = Nothing}
+
+-- | The resolved model and the label okf would print for where it came from.
+resolvedModelWithSource ::
+  AgentOverrides ->
+  AgentOverrides ->
+  Maybe AgentSettings ->
+  Maybe AgentSettings ->
+  Maybe (Text.Text, Text.Text)
+resolvedModelWithSource flags env local global =
+  case resolveAgent AgentCmdAssist flags env local global of
+    ResolvedAgent {model = Nothing} -> Nothing
+    ResolvedAgent {model = Just ResolvedField {resolvedValue, resolvedSource}} ->
+      Just (resolvedValue, agentSourceLabel AgentCmdAssist ModelField resolvedSource)
+
+-- | A flag beats an environment variable, which beats every file.
+testAgentFlagBeatsEverything :: Bool
+testAgentFlagBeatsEverything =
+  resolvedModelWithSource
+    (modelOverrides (Just "from-flag"))
+    (modelOverrides (Just "from-env"))
+    (Just (agentScopeWithModels (Just "local-default") (Just "local-command")))
+    (Just (agentScopeWithModels (Just "global-default") (Just "global-command")))
+    == Just ("from-flag", "--model flag")
+
+testAgentEnvBeatsBothScopes :: Bool
+testAgentEnvBeatsBothScopes =
+  resolvedModelWithSource
+    noAgentOverrides
+    (modelOverrides (Just "from-env"))
+    (Just (agentScopeWithModels (Just "local-default") (Just "local-command")))
+    (Just (agentScopeWithModels (Just "global-default") (Just "global-command")))
+    == Just ("from-env", "env: OKF_AGENT_MODEL")
+
+-- | Within one file, specificity wins: the per-command key beats the shared
+-- default.
+testAgentCommandKeyBeatsDefaultKeyInScope :: Bool
+testAgentCommandKeyBeatsDefaultKeyInScope =
+  resolvedModelWithSource
+    noAgentOverrides
+    noAgentOverrides
+    (Just (agentScopeWithModels (Just "local-default") (Just "local-command")))
+    Nothing
+    == Just ("local-command", "local: agent.assist.model")
+
+-- | The single most important case in the milestone: across scopes, scope wins
+-- — a local /shared default/ beats a global /per-command/ key. A reasonable
+-- person could read the two axes the other way round, which is exactly why this
+-- is asserted rather than assumed.
+testAgentLocalDefaultBeatsGlobalCommandKey :: Bool
+testAgentLocalDefaultBeatsGlobalCommandKey =
+  resolvedModelWithSource
+    noAgentOverrides
+    noAgentOverrides
+    (Just (agentScopeWithModels (Just "local-default") Nothing))
+    (Just (agentScopeWithModels (Just "global-default") (Just "global-command")))
+    == Just ("local-default", "local: agent.model")
+
+testAgentGlobalCommandKeyBeatsGlobalDefaultKey :: Bool
+testAgentGlobalCommandKeyBeatsGlobalDefaultKey =
+  resolvedModelWithSource
+    noAgentOverrides
+    noAgentOverrides
+    Nothing
+    (Just (agentScopeWithModels (Just "global-default") (Just "global-command")))
+    == Just ("global-command", "global: agent.assist.model")
+
+-- | Nothing set anywhere: the model stays unset so no flag is rendered, and the
+-- provider falls back to the one okf has always launched.
+testAgentBuiltinDefaults :: Bool
+testAgentBuiltinDefaults =
+  resolvedModelWithSource noAgentOverrides noAgentOverrides Nothing Nothing == Nothing
+    && case resolveAgent AgentCmdAssist noAgentOverrides noAgentOverrides Nothing Nothing of
+      ResolvedAgent {provider = ResolvedField {resolvedValue, resolvedSource}} ->
+        resolvedValue == ProviderClaude
+          && agentSourceLabel AgentCmdAssist ProviderField resolvedSource == "built-in default"
+
+-- | A key set to whitespace names no model, so it falls through to the next
+-- candidate rather than resolving to a model called "  ".
+testAgentBlankValueFallsThrough :: Bool
+testAgentBlankValueFallsThrough =
+  resolvedModelWithSource
+    noAgentOverrides
+    noAgentOverrides
+    (Just (agentScopeWithModels (Just "   ") (Just "\t ")))
+    (Just (agentScopeWithModels (Just "global-default") Nothing))
+    == Just ("global-default", "global: agent.model")
+
+-- | A misspelled level must name all six, because the list is what the user
+-- needs and a restatement of their typo is not.
+testAgentEffortParseError :: Bool
+testAgentEffortParseError =
+  case parseOkfEffort "medum" of
+    Right _ -> False
+    Left message ->
+      message == "unknown effort \"medum\"; expected one of: minimal, low, medium, high, xhigh, max"
+
+testAgentEffortParsesEveryLevel :: Bool
+testAgentEffortParsesEveryLevel =
+  map parseOkfEffort ["minimal", "LOW", " Medium ", "high", "xhigh", "max"]
+    == map Right [EffortMinimal, EffortLow, EffortMedium, EffortHigh, EffortXHigh, EffortMax]
+
+testAgentProviderParsing :: Bool
+testAgentProviderParsing =
+  parseOkfProvider "Codex" == Right ProviderCodex
+    && parseOkfProvider "claude" == Right ProviderClaude
+    && case parseOkfProvider "gemini" of
+      Right _ -> False
+      Left message -> message == "unknown provider \"gemini\"; expected one of: claude, codex"
 
 parseFails :: [String] -> Bool
 parseFails args =

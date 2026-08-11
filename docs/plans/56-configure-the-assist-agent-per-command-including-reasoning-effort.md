@@ -112,9 +112,10 @@ Milestone 3 — the `agent` configuration block and two-scope loading:
 
 Milestone 4 — the provenance-tracking resolver:
 
-- [ ] Create `okf-cli/src/Okf/Cli/Agent/Config.hs` with `AgentCommandName`, `AgentField`, `AgentConfigSource`, `ResolvedField`, the key/env-var builders, the candidate walker, and `resolveAgent`.
-- [ ] Add `parseOkfProvider` and `parseOkfEffort`.
-- [ ] Add unit tests covering every precedence tier and blank-value handling.
+- [x] Create `okf-cli/src/Okf/Cli/Agent/Config.hs` with `AgentCommandName`, `AgentField`, `AgentConfigSource`, `ResolvedField`, the key/env-var builders, the candidate walker, and `resolveAgent`. (2026-08-11T19:48Z)
+- [x] Add `parseOkfProvider` and `parseOkfEffort`. (2026-08-11T19:48Z)
+- [x] Add unit tests covering every precedence tier and blank-value handling. (2026-08-11T19:52Z)
+- [x] Verify the ordering tests are load-bearing by inverting two candidate entries. (2026-08-11T19:54Z)
 
 Milestone 5 — wire resolution into `okf assist`:
 
@@ -181,6 +182,20 @@ implementation. Provide concise evidence.
   filed as IR-5,
   `mori://shinzui/baikai/docs/improvement-requests/delegate-ctrl-c-to-the-interactive-session.md`.
   Both files are written into the baikai working tree and left uncommitted there.
+  Date: 2026-08-11
+
+- **The precedence tests are load-bearing, verified by inverting the order rather than by
+  assertion.** Swapping the `SourceLocalDefault` and `SourceGlobalCommand` candidate
+  entries in `resolveAgent` and evaluating the four ordering tests in
+  `cabal repl okf-cli-test` turned exactly one of them — the "scope dominates across
+  scopes" case, `testAgentLocalDefaultBeatsGlobalCommandKey` — from `True` to `False` and
+  left the other three `True`. That is the right blast radius: the inverted pair is the
+  only pair that case distinguishes.
+
+  Doing this exposed a limitation worth knowing: `okf-cli/test/Main.hs` collects its pure
+  checks as an anonymous `[Bool]`, so a failure exits non-zero without naming which check
+  failed. `cabal repl okf-cli-test` with the test name piped to stdin is the way to
+  identify one. Naming the pure checks is a worthwhile cleanup but is not this plan's.
   Date: 2026-08-11
 
 - **`docs/user/cli.md` has no assist section at all.** The plan's Milestone 7 says to
