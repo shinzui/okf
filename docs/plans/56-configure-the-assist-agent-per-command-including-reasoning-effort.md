@@ -128,9 +128,9 @@ Milestone 5 — wire resolution into `okf assist`:
 
 Milestone 6 — the `okf config agent` inspection command:
 
-- [ ] Add the `ConfigAgent` constructor and parser branch in `okf-cli/src/Okf/Cli.hs`.
-- [ ] Add the pure formatter `renderAgentResolution` and its precedence legend.
-- [ ] Add a unit test for the formatter.
+- [x] Add the `ConfigAgent` constructor and parser branch in `okf-cli/src/Okf/Cli.hs`. (2026-08-11T20:20Z)
+- [x] Add the pure formatter `renderAgentResolution` and its precedence legend. (2026-08-11T20:20Z)
+- [x] Add a unit test for the formatter. (2026-08-11T20:24Z)
 
 Milestone 7 — documentation and durable context:
 

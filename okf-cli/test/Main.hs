@@ -9,7 +9,7 @@ import Data.Time.Calendar (fromGregorian)
 import Data.Time.Clock (UTCTime (..))
 import Okf.Bundle (Concept, bundleInventoryOfConcepts, conceptAttester, conceptExecutor, conceptFromDocument, conceptIdOf, conceptParameters, conceptRuntime, conceptType, walkBundle, walkBundleInventory)
 import Okf.Cli
-import Okf.Cli.Agent.Config (AgentCommandName (..), AgentConfigSource (..), AgentField (..), AgentOverrides (..), ResolvedAgent (..), ResolvedField (..), agentSourceLabel, noAgentOverrides, parseOkfEffort, parseOkfProvider, resolveAgent)
+import Okf.Cli.Agent.Config (AgentCommandName (..), AgentConfigSource (..), AgentField (..), AgentOverrides (..), ResolvedAgent (..), ResolvedField (..), agentSourceLabel, noAgentOverrides, parseOkfEffort, parseOkfProvider, renderAgentResolution, resolveAgent)
 import Okf.Cli.Assist (AssistOptions (..), buildAgentCommand)
 import Okf.Cli.Config (AgentFieldSettings (..), AgentSettings (..), ConfigSource (..), OkfConfig (..), OkfEffort (..), OkfProvider (..), agentSharedDefaults, defaultOkfConfig, exampleConfigText, findConfigSource, loadAgentScopes, loadOkfConfig, okfConfigEnvVar, projectConfigPath)
 import Okf.Cli.Fzf (Candidate (..), FzfOpts (..), optsToArgs, parseSelectionIndex, renderCandidateLines, shellQuote, withAnsi, withHeight, withNoSort, withPrompt)
@@ -461,7 +461,8 @@ main = do
           testAgentBlankValueFallsThrough,
           testAgentEffortParseError,
           testAgentEffortParsesEveryLevel,
-          testAgentProviderParsing
+          testAgentProviderParsing,
+          testAgentResolutionFormatter
         ]
   unless (and results) exitFailure
 
@@ -1971,6 +1972,32 @@ testAgentEffortParsesEveryLevel :: Bool
 testAgentEffortParsesEveryLevel =
   map parseOkfEffort ["minimal", "LOW", " Medium ", "high", "xhigh", "max"]
     == map Right [EffortMinimal, EffortLow, EffortMedium, EffortHigh, EffortXHigh, EffortMax]
+
+-- | Assert on substrings rather than the whole block, so changing a column
+-- width does not break the test — but assert that the value and its source are
+-- on the /same/ line, because a table that pairs a value with the wrong
+-- provenance is worse than no table.
+testAgentResolutionFormatter :: Bool
+testAgentResolutionFormatter =
+  lineContaining "provider" == Just "  assist  provider      claude           [built-in default]"
+    && lineContaining "model" == Just "          model         claude-opus-4-8  [local: agent.assist.model]"
+    && lineContaining "effort" == Just "          effort        max              [env: OKF_AGENT_EFFORT]"
+    && lineContaining "systemPrompt" == Just "          systemPrompt  (unset)          [built-in default]"
+    && "Precedence, highest first:" `elem` renderedLines
+    && "  7. built-in default" `elem` renderedLines
+  where
+    renderedLines = Text.lines (renderAgentResolution [(AgentCmdAssist, mixedSourceAgent)])
+    lineContaining needle = List.find (Text.isInfixOf needle) renderedLines
+
+-- | One resolved agent with a different source behind every field.
+mixedSourceAgent :: ResolvedAgent
+mixedSourceAgent =
+  ResolvedAgent
+    { provider = ResolvedField {resolvedValue = ProviderClaude, resolvedSource = SourceBuiltinDefault},
+      model = Just ResolvedField {resolvedValue = "claude-opus-4-8", resolvedSource = SourceLocalCommand},
+      effort = Just ResolvedField {resolvedValue = EffortMax, resolvedSource = SourceEnvVar},
+      systemPrompt = Nothing
+    }
 
 testAgentProviderParsing :: Bool
 testAgentProviderParsing =

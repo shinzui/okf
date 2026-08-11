@@ -33,6 +33,7 @@ module Okf.Cli.Agent.Config
     noAgentOverrides,
     ResolvedAgent (..),
     resolveAgent,
+    renderAgentResolution,
     parseOkfProvider,
     parseOkfEffort,
     thinkingLevelOf,
@@ -49,6 +50,7 @@ import Okf.Cli.Config
     OkfProvider (..),
     agentSharedDefaults,
     renderOkfEffort,
+    renderOkfProvider,
   )
 import Okf.Prelude
 
@@ -212,6 +214,81 @@ resolveAgent command flags env local global =
           (normalize (fromBlock . commandBlock command =<< global), SourceGlobalCommand),
           (normalize (fromBlock . agentSharedDefaults =<< global), SourceGlobalDefault)
         ]
+
+-- | The table behind @okf config agent@: one block per command, one row per
+-- field, each row carrying the value okf resolved and the key or flag that
+-- supplied it.
+--
+-- The precedence legend is printed unconditionally. The whole point of the
+-- command is that the rules live next to the output that obeys them.
+renderAgentResolution :: [(AgentCommandName, ResolvedAgent)] -> Text
+renderAgentResolution entries =
+  Text.unlines (concatMap renderBlock blocks <> [""] <> precedenceLegend)
+  where
+    blocks = [(command, agentResolutionRows command resolved) | (command, resolved) <- entries]
+    allRows = concatMap snd blocks
+    commandWidth = widest (map (agentCommandSegment . fst) blocks)
+    fieldWidth = widest [name | (name, _, _) <- allRows]
+    valueWidth = widest [value | (_, value, _) <- allRows]
+    widest = foldr (max . Text.length) 0
+
+    renderBlock (command, rows) =
+      [ "  "
+          <> pad commandWidth (if rowIndex == (0 :: Int) then agentCommandSegment command else "")
+          <> "  "
+          <> pad fieldWidth name
+          <> "  "
+          <> pad valueWidth value
+          <> "  ["
+          <> source
+          <> "]"
+      | (rowIndex, (name, value, source)) <- zip [0 ..] rows
+      ]
+
+    pad width text = text <> Text.replicate (max 0 (width - Text.length text)) " "
+
+-- | One @(field, value, source label)@ row per configurable field.
+--
+-- A field no source claimed reads @(unset)@ and is attributed to the built-in
+-- default, because that is what okf will use. Values are flattened to one line
+-- so the table stays a table; a multi-line system prompt is shown with its line
+-- breaks collapsed to spaces.
+agentResolutionRows :: AgentCommandName -> ResolvedAgent -> [(Text, Text, Text)]
+agentResolutionRows command ResolvedAgent {provider, model, effort, systemPrompt} =
+  [ describe ProviderField (Just (rendered renderOkfProvider provider)),
+    describe ModelField (rendered id <$> model),
+    describe EffortField (rendered renderOkfEffort <$> effort),
+    describe SystemPromptField (rendered id <$> systemPrompt)
+  ]
+  where
+    rendered render ResolvedField {resolvedValue, resolvedSource} =
+      ResolvedField {resolvedValue = oneLine (render resolvedValue), resolvedSource}
+
+    describe agentField = \case
+      Nothing ->
+        ( agentFieldSegment agentField,
+          "(unset)",
+          agentSourceLabel command agentField SourceBuiltinDefault
+        )
+      Just ResolvedField {resolvedValue, resolvedSource} ->
+        ( agentFieldSegment agentField,
+          resolvedValue,
+          agentSourceLabel command agentField resolvedSource
+        )
+
+    oneLine = Text.unwords . Text.words
+
+precedenceLegend :: [Text]
+precedenceLegend =
+  [ "Precedence, highest first:",
+    "  1. --provider / --model / --effort / --system-prompt flag on the subcommand",
+    "  2. OKF_AGENT_PROVIDER / OKF_AGENT_MODEL / OKF_AGENT_EFFORT / OKF_AGENT_SYSTEM_PROMPT",
+    "  3. local scope   agent.<command>.<field>",
+    "  4. local scope   agent.<field>",
+    "  5. global scope  agent.<command>.<field>",
+    "  6. global scope  agent.<field>",
+    "  7. built-in default"
+  ]
 
 -- | Walk the candidates and keep the first that holds a value, with its label.
 firstCandidate :: [(Maybe a, AgentConfigSource)] -> Maybe (ResolvedField a)

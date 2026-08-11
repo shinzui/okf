@@ -30,6 +30,7 @@ module Okf.Cli.Config
     findConfigScopes,
     renderConfigSource,
     renderOkfEffort,
+    renderOkfProvider,
     exampleConfigText,
     renderConfig,
     okfConfigEnvVar,
@@ -435,17 +436,17 @@ renderConfig
 
 renderAgentFields :: Text -> AgentFieldSettings -> [Text]
 renderAgentFields keyPrefix AgentFieldSettings {provider, model, effort, systemPrompt} =
-  [ keyPrefix <> "provider = " <> maybe "(unset)" renderProvider provider,
+  [ keyPrefix <> "provider = " <> maybe "(unset)" renderOkfProvider provider,
     keyPrefix <> "model = " <> fromMaybe "(unset)" model,
     keyPrefix <> "effort = " <> maybe "(unset)" renderOkfEffort effort,
     keyPrefix <> "systemPrompt = " <> fromMaybe "(unset)" systemPrompt
   ]
 
 renderProviders :: [OkfProvider] -> Text
-renderProviders providers = "[" <> Text.intercalate ", " (map renderProvider providers) <> "]"
+renderProviders providers = "[" <> Text.intercalate ", " (map renderOkfProvider providers) <> "]"
 
-renderProvider :: OkfProvider -> Text
-renderProvider = \case
+renderOkfProvider :: OkfProvider -> Text
+renderOkfProvider = \case
   ProviderClaude -> "claude"
   ProviderCodex -> "codex"
 

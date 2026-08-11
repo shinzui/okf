@@ -53,8 +53,11 @@ import Okf.Cli.Agent.Config
     AgentOverrides (..),
     ResolvedAgent,
     agentFieldEnvVar,
+    allAgentCommands,
+    noAgentOverrides,
     parseOkfEffort,
     parseOkfProvider,
+    renderAgentResolution,
     resolveAgent,
   )
 import Okf.Cli.Assist (AssistOptions, assistAgentOverrides, assistOptionsParser, handleAssistCommand)
@@ -294,6 +297,7 @@ data ConfigCommand
   = ConfigShow
   | ConfigPath
   | ConfigInit !Bool
+  | ConfigAgent
   deriving stock (Show, Eq)
 
 data ProfileCommand
@@ -559,6 +563,12 @@ configCommandParser =
               (ConfigInit <$> switch (long "global" <> help "Write to ~/.config/okf/config.dhall instead of ./okf-config.dhall"))
               (progDesc "Write a commented example okf-config.dhall")
           )
+        <> command
+          "agent"
+          ( info
+              (pure ConfigAgent)
+              (progDesc "Show the resolved agent settings and where each came from")
+          )
     )
     <|> pure ConfigShow
 
@@ -785,6 +795,14 @@ runConfig = \case
         createDirectoryIfMissing True (FilePath.takeDirectory target)
         Text.IO.writeFile target exampleConfigText
         Text.IO.putStrLn ("Wrote " <> Text.pack target)
+  -- No flags of its own, so what it prints is what `okf assist` would use when
+  -- invoked with none.
+  ConfigAgent -> do
+    resolutions <-
+      traverse
+        (\agentCommand -> (agentCommand,) <$> resolveAgentOrDie agentCommand noAgentOverrides)
+        allAgentCommands
+    Text.IO.putStr (renderAgentResolution resolutions)
 
 loadConfigOrDie :: IO OkfConfig
 loadConfigOrDie = fst <$> loadConfigWithSourceOrDie
