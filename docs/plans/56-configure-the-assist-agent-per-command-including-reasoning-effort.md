@@ -95,11 +95,12 @@ Milestone 1 — build wiring for `baikai-claude` and `baikai-openai`:
 
 Milestone 2 — route `okf assist` through Baikai's interactive launchers:
 
-- [ ] Add the `InteractiveLauncher` record and `launcherFor :: OkfProvider -> InteractiveLauncher` to `Okf.Cli.Assist`, covering Claude and Codex.
-- [ ] Rewrite `Okf.Cli.Assist.buildClaudeCommand` as a provider-dispatching `buildAgentCommand` over `claudeInteractiveCommand` / `codexInteractiveCommand`.
-- [ ] Replace the hand-rolled `System.Process` launch with `launchClaudeInteractive` / `launchCodexInteractive`.
-- [ ] Keep `--append-system-prompt` semantics for Claude by routing the system prompt through `extraArgs`; for Codex set the request's `systemPrompt` field so Baikai folds it into the prompt.
-- [ ] Update `testAssistCommandBuilder` and `testAssistModelOverride` in `okf-cli/test/Main.hs` for the new argv (note the added `--` separator), and add a Codex counterpart.
+- [x] Add the `InteractiveLauncher` record and `launcherFor :: OkfProvider -> InteractiveLauncher` to `Okf.Cli.Assist`, covering Claude and Codex. (2026-08-11T19:20Z)
+- [x] Rewrite `Okf.Cli.Assist.buildClaudeCommand` as a provider-dispatching `buildAgentCommand` over `claudeInteractiveCommand` / `codexInteractiveCommand`. (2026-08-11T19:20Z)
+- [x] ~~Replace the hand-rolled `System.Process` launch with `launchClaudeInteractive` / `launchCodexInteractive`.~~ Not done, deliberately: both Baikai launchers drop Ctrl-C delegation, which is a measured regression. okf keeps its own spawn of Baikai's rendered command; see the Decision Log and baikai IR-5. (2026-08-11T19:24Z)
+- [x] Keep `--append-system-prompt` semantics for Claude by routing the system prompt through `extraArgs`; for Codex set the request's `systemPrompt` field so Baikai folds it into the prompt. (2026-08-11T19:20Z)
+- [x] Update `testAssistCommandBuilder` and `testAssistModelOverride` in `okf-cli/test/Main.hs` for the new argv (note the added `--` separator), and add a Codex counterpart. (2026-08-11T19:20Z)
+- [x] Raise baikai IR-5 for the Ctrl-C delegation gap. (2026-08-11T19:24Z)
 
 Milestone 3 — the `agent` configuration block and two-scope loading:
 
@@ -150,6 +151,36 @@ implementation. Provide concise evidence.
   `baikai-openai`. The prefetched hashes were
   `1mcmay3y3p3drbl4c2rj25xn5fndm00zjxmk8lzmqk6yshxwh9rf` (`baikai-claude`) and
   `12zm1xy8wba8s6s909iwvs7kb9nvvcd1pwrhvamgad1wlnz18c9x` (`baikai-openai`).
+  Date: 2026-08-11
+
+- **Baikai's interactive launchers really do drop Ctrl-C delegation, and it is not a
+  cosmetic difference.** The plan flagged this as "the plausible regression"; it is a
+  certain one. `launchClaudeInteractive` composes only `addArgs` and `setWorkingDir` onto
+  cradle's configuration, whose `delegateCtlc` field defaults to `False`;
+  `launchCodexInteractive` builds a `System.Process` spec with `Inherit` streams and never
+  sets `delegate_ctlc`. Measured with a stand-in child that traps SIGINT and keeps
+  running, spawned by a Haskell parent under a group-directed `kill -INT`, varying nothing
+  but the flag:
+
+  ```text
+  mode=nodelegate → CHILD: got SIGINT, staying alive / PARENT exit status: 130
+  mode=delegate   → CHILD: got SIGINT, staying alive / CHILD: exiting normally
+                    PARENT: child exited with ExitSuccess / PARENT exit status: 0
+  ```
+
+  Without delegation okf dies on the first Ctrl-C and orphans the agent, which is exactly
+  the routine act of redirecting an agent mid-turn. The same check run through the real
+  `okf` binary with a fake `claude` on `PATH` confirms the shipped behaviour is preserved:
+  `okf exit status: 0` after the child handled the interrupt and exited on its own terms.
+  Date: 2026-08-11
+
+- **The system-prompt improvement request the plan asks Milestone 2 to open already
+  exists.** It was raised during planning as baikai IR-4,
+  `mori://shinzui/baikai/docs/improvement-requests/distinguish-replacing-a-system-prompt-from-appending-to-one.md`
+  (artifact-level URI pending). Milestone 2 therefore only had to raise the Ctrl-C one,
+  filed as IR-5,
+  `mori://shinzui/baikai/docs/improvement-requests/delegate-ctrl-c-to-the-interactive-session.md`.
+  Both files are written into the baikai working tree and left uncommitted there.
   Date: 2026-08-11
 
 - **`docs/user/cli.md` has no assist section at all.** The plan's Milestone 7 says to
@@ -286,6 +317,34 @@ Record every decision made while working on the plan.
   `provider` needs a concrete default because the launcher has to pick one, and Claude
   remains that default because it is what `okf assist` has always launched; Codex becomes
   reachable but never automatic.
+  Date: 2026-08-11
+
+
+- Decision: Adopt Baikai's interactive command *builders* but keep okf's own
+  `System.Process` spawn, taking the fallback this plan's Idempotence and Recovery section
+  authorises. `Okf.Cli.Assist` therefore still imports `System.Process`, contrary to the
+  Interfaces and Dependencies section, and `InteractiveLauncher` carries no
+  `launchSession` field.
+  Rationale: measured, not predicted — see Surprises & Discoveries. Neither
+  `launchClaudeInteractive` (cradle, `delegateCtlc` defaulting to `False`) nor
+  `launchCodexInteractive` (`System.Process` with no `delegate_ctlc`) takes the calling
+  process out of the terminal's signal path, so the first Ctrl-C inside an assist session
+  would kill okf and orphan the agent. okf has set `delegate_ctlc = True` since `okf
+  assist` shipped, and interrupting a turn is the routine way a user redirects an agent,
+  so this is a regression in the most common interaction in the feature. The fix belongs
+  upstream and is filed as baikai IR-5, but it needs a new Baikai release and new Hackage
+  pins, which is outside this plan. The split keeps every vendor flag — which flag carries
+  effort, where `--` goes, that Codex has no system-prompt flag — in Baikai, which is the
+  part the plan's Decision Log actually cares about; only process control, which is not
+  vendor-specific at all, stays in okf. Revisit and delete `launchAgent` when IR-5 lands.
+  Date: 2026-08-11
+
+- Decision: `InteractiveLauncher` gains a `launcherInstallHint` field beyond the four the
+  plan sketched.
+  Rationale: the plan's own example error message says "Install the Codex CLI", which is
+  not derivable from the executable name `codex` — "Install Claude Code" is not "install
+  claude" either. One more constant field is cheaper than a second `case provider of` in
+  the error path, which is the thing the record exists to prevent.
   Date: 2026-08-11
 
 

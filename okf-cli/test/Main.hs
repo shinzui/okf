@@ -9,7 +9,7 @@ import Data.Time.Calendar (fromGregorian)
 import Data.Time.Clock (UTCTime (..))
 import Okf.Bundle (Concept, bundleInventoryOfConcepts, conceptAttester, conceptExecutor, conceptFromDocument, conceptIdOf, conceptParameters, conceptRuntime, conceptType, walkBundle, walkBundleInventory)
 import Okf.Cli
-import Okf.Cli.Assist (AssistOptions (..), buildClaudeCommand)
+import Okf.Cli.Assist (AssistOptions (..), buildAgentCommand)
 import Okf.Cli.Config (AssistSettings (..), ConfigSource (..), KitSettings (..), OkfConfig (..), OkfProvider (..), defaultOkfConfig, exampleConfigText, findConfigSource, loadOkfConfig, okfConfigEnvVar, projectConfigPath)
 import Okf.Cli.Fzf (Candidate (..), FzfOpts (..), optsToArgs, parseSelectionIndex, renderCandidateLines, shellQuote, withAnsi, withHeight, withNoSort, withPrompt)
 import Okf.Cli.Fzf.Selector (ConceptOrder (..), conceptCandidates, conceptPreviewCommand, orderConcepts, parseBundleSearchRoots)
@@ -38,6 +38,7 @@ main = do
   configInvalidDhall <- testConfigInvalidDhall
   assistCommandBuilder <- testAssistCommandBuilder
   assistModelOverride <- testAssistModelOverride
+  assistCodexCommandBuilder <- testAssistCodexCommandBuilder
   profileDocumentWrites <- testProfileDocumentWritesBundle
   profileDocumentDeclaresVersion <- testProfileDocumentDeclaresOkfVersion
   profileDocMatchesExample <- testProfileDocumentationMatchesCommittedExample
@@ -442,7 +443,8 @@ main = do
           configLegacyWithoutProfiles,
           configInvalidDhall,
           assistCommandBuilder,
-          assistModelOverride
+          assistModelOverride,
+          assistCodexCommandBuilder
         ]
   unless (and results) exitFailure
 
@@ -1590,31 +1592,64 @@ testConfigInvalidDhall =
         Left message -> not (Text.null (Text.strip message))
         Right _ -> False
 
+-- | Baikai fixes the argument order — model, effort, system prompt, --add-dir
+-- pairs, safety, extra arguments — and fences the prompt off behind @--@
+-- because @--add-dir@ is variadic.
 testAssistCommandBuilder :: IO Bool
 testAssistCommandBuilder =
   pure $
-    buildClaudeCommand assistTestConfig ["/a", "/b"] (AssistOptions "do work" Nothing False)
-      == [ "--add-dir",
-           "/a",
-           "--add-dir",
-           "/b",
-           "--model",
-           "claude-opus-4-5",
-           "--append-system-prompt",
-           "Be concise",
-           "do work"
-         ]
+    buildAgentCommand ProviderClaude assistTestConfig ["/a", "/b"] (AssistOptions "do work" Nothing False)
+      == Right
+        ( "claude",
+          [ "--model",
+            "claude-opus-4-5",
+            "--add-dir",
+            "/a",
+            "--add-dir",
+            "/b",
+            "--append-system-prompt",
+            "Be concise",
+            "--",
+            "do work"
+          ]
+        )
 
 testAssistModelOverride :: IO Bool
 testAssistModelOverride =
   pure $
-    buildClaudeCommand assistTestConfig [] (AssistOptions "do work" (Just "override-model") True)
-      == [ "--model",
-           "override-model",
-           "--append-system-prompt",
-           "Be concise",
-           "do work"
-         ]
+    buildAgentCommand ProviderClaude assistTestConfig [] (AssistOptions "do work" (Just "override-model") True)
+      == Right
+        ( "claude",
+          [ "--model",
+            "override-model",
+            "--append-system-prompt",
+            "Be concise",
+            "--",
+            "do work"
+          ]
+        )
+
+-- | Codex has no system-prompt flag, so the system prompt must reach it inside
+-- the prompt argument rather than as @--append-system-prompt@. The exact
+-- wording of the fold is Baikai's, so assert on what okf is responsible for —
+-- choosing the field — rather than on a format okf does not own.
+testAssistCodexCommandBuilder :: IO Bool
+testAssistCodexCommandBuilder =
+  pure $
+    case buildAgentCommand ProviderCodex assistTestConfig ["/a"] (AssistOptions "do work" Nothing False) of
+      Left _ -> False
+      Right (executable, argv) ->
+        executable == "codex"
+          && take 5 argv == ["--model", "claude-opus-4-5", "--add-dir", "/a", "--"]
+          && length argv == 6
+          && "--append-system-prompt" `notElem` argv
+          && systemPromptPrecedesUserPrompt (Text.pack (last argv))
+  where
+    systemPromptPrecedesUserPrompt folded =
+      case Text.breakOn "do work" folded of
+        (beforeUserPrompt, fromUserPrompt) ->
+          not (Text.null fromUserPrompt)
+            && "Be concise" `Text.isInfixOf` beforeUserPrompt
 
 assistTestConfig :: OkfConfig
 assistTestConfig =
