@@ -132,12 +132,18 @@ Milestone 6 — the `okf config agent` inspection command:
 - [x] Add the pure formatter `renderAgentResolution` and its precedence legend. (2026-08-11T20:20Z)
 - [x] Add a unit test for the formatter. (2026-08-11T20:24Z)
 
+Final validation:
+
+- [x] `cabal build all`, `cabal test all`, and `nix build .#okf-cli` all succeed. (2026-08-11T20:52Z)
+- [x] Every criterion in Validation and Acceptance exercised against the built binary. (2026-08-11T20:50Z)
+- [x] Every flag okf renders checked against the installed `claude --help` and `codex --help`. (2026-08-11T20:48Z)
+
 Milestone 7 — documentation and durable context:
 
-- [ ] Update `okf-cli/help/agents.md` and `okf-cli/help/config.md`.
-- [ ] Update `docs/user/cli.md`.
-- [ ] Add a `CHANGELOG.md` entry under `[Unreleased]`.
-- [ ] Write `docs/adr/16-per-command-agent-configuration-and-config-scopes.md`.
+- [x] Update `okf-cli/help/agents.md` and `okf-cli/help/config.md`. (2026-08-11T20:35Z)
+- [x] Write the assist section of `docs/user/cli.md` — it had none. (2026-08-11T20:35Z)
+- [x] Add entries under `[Unreleased]` in both `CHANGELOG.md` and `okf-cli/CHANGELOG.md`. (2026-08-11T20:38Z)
+- [x] Write `docs/adr/16-per-command-agent-configuration-and-config-scopes.md`. (2026-08-11T20:40Z)
 
 
 ## Surprises & Discoveries
@@ -197,6 +203,15 @@ implementation. Provide concise evidence.
   checks as an anonymous `[Bool]`, so a failure exits non-zero without naming which check
   failed. `cabal repl okf-cli-test` with the test name piped to stdin is the way to
   identify one. Naming the pure checks is a worthwhile cleanup but is not this plan's.
+  Date: 2026-08-11
+
+- **The installed `claude --help` confirms the clamping story exactly.** Its
+  `--effort <level>` documents `(low, medium, high, xhigh, max)` — no `minimal` — which
+  is the vendor fact behind Baikai clamping `ThinkingMinimal` up to `low` while Codex
+  takes all six verbatim. `--add-dir <directories...>` is likewise documented as
+  variadic, which is what makes Baikai's `--` separator before the prompt necessary
+  rather than decorative. Every flag okf emits for either vendor appears in that
+  vendor's help output.
   Date: 2026-08-11
 
 - **`docs/user/cli.md` has no assist section at all.** The plan's Milestone 7 says to
@@ -432,7 +447,56 @@ Compare the result against the original purpose. Before marking the plan complet
 distill durable project context from the Decision Log, Surprises & Discoveries, and
 this section into docs/adr/. Keep task-local execution details here.
 
-(To be filled during and after implementation.)
+All seven milestones landed, in seven commits, each leaving the tree building and
+green. The plan's purpose is met: a global file can set a shared model while a project
+file overrides only the effort and both apply; `OKF_AGENT_*` beats both; flags beat
+everything; `okf config agent` names the winning key for every setting; and choosing
+Codex launches a real `codex` session rather than exiting 2.
+
+Every acceptance criterion in Validation and Acceptance was exercised against the built
+binary in throwaway `HOME` directories, including the two the plan singles out as
+easy to get backwards. A local `agent.model` beats a global `agent.assist.model`
+(`project-default [local: agent.model]`), and one neutral effort level reaches each
+vendor in its own vocabulary — `--effort minimal` becomes `--effort low` for Claude and
+`-c model_reasoning_effort=minimal` for Codex. The installed `claude --help` confirms
+why: its `--effort` accepts exactly `low, medium, high, xhigh, max`. Every flag okf
+emits was checked against the installed CLIs' help output, and `--add-dir
+<directories...>` is indeed variadic, which is what makes Baikai's `--` separator
+necessary rather than cosmetic.
+
+Two things came out differently from the plan, both recorded in the Decision Log:
+
+The larger one is that okf kept its own process spawn. The plan wanted
+`System.Process` gone from `Okf.Cli.Assist`; measurement showed both Baikai launchers
+drop Ctrl-C delegation, which would kill okf and orphan the agent on the first
+interrupt — the routine way a user redirects an agent mid-turn. The plan's Idempotence
+and Recovery section anticipated exactly this and authorised the split, so okf takes
+Baikai's command builders and keeps the spawn. Every vendor flag still lives in Baikai,
+which is what the principle was protecting; process control is not vendor-specific.
+Filed upstream as baikai IR-5, with `launchAgent` marked for deletion when it lands.
+
+The smaller one is sequencing: `exampleConfigText` could not drop its `assist` block in
+Milestone 3 as written, because `OkfConfig` still required that field until Milestone 5
+and Dhall decodes records strictly, so `okf config init` would have written a file
+`okf config show` could not read. The two edits moved together in Milestone 5 instead.
+
+Two gaps are worth naming. A fully interactive session was not driven from this
+non-TTY context: the spawn, wait, exit-status propagation, and Ctrl-C behaviour were
+all verified against a stand-in agent binary, and the argument vectors were verified
+against the real CLIs' help output, but nobody typed into a live `claude` session as
+part of this work. And `okf-cli/test/Main.hs` collects its pure checks as an anonymous
+`[Bool]`, so a failure exits non-zero without naming which check failed; identifying
+one means piping its name into `cabal repl okf-cli-test`. Naming those checks is a
+worthwhile cleanup and is not this plan's.
+
+The durable half of the Decision Log — two-scope layering for `agent` only, the rule
+that scope dominates across scopes while specificity dominates within one, provenance
+resolved alongside every value, cross-command environment variables, Baikai owning
+every vendor flag while okf keeps the spawn, and provider divergence confined to
+`InteractiveLauncher` — is distilled into
+`docs/adr/16-per-command-agent-configuration-and-config-scopes.md`, which also records
+that it supersedes both scope exclusions in
+`docs/masterplans/3-integrate-baikai-for-agent-assist-and-kit-support-in-okf.md`.
 
 
 ## Context and Orientation
