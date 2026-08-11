@@ -46,6 +46,13 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   failing the menu. Nothing else changes: `okf concepts`, `okf trust`, and the
   other whole-bundle reports remain sorted by concept ID and diffable.
 
+  `okf show --sort id` restores the alphabetical order for anyone looking a
+  concept up by name rather than resuming recent work, and `--sort modified`
+  names the default explicitly. The flag applies to the menu, so it does
+  nothing when `CONCEPT_ID` is given; an order okf does not recognise fails the
+  command rather than falling back to the default, because a silent fallback
+  looks exactly like the flag having worked.
+
 - Builds of this repository resolve `cmark-gfm` from
   [a fork](https://github.com/shinzui/cmark-gfm-hs) pinned by commit in
   `cabal.project`, rather than from Hackage. The fork makes core-extension

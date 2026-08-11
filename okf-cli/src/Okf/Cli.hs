@@ -53,8 +53,11 @@ import Okf.Cli.Config
 import Okf.Cli.Fzf (FzfConfig, detectFzfConfig)
 import Okf.Cli.Fzf.Selector
   ( BundleSelection (..),
+    ConceptOrder (..),
     ConceptSelection (..),
     bundleSearchRootsEnvVar,
+    parseConceptOrder,
+    renderConceptOrder,
     selectBundle,
     selectConcept,
   )
@@ -231,7 +234,10 @@ data ShowOptions = ShowOptions
   { bundlePath :: !(Maybe FilePath),
     conceptIdText :: !(Maybe Text),
     profilePath :: !(Maybe FilePath),
-    computationOnly :: !Bool
+    computationOnly :: !Bool,
+    -- | Order of the interactive concept menu; ignored when @CONCEPT_ID@ is
+    -- given, because then there is no menu.
+    conceptOrder :: !ConceptOrder
   }
   deriving stock (Show, Eq)
 
@@ -493,6 +499,14 @@ showOptionsParser =
     <*> switch
       ( long "computation"
           <> help "Print only the computation and nothing else"
+      )
+    <*> option
+      (maybeReader parseConceptOrder)
+      ( long "sort"
+          <> metavar "ORDER"
+          <> value ByModifiedTime
+          <> showDefaultWith (Text.unpack . renderConceptOrder)
+          <> help "Order of the interactive concept menu: modified or id"
       )
 
 idOptionsParser :: Parser IdOptions
@@ -1424,7 +1438,7 @@ runGraph GraphOptions {bundlePath} = do
   LazyByteString.putStrLn (Aeson.encode (buildGraph concepts))
 
 runShow :: ShowOptions -> IO ()
-runShow ShowOptions {bundlePath, conceptIdText, profilePath, computationOnly} = do
+runShow ShowOptions {bundlePath, conceptIdText, profilePath, computationOnly, conceptOrder} = do
   fzfConfig <- detectFzfConfig
   resolvedBundle <- resolveBundlePath fzfConfig bundlePath
   concepts <- loadBundleOrExit resolvedBundle
@@ -1435,7 +1449,7 @@ runShow ShowOptions {bundlePath, conceptIdText, profilePath, computationOnly} = 
   case conceptIdText of
     Just rawIdentifier -> showConceptByIdentifier render profilePath concepts rawIdentifier
     Nothing -> do
-      selection <- selectConcept fzfConfig resolvedBundle concepts
+      selection <- selectConcept fzfConfig conceptOrder resolvedBundle concepts
       case selection of
         ConceptChosen concept -> render concept
         ConceptNoCandidates ->

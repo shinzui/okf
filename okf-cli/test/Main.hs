@@ -12,7 +12,7 @@ import Okf.Cli
 import Okf.Cli.Assist (AssistOptions (..), buildClaudeCommand)
 import Okf.Cli.Config (AssistSettings (..), ConfigSource (..), KitSettings (..), OkfConfig (..), OkfProvider (..), defaultOkfConfig, exampleConfigText, findConfigSource, loadOkfConfig, okfConfigEnvVar, projectConfigPath)
 import Okf.Cli.Fzf (Candidate (..), FzfOpts (..), optsToArgs, parseSelectionIndex, renderCandidateLines, shellQuote, withAnsi, withHeight, withNoSort, withPrompt)
-import Okf.Cli.Fzf.Selector (conceptCandidates, conceptModificationTimes, conceptPreviewCommand, parseBundleSearchRoots, sortConceptsByModified)
+import Okf.Cli.Fzf.Selector (ConceptOrder (..), conceptCandidates, conceptPreviewCommand, orderConcepts, parseBundleSearchRoots)
 import Okf.Cli.Help (HelpTopic (..), helpTopics)
 import Okf.ConceptId (parseConceptId, renderConceptId)
 import Okf.Document (Attester (..), Executor (..), Parameter (..), parseDocument)
@@ -53,7 +53,7 @@ main = do
   conceptsReportsExample <- testConceptsReportsExampleBundle
   conceptsKeepsStatusDefaultOut <- testConceptsDoesNotApplyStatusDefault
   profileDocStrictWithTimestamp <- testProfileDocumentationStrictWithTimestamp
-  conceptMenuOrdersByMtime <- testConceptMenuOrdersByModificationTime
+  conceptMenuOrdering <- testConceptMenuOrdering
   let results =
         [ parseSucceeds ["validate", "bundle"],
           parseSucceeds ["validate", "bundle", "--strict"],
@@ -120,7 +120,8 @@ main = do
               { bundlePath = Just "bundle",
                 conceptIdText = Just "tables/orders",
                 profilePath = Nothing,
-                computationOnly = False
+                computationOnly = False,
+                conceptOrder = ByModifiedTime
               },
           parseShowMatches
             ["show", "b", "ADR-2", "--profile", "p.dhall"]
@@ -128,7 +129,8 @@ main = do
               { bundlePath = Just "b",
                 conceptIdText = Just "ADR-2",
                 profilePath = Just "p.dhall",
-                computationOnly = False
+                computationOnly = False,
+                conceptOrder = ByModifiedTime
               },
           parseShowMatches
             ["show"]
@@ -136,7 +138,8 @@ main = do
               { bundlePath = Nothing,
                 conceptIdText = Nothing,
                 profilePath = Nothing,
-                computationOnly = False
+                computationOnly = False,
+                conceptOrder = ByModifiedTime
               },
           parseShowMatches
             ["show", "bundle"]
@@ -144,7 +147,8 @@ main = do
               { bundlePath = Just "bundle",
                 conceptIdText = Nothing,
                 profilePath = Nothing,
-                computationOnly = False
+                computationOnly = False,
+                conceptOrder = ByModifiedTime
               },
           parseShowMatches
             ["show", "--profile", "p.dhall"]
@@ -152,7 +156,8 @@ main = do
               { bundlePath = Nothing,
                 conceptIdText = Nothing,
                 profilePath = Just "p.dhall",
-                computationOnly = False
+                computationOnly = False,
+                conceptOrder = ByModifiedTime
               },
           -- §10.3's two forms are both reachable through one flag, so a caller
           -- does not have to know which one the producer chose.
@@ -162,8 +167,31 @@ main = do
               { bundlePath = Just "bundle",
                 conceptIdText = Just "computations/revenue",
                 profilePath = Nothing,
-                computationOnly = True
+                computationOnly = True,
+                conceptOrder = ByModifiedTime
               },
+          -- --sort takes the menu back to the order walkBundle returns, and a
+          -- misspelled order fails the parse rather than falling back to the
+          -- default, which would be invisible.
+          parseShowMatches
+            ["show", "bundle", "--sort", "id"]
+            ShowOptions
+              { bundlePath = Just "bundle",
+                conceptIdText = Nothing,
+                profilePath = Nothing,
+                computationOnly = False,
+                conceptOrder = ByConceptId
+              },
+          parseShowMatches
+            ["show", "--sort", "modified"]
+            ShowOptions
+              { bundlePath = Nothing,
+                conceptIdText = Nothing,
+                profilePath = Nothing,
+                computationOnly = False,
+                conceptOrder = ByModifiedTime
+              },
+          parseFails ["show", "bundle", "--sort", "mtime"],
           parseIdMatches
             ["id", "next", "b", "ADR", "--profile", "p.dhall"]
             IdOptions
@@ -407,7 +435,7 @@ main = do
           conceptsReportsExample,
           conceptsKeepsStatusDefaultOut,
           profileDocStrictWithTimestamp,
-          conceptMenuOrdersByMtime,
+          conceptMenuOrdering,
           configDefaults,
           configProjectPrecedence,
           configEnvPrecedence,
@@ -1457,10 +1485,12 @@ testLogAddWritesFile = do
     )
 
 -- | Three concepts written in alphabetical order and stamped with mtimes that
--- disagree with it, so the ordering can only come from the filesystem. A fourth
--- concept has no file at all: it must land last instead of aborting the walk.
-testConceptMenuOrdersByModificationTime :: IO Bool
-testConceptMenuOrdersByModificationTime = do
+-- disagree with it, so the modification-time ordering can only come from the
+-- filesystem. A fourth concept has no file at all: it must land last under
+-- --sort modified instead of aborting the walk, and take its alphabetical place
+-- under --sort id, where no file is consulted.
+testConceptMenuOrdering :: IO Bool
+testConceptMenuOrdering = do
   temporaryDirectory <- getTemporaryDirectory
   root <- createTempDirectory temporaryDirectory "okf-cli-concept-order"
   createDirectoryIfMissing True (root </> "tables")
@@ -1476,14 +1506,22 @@ testConceptMenuOrdersByModificationTime = do
   stamp "beta" 20
   stamp "gamma" 10
   walked <- walkBundle root
-  ordered <- case walked of
-    Left _ -> pure []
-    Right concepts -> do
-      let unwritten = buildConcept "tables/delta" "---\ntype: Table\n---\n\n# delta\n"
-      times <- conceptModificationTimes root (concepts <> [unwritten])
-      pure (map (renderConceptId . conceptIdOf) (sortConceptsByModified times))
+  (byTime, byId) <- case walked of
+    Left _ -> pure ([], [])
+    Right walkedConcepts -> do
+      -- Appended rather than inserted in ID order, so sorting by ID has to move
+      -- it and cannot pass by leaving the input alone.
+      let concepts = walkedConcepts <> [buildConcept "tables/delta" "---\ntype: Table\n---\n\n# delta\n"]
+      recent <- orderConcepts ByModifiedTime root concepts
+      alphabetical <- orderConcepts ByConceptId root concepts
+      pure (map conceptIdText recent, map conceptIdText alphabetical)
   removeDirectoryRecursive root
-  pure (ordered == ["tables/beta", "tables/gamma", "tables/alpha", "tables/delta"])
+  pure
+    ( byTime == ["tables/beta", "tables/gamma", "tables/alpha", "tables/delta"]
+        && byId == ["tables/alpha", "tables/beta", "tables/delta", "tables/gamma"]
+    )
+  where
+    conceptIdText = renderConceptId . conceptIdOf
 
 testConfigDefaults :: IO Bool
 testConfigDefaults =

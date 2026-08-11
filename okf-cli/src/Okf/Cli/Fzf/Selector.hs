@@ -2,13 +2,17 @@
 -- directory and a concept inside it.
 module Okf.Cli.Fzf.Selector
   ( BundleSelection (..),
+    ConceptOrder (..),
     ConceptSelection (..),
     bundleSearchRootsEnvVar,
     parseBundleSearchRoots,
+    parseConceptOrder,
     bundleSearchRoots,
     conceptCandidates,
     conceptModificationTimes,
     conceptPreviewCommand,
+    orderConcepts,
+    renderConceptOrder,
     selectBundle,
     selectConcept,
     sortConceptsByModified,
@@ -50,6 +54,30 @@ data ConceptSelection
   | ConceptSelectionUnavailable
   | ConceptSelectionError !Text
   deriving stock (Show, Eq)
+
+-- | The order concepts appear in the interactive menu.
+data ConceptOrder
+  = -- | Most recently modified first. The default, because the concept a user
+    -- means is usually one they were just working on.
+    ByModifiedTime
+  | -- | Alphabetical by concept ID, the order 'Okf.Bundle.walkBundle' returns.
+    ByConceptId
+  deriving stock (Show, Eq)
+
+-- | Read a @--sort@ value. The spellings are the two nouns in the flag's help
+-- text, and nothing else is accepted, so a typo fails the parse rather than
+-- silently selecting the default.
+parseConceptOrder :: String -> Maybe ConceptOrder
+parseConceptOrder = \case
+  "modified" -> Just ByModifiedTime
+  "id" -> Just ByConceptId
+  _ -> Nothing
+
+-- | The @--sort@ spelling of an order, so help text and errors can name it.
+renderConceptOrder :: ConceptOrder -> Text
+renderConceptOrder = \case
+  ByModifiedTime -> "modified"
+  ByConceptId -> "id"
 
 -- | Colon-separated list of directories to search for bundles, in the style of
 -- @PATH@.
@@ -99,28 +127,39 @@ selectBundle fzfConfig
             FzfCancelled -> BundleSelectionCancelled
             FzfError message -> BundleSelectionError message
 
-selectConcept :: FzfConfig -> FilePath -> [Concept] -> IO ConceptSelection
-selectConcept fzfConfig bundlePath concepts
+selectConcept :: FzfConfig -> ConceptOrder -> FilePath -> [Concept] -> IO ConceptSelection
+selectConcept fzfConfig order bundlePath concepts
   | not (isFzfAvailable fzfConfig) = pure ConceptSelectionUnavailable
   | null concepts = pure ConceptNoCandidates
   | otherwise = do
       executablePath <- getExecutablePath
-      -- The menu is ordered by how recently each concept file changed, so the
-      -- work in progress is at the top. @--no-sort@ is what makes fzf honour
-      -- it: without it fzf would impose its own order on the unfiltered list.
-      recentFirst <- sortConceptsByModified <$> conceptModificationTimes bundlePath concepts
+      -- @--no-sort@ is what makes fzf honour the order chosen here: without it
+      -- fzf would impose its own on the unfiltered list.
+      ordered <- orderConcepts order bundlePath concepts
       let opts =
             withPrompt "concept> "
               <> withHeader (Text.pack bundlePath)
               <> withHeight "60%"
               <> withNoSort
               <> withPreview (conceptPreviewCommand executablePath bundlePath)
-      result <- runFzf fzfConfig opts (conceptCandidates recentFirst)
+      result <- runFzf fzfConfig opts (conceptCandidates ordered)
       pure $ case result of
         FzfSelected concept -> ConceptChosen concept
         FzfNoMatch -> ConceptNoCandidates
         FzfCancelled -> ConceptSelectionCancelled
         FzfError message -> ConceptSelectionError message
+
+-- | Put the menu's concepts in the requested order.
+--
+-- Sorting by ID is what 'Okf.Bundle.walkBundle' already returns, and it is
+-- redone here anyway so the menu's order is a property of the menu rather than
+-- one inherited from a caller that could stop guaranteeing it. Only the
+-- modification-time order touches the filesystem.
+orderConcepts :: ConceptOrder -> FilePath -> [Concept] -> IO [Concept]
+orderConcepts ByConceptId _ concepts =
+  pure (List.sortOn (renderConceptId . conceptIdOf) concepts)
+orderConcepts ByModifiedTime bundlePath concepts =
+  sortConceptsByModified <$> conceptModificationTimes bundlePath concepts
 
 -- | Pair every concept with the modification time of the file it was read
 -- from, resolved against the bundle root because 'conceptSourcePath' is

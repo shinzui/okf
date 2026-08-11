@@ -49,6 +49,16 @@ THE CONCEPT MENU
   written by one checkout, fall back to concept ID. A concept whose file
   cannot be read is listed last rather than dropped.
 
+  Pass --sort id to list concepts alphabetically by concept ID instead, which
+  is the order every other okf command prints them in:
+
+    okf show --sort id           alphabetical menu
+    okf show --sort modified     most recently modified first (the default)
+
+  --sort applies to the menu, so it does nothing when you name a CONCEPT_ID.
+  An order okf does not know fails the command rather than falling back to
+  the default.
+
   Typing filters on the concept ID, type, and title together.
 
 KEYS

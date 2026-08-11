@@ -433,6 +433,19 @@ concept ID, and a concept whose file cannot be read is listed last. The
 whole-bundle reports (`okf concepts`, `okf trust`, `okf sources`) are unaffected
 and stay sorted by concept ID, so their output remains diffable.
 
+`--sort` chooses the menu's order:
+
+```bash
+cabal run okf -- show --sort id         # alphabetical by concept ID
+cabal run okf -- show --sort modified   # most recently modified first (default)
+```
+
+`--sort id` gives the menu the same order as every other okf command, which is
+what you want when you are looking for a concept by name rather than resuming
+recent work. The flag applies to the menu only, so it has no effect when
+`CONCEPT_ID` is given. An unrecognised order fails the command rather than
+silently falling back to the default.
+
 Exit status when a menu is involved:
 
 | Status | Meaning |
