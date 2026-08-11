@@ -7,6 +7,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.6.0.0] - 2026-08-11
+
 ### Added
 
 - **`okf concepts` answers the simplest question anyone asks of a corpus:**
@@ -101,6 +103,11 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - The `assist` configuration block is replaced by `agent.assist`. A file written
   for any earlier okf still loads — its `assist` values are read as
   `agent.assist.*` — so nothing needs editing on upgrade.
+
+- Baikai resolves from Hackage rather than from a commit pin. `baikai` moves to
+  `^>=0.5.0` and `baikai-kit` to `^>=0.1.0.4`, both released, so building okf
+  from source no longer needs a `source-repository-package` stanza for them or a
+  flake input kept in step with it.
 
 ### Fixed
 

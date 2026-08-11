@@ -7,6 +7,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.6.0.0] - 2026-08-11
+
 ### Added
 
 - `Okf.Query`: selecting concepts out of a walked bundle by what their
@@ -38,6 +40,14 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   checked against the profile's declared type names when
   `allowUnknownTypes = False`, since that is how a profile spells its
   concept-type vocabulary.
+
+### Changed
+
+- **Nothing breaks in this release.** `okf-core` 0.6.0.0 is additive — one new
+  module, no changed type and no removed export — and the major bump only
+  reflects the shared version it carries with `okf-cli`, which does break. Prior
+  major bumps here each carried a real break, so this one is worth naming: a
+  consumer upgrading from 0.5.0.0 has nothing to change.
 
 ## [0.5.0.0] - 2026-08-01
 

@@ -7,6 +7,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.6.0.0] - 2026-08-11
+
 ### Added
 
 - `okf concepts BUNDLE` lists the concepts a bundle holds as one aligned row per
@@ -60,6 +62,14 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - The `assist` configuration block is replaced by `agent.assist`. Files written
   for okf 0.2.0.0 and 0.5.0.0 still load; their `assist` values are read as
   `agent.assist.*`.
+- Requires `okf-core ^>=0.6.0.0`, for `Okf.Query`, which `okf concepts` uses to
+  filter. The `okf-core` half of this release is additive — nothing a consumer
+  of the library calls today changed — but the two packages share one version,
+  so the bound moves with `okf-cli`'s own breaking changes.
+- Requires `baikai ^>=0.5.0` and `baikai-kit ^>=0.1.0.4`, and adds
+  `baikai-claude ^>=0.5.0` and `baikai-openai ^>=0.5.0` for the vendor command
+  lines. All four resolve from Hackage; the previous git pin on `baikai` is
+  gone.
 
 ### Fixed
 
