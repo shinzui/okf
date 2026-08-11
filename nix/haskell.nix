@@ -22,19 +22,6 @@
       hsdev = inputs.haskell-nix-dev.lib.${system};
       basePackages = pkgs.haskell.packages."ghc9124";
 
-      # Baikai is a multi-package repository. callCabal2nix receives only the
-      # selected subdirectory, so copy the repo-root LICENSE into the source
-      # when a package's LICENSE symlink would otherwise dangle in the store.
-      withBaikaiRootLicense = name: src:
-        pkgs.runCommand "${name}-with-license" { } ''
-          cp -R ${src} $out
-          chmod -R u+w $out
-          if [ ! -f "$out/LICENSE" ]; then
-            rm -f "$out/LICENSE"
-            cp ${inputs.baikai-src}/LICENSE "$out/LICENSE"
-          fi
-        '';
-
       inherit (pkgs.haskell.lib.compose) doJailbreak dontCheck markUnbroken;
 
       haskellPackages = basePackages.override {
@@ -55,12 +42,15 @@
               callHackageNoCheck "streamly" "0.11.1" "1dxyhq8m9fr3ghpmxkh6bc37fd4f1048xckjrlpp6ybvlg0lq7g2";
             openai = dontCheck (doJailbreak (markUnbroken prev.openai));
 
-            baikai = dontCheck (doJailbreak (final.callCabal2nix "baikai"
-              (withBaikaiRootLicense "baikai" "${inputs.baikai-src}/baikai")
-              { }));
-            baikai-kit = dontCheck (doJailbreak (final.callCabal2nix "baikai-kit"
-              (withBaikaiRootLicense "baikai-kit" "${inputs.baikai-src}/baikai-kit")
-              { }));
+            # Baikai is released to Hackage; nixpkgs' package set does not carry
+            # it yet, so fetch the published tarballs directly. Keep these
+            # versions in step with the bounds in okf-cli/okf-cli.cabal.
+            baikai =
+              callHackageNoCheck "baikai" "0.5.0.0"
+                "1zjvhjj8d7i0d917265grrz3rqncfkvmqprbcwk1m1h2702y0915";
+            baikai-kit =
+              callHackageNoCheck "baikai-kit" "0.1.0.4"
+                "1fjnar187vaiawn7nx13zzb55g7gjjdn7jg8py1b28fr6pcd2871";
           };
       };
 

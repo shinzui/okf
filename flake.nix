@@ -5,11 +5,6 @@
     haskell-nix-dev.url = "github:shinzui/haskell-nix-dev";
     nixpkgs.follows = "haskell-nix-dev/nixpkgs";
 
-    baikai-src = {
-      url = "github:shinzui/baikai/5f527d8534074875ac02e47ba61d6755b82aca75";
-      flake = false;
-    };
-
     flake-parts.url = "github:hercules-ci/flake-parts";
     flake-parts.inputs.nixpkgs-lib.follows = "nixpkgs";
 

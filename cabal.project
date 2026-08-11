@@ -2,14 +2,6 @@ packages:
   okf-core
   okf-cli
 
-source-repository-package
-  type: git
-  location: https://github.com/shinzui/baikai
-  tag: 5f527d8534074875ac02e47ba61d6755b82aca75
-  subdir:
-    baikai
-    baikai-kit
-
 -- cmark-gfm fork: makes core-extension registration thread-safe, so parsing
 -- Markdown from more than one thread does not abort the process.
 --
