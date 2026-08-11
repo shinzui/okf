@@ -7,6 +7,11 @@ okf implements OKF v0.2. Everything v0.2 added over v0.1 is optional
 frontmatter, so a v0.1 bundle is still a valid bundle; see
 [Migrating from v0.1](#migrating-from-v01).
 
+This page is the field reference: what each key means and what okf does with a
+malformed one. For which fields to write when, how to roll v0.2 out across a
+bundle you already have, and how to gate a pipeline on what it records, see
+[Using OKF v0.2](okf-v0-2.md).
+
 
 ## Reserved Files
 

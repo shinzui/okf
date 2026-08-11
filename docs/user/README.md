@@ -11,7 +11,9 @@ okf implements OKF v0.2, which adds optional frontmatter for provenance, trust,
 and lifecycle so that a reader can judge machine-written knowledge: where a
 concept came from, who confirmed it, and whether it is still current. Bundles
 written against v0.1 stay readable — see
-[OKF Bundle Format](format.md#migrating-from-v01) for what changed.
+[OKF Bundle Format](format.md#migrating-from-v01) for what changed, and
+[Using OKF v0.2](okf-v0-2.md) for which of those fields to write when and what
+to do with them once they are there.
 
 
 ## Start Here
@@ -44,6 +46,7 @@ needed. See the [CLI Reference](cli.md#help) for details.
 
 - [CLI Reference](cli.md): command syntax, options, output, and exit behavior.
 - [OKF Bundle Format](format.md): directory layout, concept IDs, frontmatter, and links.
+- [Using OKF v0.2](okf-v0-2.md): adopting provenance, trust, lifecycle, and attested computations in a bundle, and gating on them.
 - [Profiles](profiles.md): checking a bundle against house conventions with `--profile`.
 - [Authoring Guide](authoring.md): the producer API for building, constructing, writing, and validating bundles in code.
 - [Fixture Walkthrough](fixtures.md): runnable examples using the repository fixtures and the worked bundles under `examples/`.

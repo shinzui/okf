@@ -21,8 +21,10 @@ and **lifecycle** (`status`, `stale_after`). Every one of them is optional —
 `type` is still the only key a concept must have — and v0.1 bundles remain
 readable, with `timestamp` read whenever `generated` is absent. A bundle may
 declare which dialect it targets with `okf_version: "0.2"` in its root
-`index.md`. See [docs/user/format.md](./docs/user/format.md) for the field set
-and [docs/adr/7-okf-v0-1-legacy-fallback-policy.md](./docs/adr/7-okf-v0-1-legacy-fallback-policy.md)
+`index.md`. See [docs/user/format.md](./docs/user/format.md) for the field set,
+[docs/user/okf-v0-2.md](./docs/user/okf-v0-2.md) for how to adopt those fields
+and gate on them, and
+[docs/adr/7-okf-v0-1-legacy-fallback-policy.md](./docs/adr/7-okf-v0-1-legacy-fallback-policy.md)
 for what okf does with a v0.1 bundle.
 
 
