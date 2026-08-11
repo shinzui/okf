@@ -5,11 +5,16 @@ module Okf.Cli.Assist
     assistOptionsParser,
     handleAssistCommand,
     buildClaudeCommand,
+    knownAgentExecutables,
   )
 where
 
 import Baikai.Kit.Session (agentDirsForSession)
+import Baikai.Provider.Claude.Interactive (defaultClaudeInteractiveConfig)
+import Baikai.Provider.OpenAI.Interactive (defaultCodexInteractiveConfig)
 import Control.Exception (IOException, try)
+import Control.Lens ((^.))
+import Data.Generics.Labels ()
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text.IO
@@ -19,6 +24,17 @@ import Options.Applicative
 import System.Exit (ExitCode (..), exitWith)
 import System.IO (hPutStrLn, stderr)
 import System.Process (createProcess, delegate_ctlc, proc, waitForProcess)
+
+-- | Temporary: references a symbol from @baikai-claude@ and one from
+-- @baikai-openai@ so both packages are genuinely linked rather than merely
+-- declared in @build-depends@. Milestone 2 of
+-- @docs/plans/56-configure-the-assist-agent-per-command-including-reasoning-effort.md@
+-- replaces this with the real usage.
+knownAgentExecutables :: [FilePath]
+knownAgentExecutables =
+  [ defaultClaudeInteractiveConfig ^. #executable,
+    defaultCodexInteractiveConfig ^. #executable
+  ]
 
 data AssistOptions = AssistOptions
   { prompt :: !Text,

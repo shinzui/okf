@@ -42,15 +42,25 @@
               callHackageNoCheck "streamly" "0.11.1" "1dxyhq8m9fr3ghpmxkh6bc37fd4f1048xckjrlpp6ybvlg0lq7g2";
             openai = dontCheck (doJailbreak (markUnbroken prev.openai));
 
+            # baikai-claude launches interactive `claude` sessions through
+            # cradle, which nixpkgs marks broken for this GHC.
+            cradle = dontCheck (doJailbreak (markUnbroken prev.cradle));
+
             # Baikai is released to Hackage; nixpkgs' package set does not carry
             # it yet, so fetch the published tarballs directly. Keep these
             # versions in step with the bounds in okf-cli/okf-cli.cabal.
             baikai =
               callHackageNoCheck "baikai" "0.5.0.0"
                 "1zjvhjj8d7i0d917265grrz3rqncfkvmqprbcwk1m1h2702y0915";
+            baikai-claude =
+              callHackageNoCheck "baikai-claude" "0.5.0.0"
+                "1mcmay3y3p3drbl4c2rj25xn5fndm00zjxmk8lzmqk6yshxwh9rf";
             baikai-kit =
               callHackageNoCheck "baikai-kit" "0.1.0.4"
                 "1fjnar187vaiawn7nx13zzb55g7gjjdn7jg8py1b28fr6pcd2871";
+            baikai-openai =
+              callHackageNoCheck "baikai-openai" "0.5.0.0"
+                "12zm1xy8wba8s6s909iwvs7kb9nvvcd1pwrhvamgad1wlnz18c9x";
           };
       };
 

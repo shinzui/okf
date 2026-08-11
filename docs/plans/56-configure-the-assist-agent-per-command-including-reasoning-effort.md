@@ -89,9 +89,9 @@ This section must always reflect the actual current state of the work.
 
 Milestone 1 — build wiring for `baikai-claude` and `baikai-openai`:
 
-- [ ] Add `baikai-claude ^>=0.5.0` and `baikai-openai ^>=0.5.0` to the `library` stanza of `okf-cli/okf-cli.cabal`.
-- [ ] Add `baikai-claude`, `baikai-openai`, and `cradle` overrides to the overlay in `nix/haskell.nix`.
-- [ ] Prove `cabal build all` and `nix build .#okf-cli` both succeed with a symbol from each new package referenced from `Okf.Cli.Assist`.
+- [x] Add `baikai-claude ^>=0.5.0` and `baikai-openai ^>=0.5.0` to the `library` stanza of `okf-cli/okf-cli.cabal`. (2026-08-11T19:05Z)
+- [x] Add `baikai-claude`, `baikai-openai`, and `cradle` overrides to the overlay in `nix/haskell.nix`. (2026-08-11T19:05Z)
+- [x] Prove `cabal build all` and `nix build .#okf-cli` both succeed with a symbol from each new package referenced from `Okf.Cli.Assist`. (2026-08-11T19:16Z)
 
 Milestone 2 — route `okf assist` through Baikai's interactive launchers:
 
@@ -142,7 +142,22 @@ Milestone 7 — documentation and durable context:
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+- **Milestone 1 needed no `markUnbroken` beyond `cradle`, and the dependency set the
+  plan predicted was exactly right.** `nix build .#okf-cli` built six derivations —
+  `claude-1.4.0`, `cradle-0.0.0.0`, `baikai-claude-0.5.0.0`, `baikai-openai-0.5.0.0`,
+  and the two okf packages — with no version conflicts and no further overrides. The
+  `openai` unbreak that the overlay already carried for `baikai-kit` did indeed cover
+  `baikai-openai`. The prefetched hashes were
+  `1mcmay3y3p3drbl4c2rj25xn5fndm00zjxmk8lzmqk6yshxwh9rf` (`baikai-claude`) and
+  `12zm1xy8wba8s6s909iwvs7kb9nvvcd1pwrhvamgad1wlnz18c9x` (`baikai-openai`).
+  Date: 2026-08-11
+
+- **`docs/user/cli.md` has no assist section at all.** The plan's Milestone 7 says to
+  "update the assist section", but the file lists `assist` in its command index at line
+  29 and then never documents it — the manual ends with the `profile` section. The same
+  is true of `kit`. Milestone 7 therefore *writes* an assist section rather than editing
+  one; documenting `kit` stays out of scope.
+  Date: 2026-08-11
 
 
 ## Decision Log
