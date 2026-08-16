@@ -81,6 +81,7 @@ test-suite okf-cli-test
   main-is:        Main.hs
   hs-source-dirs: test
   build-depends:
+    , aeson                 >=2.2      && <2.4
     , base                  >=4.20     && <5
     , directory
     , filepath

@@ -53,18 +53,19 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] Milestone 1: Reproduce the defect from a clean checkout and record the byte-level evidence.
-- [ ] Milestone 2: Add a failing regression test that pins all six diagnostics (red).
-  - [ ] Add `aeson` to the `okf-cli-test` test-suite `build-depends` in `okf-cli/okf-cli.cabal`.
-  - [ ] Export `renderProfileViolation` from `Okf.Cli` in `okf-cli/src/Okf/Cli.hs`, with a Haddock note saying why.
-  - [ ] Add `testNonAsciiValuesSurviveDiagnostics` to `okf-cli/test/Main.hs` and wire it into the `results` list.
-  - [ ] Run `cabal test okf-cli-test` and confirm the new check fails while every other check passes.
-- [ ] Milestone 3: Fix the six call sites (green).
-  - [ ] Add the `Data.ByteString.Lazy` and `Data.Text.Encoding` imports to `okf-cli/src/Okf/Cli.hs`.
-  - [ ] Add the `renderJsonValue` helper next to `renderProfileViolation`.
-  - [ ] Replace all six `Text.pack (LazyByteString.unpack (Aeson.encode ...))` expressions with `renderJsonValue`.
-  - [ ] Run `cabal test okf-cli-test` and confirm it passes.
-  - [ ] Re-run the manual reproduction and confirm the value renders as 東京.
+- [x] Milestone 1: Reproduce the defect from a clean checkout and record the byte-level evidence. (2026-08-16)
+- [x] Milestone 2: Add a failing regression test that pins all six diagnostics (red). (2026-08-16)
+  - [x] Add `aeson` to the `okf-cli-test` test-suite `build-depends` in `okf-cli/okf-cli.cabal`.
+  - [x] Export `renderProfileViolation` from `Okf.Cli` in `okf-cli/src/Okf/Cli.hs`, with a Haddock note saying why.
+  - [x] Add `testNonAsciiValuesSurviveDiagnostics` to `okf-cli/test/Main.hs` and wire it into the `results` list.
+  - [x] Run `cabal test okf-cli-test` and confirm the new check fails while every other check passes.
+- [x] Milestone 3: Fix the six call sites (green). (2026-08-16)
+  - [x] Add the `Data.ByteString.Lazy` and `Data.Text.Encoding` imports to `okf-cli/src/Okf/Cli.hs`.
+  - [x] Add the `renderJsonValue` helper next to `renderProfileViolation`.
+  - [x] Replace all six `Text.pack (LazyByteString.unpack (Aeson.encode ...))` expressions with `renderJsonValue`.
+  - [x] Run `cabal test okf-cli-test` and confirm it passes.
+  - [x] Re-run the manual reproduction and confirm the value renders as 東京.
+  - [x] Prove the test is not vacuous by reverting one site alone and confirming the suite names it.
 - [ ] Milestone 4: Record the change and close the bug report.
   - [ ] Add a `### Fixed` entry under `## [Unreleased]` in `CHANGELOG.md`.
   - [ ] Add a `### Fixed` entry under `## [Unreleased]` in `okf-cli/CHANGELOG.md`.
@@ -101,6 +102,39 @@ implementation. Provide concise evidence.
   explaining the choice. So the repository already contains the correct idiom; only
   `okf-cli` diverged from it. This is why the plan adopts the *lenient* decoder rather than
   the strict one the bug report suggested — see the Decision Log.
+
+- **A `"東京" \`Text.isInfixOf\` line` assertion is vacuous for the very diagnostic the bug
+  report is named after.** The `ValueNotInVocabulary` line prints the allowed values *and*
+  the found value, and the allowed values always rendered correctly. So the mangled line
+  still contains 東京 — in its left half — and passes the substring check. The red run in
+  Milestone 2 named only five of the six lines for exactly that reason:
+
+  ```text
+  profile diagnostics mangled a non-ASCII value:
+    places/tokyo: frontmatter cardinality at prefecture must be list, found scalar: "æ±äº¬"
+    places/tokyo: frontmatter value at prefecture must match format uri, found: "æ±äº¬"
+    places/tokyo: malformed document reference at prefecture: "æ±äº¬"
+    places/tokyo: malformed path at prefecture: "æ±äº¬"
+    places/tokyo: frontmatter element at reviews[0] must be a record, found: ["æ±äº¬"]
+  the vocabulary diagnostic did not render as expected:
+    wanted: places/tokyo: frontmatter value at prefecture must be one of [東京都, 京都府], found: "東京"
+    got:    places/tokyo: frontmatter value at prefecture must be one of [東京都, 京都府], found: "æ±äº¬"
+  ```
+
+  The exact-line assertion the plan called merely "better still" is therefore load-bearing:
+  without it the headline case would have been untested. The two assertions stay paired.
+
+- **The repository has no `treefmt.toml`; the formatter is invoked as `nix fmt`.** The plan's
+  `treefmt` and `treefmt --fail-on-change --no-cache` commands fail with "failed to find
+  treefmt config file". The configuration lives in `nix/treefmt.nix` and is wired through
+  the flake, so the working commands are `nix fmt` and
+  `nix fmt -- --fail-on-change --no-cache`. Both were run and are clean.
+
+- **`nix fmt --fail-on-change` can report a spurious change on its first run after an edit.**
+  The first invocation logged `ERRO file has changed path=okf-cli/test/Main.hs
+  prev_size=94022 ... current_size=94022` — identical size, different mtime — and counted it
+  as `1 changed`. Re-running immediately reported `0 changed` with no diff to the file. It is
+  an mtime race inside treefmt, not a real formatting difference; re-run before believing it.
 
 
 ## Decision Log
@@ -163,6 +197,15 @@ Record every decision made while working on the plan.
   contributor reaching for `LazyByteString.unpack` will find it ready to hand. An ADR is the
   repository's mechanism for recording exactly that kind of standing hazard. No existing ADR
   covers CLI text rendering or character encoding.
+  Date: 2026-08-16
+
+- Decision: Make `testNonAsciiValuesSurviveDiagnostics` an `IO Bool` in the reporting form,
+  and assert both the substring and the exact `ValueNotInVocabulary` line.
+  Rationale: The plan offered the bare-`Bool` form as acceptable and the reporting form as
+  preferable. The red run settled it: the substring check alone is vacuous for the
+  vocabulary diagnostic (see Surprises & Discoveries), so the exact-line assertion is
+  required rather than optional, and printing the offending lines is what made that visible
+  in the first place.
   Date: 2026-08-16
 
 - Decision: Record `fixedVersion: unreleased` in the bug report rather than bumping the

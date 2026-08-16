@@ -24,6 +24,7 @@ module Okf.Cli
     parserInfo,
     profileRegistryEnvVar,
     renderProfileDetail,
+    renderProfileViolation,
     renderRegistryTable,
     runCli,
     runCommand,
@@ -35,6 +36,7 @@ import Control.Exception (IOException, try)
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as AesonKey
 import Data.Aeson.KeyMap qualified as KeyMap
+import Data.ByteString.Lazy qualified as LazyBytes
 import Data.ByteString.Lazy.Char8 qualified as LazyByteString
 import Data.Foldable (toList, traverse_)
 import Data.List qualified as List
@@ -43,6 +45,7 @@ import Data.Map.Strict qualified as Map
 import Data.Maybe (mapMaybe)
 import Data.Set qualified as Set
 import Data.Text qualified as Text
+import Data.Text.Encoding qualified as Text.Encoding
 import Data.Text.IO qualified as Text.IO
 import Data.Time (defaultTimeLocale, formatTime, getCurrentTime, utctDay)
 import Okf.Actor (parseActor, renderActor)
@@ -2131,9 +2134,27 @@ bundleValidationErrorIsFailure = \case
 bundleValidationErrorIsAdvisory :: BundleValidationError -> Bool
 bundleValidationErrorIsAdvisory = not . bundleValidationErrorIsFailure
 
+-- | A frontmatter value as JSON text, for a diagnostic that must show the author
+-- exactly what it found.
+--
+-- The decode step is the point. 'Aeson.encode' produces UTF-8 bytes, and turning
+-- those into 'Text' with a @Char8@ unpack — which is a Latin-1 decode — renders
+-- every non-ASCII value as mojibake: 東京 comes back as @æ±äº¬@. The lenient
+-- decoder is used rather than the strict one because this is the renderer that
+-- reports what went wrong with a document, and a partial function is the wrong
+-- thing to put there even when its input is UTF-8 by construction.
+renderJsonValue :: Aeson.Value -> Text
+renderJsonValue = Text.Encoding.decodeUtf8Lenient . LazyBytes.toStrict . Aeson.encode
+
 -- | One deviation as one line. The 'ProfileSpec' is here only so a missing
 -- required field can carry the profile's own explanation of what that field is
 -- for; every other case ignores it.
+--
+-- Exported so a test can assert a whole diagnostic line rather than only the
+-- accessors behind it, as 'computationReport' and 'renderProfileDetail' already
+-- are. The constructors that quote a frontmatter value back to the author ignore
+-- both the 'CompiledProfile' and the concept list, so such a test can pass any
+-- compiled profile and an empty list.
 renderProfileViolation :: CompiledProfile -> [Concept] -> ProfileViolation -> Text
 renderProfileViolation compiled concepts = \case
   TypeNotInProfile cid ctype ->
@@ -2169,7 +2190,7 @@ renderProfileViolation compiled concepts = \case
       <> " must be one of ["
       <> Text.intercalate ", " allowed
       <> "], found: "
-      <> Text.pack (LazyByteString.unpack (Aeson.encode actual))
+      <> renderJsonValue actual
   CardinalityMismatch cid fieldPath expected actual ->
     renderConceptId cid
       <> ": frontmatter cardinality at "
@@ -2179,7 +2200,7 @@ renderProfileViolation compiled concepts = \case
       <> ", found "
       <> valueCardinalityName actual
       <> ": "
-      <> Text.pack (LazyByteString.unpack (Aeson.encode actual))
+      <> renderJsonValue actual
   ValueFormatMismatch cid fieldPath expected actual ->
     renderConceptId cid
       <> ": frontmatter value at "
@@ -2187,7 +2208,7 @@ renderProfileViolation compiled concepts = \case
       <> " must match format "
       <> renderFieldFormat expected
       <> ", found: "
-      <> Text.pack (LazyByteString.unpack (Aeson.encode actual))
+      <> renderJsonValue actual
   DanglingHandleReference cid fieldPath handle ->
     renderConceptId cid
       <> ": "
@@ -2208,7 +2229,7 @@ renderProfileViolation compiled concepts = \case
       <> ": malformed document reference at "
       <> renderFieldPath fieldPath
       <> ": "
-      <> Text.pack (LazyByteString.unpack (Aeson.encode actual))
+      <> renderJsonValue actual
   ExternalReferenceSchemeNotAllowed cid fieldPath actualScheme allowedSchemes ->
     renderConceptId cid
       <> ": external reference at "
@@ -2239,7 +2260,7 @@ renderProfileViolation compiled concepts = \case
       <> ": malformed path at "
       <> renderFieldPath fieldPath
       <> ": "
-      <> Text.pack (LazyByteString.unpack (Aeson.encode actual))
+      <> renderJsonValue actual
   PathEscapesBundle cid fieldPath rawPath ->
     renderConceptId cid
       <> ": path at "
@@ -2253,7 +2274,7 @@ renderProfileViolation compiled concepts = \case
       <> ": frontmatter element at "
       <> renderFieldPath fieldPath
       <> " must be a record, found: "
-      <> Text.pack (LazyByteString.unpack (Aeson.encode actual))
+      <> renderJsonValue actual
   PathPatternMismatch cid ctype patternText ->
     renderConceptId cid <> ": " <> ctype <> " must match path pattern: " <> patternText
   MissingResource cid ctype scheme ->

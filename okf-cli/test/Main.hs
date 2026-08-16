@@ -2,7 +2,10 @@ module Main (main) where
 
 import Control.Exception (bracket)
 import Control.Monad (unless)
+import Data.Aeson (Value (..), toJSON)
+import Data.Foldable (traverse_)
 import Data.List qualified as List
+import Data.List.NonEmpty (NonEmpty (..))
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text.IO
 import Data.Time.Calendar (fromGregorian)
@@ -15,10 +18,10 @@ import Okf.Cli.Config (AgentFieldSettings (..), AgentSettings (..), ConfigSource
 import Okf.Cli.Fzf (Candidate (..), FzfOpts (..), optsToArgs, parseSelectionIndex, renderCandidateLines, shellQuote, withAnsi, withHeight, withNoSort, withPrompt)
 import Okf.Cli.Fzf.Selector (ConceptOrder (..), conceptCandidates, conceptPreviewCommand, orderConcepts, parseBundleSearchRoots)
 import Okf.Cli.Help (HelpTopic (..), helpTopics)
-import Okf.ConceptId (parseConceptId, renderConceptId)
+import Okf.ConceptId (ConceptId, parseConceptId, renderConceptId)
 import Okf.Document (Attester (..), Executor (..), Parameter (..), parseDocument)
 import Okf.Index (OkfVersion (..), VersionDeclaration (..), parseOkfVersion, readBundleVersion)
-import Okf.Profile (Cardinality (..), FieldCondition (..), FieldFormat (..), FieldRule (..), FrontmatterRules (..), HandleReferenceRule (..), NestedFieldRule (..), NestedRules (..), PathReferenceRule (..), ProfileSpec (..), TypeRule (..), compileProfile, loadProfileFile, validateProfile, validateProfileVersion)
+import Okf.Profile (Cardinality (..), CompiledProfile, FieldCondition (..), FieldFormat (..), FieldPath (..), FieldPathSegment (..), FieldRule (..), FrontmatterRules (..), HandleReferenceRule (..), NestedFieldRule (..), NestedRules (..), PathReferenceRule (..), ProfileSpec (..), ProfileViolation (..), TypeRule (..), compileProfile, loadProfileFile, validateProfile, validateProfileVersion)
 import Okf.Profile.Registry (RegistryEntry (..), defaultRegistryReference)
 import Okf.Query (ConceptFilter (..), FieldSelector (..), filterConcepts)
 import Okf.Validation (ValidationProfile (..), validateBundle)
@@ -58,6 +61,7 @@ main = do
   conceptsKeepsStatusDefaultOut <- testConceptsDoesNotApplyStatusDefault
   profileDocStrictWithTimestamp <- testProfileDocumentationStrictWithTimestamp
   conceptMenuOrdering <- testConceptMenuOrdering
+  nonAsciiDiagnostics <- testNonAsciiValuesSurviveDiagnostics
   let results =
         [ parseSucceeds ["validate", "bundle"],
           parseSucceeds ["validate", "bundle", "--strict"],
@@ -440,6 +444,7 @@ main = do
           conceptsKeepsStatusDefaultOut,
           profileDocStrictWithTimestamp,
           conceptMenuOrdering,
+          nonAsciiDiagnostics,
           configDefaults,
           configProjectPrecedence,
           configEnvPrecedence,
@@ -498,6 +503,73 @@ parseValidateMatches args expected =
   case execParserPure defaultPrefs parserInfo args of
     Success (Options (Validate opts)) -> opts == expected
     _ -> False
+
+-- | Every profile diagnostic that quotes the offending frontmatter value must
+-- quote it as the author wrote it. Six 'ProfileViolation' constructors carry a
+-- raw 'Value' and print it; all six once turned Aeson's UTF-8 output into 'Text'
+-- with a @Data.ByteString.Lazy.Char8@ unpack, which is a Latin-1 decode, so
+-- @東京@ was reported as @æ±äº¬@ while the allowed values on the very same line
+-- rendered correctly.
+--
+-- The check is on the rendered line rather than on the helper behind it, so a
+-- future constructor that reintroduces the unpack is caught rather than only a
+-- helper nobody calls. The exact-line assertion on 'ValueNotInVocabulary' pins
+-- the wording and the placement of the value as well as its encoding.
+--
+-- 'samplePostgresqlProfile' is used for no reason beyond needing a
+-- 'CompiledProfile' to pass: none of these six constructors consults it.
+testNonAsciiValuesSurviveDiagnostics :: IO Bool
+testNonAsciiValuesSurviveDiagnostics =
+  case (compileProfile samplePostgresqlProfile, parseConceptId "places/tokyo") of
+    (Left definitionErrors, _) ->
+      reportFailure ("the sample profile does not compile: " <> show definitionErrors)
+    (_, Left err) ->
+      reportFailure ("places/tokyo is not a concept id: " <> show err)
+    (Right compiled, Right cid) ->
+      case nonAsciiDiagnosticLines compiled cid of
+        [] -> reportFailure "no diagnostics were rendered at all"
+        rendered@(vocabularyLine : _) -> do
+          let mangled = filter (not . ("東京" `Text.isInfixOf`)) rendered
+              vocabularyMatches = vocabularyLine == expectedVocabularyLine
+          unless (null mangled) $ do
+            putStrLn "profile diagnostics mangled a non-ASCII value:"
+            traverse_ (Text.IO.putStrLn . ("  " <>)) mangled
+          unless vocabularyMatches $
+            putStrLn
+              ( "the vocabulary diagnostic did not render as expected:\n  wanted: "
+                  <> Text.unpack expectedVocabularyLine
+                  <> "\n  got:    "
+                  <> Text.unpack vocabularyLine
+              )
+          pure (null mangled && vocabularyMatches)
+  where
+    reportFailure message = putStrLn message >> pure False
+
+-- | One rendered line per 'ProfileViolation' constructor that echoes a raw
+-- frontmatter value, all carrying the same Japanese value. The vocabulary case
+-- comes first because 'testNonAsciiValuesSurviveDiagnostics' also asserts it
+-- whole.
+nonAsciiDiagnosticLines :: CompiledProfile -> ConceptId -> [Text.Text]
+nonAsciiDiagnosticLines compiled cid =
+  [ render (ValueNotInVocabulary cid prefecture ["東京都", "京都府"] japanese),
+    render (CardinalityMismatch cid prefecture List japanese),
+    render (ValueFormatMismatch cid prefecture Uri japanese),
+    render (MalformedDocumentReference cid prefecture japanese),
+    render (MalformedPathReference cid prefecture japanese),
+    render (NestedElementNotRecord cid nestedElement (toJSON ["東京" :: Text.Text]))
+  ]
+  where
+    render = renderProfileViolation compiled []
+    japanese = String "東京"
+    prefecture = FieldPath (FieldName "prefecture" :| [])
+    nestedElement = FieldPath (FieldName "reviews" :| [ArrayIndex 0])
+
+-- | The whole vocabulary diagnostic, exactly. Both halves of this line carry the
+-- same characters, which is the point: before the fix the allowed values on the
+-- left rendered correctly and the found value on the right did not.
+expectedVocabularyLine :: Text.Text
+expectedVocabularyLine =
+  "places/tokyo: frontmatter value at prefecture must be one of [東京都, 京都府], found: \"東京\""
 
 -- | One root-level entry and one nested entry whose columns differ in width, so
 -- the padding in 'renderRegistryTable' is actually exercised, and the @(root)@
