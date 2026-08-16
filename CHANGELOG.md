@@ -7,6 +7,20 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Fixed
+
+- **A profile diagnostic quotes a non-ASCII value as the author wrote it.** When
+  `okf validate --profile` rejected a frontmatter value, the six messages that
+  quote the value back — the vocabulary, cardinality, format, document-reference,
+  path-reference, and nested-record diagnostics — turned Aeson's UTF-8 output into
+  text one byte at a time, so `prefecture: 東京` was reported as `found: "æ±äº¬"`
+  while the allowed values on the very same line rendered correctly. For a corpus
+  written in a non-Latin script, every vocabulary violation printed an unreadable
+  value, and the message that exists to say what is wrong could not say it. The
+  values now render as written. Validation itself never differed, and `--json`
+  output was never affected: it writes Aeson's bytes to the handle without a
+  decode step.
+
 ## [0.6.0.0] - 2026-08-11
 
 ### Added

@@ -3,8 +3,13 @@ type: Bug Report
 title: Profile diagnostics render non-ASCII frontmatter values as mojibake
 description: Six profile diagnostics print the offending value by unpacking Aeson's UTF-8 output with Data.ByteString.Lazy.Char8, so every non-ASCII value is displayed as Latin-1 mojibake.
 bugId: BUG-1
-status: reported
+status: fixed
 severity: cosmetic
+fixedVersion: unreleased
+resolution: >-
+  The six diagnostics now decode Aeson's encoded bytes as UTF-8 through a shared
+  renderJsonValue helper instead of unpacking them as Latin-1, and a regression
+  test in okf-cli/test/Main.hs pins all six.
 origin: mori://shinzui/jangso-db
 affects: mori://shinzui/okf
 affectedVersion: 0.6.0.0
@@ -138,6 +143,19 @@ Michelin grades are all Japanese — essentially *every* vocabulary violation pr
 value, so the diagnostic that exists to say what was wrong cannot say it. The workaround, until this
 is fixed, is to read the `must be one of […]` list, which renders correctly, and compare it against
 the document by eye rather than trusting the `found:` half.
+
+## Fixed
+
+Fixed by [ExecPlan 57](../plans/57-render-non-ascii-frontmatter-values-correctly-in-profile-diagnostics.md),
+which took the suggested fix with one change: the decoder is
+`Text.Encoding.decodeUtf8Lenient` rather than the strict `decodeUtf8` suggested
+above. The reasoning above — that `decodeUtf8` is total on `Aeson.encode` output —
+is correct, but this is the renderer that reports what went wrong with a
+document, and a partial function there would turn a cosmetic defect into a crash
+in the diagnostic path if the premise were ever falsified. `okf-core` had already
+made the same choice for the same operation in `Okf.Query.scalarText`. The
+standing constraint is recorded as
+[ADR 17](../adr/17-json-values-in-human-readable-diagnostics.md).
 
 ## Not a regression
 

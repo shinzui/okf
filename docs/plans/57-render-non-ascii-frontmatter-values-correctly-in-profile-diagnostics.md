@@ -66,12 +66,13 @@ This section must always reflect the actual current state of the work.
   - [x] Run `cabal test okf-cli-test` and confirm it passes.
   - [x] Re-run the manual reproduction and confirm the value renders as 東京.
   - [x] Prove the test is not vacuous by reverting one site alone and confirming the suite names it.
-- [ ] Milestone 4: Record the change and close the bug report.
-  - [ ] Add a `### Fixed` entry under `## [Unreleased]` in `CHANGELOG.md`.
-  - [ ] Add a `### Fixed` entry under `## [Unreleased]` in `okf-cli/CHANGELOG.md`.
-  - [ ] Write `docs/adr/17-json-values-in-human-readable-diagnostics.md`.
-  - [ ] Set `status: fixed`, add `fixedVersion: unreleased` and `resolution:` in the bug report.
-  - [ ] Re-validate the bug-report bundle with its own documented command.
+- [x] Milestone 4: Record the change and close the bug report. (2026-08-16)
+  - [x] Add a `### Fixed` entry under `## [Unreleased]` in `CHANGELOG.md`.
+  - [x] Add a `### Fixed` entry under `## [Unreleased]` in `okf-cli/CHANGELOG.md`.
+  - [x] Write `docs/adr/17-json-values-in-human-readable-diagnostics.md`.
+  - [x] Set `status: fixed`, add `fixedVersion: unreleased` and `resolution:` in the bug report.
+  - [x] Record the status change in `docs/bug-reports/log.md` with `okf log add`.
+  - [x] Re-validate the bug-report bundle with its own documented command.
 - [ ] Milestone 5: Full-repository validation and retrospective.
 
 
