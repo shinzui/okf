@@ -7,6 +7,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.6.0.1] - 2026-08-16
+
 ### Fixed
 
 - **A profile diagnostic quotes a non-ASCII value as the author wrote it.** When

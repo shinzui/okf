@@ -7,6 +7,11 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.6.0.1] - 2026-08-16
+
+No library changes. Released to keep the version in step with `okf-cli`
+`0.6.0.1`, which fixes how profile diagnostics render non-ASCII values.
+
 ## [0.6.0.0] - 2026-08-11
 
 ### Added

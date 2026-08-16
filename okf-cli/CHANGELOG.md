@@ -7,11 +7,18 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.6.0.1] - 2026-08-16
+
 ### Fixed
 
 - Profile diagnostics quote a non-ASCII frontmatter value as written. The six
   messages that echo the offending value decoded Aeson's UTF-8 output as Latin-1,
   so `東京` printed as `æ±äº¬`. `--json` output was unaffected.
+
+### Changed
+
+- Requires `okf-core ^>=0.6.0.1`, released alongside this version. The library
+  itself is unchanged from `0.6.0.0`.
 
 ## [0.6.0.0] - 2026-08-11
 
