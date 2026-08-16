@@ -73,7 +73,11 @@ This section must always reflect the actual current state of the work.
   - [x] Set `status: fixed`, add `fixedVersion: unreleased` and `resolution:` in the bug report.
   - [x] Record the status change in `docs/bug-reports/log.md` with `okf log add`.
   - [x] Re-validate the bug-report bundle with its own documented command.
-- [ ] Milestone 5: Full-repository validation and retrospective.
+- [x] Milestone 5: Full-repository validation and retrospective. (2026-08-16)
+  - [x] `cabal build all` and `cabal test all` — both suites pass.
+  - [x] `nix fmt -- --fail-on-change --no-cache` — clean.
+  - [x] All three bundles validate with the expected output and exit codes.
+  - [x] Confirm ADR 17 covers what the Decision Log turned up.
 
 
 ## Surprises & Discoveries
@@ -226,7 +230,52 @@ Compare the result against the original purpose. Before marking the plan complet
 distill durable project context from the Decision Log, Surprises & Discoveries, and
 this section into docs/adr/. Keep task-local execution details here.
 
-(To be filled during and after implementation.)
+**The stated outcome was reached exactly.** The command in the Purpose section now prints
+the value as the author wrote it, confirmed at byte level rather than by reading a terminal:
+
+```text
+00000050: bde5 ba9c 5d2c 2066 6f75 6e64 3a20 22e6  ....], found: ".
+00000060: 9db1 e4ba ac22 0a                        .....".
+```
+
+`e69d b1 e4ba ac` — 東京 — now appears in the `found:` half as it always did in the
+allowed-values half, and `c3a6` appears nowhere in the output. All six diagnostics changed,
+and validation behaviour did not: the reproduction still exits 1 under `--profile-enforce`
+and 0 without it, with the same advisory line. `okf graph --json` still emits zero `c3a6`
+byte pairs.
+
+**The plan was accurate about the code and inaccurate about one command.** Every line number,
+call site, module, and idiom it named was correct, and the six substitutions were as
+mechanical as promised. The one thing it got wrong was the formatter invocation: this
+repository has no `treefmt.toml`, so `treefmt` and `treefmt --fail-on-change --no-cache`
+both fail outright, and the working commands are `nix fmt` and
+`nix fmt -- --fail-on-change --no-cache`. `agents/skills/release/SKILL.md` already documents
+the right form, so no durable doc needed correcting — the error was local to this plan.
+
+**The most useful thing learned was about the test, not the fix.** The plan treated the
+exact-line assertion as optional polish ("better still"). The red run showed it is
+load-bearing: a `"東京" \`isInfixOf\` line` check passes on the *broken* `ValueNotInVocabulary`
+output, because that line's correctly-rendered allowed-values half already contains 東京. Had
+the check been written in the plan's minimal form, the one diagnostic the bug report is named
+after would have been the one diagnostic left untested — and the suite would have gone green
+before the fix, which is the failure mode the red-first discipline exists to catch. The
+warning is carried into ADR 17 so a future test author does not repeat it.
+
+**Two verifications were worth their cost.** Reverting a single call site and confirming the
+suite named that diagnostic alone proved per-site coverage, not merely all-six-at-once
+coverage. And inspecting bytes with `xxd` throughout kept a terminal, a font, and a locale
+out of every judgement — the same discipline the bug report used to make the diagnosis in
+the first place.
+
+**One thing was added beyond the plan.** The plan's Milestone 4 mentioned a `log.md` entry
+only as a fallback if validation reported staleness. It did not, but the status change is a
+real update to the bug-report bundle, so the entry was written with `okf log add` anyway;
+the log exists to record what changed, not only to satisfy a check.
+
+**No gaps.** Every acceptance criterion in Validation and Acceptance was executed and met.
+Nothing in scope was left undone, and nothing outside it was touched: `okf-core` is
+unchanged, no version was bumped, and `Data.ByteString.Lazy.Char8` remains imported for the
+four `putStrLn` sites that are correct as they stand.
 
 
 ## Context and Orientation
