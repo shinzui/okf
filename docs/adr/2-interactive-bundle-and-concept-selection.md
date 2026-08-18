@@ -122,3 +122,39 @@ Interactive selection is confined to `okf show`. `validate`, `index`, `log`,
 `graph`, and `id` keep their required `BUNDLE` argument. The layer is written as
 reusable modules (`Okf.Cli.Fzf`, `Okf.Cli.Fzf.Selector`), so extending it to
 another command later is a parser change plus a call to `resolveBundlePath`.
+
+
+## Amendment: generalized bundle selection and listing (2026-08-18)
+
+The final paragraph above and the Decision's show-only scope are superseded.
+Every command whose operation consumes an existing bundle now makes `BUNDLE`
+optional and uses the same resolver: `validate`, `index`, log preview, `log add`,
+`graph`, `show`, `trust`, `sources`, `computations`, `concepts`, `id list`, and
+`id next`. Concept selection remains specific to `show`. Commands that create
+an output bundle or operate on other resources do not acquire a picker.
+
+An explicit `BUNDLE` returns from the resolver before availability detection and
+never spawns `fzf`. This is stronger than merely declining to draw a menu: a
+script with an explicit path cannot be affected by whether `fzf` or a terminal
+exists. `show BUNDLE` may still open its distinct concept picker, while `show
+BUNDLE CONCEPT_ID` is fully non-interactive. Scripts and CI should continue to
+pass paths explicitly.
+
+The positional compatibility rules are intentionally asymmetric where the old
+grammar demands it. `id next PREFIX` is the one-positional interactive form and
+`id next BUNDLE PREFIX` retains its old meaning. For `log add`, one positional
+continues to mean the explicit bundle; selecting a bundle while naming a concept
+would be ambiguous and is not supported without a future named option.
+
+`okf bundles` exposes the normalized, sorted, duplicate-free candidate paths as
+a non-interactive listing. Text mode prints one path per line; JSON mode adds
+optional observed handle-prefix metadata. It uses the same search roots and
+discovery heuristic as the picker but never invokes `fzf`, so an empty listing
+is a successful answer rather than the picker's no-candidate failure.
+
+The menu exit contract is now operation-neutral. No bundle candidates exits 1
+and names the roots; unavailable selection or an `fzf` error exits 2;
+cancellation exits 130 without partial command output. After a bundle is chosen,
+the selected command keeps its existing success and failure semantics. For
+`show`, no concepts still exits 1 and concept-picker diagnostics remain specific
+to that command.

@@ -62,8 +62,8 @@ This section must always reflect the actual current state of the work.
 - [x] (2026-08-18 15:03Z) Milestone 2: added parser regressions for every command and the special `id next` and `log add` positional cases; `cabal test okf-cli` passed.
 - [x] (2026-08-18 15:03Z) Milestone 3: routed every bundle-taking command through one shared resolver and retained the established picker exit-code contract.
 - [x] (2026-08-18 15:03Z) Milestone 3: verified explicit paths with `fzf` absent from `PATH`, all omitted command families through one-candidate `fzf --select-1` flows, no-candidate exit 1, unavailable exit 2, and cancellation exit 130.
-- [ ] Milestone 4: update embedded help, user documentation, changelogs, ADR 1, and ADR 2.
-- [ ] Milestone 4: run the full build and test suite, perform the end-to-end command matrix, and complete ADR distillation and this plan's retrospective.
+- [x] (2026-08-18 16:09Z) Milestone 4: updated embedded help, user documentation, changelogs, ADR 1, and ADR 2.
+- [x] (2026-08-18 16:09Z) Milestone 4: ran the full build and test suite, performed the end-to-end command matrix, completed ADR distillation, and completed this plan's retrospective.
 
 
 ## Surprises & Discoveries
@@ -187,6 +187,13 @@ Record every decision made while working on the plan.
   concept is omitted.
   Date: 2026-08-18
 
+- Decision: Keep bundle-picker and concept-picker diagnostics separate after
+  generalizing bundle resolution.
+  Rationale: Bundle omission is now command-neutral, while only `show` can omit
+  `CONCEPT_ID`. Separate error helpers keep the shared `BUNDLE` advice accurate
+  without weakening `show`'s more specific concept guidance.
+  Date: 2026-08-18
+
 
 ## Outcomes & Retrospective
 
@@ -195,7 +202,37 @@ Compare the result against the original purpose. Before marking the plan complet
 distill durable project context from the Decision Log, Surprises & Discoveries, and
 this section into docs/adr/. Keep task-local execution details here.
 
-(To be filled during and after implementation.)
+All four milestones are complete. `okf bundles` now exposes the picker corpus in
+stable text and JSON forms, with observed strict handle prefixes and path-only
+degradation for candidates that cannot be walked. Every command that consumes
+an existing bundle accepts omission and reaches the same shared resolver, while
+all explicit forms retain their former meaning and bypass bundle-picker
+detection. `show` retains its separate concept picker; `id next` preserves both
+unambiguous arities; and `log add` preserves the legacy one-positional meaning.
+
+The end-to-end pseudo-terminal matrix exercised validation, index preview, log
+preview and writing, graph, show, trust, sources, computations, filtered
+concepts, `id list`, and both `id next` forms against disposable bundles. It
+also observed no-candidate exit 1, unavailable exit 2, and cancellation exit
+130. An explicit validation with `fzf` absent from `PATH` printed the expected
+four-concept success line.
+
+Final validation passed on 2026-08-18: `nix fmt` traversed 387 files with no
+remaining formatting changes; `git diff --check` passed; `cabal build all`
+passed; and `cabal test all` passed both test suites, exactly one Cabal test case
+in `okf-core-test` and one aggregate Cabal test case in `okf-cli-test`. The CLI
+test executable intentionally aggregates its internal Boolean assertions and
+does not report a finer test count; there were no skipped or manually excepted
+tests. Embedded `bundles` and `interactive` topics, optional-bundle parser help,
+the dynamic completion protocol returning `bundles`, and the JSON `jq` shape
+check all passed.
+
+The ADR distillation amended `docs/adr/1-profile-declared-document-ids.md` with
+the non-normative observed-prefix rule and amended
+`docs/adr/2-interactive-bundle-and-concept-selection.md` with the generalized
+command scope, explicit-path guarantee, non-interactive listing, positional
+compatibility rules, and operation-neutral status contract. No new ADR was
+needed because those two accepted decisions already own the durable context.
 
 
 ## Context and Orientation
@@ -659,3 +696,11 @@ data BundleSelection
 
 The final implementation must preserve that semantic interface even if constructor field
 strictness or deriving clauses differ from this abbreviated declaration.
+
+
+## Revision Note
+
+2026-08-18: Updated the living sections throughout implementation, recorded the
+terminal status evidence and diagnostic-helper decision, completed the
+retrospective with exact validation results, and documented the final ADR
+distillation. The implementation did not change the plan's intended scope.

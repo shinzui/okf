@@ -45,6 +45,7 @@ CORE IDEAS
 
 WHAT THE okf TOOL DOES
 
+  bundles       List discoverable bundle paths without opening a menu.
   validate      Check frontmatter conformance and, as an authoring aid, that
                 links resolve and log.md files are well structured.
   index         Generate progressive-disclosure index.md files per directory.
@@ -74,6 +75,7 @@ STANDALONE BY DESIGN
 
 SEE ALSO
 
+  okf help bundles       Listing and discovering bundle paths.
   okf help format        Bundle layout, concept IDs, frontmatter, and links.
   okf help validation    What "conformant" means and how the tool checks it.
   okf help profiles      Checking a bundle against house conventions.

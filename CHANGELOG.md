@@ -7,8 +7,21 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- `okf bundles` lists discovered bundle paths without opening `fzf`; `--json`
+  emits a top-level array whose entries always contain `path` and optionally
+  contain sorted `idPrefixes` observed in strict top-level document handles.
+  Empty discovery succeeds, and metadata failure degrades to a path-only entry.
+
 ### Changed
 
+- Commands that consume an existing bundle now accept an omitted `BUNDLE` and
+  select one with the shared `fzf` picker: `validate`, `index`, both `log`
+  forms, `graph`, `show`, `trust`, `sources`, `computations`, `concepts`, and
+  both `id` forms. Explicit paths bypass picker detection and process spawning,
+  preserving non-interactive scripts. `id next PREFIX` is the new interactive
+  one-positional form; `id next BUNDLE PREFIX` keeps its existing meaning.
 - **Breaking: `okf concepts BUNDLE --json` now emits each selected concept's
   complete stored frontmatter object.** The former CLI-owned
   `id`/`path`/`type`/`title`/`fields` envelope is gone; file-derived identity,

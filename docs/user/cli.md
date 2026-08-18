@@ -13,6 +13,7 @@ cabal run okf -- --help
 The help output lists these commands:
 
 ```text
+bundles
 validate
 index
 log
@@ -44,14 +45,60 @@ cabal run okf -- help okf      # what the Open Knowledge Format is
 cabal run okf -- help format   # bundle layout, concept IDs, frontmatter, links
 ```
 
-Available topics: `okf`, `format`, `validation`, `profiles`, `computations`,
+Available topics: `okf`, `bundles`, `format`, `validation`, `profiles`, `computations`,
 `concepts`, `trust`, `index`, `log`, `graph`, `ids`, `interactive`, `config`,
 `kit`, `agents`. Topic lookup is case-insensitive. An unknown topic name prints
 the list of valid topics, and the command still succeeds (exit 0).
 
-The first four cover the format and how a bundle is checked; `computations`,
+The `okf`, `format`, `validation`, and `profiles` topics cover the format and
+how a bundle is checked; `computations`,
 `concepts`, `trust`, `index`, `log`, `graph`, and `ids` are the command-level
 guides for the reports and generators documented below.
+
+
+## bundles
+
+List the same bundle paths the interactive picker can offer, without opening a
+menu or requiring `fzf` or a terminal.
+
+```bash
+cabal run okf -- bundles
+cabal run okf -- bundles --json
+```
+
+Text output is one normalized path per line in sorted, duplicate-free order.
+No candidates is a successful empty result. The default search root is the
+current directory; `OKF_BUNDLE_ROOTS` replaces it with a colon-separated list:
+
+```bash
+OKF_BUNDLE_ROOTS=~/knowledge:~/work cabal run okf -- bundles
+```
+
+JSON output is a top-level array whose objects always contain `path`. When a
+bundle carries strict handles such as `ADR-1` or `BUG-3`, the object also carries
+the sorted, duplicate-free prefixes actually observed in top-level string
+frontmatter:
+
+```json
+[
+  {"idPrefixes": ["ADR", "RFC"], "path": "docs/decisions"},
+  {"path": "examples/ddd-ordering"}
+]
+```
+
+`idPrefixes` is evidence found in documents, not profile-declared policy. The
+command does not load `profile.dhall`, guess from filenames or directory names,
+or access the network. A malformed handle such as `ADR-007` contributes no
+prefix. If a discovered directory cannot later be walked as a bundle, it stays
+in the result as a path-only object; an empty JSON result is `[]`.
+
+Discovery looks four levels deep. A directory qualifies when it directly holds
+`index.md` or a non-reserved Markdown concept with a non-empty `type`. Its
+subtree is then pruned, so a bundle and its subdirectories are not both listed.
+Hidden, symlinked, common build, missing, and unreadable directories are
+skipped. A bundle whose top directory has neither an index nor a concept may be
+reported as its first qualifying subdirectory; set a more specific root or pass
+the intended path explicitly when that happens.
 
 
 ## validate
@@ -59,9 +106,9 @@ guides for the reports and generators documented below.
 Validate every concept document in a bundle.
 
 ```bash
-cabal run okf -- validate BUNDLE
-cabal run okf -- validate BUNDLE --strict
-cabal run okf -- validate BUNDLE --log-enforce
+cabal run okf -- validate [BUNDLE]
+cabal run okf -- validate [BUNDLE] --strict
+cabal run okf -- validate [BUNDLE] --log-enforce
 ```
 
 Default validation is permissive OKF conformance. It requires each concept
@@ -151,8 +198,8 @@ strings, required frontmatter keys, `resource:` schemes, file layout, and
 against it. See [Profiles](profiles.md) for the descriptor schema.
 
 ```bash
-cabal run okf -- validate BUNDLE --profile PROFILE.dhall
-cabal run okf -- validate BUNDLE --profile PROFILE.dhall --profile-enforce
+cabal run okf -- validate [BUNDLE] --profile PROFILE.dhall
+cabal run okf -- validate [BUNDLE] --profile PROFILE.dhall --profile-enforce
 ```
 
 | Option | Effect |
@@ -183,9 +230,9 @@ profile: 1 advisory deviation(s) (use --profile-enforce to fail)
 Preview or write generated `index.md` files.
 
 ```bash
-cabal run okf -- index BUNDLE
-cabal run okf -- index BUNDLE --write
-cabal run okf -- index BUNDLE --write --okf-version 0.2
+cabal run okf -- index [BUNDLE]
+cabal run okf -- index [BUNDLE] --write
+cabal run okf -- index [BUNDLE] --write --okf-version 0.2
 ```
 
 Without `--write`, `okf` prints every generated index to stdout and does not
@@ -230,10 +277,10 @@ Preview, check, and update `log.md` files. A `log.md` is a reserved Markdown
 file that records dated changes for its directory scope.
 
 ```bash
-cabal run okf -- log BUNDLE
-cabal run okf -- log BUNDLE --check-stale
-cabal run okf -- log BUNDLE --since HEAD
-cabal run okf -- log add BUNDLE [CONCEPT_ID] --kind Update -m "Refreshed schema"
+cabal run okf -- log [BUNDLE]
+cabal run okf -- log [BUNDLE] --check-stale
+cabal run okf -- log [BUNDLE] --since HEAD
+cabal run okf -- log add [BUNDLE] [CONCEPT_ID] --kind Update -m "Refreshed schema"
 ```
 
 `okf log BUNDLE` prints each discovered log as:
@@ -261,13 +308,17 @@ that concept's directory, creating it if absent; without one, it writes the root
 `log.md`. Re-running the same command adds another bullet; it does not
 deduplicate.
 
+For backward compatibility, one positional after `log add` is always the
+explicit `BUNDLE`; omit all positionals to select a bundle and update its root
+log. Selecting a bundle interactively while naming a concept is not supported.
+
 
 ## graph
 
 Print concept graph JSON.
 
 ```bash
-cabal run okf -- graph BUNDLE --json
+cabal run okf -- graph [BUNDLE] --json
 ```
 
 JSON is currently the only graph output format. The `--json` flag is accepted so
@@ -386,8 +437,18 @@ okf never runs a computation. Printing one is not executing it.
 
 ### Interactive selection
 
-Both positional arguments are optional. Whichever one you leave out, `show`
-asks for interactively:
+Every command that operates on an existing bundle accepts an optional `BUNDLE`.
+Omit it in a terminal to choose from the discovered bundles. This applies to
+`validate`, `index`, both `log` forms, `graph`, `show`, `trust`, `sources`,
+`computations`, `concepts`, and both `id` forms. For example:
+
+```bash
+cabal run okf -- validate                 # pick a bundle, then validate it
+cabal run okf -- concepts --type Policy  # pick a bundle, then list policies
+cabal run okf -- id next ADR --profile p.dhall
+```
+
+`show` additionally asks for a concept when `CONCEPT_ID` is omitted:
 
 ```bash
 cabal run okf -- show                     # pick a bundle, then pick a concept
@@ -396,11 +457,11 @@ cabal run okf -- show BUNDLE CONCEPT_ID   # no menus; unchanged behavior
 ```
 
 This needs the [fzf](https://github.com/junegunn/fzf) fuzzy finder on your
-`PATH` and a terminal. fzf is an optional runtime dependency: nothing else in
-`okf` uses it, and scripted usage — which always passes both arguments — never
-touches it. Because fzf reads keystrokes from the terminal device rather than
-from standard input, the menus still work inside a pipeline such as
-`okf show | less`.
+`PATH` and a terminal. fzf is an optional runtime dependency: passing `BUNDLE`
+explicitly bypasses bundle-picker availability checks and process spawning, so
+scripts and CI should continue to pass paths. `okf bundles` is always
+non-interactive. Because fzf reads keystrokes from the terminal device rather
+than from standard input, menus still work inside a pipeline.
 
 The bundle menu lists the OKF bundles found under the current directory,
 searching four levels deep. A directory counts as a bundle when it holds an
@@ -450,13 +511,13 @@ Exit status when a menu is involved:
 
 | Status | Meaning |
 | ------ | ------- |
-| `0` | a concept was printed |
-| `1` | nothing to choose from: no bundles found, or the bundle has no concepts |
-| `2` | no interactive selection available: fzf is missing, or there is no terminal |
+| `0` | the selected operation completed successfully |
+| `1` | no bundles were found, `show` found no concepts, or the selected operation reported its ordinary failure |
+| `2` | interactive selection is unavailable or `fzf` failed |
 | `130` | cancelled with Esc or ctrl-c; nothing is printed |
 
-Exit `2` names the argument you should pass instead, so a non-interactive
-environment always tells you how to proceed.
+Exit `2` tells you to pass `BUNDLE` explicitly. After selection, each command
+retains its ordinary success and failure behavior.
 
 
 ## trust
@@ -466,7 +527,7 @@ concept. Nothing is read that the bundle does not say, and nothing is stored:
 the tier is derived from `verified` on each run.
 
 ```bash
-cabal run okf -- trust BUNDLE
+cabal run okf -- trust [BUNDLE]
 ```
 
 ```text
@@ -508,7 +569,7 @@ following a link from the `Metric` that uses it, and reaches all of them with
 this command.
 
 ```bash
-cabal run okf -- computations BUNDLE
+cabal run okf -- computations [BUNDLE]
 ```
 
 ```text
@@ -577,7 +638,7 @@ List the provenance each concept records, with the credibility signals that
 frame it.
 
 ```bash
-cabal run okf -- sources BUNDLE
+cabal run okf -- sources [BUNDLE]
 ```
 
 ```text
@@ -613,13 +674,13 @@ concepts are there, and which ones match what I care about" — the other
 whole-bundle reports each answer a narrower question.
 
 ```bash
-cabal run okf -- concepts BUNDLE
-cabal run okf -- concepts BUNDLE --type TYPE
-cabal run okf -- concepts BUNDLE --where KEY=VALUE
-cabal run okf -- concepts BUNDLE --has KEY --missing KEY
-cabal run okf -- concepts BUNDLE --show KEY
-cabal run okf -- concepts BUNDLE --json
-cabal run okf -- concepts BUNDLE --profile PROFILE
+cabal run okf -- concepts [BUNDLE]
+cabal run okf -- concepts [BUNDLE] --type TYPE
+cabal run okf -- concepts [BUNDLE] --where KEY=VALUE
+cabal run okf -- concepts [BUNDLE] --has KEY --missing KEY
+cabal run okf -- concepts [BUNDLE] --show KEY
+cabal run okf -- concepts [BUNDLE] --json
+cabal run okf -- concepts [BUNDLE] --profile PROFILE
 ```
 
 ```text
@@ -738,6 +799,14 @@ only; it never projects or limits JSON output.
 List allocated document IDs or print the next unused handle. Both subcommands
 require a profile because it declares the ID field and allowed prefixes.
 Neither command writes to the bundle.
+
+```bash
+cabal run okf -- id list [BUNDLE] --profile PROFILE
+cabal run okf -- id next [BUNDLE] PREFIX --profile PROFILE
+```
+
+With one positional after `id next`, it is the prefix and the bundle is selected
+interactively. With two, they retain the explicit `BUNDLE PREFIX` meaning.
 
 ```bash
 cabal run okf -- id list okf-core/test/fixtures/doc-ids \

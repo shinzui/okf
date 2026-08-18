@@ -21,6 +21,7 @@ to do with them once they are there.
 From the repository root, inspect the checked-in valid fixture bundle:
 
 ```bash
+cabal run okf -- bundles
 cabal run okf -- validate okf-core/test/fixtures/valid-bundle
 cabal run okf -- index okf-core/test/fixtures/valid-bundle
 cabal run okf -- graph okf-core/test/fixtures/valid-bundle --json
@@ -32,6 +33,11 @@ The validation command should print:
 ```text
 OK: 4 concepts (okf_version 0.2)
 ```
+
+`okf bundles` lists discoverable paths without opening a menu. In a terminal,
+commands that consume an existing bundle also let you omit its path and choose
+with `fzf`, for example `okf validate` or `okf concepts --type Policy`. Scripts
+and CI should keep passing explicit paths.
 
 
 ## In-Terminal Help
@@ -54,8 +60,10 @@ needed. See the [CLI Reference](cli.md#help) for details.
 
 ## Common Workflow
 
-1. Create Markdown concept documents under a bundle directory.
-2. Run `okf validate <bundle>` to check minimal OKF conformance.
+1. Create Markdown concept documents under a bundle directory, and use
+   `okf bundles` when you need to discover existing bundles.
+2. Run `okf validate <bundle>` to check minimal OKF conformance, or omit the
+   path in a terminal to select it interactively.
 3. Run `okf index <bundle>` to preview generated `index.md` files.
 4. Run `okf index <bundle> --write` to update indexes.
 5. Run `okf graph <bundle> --json` to produce graph data for tools.

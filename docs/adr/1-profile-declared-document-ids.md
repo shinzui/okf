@@ -89,3 +89,13 @@ forward unchanged, so the claim itself stands; only the version reference was
 stale. The permissive-core principle this ADR establishes is what keeps every
 v0.2 frontmatter family optional in okf's core validation — see
 `docs/adr/7-okf-v0-1-legacy-fallback-policy.md`.
+
+This ADR was amended on 2026-08-18 to distinguish declared handle policy from
+discovery metadata. `okf bundles --json` may add an `idPrefixes` array to a
+bundle entry by applying the same strict `parseDocumentId` grammar to every
+top-level string-valued frontmatter field and reporting the sorted prefixes it
+actually observes. The array is evidence about current documents, not proof
+that a profile declares those prefixes, governs their fields, or guarantees
+their uniqueness. Listing does not load a profile, infer from paths or
+filenames, or access the network. No observed valid handle means the key is
+omitted, and a bundle that cannot be walked remains a path-only entry.

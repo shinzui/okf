@@ -45,6 +45,7 @@ data HelpTopic = HelpTopic
 helpTopics :: [HelpTopic]
 helpTopics =
   [ HelpTopic "okf" "What the Open Knowledge Format is" okfTopicContent,
+    HelpTopic "bundles" "Listing and discovering bundle paths" bundlesTopicContent,
     HelpTopic "format" "Bundle layout, concept IDs, frontmatter, and links" formatTopicContent,
     HelpTopic "validation" "How bundles are validated and referential integrity" validationTopicContent,
     HelpTopic "profiles" "Checking a bundle against house conventions" profilesTopicContent,
@@ -63,6 +64,9 @@ helpTopics =
 
 okfTopicContent :: Text
 okfTopicContent = $(embedStringFile "help/okf.md")
+
+bundlesTopicContent :: Text
+bundlesTopicContent = $(embedStringFile "help/bundles.md")
 
 formatTopicContent :: Text
 formatTopicContent = $(embedStringFile "help/format.md")

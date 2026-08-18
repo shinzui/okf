@@ -25,11 +25,13 @@ DECLARING THEM IN A PROFILE
 
 ALLOCATING AND LISTING
 
-  okf id list BUNDLE --profile PROFILE.dhall
-  okf id next BUNDLE PREFIX --profile PROFILE.dhall
+  okf id list [BUNDLE] --profile PROFILE.dhall
+  okf id next [BUNDLE] PREFIX --profile PROFILE.dhall
 
   Both subcommands require a profile, because the profile is what declares the
-  ID field and the allowed prefixes. Neither writes to the bundle.
+  ID field and the allowed prefixes. Neither writes to the bundle. With one
+  positional after id next, it is PREFIX and BUNDLE is selected interactively;
+  with two, they keep the explicit BUNDLE PREFIX meaning.
 
     okf id list decisions --profile profiles/decisions.dhall
     ADR-1  decisions/use-markdown

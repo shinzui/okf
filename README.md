@@ -55,6 +55,7 @@ Enter the development shell and run the checked-in fixture bundle:
 
 ```bash
 nix develop
+cabal run okf -- bundles
 cabal run okf -- validate okf-core/test/fixtures/valid-bundle
 cabal run okf -- index okf-core/test/fixtures/valid-bundle
 cabal run okf -- log okf-core/test/fixtures/valid-bundle
@@ -77,19 +78,22 @@ The CLI surface is intentionally small:
 
 ```bash
 cabal run okf -- --version
-cabal run okf -- validate <bundle>
-cabal run okf -- validate <bundle> --strict
-cabal run okf -- validate <bundle> --profile <descriptor>.dhall [--profile-enforce]
-cabal run okf -- validate <bundle> --log-enforce
-cabal run okf -- index <bundle> [--write] [--okf-version MAJOR.MINOR]
-cabal run okf -- trust <bundle>
-cabal run okf -- sources <bundle>
-cabal run okf -- log <bundle> [--check-stale] [--since <git-ref>]
-cabal run okf -- log add <bundle> [<concept-id>] -m <message> [--kind <kind>] [--date YYYY-MM-DD]
-cabal run okf -- graph <bundle> [--json]
+cabal run okf -- bundles [--json]
+cabal run okf -- validate [<bundle>]
+cabal run okf -- validate [<bundle>] --strict
+cabal run okf -- validate [<bundle>] --profile <descriptor>.dhall [--profile-enforce]
+cabal run okf -- validate [<bundle>] --log-enforce
+cabal run okf -- index [<bundle>] [--write] [--okf-version MAJOR.MINOR]
+cabal run okf -- trust [<bundle>]
+cabal run okf -- sources [<bundle>]
+cabal run okf -- computations [<bundle>]
+cabal run okf -- concepts [<bundle>] [--type TYPE] [--json]
+cabal run okf -- log [<bundle>] [--check-stale] [--since <git-ref>]
+cabal run okf -- log add [<bundle>] [<concept-id>] -m <message> [--kind <kind>] [--date YYYY-MM-DD]
+cabal run okf -- graph [<bundle>] [--json]
 cabal run okf -- show [<bundle>] [<concept-id-or-document-id>] [--profile <descriptor>]
-cabal run okf -- id next <bundle> <PREFIX> --profile <descriptor>
-cabal run okf -- id list <bundle> --profile <descriptor>
+cabal run okf -- id next [<bundle>] <PREFIX> --profile <descriptor>
+cabal run okf -- id list [<bundle>] --profile <descriptor>
 cabal run okf -- config show
 cabal run okf -- kit list
 cabal run okf -- assist --print-command "PROMPT"
@@ -119,20 +123,24 @@ and an existing declaration is preserved when the flag is absent. `log` previews
 and checks reserved `log.md` files; `log add` appends
 a dated entry to the root log or to the log in a concept's directory. `graph`
 emits JSON graph data; JSON is currently the only graph format, and `--json` is
-accepted to keep the command shape stable for future formats. `show` prints one
-concept's metadata and Markdown body, resolving either its canonical path ID or
-a profile-declared document ID. Both of `show`'s arguments are optional in a
-terminal: with either one missing, `show` opens an [fzf](https://github.com/junegunn/fzf)
-menu — of the bundles found under the current directory (or under
-`OKF_BUNDLE_ROOTS`), then of that bundle's concepts with a preview pane. fzf is
-an optional dependency; without it, `show` explains which argument to pass.
+accepted to keep the command shape stable for future formats. `bundles` lists
+the paths discovered under the current directory or `OKF_BUNDLE_ROOTS`, with
+optional JSON metadata for strict handle prefixes observed in each bundle; it
+never opens a menu. `show` prints one concept's metadata and Markdown body,
+resolving either its canonical path ID or a profile-declared document ID.
+Every command that consumes an existing bundle lets a terminal user omit
+`BUNDLE` and select one with [fzf](https://github.com/junegunn/fzf); `show` also
+offers a concept menu with a preview pane. Passing paths explicitly bypasses the
+bundle picker, so scripts and CI stay non-interactive. fzf is an optional
+dependency; without it, an omitted-bundle command explains which argument to
+pass.
 `id next` allocates the next numbered handle
 without writing, and `id list` prints all allocated handles. `config` shows or initializes the Dhall
 configuration used by the agent commands. `kit` installs reusable AI-agent
 skills and subagents from `okf-kit`. `assist` launches an interactive Claude
 session with installed OKF skills on its path. `completions` generates shell
 completion scripts for Bash, Zsh, and Fish. `help` prints embedded conceptual
-guides for `okf`, `format`, `validation`, `profiles`, `interactive`, `config`,
+guides for `okf`, `bundles`, `format`, `validation`, `profiles`, `interactive`, `config`,
 `kit`, and `agents`.
 
 Invalid fixtures are available for validation behavior:
