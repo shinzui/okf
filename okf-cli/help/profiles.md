@@ -395,6 +395,16 @@ DOCUMENT REFERENCES
   ~/.cache/dhall after the first fetch, so later runs are offline. Pass
   --registry with a local checkout to be offline throughout.
 
+  The built-in pin currently targets v0.10.0 and publishes ten OKF 0.2 profiles
+  with descriptions. Those descriptions print in full and can wrap on a normal
+  terminal. Repository maintainers refresh an explicitly reviewed tag and the
+  offline conformance fixture together with:
+
+    ./scripts/refresh-default-registry.sh TAG
+
+  The script prints the matching defaultRegistryReference literal; it never
+  chooses a tag automatically.
+
   There is no install step. `okf profile show` closes with the two-line Dhall
   snippet that consumes the profile; save it to a file and pass that file to
   `okf validate --profile`.

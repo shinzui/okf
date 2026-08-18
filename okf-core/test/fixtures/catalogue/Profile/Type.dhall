@@ -1,0 +1,15 @@
+--| Record-completion schema for a complete OKF house profile.
+--
+-- A profile is a declarative description of how a team uses the Open Knowledge
+-- Format (OKF): which `type:` strings are allowed, which frontmatter keys are
+-- required, what `resource:` URI scheme each type needs, where each type's files
+-- must live, and what columns a `# Schema` table must have.
+--
+-- Profiles are NOT part of the OKF standard. A bundle that deviates from a
+-- profile remains fully OKF-conformant; profiles are house conventions layered
+-- on top, checked (advisory by default) with `okf validate --profile`.
+--
+-- Both the type and its defaults come from okf's pinned canonical schema so this
+-- package cannot accidentally drift from the decoder. Values are built with
+-- completion: `Profile::{ name = "…", types = [ … ] }`.
+let okf = ./okf.dhall in okf.defaults.Profile

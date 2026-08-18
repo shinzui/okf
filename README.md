@@ -178,7 +178,7 @@ lists and allocates those handles, and `okf show` resolves them after canonical
 path lookup.
 You do not have to write a descriptor from scratch. `okf profile list` shows what
 a *registry* — any Dhall expression evaluating to a record of profiles, such as
-the separate [okf-profiles](https://github.com/shinzui/okf-profiles) repository —
+the separate [okf-profiles](mori://shinzui/okf-profiles) repository —
 publishes, and `okf profile show` prints one profile's complete rule set along
 with the two lines needed to pass it to `okf validate --profile`.
 
@@ -186,6 +186,11 @@ with the two lines needed to pass it to `okf validate --profile`.
 cabal run okf -- profile list
 cabal run okf -- profile show postgresql
 ```
+
+The built-in default is pinned to `mori://shinzui/okf-profiles` v0.10.0, which
+publishes ten OKF 0.2 profiles with descriptions. Repository maintainers move
+that reviewed pin and its offline conformance fixture together with
+`./scripts/refresh-default-registry.sh TAG`.
 
 A profile can also document itself. `okf profile document` generates an OKF
 bundle describing a profile — one page for the profile, one page per concept type

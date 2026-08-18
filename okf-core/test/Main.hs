@@ -169,6 +169,7 @@ main = do
         test "handle reference JSON encoding is stable" testHandleReferenceJsonShape,
         test "field format JSON encoding is stable" testFieldFormatJsonShape,
         testIO "loadRegistry enumerates nested profiles and skips non-profiles" testRegistryEnumeratesProfiles,
+        testIO "loadRegistry decodes every profile in the pinned catalogue snapshot" testPinnedCatalogueDecodes,
         testIO "loadRegistry reports a bare profile as a root entry" testRegistryRootProfile,
         testIO "resolveRegistryRef prefers package.dhall inside a directory" testResolveRegistryRef,
         testIO "loadRegistry reports a missing registry as Left" testRegistryLoadFailure,
@@ -3031,6 +3032,36 @@ testRegistryEnumeratesProfiles = do
       assertBool
         "expected findRegistryEntry to resolve the nested export"
         (isJust (findRegistryEntry "nested.decisions" entries))
+
+-- | The built-in registry pin and this offline snapshot move together. Loading
+-- the snapshot catches a catalogue descriptor that the current decoder cannot
+-- read without making the test suite depend on GitHub or Dhall's cache.
+testPinnedCatalogueDecodes :: IO (Either Text ())
+testPinnedCatalogueDecodes = do
+  path <- fixtureFilePath "catalogue/package.dhall"
+  loaded <- loadRegistry (RegistryFile path)
+  pure $ case loaded of
+    Left err -> Left ("failed to load pinned catalogue snapshot: " <> err)
+    Right entries -> do
+      assertEqual
+        [ "coordination.bugReports",
+          "coordination.capabilities",
+          "coordination.improvementRequests",
+          "coordination.useCases",
+          "documentation.architectureDecisions",
+          "documentation.patternCatalog",
+          "documentation.researchDocuments",
+          "okfV02",
+          "postgresql",
+          "tanPostgresql"
+        ]
+        (List.sort (map (^. #export) entries))
+      assertBool
+        "expected every pinned catalogue profile to have a non-empty name"
+        (all (not . Text.null . (^. #spec . #name)) entries)
+      assertBool
+        "expected every pinned catalogue profile to have a non-empty okfVersion"
+        (all (not . Text.null . (^. #spec . #okfVersion)) entries)
 
 -- | A registry reference that is itself a profile yields one entry whose export
 -- path is empty.

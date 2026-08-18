@@ -67,8 +67,8 @@ data RegistryEntry = RegistryEntry
 -- newer tag means changing the URL and the hash together.
 defaultRegistryReference :: Text
 defaultRegistryReference =
-  "https://raw.githubusercontent.com/shinzui/okf-profiles/v0.4.2/package.dhall\
-  \ sha256:39e79b65672439cde9c1271e3d92abf68ba1e2427541598e0d04de23e741f0cb"
+  "https://raw.githubusercontent.com/shinzui/okf-profiles/v0.10.0/package.dhall\
+  \ sha256:c6882a5cb6ece28027f5f9d219d323cff64f131b97ecbf536ed54d77263f5edf"
 
 -- | How an entry with an empty export path is displayed.
 rootExportLabel :: Text

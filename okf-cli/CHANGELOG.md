@@ -16,6 +16,11 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
+- With no registry override, `okf profile list` now reports the ten OKF 0.2
+  profiles in `mori://shinzui/okf-profiles` v0.10.0, including their
+  descriptions, instead of the five undescribed OKF 0.1 profiles from v0.4.2.
+  The descriptions currently print in full, so this one-line listing is wider
+  than a normal terminal until the compact profile-table work lands.
 - Every command that consumes an existing bundle accepts an omitted `BUNDLE`
   and selects one through the shared picker. Explicit paths remain fully
   non-interactive. `id next PREFIX` selects a bundle, while the existing

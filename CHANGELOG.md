@@ -13,9 +13,18 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   emits a top-level array whose entries always contain `path` and optionally
   contain sorted `idPrefixes` observed in strict top-level document handles.
   Empty discovery succeeds, and metadata failure degrades to a path-only entry.
+- `scripts/refresh-default-registry.sh TAG` computes the normalized Dhall hash
+  for an explicitly reviewed `mori://shinzui/okf-profiles` release and
+  regenerates the offline catalogue fixture in the same step. A conformance test
+  loads that snapshot without the network and pins all ten export paths.
 
 ### Changed
 
+- The built-in profile registry now pins `mori://shinzui/okf-profiles` v0.10.0,
+  so `okf profile list` with no overrides reports ten OKF 0.2 profiles with
+  descriptions instead of five OKF 0.1 profiles without them. Those descriptions
+  currently print in full, so the one-line listing is wide until the compact
+  profile-table work lands.
 - Commands that consume an existing bundle now accept an omitted `BUNDLE` and
   select one with the shared `fzf` picker: `validate`, `index`, both `log`
   forms, `graph`, `show`, `trust`, `sources`, `computations`, `concepts`, and

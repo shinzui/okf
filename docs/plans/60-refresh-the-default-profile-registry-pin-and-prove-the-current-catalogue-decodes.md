@@ -51,18 +51,18 @@ one constant, adds evidence that the change is safe, and makes the next such cha
 
 ## Progress
 
-- [ ] Verify the upstream tag and compute its hash, recording both in this plan
-- [ ] Add `scripts/refresh-default-registry.sh` and prove it reproduces the recorded hash
-- [ ] Update `defaultRegistryReference` in `okf-core/src/Okf/Profile/Registry.hs`
-- [ ] Vendor an offline copy of the pinned catalogue under `okf-core/test/fixtures/catalogue/`
-- [ ] Add the decode-conformance test to `okf-core/test/Main.hs` and see it pass
-- [ ] Confirm the existing config-default tests in `okf-cli/test/Main.hs` still pass
-- [ ] Run `cabal build all` and `cabal test all` clean
-- [ ] Observe the new listing from a built binary and paste the transcript into this plan
-- [ ] Update `CHANGELOG.md`, `okf-core/CHANGELOG.md`, `okf-cli/CHANGELOG.md`
-- [ ] Update `docs/user/profiles.md`, `okf-cli/help/profiles.md`, and `README.md` where they name the pinned version or the refresh procedure
-- [ ] Implement and verify ADR 3's 2026-08-18 pin-refresh obligation
-- [ ] Record the `DESCRIPTION` column regression in Surprises & Discoveries
+- [x] (2026-08-18 18:41Z) Verified the authoritative upstream tag list still ends at v0.10.0 and reproduced its normalized hash
+- [x] (2026-08-18 18:41Z) Added `scripts/refresh-default-registry.sh`; its v0.4.2 run reproduced the existing pin before its v0.10.0 run generated the new fixture
+- [x] (2026-08-18 19:12Z) Updated `defaultRegistryReference` in `okf-core/src/Okf/Profile/Registry.hs`
+- [x] (2026-08-18 19:12Z) Vendored the generated offline v0.10.0 catalogue under `okf-core/test/fixtures/catalogue/`
+- [x] (2026-08-18 19:12Z) Added the decode-conformance test to `okf-core/test/Main.hs`, saw it pass offline, deliberately broke one descriptor, and saw the test fail at that descriptor
+- [x] (2026-08-18 19:14Z) Confirmed the existing config-default tests in `okf-cli/test/Main.hs` still pass as part of the full CLI suite
+- [x] (2026-08-18 19:14Z) Ran `cabal build all` and `cabal test all` clean
+- [x] (2026-08-18 19:12Z) Observed the ten-profile OKF 0.2 listing from the rebuilt binary and recorded its wide-description evidence below
+- [x] (2026-08-18 19:12Z) Updated `CHANGELOG.md`, `okf-core/CHANGELOG.md`, `okf-cli/CHANGELOG.md`
+- [x] (2026-08-18 19:12Z) Updated `docs/user/profiles.md`, `okf-cli/help/profiles.md`, and `README.md` with the current pin and refresh procedure
+- [x] (2026-08-18 19:14Z) Implemented ADR 3's release-time pin-refresh obligation in `agents/skills/release/SKILL.md` and confirmed the delivered behavior needs no further ADR amendment
+- [x] (2026-08-18 19:12Z) Recorded the `DESCRIPTION` column regression in Surprises & Discoveries
 
 
 ## Surprises & Discoveries
@@ -77,8 +77,13 @@ one constant, adds evidence that the change is safe, and makes the next such cha
 - Observation: The v0.10.0 package decodes to ten OKF 0.2 profiles, including
   `coordination.bugReports`; the added descriptions make the current single-line table too
   wide. EP 63 owns that rendering correction.
-  Evidence: exercised the real resolver with the pinned reference and a built `okf` binary
-  during Master Plan 10's architecture audit.
+  Evidence: exercised the real resolver with the pinned reference and a rebuilt `okf`
+  binary. The `coordination.capabilities` row alone rendered as follows, causing normal
+  terminals to wrap the description onto unaligned display lines:
+
+  ```text
+  coordination.capabilities  capabilities  0.2  1  capabilityId  Consumer-facing catalog of what a repository provides today: stable CAP-N handles, an explicit compatibility promise, and evidence. Provision claims only — absent capabilities are improvement requests, and capabilities that span repositories are use-case features owned by the consumer. The house `reviews` family and OKF `verified` coexist: `reviews` records far more than `verified` can, so an approving `reviews` entry should also be mirrored into `verified` to keep the derived trust tier accurate.
+  ```
 
 - Observation: Resolving the entire tagged package produces 2,218,575 bytes, while the
   tagged `package.dhall`/`Profile`/`profiles` tree is about 88 KB and resolving only its
@@ -86,6 +91,14 @@ one constant, adds evidence that the change is safe, and makes the next such cha
   Evidence: measured both forms with `dhall resolve | wc -c` and `git ls-tree -rl` on
   v0.10.0. The fixture therefore preserves relative imports and inlines only
   `Profile/okf.dhall`.
+
+- Observation: The catalogue conformance case is independently offline and fails at the
+  descriptor that stopped decoding rather than merely reporting a changed row count.
+  Evidence: the complete `okf-core-test` binary passed with a fresh `XDG_CACHE_HOME` and
+  both HTTP proxy variables pointed at unused local port 9. Temporarily renaming the
+  `name` field in `coordination/bug-reports.dhall` to `nayme` then made the new case fail
+  with the import chain and exact annotated record mismatch; restoring it returned the
+  suite to green.
 
 
 ## Decision Log
@@ -107,6 +120,15 @@ one constant, adds evidence that the change is safe, and makes the next such cha
   cached or local. Making the refresh cheap and documented is the fix; making it automatic
   is a different behavior. An explicitly opt-in check is planned in
   `docs/plans/63-show-where-every-profile-came-from-and-how-to-refresh-it.md`.
+  Date: 2026-08-18
+
+- Decision: Make the refresh script replace the catalogue fixture only after tag checkout,
+  hashing, copying, and schema resolution all succeed, while leaving the Haskell constant
+  as an explicit paste-and-review step.
+  Rationale: A failed network or Dhall operation must not leave a partial fixture. Keeping
+  the constant update visible in review also preserves ADR 3's deliberate adoption rule:
+  the script computes and stages evidence for a named tag but never changes runtime behavior
+  merely because upstream published something new.
   Date: 2026-08-18
 
 
@@ -481,7 +503,7 @@ Then, after writing the script in Milestone 1:
 
 Record the adopted tag and hash here when you run it:
 
-- Adopted tag: `v0.10.0` (confirm; update if upstream has moved)
+- Adopted tag: `v0.10.0` (confirmed from upstream tags on 2026-08-18)
 - Adopted hash: `sha256:c6882a5cb6ece28027f5f9d219d323cff64f131b97ecbf536ed54d77263f5edf`
 
 Confirm the new pin works before editing any Haskell, by feeding it through the environment
@@ -669,7 +691,27 @@ source provenance with a wrapper rather than changing `RegistryEntry`.
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+EP-60 is complete. The built-in reference now pins
+`mori://shinzui/okf-profiles` v0.10.0 at
+`sha256:c6882a5cb6ece28027f5f9d219d323cff64f131b97ecbf536ed54d77263f5edf`.
+With no configuration, `okf profile list` reports the expected ten OKF 0.2 profiles and
+`okf profile show okfV02` resolves one of the newly available exports.
+
+The refresh command reproduced the known v0.4.2 hash before generating v0.10.0. Its
+offline snapshot contains the tagged relative-import tree plus the resolved pinned schema.
+The new conformance case passed with an empty Dhall cache and unusable HTTP proxies, failed
+at the exact descriptor after a deliberate schema mismatch, and passed again after the
+fixture was restored. `cabal build all`, both suites under `cabal test all`, `nix fmt`, and
+`cabal check` for okf-core are green. The okf-core sdist contains all 19 generated catalogue
+fixture files.
+
+No public `Okf.Profile.Registry` type changed, so EP-61 can add its planned provenance
+wrapper against the current catalogue without compatibility repair. The v0.10.0 prose
+makes the existing one-line table demonstrably too wide; that anticipated presentation
+regression remains owned by EP-63 and is documented in the changelogs rather than hidden.
+ADR 3's 2026-08-18 amendment already records the durable decisions delivered here — manual
+tag adoption, one-way dependency, offline conformance, and an explicit release obligation —
+so the completion distillation found no missing ADR change.
 
 
 ## Revision Note

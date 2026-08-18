@@ -833,26 +833,35 @@ walks the evaluated record and reports every field that decodes as a profile,
 under the dotted path at which it found it. That path is the profile's **export
 path**, and it is the handle you pass to `okf profile show`.
 
-The [okf-profiles](https://github.com/shinzui/okf-profiles) repository is already
+The [okf-profiles](mori://shinzui/okf-profiles) repository is already
 exactly this shape, so it works as a registry with no changes:
 
 ```bash
 okf profile list --registry /path/to/okf-profiles
 ```
 
+With no override, okf currently pins v0.10.0 of that catalogue. It reports the
+following ten profiles; the final `DESCRIPTION` column is omitted here for
+width, but the command prints each catalogue description in full:
+
 ```text
-EXPORT                               NAME                                   OKF  TYPES  ID FIELD   DESCRIPTION
-coordination.improvementRequests     cross-repository-improvement-requests  0.1      1  requestId  -
-documentation.architectureDecisions  architecture-decision-records          0.1      1  docId      -
-documentation.patternCatalog         mori-documentation-pattern-catalog     0.1      8  -          -
-postgresql                           shinzui-postgresql                     0.1      3  -          -
-tanPostgresql                        tan-postgresql                         0.1      4  -          -
+EXPORT                               NAME                                   OKF  TYPES  ID FIELD
+coordination.bugReports              bug-reports                            0.2      1  bugId
+coordination.capabilities            capabilities                           0.2      1  capabilityId
+coordination.improvementRequests     cross-repository-improvement-requests  0.2      1  requestId
+coordination.useCases                jtbd-use-cases                         0.2      2  useCaseId
+documentation.architectureDecisions  architecture-decision-records          0.2      1  docId
+documentation.patternCatalog         mori-documentation-pattern-catalog     0.2      8  -
+documentation.researchDocuments      research-documents                     0.2      1  researchId
+okfV02                               okf-v0-2                               0.2      0  -
+postgresql                           shinzui-postgresql                     0.2      3  -
+tanPostgresql                        tan-postgresql                         0.2      4  -
 ```
 
 The `DESCRIPTION` column shows the profile's own one-line summary. Descriptions
-are optional and were added after these profiles were published, so every row
-above reads `-`; a profile that declares one shows it. The column comes last so
-a long description cannot push the other columns off the right edge.
+are optional; a profile that omits one shows `-`. The v0.10.0 catalogue supplies
+descriptions for all ten profiles. They currently print without truncation, so
+the one-line table can wrap at ordinary terminal widths.
 
 A profile that carries no description is not out of date and needs no migration:
 okf reads descriptor shapes both with and without descriptions. `okf profile show`
@@ -893,6 +902,17 @@ and serves it from there afterwards. In practice `okf profile list` costs one
 network fetch ever. The pin also means a later `okf-profiles` release cannot
 silently change what okf reports; moving to a newer tag means changing the URL
 and the hash together.
+
+For repository maintainers, refreshing a deliberately reviewed release is one
+command:
+
+```bash
+./scripts/refresh-default-registry.sh v0.10.0
+```
+
+The script computes the normalized Dhall hash, regenerates the offline catalogue
+fixture, and prints the `defaultRegistryReference` literal to paste into
+`okf-core/src/Okf/Profile/Registry.hs`. It never chooses a tag automatically.
 
 ### Inspecting one profile
 

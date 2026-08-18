@@ -196,7 +196,7 @@ additive local-source composition, basename exports, and picker compatibility.
 
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
-| 60 | Refresh the default profile registry pin and prove the current catalogue decodes | [docs/plans/60-refresh-the-default-profile-registry-pin-and-prove-the-current-catalogue-decodes.md](../plans/60-refresh-the-default-profile-registry-pin-and-prove-the-current-catalogue-decodes.md) | None | None | Not Started |
+| 60 | Refresh the default profile registry pin and prove the current catalogue decodes | [docs/plans/60-refresh-the-default-profile-registry-pin-and-prove-the-current-catalogue-decodes.md](../plans/60-refresh-the-default-profile-registry-pin-and-prove-the-current-catalogue-decodes.md) | None | None | Complete |
 | 61 | Read profiles from more than one registry | [docs/plans/61-read-profiles-from-more-than-one-registry.md](../plans/61-read-profiles-from-more-than-one-registry.md) | None | EP-60 | Not Started |
 | 62 | Discover and select local profile descriptors in the repository | [docs/plans/62-discover-and-select-local-profile-descriptors-in-the-repository.md](../plans/62-discover-and-select-local-profile-descriptors-in-the-repository.md) | EP-61 | None | Not Started |
 | 63 | Show where every profile came from and how to refresh it | [docs/plans/63-show-where-every-profile-came-from-and-how-to-refresh-it.md](../plans/63-show-where-every-profile-came-from-and-how-to-refresh-it.md) | EP-60, EP-61, EP-62 | None | Not Started |
@@ -359,9 +359,9 @@ layering for the `profiles` block.
 
 ## Progress
 
-- [ ] EP-60: default registry pin moved to `okf-profiles` v0.10.0 with hash `sha256:c6882a5cb6ece28027f5f9d219d323cff64f131b97ecbf536ed54d77263f5edf`, and `okf profile list` with no configuration shows the ten current profiles
-- [ ] EP-60: an offline fixture plus a decode-conformance test prove every profile in the pinned catalogue decodes under the current `ProfileSpec` decoder
-- [ ] EP-60: refreshing the pin is a single scripted command, and the release checklist says to run it
+- [x] (2026-08-18 19:14Z) EP-60: default registry pin moved to `mori://shinzui/okf-profiles` v0.10.0 with hash `sha256:c6882a5cb6ece28027f5f9d219d323cff64f131b97ecbf536ed54d77263f5edf`, and `okf profile list` with no configuration shows the ten current profiles
+- [x] (2026-08-18 19:14Z) EP-60: an offline fixture plus a decode-conformance test prove every profile in the pinned catalogue decodes under the current `ProfileSpec` decoder
+- [x] (2026-08-18 19:14Z) EP-60: refreshing the pin is a single scripted command, and the release checklist says to run it
 - [ ] EP-61: `profiles.registries` accepts a list in configuration, and a file using the old single `registry` key still loads
 - [ ] EP-61: `--registry` is repeatable, `OKF_PROFILE_REGISTRIES` accepts a JSON array, and legacy singular `OKF_PROFILE_REGISTRY` still works
 - [ ] EP-61: `okf profile list` prints one merged, source-grouped listing with a source label on every row
@@ -471,6 +471,13 @@ bytes. The tagged relative-import tree is about 88 KB and its only non-local cod
 `Profile/okf.dhall`, resolves to about 543 KB. EP-60 therefore vendors the tagged tree and
 inlines only that schema import, producing a roughly 630 KB offline fixture without replacing
 the catalogue's own descriptors with one opaque expression.
+
+**EP-60 validated the pin and fixture boundary without changing the registry API**
+(2026-08-18, implementation). The generated snapshot loads with a fresh Dhall cache and
+blocked HTTP proxies, its intentional failure names the exact descriptor that stopped
+decoding, and all 19 generated fixture files are present in the okf-core sdist. The public
+`RegistryEntry` and registry-loading signatures remain unchanged, so EP-61's planned
+source wrapper can proceed without a compatibility adjustment.
 
 
 ## Decision Log
@@ -609,7 +616,12 @@ the catalogue's own descriptors with one opaque expression.
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+EP-60 is complete: the default now exposes ten current OKF 0.2 profiles, the pin and
+offline snapshot refresh together through one explicit-tag script, and both runtime and
+packaging checks prove the snapshot decodes without network access. The known wide
+description rendering remains intentionally queued for EP-63. EP-61 is now the first
+dependency-ready incomplete child plan; EP-62 and EP-63 remain blocked by their documented
+hard dependencies.
 
 
 ## Revision Note (2026-08-18)

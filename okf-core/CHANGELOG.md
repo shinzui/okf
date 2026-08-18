@@ -7,6 +7,19 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- An offline snapshot of the built-in profile catalogue and a registry
+  conformance test prove that every pinned export decodes under the current
+  `ProfileSpec` compatibility chain. The exact ten export paths are asserted so
+  a partial or unintended catalogue refresh fails loudly.
+
+### Changed
+
+- `defaultRegistryReference` now pins `mori://shinzui/okf-profiles` v0.10.0 and
+  its normalized sha256 hash, replacing v0.4.2. The public registry API is
+  unchanged.
+
 ## [0.6.0.1] - 2026-08-16
 
 No library changes. Released to keep the version in step with `okf-cli`

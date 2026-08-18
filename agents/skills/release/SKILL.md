@@ -95,6 +95,28 @@ Present a summary showing:
 - Number of commits since last release
 - Which package directories (`okf-core/`, `okf-cli/`) have changes
 
+Then verify the built-in profile registry pin before choosing the release
+version. Use upstream tags rather than the local
+`mori://shinzui/okf-profiles` checkout, which may contain unreleased work:
+
+```bash
+git ls-remote --refs --sort='-version:refname' --tags \
+  https://github.com/shinzui/okf-profiles.git 'v*' \
+  | sed -n '1s|.*refs/tags/||p'
+
+PROFILE_TAG=v0.10.0  # replace only after reviewing the reported release
+./scripts/refresh-default-registry.sh "$PROFILE_TAG"
+```
+
+The script requires an explicit tag, regenerates
+`okf-core/test/fixtures/catalogue/`, and prints the corresponding
+`defaultRegistryReference` literal. Compare that literal with
+`okf-core/src/Okf/Profile/Registry.hs`; if the reviewed tag moved, update the URL
+and hash together. If it did not move, the script and fixture must produce no
+diff. The command must name the reviewed tag literally; do not feed tag discovery
+straight into the refresh script. Never adopt an unreleased local revision or
+let tag discovery change the pin without reviewing catalogue compatibility.
+
 ### 2. Determine the next version using PVP
 
 - If `$ARGUMENTS` is `major`, `minor`, or `patch`, use that bump level.
