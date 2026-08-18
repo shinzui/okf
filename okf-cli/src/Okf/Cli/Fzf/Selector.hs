@@ -27,11 +27,17 @@ import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Time.Clock (UTCTime)
 import Okf.Bundle (Concept, conceptIdOf, conceptSourcePath, conceptTitle, conceptType)
+import Okf.Cli.BundleDiscovery
+  ( BundleDiscovery (..),
+    bundleSearchRoots,
+    bundleSearchRootsEnvVar,
+    discoverAvailableBundles,
+    parseBundleSearchRoots,
+  )
 import Okf.Cli.Fzf
 import Okf.ConceptId (renderConceptId)
-import Okf.Discovery (defaultDiscoveryOptions, discoverBundleRoots)
 import System.Directory (getModificationTime)
-import System.Environment (getExecutablePath, lookupEnv)
+import System.Environment (getExecutablePath)
 import System.FilePath ((</>))
 
 -- | Outcome of asking the user to pick a bundle.
@@ -79,38 +85,11 @@ renderConceptOrder = \case
   ByModifiedTime -> "modified"
   ByConceptId -> "id"
 
--- | Colon-separated list of directories to search for bundles, in the style of
--- @PATH@.
-bundleSearchRootsEnvVar :: String
-bundleSearchRootsEnvVar = "OKF_BUNDLE_ROOTS"
-
-parseBundleSearchRoots :: String -> [FilePath]
-parseBundleSearchRoots raw =
-  [ Text.unpack trimmed
-  | piece <- Text.splitOn ":" (Text.pack raw),
-    let trimmed = Text.strip piece,
-    not (Text.null trimmed)
-  ]
-
--- | Where to look for bundles: @OKF_BUNDLE_ROOTS@ when it names at least one
--- directory, otherwise the current working directory.
-bundleSearchRoots :: IO [FilePath]
-bundleSearchRoots = do
-  configured <- lookupEnv bundleSearchRootsEnvVar
-  pure $ case configured of
-    Nothing -> ["."]
-    Just raw -> case parseBundleSearchRoots raw of
-      [] -> ["."]
-      roots -> roots
-
 selectBundle :: FzfConfig -> IO BundleSelection
 selectBundle fzfConfig
   | not (isFzfAvailable fzfConfig) = pure BundleSelectionUnavailable
   | otherwise = do
-      roots <- bundleSearchRoots
-      discovered <-
-        List.nub . List.sort . concat
-          <$> traverse (discoverBundleRoots defaultDiscoveryOptions) roots
+      BundleDiscovery {searchRoots = roots, bundlePaths = discovered} <- discoverAvailableBundles
       case discovered of
         [] -> pure (BundleNoCandidates roots)
         bundles -> do

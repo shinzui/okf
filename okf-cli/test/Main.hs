@@ -15,6 +15,7 @@ import Okf.Bundle (Concept, bundleInventoryOfConcepts, conceptAttester, conceptE
 import Okf.Cli
 import Okf.Cli.Agent.Config (AgentCommandName (..), AgentConfigSource (..), AgentField (..), AgentOverrides (..), ResolvedAgent (..), ResolvedField (..), agentSourceLabel, noAgentOverrides, parseOkfEffort, parseOkfProvider, renderAgentResolution, resolveAgent)
 import Okf.Cli.Assist (AssistOptions (..), buildAgentCommand)
+import Okf.Cli.BundleDiscovery (BundleDiscovery (..), bundleSearchRootsEnvVar, discoverAvailableBundles)
 import Okf.Cli.Config (AgentFieldSettings (..), AgentSettings (..), ConfigSource (..), OkfConfig (..), OkfEffort (..), OkfProvider (..), agentSharedDefaults, defaultOkfConfig, exampleConfigText, findConfigSource, loadAgentScopes, loadOkfConfig, okfConfigEnvVar, projectConfigPath)
 import Okf.Cli.Fzf (Candidate (..), FzfOpts (..), optsToArgs, parseSelectionIndex, renderCandidateLines, shellQuote, withAnsi, withHeight, withNoSort, withPrompt)
 import Okf.Cli.Fzf.Selector (ConceptOrder (..), conceptCandidates, conceptPreviewCommand, orderConcepts, parseBundleSearchRoots)
@@ -35,6 +36,7 @@ import System.IO.Temp (createTempDirectory)
 
 main :: IO ()
 main = do
+  bundleDiscoveryListing <- testBundleDiscoveryListing
   logAddWrites <- testLogAddWritesFile
   configDefaults <- testConfigDefaults
   configProjectPrecedence <- testConfigProjectPrecedence
@@ -65,7 +67,69 @@ main = do
   conceptMenuOrdering <- testConceptMenuOrdering
   nonAsciiDiagnostics <- testNonAsciiValuesSurviveDiagnostics
   let results =
-        [ parseSucceeds ["validate", "bundle"],
+        [ parseBundlesMatches ["bundles"] (BundlesOptions False),
+          parseBundlesMatches ["bundles", "--json"] (BundlesOptions True),
+          observedIdPrefixes sampleHandleConcepts == ["ADR", "RFC"],
+          bundleListJson [("a", []), ("b", ["ADR", "RFC"])]
+            == Aeson.toJSON
+              [ Aeson.object ["path" Aeson..= ("a" :: FilePath)],
+                Aeson.object
+                  [ "path" Aeson..= ("b" :: FilePath),
+                    "idPrefixes" Aeson..= (["ADR", "RFC"] :: [Text.Text])
+                  ]
+              ],
+          parseCommandMatches
+            ["validate"]
+            (Validate (ValidateOptions Nothing False Nothing False False)),
+          parseCommandMatches
+            ["index"]
+            (Index (IndexOptions Nothing False Nothing)),
+          parseCommandMatches
+            ["log"]
+            (Log (LogOptions Nothing False Nothing LogPreview)),
+          parseCommandMatches
+            ["log", "add", "-m", "Root update"]
+            ( Log
+                ( LogOptions
+                    Nothing
+                    False
+                    Nothing
+                    (LogAdd (LogAddOptions Nothing "Update" "Root update" Nothing))
+                )
+            ),
+          parseCommandMatches
+            ["log", "add", "b", "-m", "Root update"]
+            ( Log
+                ( LogOptions
+                    (Just "b")
+                    False
+                    Nothing
+                    (LogAdd (LogAddOptions Nothing "Update" "Root update" Nothing))
+                )
+            ),
+          parseCommandMatches
+            ["graph"]
+            (GraphCommand (GraphOptions Nothing False)),
+          parseCommandMatches
+            ["trust"]
+            (Trust (TrustOptions Nothing)),
+          parseCommandMatches
+            ["sources"]
+            (Sources (SourcesOptions Nothing)),
+          parseCommandMatches
+            ["computations"]
+            (Computations (ComputationsOptions Nothing)),
+          parseCommandMatches
+            ["concepts"]
+            (Concepts (ConceptsOptions Nothing [] [] [] [] [] Nothing False)),
+          parseIdMatches
+            ["id", "next", "ADR", "--profile", "p.dhall"]
+            (IdOptions Nothing "p.dhall" (IdNext "ADR")),
+          parseIdMatches
+            ["id", "list", "--profile", "p.dhall"]
+            (IdOptions Nothing "p.dhall" IdList),
+          parseFails ["id", "next", "b", "ADR", "EXTRA", "--profile", "p.dhall"],
+          parseSucceeds ["validate", "bundle"],
           parseSucceeds ["validate", "bundle", "--strict"],
           parseSucceeds ["validate", "bundle", "--profile", "p.dhall"],
           parseSucceeds ["validate", "bundle", "--profile", "p.dhall", "--profile-enforce"],
@@ -73,7 +137,7 @@ main = do
           parseValidateMatches
             ["validate", "b", "--profile", "p.dhall", "--profile-enforce"]
             ValidateOptions
-              { bundlePath = "b",
+              { bundlePath = Just "b",
                 strictMode = False,
                 profilePath = Just "p.dhall",
                 profileEnforce = True,
@@ -82,7 +146,7 @@ main = do
           parseValidateMatches
             ["validate", "b"]
             ValidateOptions
-              { bundlePath = "b",
+              { bundlePath = Just "b",
                 strictMode = False,
                 profilePath = Nothing,
                 profileEnforce = False,
@@ -91,7 +155,7 @@ main = do
           parseValidateMatches
             ["validate", "b", "--log-enforce"]
             ValidateOptions
-              { bundlePath = "b",
+              { bundlePath = Just "b",
                 strictMode = False,
                 profilePath = Nothing,
                 profileEnforce = False,
@@ -103,7 +167,7 @@ main = do
           parseLogMatches
             ["log", "b", "--check-stale", "--since", "HEAD~1"]
             LogOptions
-              { bundlePath = "b",
+              { bundlePath = Just "b",
                 checkStale = True,
                 sinceRef = Just "HEAD~1",
                 logSub = LogPreview
@@ -111,7 +175,7 @@ main = do
           parseLogMatches
             ["log", "add", "b", "tables/users", "--kind", "Update", "-m", "Refreshed schema", "--date", "2026-06-23"]
             LogOptions
-              { bundlePath = "b",
+              { bundlePath = Just "b",
                 checkStale = False,
                 sinceRef = Nothing,
                 logSub =
@@ -205,14 +269,14 @@ main = do
           parseIdMatches
             ["id", "next", "b", "ADR", "--profile", "p.dhall"]
             IdOptions
-              { bundlePath = "b",
+              { bundlePath = Just "b",
                 profilePath = "p.dhall",
                 idSub = IdNext "ADR"
               },
           parseIdMatches
             ["id", "list", "b", "--profile", "p.dhall"]
             IdOptions
-              { bundlePath = "b",
+              { bundlePath = Just "b",
                 profilePath = "p.dhall",
                 idSub = IdList
               },
@@ -366,14 +430,13 @@ main = do
           parseSucceeds ["trust", "bundle"],
           parseSucceeds ["sources", "bundle"],
           parseSucceeds ["computations", "bundle"],
-          parseFails ["computations"],
+          parseSucceeds ["computations"],
           parseSucceeds ["concepts", "bundle"],
-          -- The BUNDLE argument is required: this command never launches fzf.
-          parseFails ["concepts"],
+          parseSucceeds ["concepts"],
           parseConceptsMatches
             ["concepts", "b"]
             ConceptsOptions
-              { bundlePath = "b",
+              { bundlePath = Just "b",
                 conceptTypes = [],
                 fieldFilters = [],
                 presentFields = [],
@@ -385,7 +448,7 @@ main = do
           parseConceptsMatches
             ["concepts", "b", "--json"]
             ConceptsOptions
-              { bundlePath = "b",
+              { bundlePath = Just "b",
                 conceptTypes = [],
                 fieldFilters = [],
                 presentFields = [],
@@ -397,7 +460,7 @@ main = do
           parseConceptsMatches
             ["concepts", "b", "--type", "Policy", "--where", "status=accepted", "--show", "requestId"]
             ConceptsOptions
-              { bundlePath = "b",
+              { bundlePath = Just "b",
                 conceptTypes = ["Policy"],
                 fieldFilters = [FieldEquals (TopLevelField "status") "accepted"],
                 presentFields = [],
@@ -409,7 +472,7 @@ main = do
           parseConceptsMatches
             ["concepts", "b", "--has", "completedAt", "--missing", "reviews.outcome"]
             ConceptsOptions
-              { bundlePath = "b",
+              { bundlePath = Just "b",
                 conceptTypes = [],
                 fieldFilters = [],
                 presentFields = [TopLevelField "completedAt"],
@@ -430,6 +493,7 @@ main = do
           parseShowsInfo ["--version"],
           parseFails ["hello"],
           logAddWrites,
+          bundleDiscoveryListing,
           profileDocumentWrites,
           profileDocumentDeclaresVersion,
           profileDocMatchesExample,
@@ -484,6 +548,14 @@ sampleConceptDisplays = map candidateDisplay (conceptCandidates [longConcept, sh
     longConcept = buildConcept "tables/orders" "---\ntype: Table\ntitle: Orders\n---\n\n# Orders\n"
     shortConcept = buildConcept "x" "---\ntype:\n---\n\n# x\n"
 
+-- | Multiple fields and concepts can contribute handle families. Invalid
+-- spellings and duplicate valid values do not affect the result.
+sampleHandleConcepts :: [Concept]
+sampleHandleConcepts =
+  [ buildConcept "decisions/one" "---\ntype: Decision\ndocId: ADR-2\nalias: RFC-9\nlegacy: ADR-007\n---\n\n# One\n",
+    buildConcept "decisions/two" "---\ntype: Decision\ndocId: ADR-1\n---\n\n# Two\n"
+  ]
+
 -- | An in-memory concept from its identifier and document source, for tests
 -- that need a concept without a bundle on disk to walk.
 buildConcept :: Text.Text -> Text.Text -> Concept
@@ -496,6 +568,18 @@ parseSucceeds :: [String] -> Bool
 parseSucceeds args =
   case execParserPure defaultPrefs parserInfo args of
     Success _ -> True
+    _ -> False
+
+parseCommandMatches :: [String] -> Command -> Bool
+parseCommandMatches args expected =
+  case execParserPure defaultPrefs parserInfo args of
+    Success (Options actual) -> actual == expected
+    _ -> False
+
+parseBundlesMatches :: [String] -> BundlesOptions -> Bool
+parseBundlesMatches args expected =
+  case execParserPure defaultPrefs parserInfo args of
+    Success (Options (Bundles opts)) -> opts == expected
     _ -> False
 
 -- | Parse a @validate@ invocation and check it yields exactly the expected
@@ -1609,7 +1693,7 @@ testLogAddWritesFile = do
   runCommand
     ( Log
         LogOptions
-          { bundlePath = root,
+          { bundlePath = Just root,
             checkStale = False,
             sinceRef = Nothing,
             logSub =
@@ -1628,6 +1712,69 @@ testLogAddWritesFile = do
     ( "## 2026-06-23" `Text.isInfixOf` written
         && "* **Update**: Refreshed schema" `Text.isInfixOf` written
     )
+
+-- | Discovery stays sorted and duplicate-free across repeated roots, an empty
+-- search is successful, and JSON metadata failure leaves a path-only entry.
+testBundleDiscoveryListing :: IO Bool
+testBundleDiscoveryListing = do
+  temporaryDirectory <- getTemporaryDirectory
+  originalRoots <- lookupEnv bundleSearchRootsEnvVar
+  bracket
+    (createTempDirectory temporaryDirectory "okf-cli-bundle-discovery")
+    ( \root -> do
+        setMaybeEnv bundleSearchRootsEnvVar originalRoots
+        removeDirectoryRecursive root
+    )
+    ( \root -> do
+        setEnv bundleSearchRootsEnvVar root
+        BundleDiscovery {bundlePaths = emptyPaths} <- discoverAvailableBundles
+
+        let plain = root </> "a-plain"
+            invalid = root </> "m-invalid"
+            handled = root </> "z-handled"
+        traverse_ (createDirectoryIfMissing True) [plain, invalid, handled]
+        Text.IO.writeFile (plain </> "index.md") "# Plain\n"
+        Text.IO.writeFile (invalid </> "index.md") "# Invalid\n"
+        Text.IO.writeFile (invalid </> "broken.md") "---\ntype: Broken\n"
+        Text.IO.writeFile
+          (handled </> "decision.md")
+          "---\ntype: Decision\ndocId: ADR-2\nrelatedId: BUG-3\nlegacy: ADR-007\n---\n\n# Decision\n"
+
+        setEnv bundleSearchRootsEnvVar (root <> ":" <> root)
+        BundleDiscovery {searchRoots, bundlePaths} <- discoverAvailableBundles
+        entries <- traverse enrich bundlePaths
+        let expectedPaths = [plain, invalid, handled]
+            expectedJson =
+              Aeson.toJSON
+                [ Aeson.object ["path" Aeson..= plain],
+                  Aeson.object ["path" Aeson..= invalid],
+                  Aeson.object
+                    [ "path" Aeson..= handled,
+                      "idPrefixes" Aeson..= (["ADR", "BUG"] :: [Text.Text])
+                    ]
+                ]
+            actualJson = bundleListJson entries
+            passed =
+              null emptyPaths
+                && searchRoots == [root, root]
+                && bundlePaths == expectedPaths
+                && actualJson == expectedJson
+        unless passed $
+          putStrLn
+            ( "bundle discovery listing mismatch:\npaths: "
+                <> show bundlePaths
+                <> "\nentries: "
+                <> show actualJson
+            )
+        pure passed
+    )
+  where
+    enrich path = do
+      walked <- walkBundle path
+      pure (path, either (const []) observedIdPrefixes walked)
+    setMaybeEnv key = \case
+      Nothing -> unsetEnv key
+      Just envValue -> setEnv key envValue
 
 -- | Three concepts written in alphabetical order and stamped with mtimes that
 -- disagree with it, so the modification-time ordering can only come from the

@@ -42,6 +42,7 @@ library
     Okf.Cli
     Okf.Cli.Agent.Config
     Okf.Cli.Assist
+    Okf.Cli.BundleDiscovery
     Okf.Cli.Completions
     Okf.Cli.Config
     Okf.Cli.Fzf

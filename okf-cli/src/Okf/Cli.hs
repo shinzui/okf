@@ -1,6 +1,7 @@
 -- | Top-level CLI entry point for okf.
 module Okf.Cli
-  ( Command (..),
+  ( BundlesOptions (..),
+    Command (..),
     ComputationsOptions (..),
     ConceptsOptions (..),
     GraphOptions (..),
@@ -17,10 +18,14 @@ module Okf.Cli
     ProfileListOptions (..),
     ProfileShowOptions (..),
     ShowOptions (..),
+    SourcesOptions (..),
+    TrustOptions (..),
     ValidateOptions (..),
+    bundleListJson,
     computationReport,
     conceptReport,
     conceptReportJson,
+    observedIdPrefixes,
     parserInfo,
     profileRegistryEnvVar,
     renderProfileDetail,
@@ -64,6 +69,7 @@ import Okf.Cli.Agent.Config
     resolveAgent,
   )
 import Okf.Cli.Assist (AssistOptions, assistAgentOverrides, assistOptionsParser, handleAssistCommand)
+import Okf.Cli.BundleDiscovery (BundleDiscovery (..), discoverAvailableBundles)
 import Okf.Cli.Completions (CompletionsShell, completionsParser, handleCompletions)
 import Okf.Cli.Config
 import Okf.Cli.Fzf (FzfConfig, detectFzfConfig)
@@ -107,6 +113,7 @@ import Okf.Prelude hiding (List, Object)
 import Okf.Profile
   ( Cardinality (..),
     CompiledProfile,
+    DocumentId (..),
     FieldCondition (..),
     FieldFormat (..),
     FieldPath (..),
@@ -184,7 +191,8 @@ import System.IO (stderr)
 import System.Process (readProcessWithExitCode)
 
 data Command
-  = Validate ValidateOptions
+  = Bundles BundlesOptions
+  | Validate ValidateOptions
   | Index IndexOptions
   | Log LogOptions
   | GraphCommand GraphOptions
@@ -202,8 +210,13 @@ data Command
   | Help HelpCommand
   deriving stock (Show, Eq)
 
+data BundlesOptions = BundlesOptions
+  { json :: !Bool
+  }
+  deriving stock (Show, Eq)
+
 data ValidateOptions = ValidateOptions
-  { bundlePath :: !FilePath,
+  { bundlePath :: !(Maybe FilePath),
     strictMode :: !Bool,
     profilePath :: !(Maybe FilePath),
     profileEnforce :: !Bool,
@@ -212,14 +225,14 @@ data ValidateOptions = ValidateOptions
   deriving stock (Show, Eq)
 
 data IndexOptions = IndexOptions
-  { bundlePath :: !FilePath,
+  { bundlePath :: !(Maybe FilePath),
     write :: !Bool,
     okfVersion :: !(Maybe Text)
   }
   deriving stock (Show, Eq)
 
 data LogOptions = LogOptions
-  { bundlePath :: !FilePath,
+  { bundlePath :: !(Maybe FilePath),
     checkStale :: !Bool,
     sinceRef :: !(Maybe Text),
     logSub :: !LogSub
@@ -240,7 +253,7 @@ data LogAddOptions = LogAddOptions
   deriving stock (Show, Eq)
 
 data GraphOptions = GraphOptions
-  { bundlePath :: !FilePath,
+  { bundlePath :: !(Maybe FilePath),
     json :: !Bool
   }
   deriving stock (Show, Eq)
@@ -257,22 +270,22 @@ data ShowOptions = ShowOptions
   deriving stock (Show, Eq)
 
 data TrustOptions = TrustOptions
-  { bundlePath :: !FilePath
+  { bundlePath :: !(Maybe FilePath)
   }
   deriving stock (Show, Eq)
 
 data SourcesOptions = SourcesOptions
-  { bundlePath :: !FilePath
+  { bundlePath :: !(Maybe FilePath)
   }
   deriving stock (Show, Eq)
 
 data ComputationsOptions = ComputationsOptions
-  { bundlePath :: !FilePath
+  { bundlePath :: !(Maybe FilePath)
   }
   deriving stock (Show, Eq)
 
 data ConceptsOptions = ConceptsOptions
-  { bundlePath :: !FilePath,
+  { bundlePath :: !(Maybe FilePath),
     conceptTypes :: ![Text],
     fieldFilters :: ![ConceptFilter],
     presentFields :: ![FieldSelector],
@@ -284,7 +297,7 @@ data ConceptsOptions = ConceptsOptions
   deriving stock (Show, Eq)
 
 data IdOptions = IdOptions
-  { bundlePath :: !FilePath,
+  { bundlePath :: !(Maybe FilePath),
     profilePath :: !FilePath,
     idSub :: !IdSub
   }
@@ -365,7 +378,8 @@ optionsParser = Options <$> commandParser
 commandParser :: Parser Command
 commandParser =
   hsubparser
-    ( command "validate" (info (Validate <$> validateOptionsParser <**> helper) (progDesc "Validate an OKF bundle"))
+    ( command "bundles" (info (Bundles <$> bundlesOptionsParser <**> helper) (progDesc "List discovered OKF bundles"))
+        <> command "validate" (info (Validate <$> validateOptionsParser <**> helper) (progDesc "Validate an OKF bundle"))
         <> command "index" (info (Index <$> indexOptionsParser <**> helper) (progDesc "Preview or write generated index.md files"))
         <> command "log" (info (Log <$> logOptionsParser <**> helper) (progDesc "Preview and check log.md files"))
         <> command "graph" (info (GraphCommand <$> graphOptionsParser <**> helper) (progDesc "Print a bundle graph"))
@@ -383,10 +397,13 @@ commandParser =
         <> command "help" (info (Help <$> helpCommandParser <**> helper) (progDesc "Show conceptual help topics"))
     )
 
+bundlesOptionsParser :: Parser BundlesOptions
+bundlesOptionsParser = BundlesOptions <$> jsonSwitch
+
 validateOptionsParser :: Parser ValidateOptions
 validateOptionsParser =
   ValidateOptions
-    <$> bundleArgument
+    <$> optionalBundleArgument
     <*> switch (long "strict" <> help "Require recommended authoring fields")
     <*> optional
       ( strOption
@@ -401,7 +418,7 @@ validateOptionsParser =
 indexOptionsParser :: Parser IndexOptions
 indexOptionsParser =
   IndexOptions
-    <$> bundleArgument
+    <$> optionalBundleArgument
     <*> switch (long "write" <> help "Write generated index.md files instead of previewing")
     <*> optional
       ( strOption
@@ -418,7 +435,7 @@ logOptionsParser =
 logPreviewOptionsParser :: Parser LogOptions
 logPreviewOptionsParser =
   LogOptions
-    <$> bundleArgument
+    <$> optionalBundleArgument
     <*> switch (long "check-stale" <> help "Report concepts newer than their nearest log.md")
     <*> optional
       ( Text.pack
@@ -436,12 +453,12 @@ logAddCommandParser =
     ( command
         "add"
         ( info
-            (logAddOptionsToCommand <$> bundleArgument <*> logAddOptionsParser <**> helper)
+            (logAddOptionsToCommand <$> optionalBundleArgument <*> logAddOptionsParser <**> helper)
             (progDesc "Append an entry to the nearest log.md")
         )
     )
 
-logAddOptionsToCommand :: FilePath -> LogAddOptions -> LogOptions
+logAddOptionsToCommand :: Maybe FilePath -> LogAddOptions -> LogOptions
 logAddOptionsToCommand path addOptions =
   LogOptions
     { bundlePath = path,
@@ -483,21 +500,13 @@ logAddOptionsParser =
 graphOptionsParser :: Parser GraphOptions
 graphOptionsParser =
   GraphOptions
-    <$> bundleArgument
+    <$> optionalBundleArgument
     <*> switch (long "json" <> help "Print JSON graph output")
 
--- | The @show@ command spells out its own bundle argument instead of reusing
--- 'bundleArgument', because only here is the argument optional and the help
--- text must say so.
 showOptionsParser :: Parser ShowOptions
 showOptionsParser =
   ShowOptions
-    <$> optional
-      ( strArgument
-          ( metavar "BUNDLE"
-              <> help "Path to an OKF bundle directory; omit to choose one interactively"
-          )
-      )
+    <$> optionalBundleArgument
     <*> optional
       ( Text.pack
           <$> strArgument
@@ -531,22 +540,26 @@ idOptionsParser =
     ( command
         "next"
         ( info
-            ( IdOptions
-                <$> bundleArgument
-                <*> profileArgument
-                <*> (IdNext . Text.pack <$> strArgument (metavar "PREFIX" <> help "Profile-declared document ID prefix"))
-                  <**> helper
-            )
+            (idNextOptionsParser <**> helper)
             (progDesc "Print the next unused document ID")
         )
         <> command
           "list"
           ( info
-              (IdOptions <$> bundleArgument <*> profileArgument <*> pure IdList <**> helper)
+              (IdOptions <$> optionalBundleArgument <*> profileArgument <*> pure IdList <**> helper)
               (progDesc "List allocated document IDs")
           )
     )
   where
+    idNextOptionsParser =
+      toIdNext
+        <$> (Text.pack <$> strArgument (metavar "BUNDLE_OR_PREFIX" <> help "Bundle path in the two-argument form, or the document ID prefix when choosing a bundle interactively"))
+        <*> optional (Text.pack <$> strArgument (metavar "PREFIX" <> help "Profile-declared document ID prefix when BUNDLE is given"))
+        <*> profileArgument
+    toIdNext firstArgument second selectedProfile =
+      case second of
+        Nothing -> IdOptions {bundlePath = Nothing, profilePath = selectedProfile, idSub = IdNext firstArgument}
+        Just selectedPrefix -> IdOptions {bundlePath = Just (Text.unpack firstArgument), profilePath = selectedProfile, idSub = IdNext selectedPrefix}
     profileArgument =
       strOption
         ( long "profile"
@@ -690,23 +703,24 @@ registryOption =
 jsonSwitch :: Parser Bool
 jsonSwitch = switch (long "json" <> help "Emit JSON instead of text")
 
-bundleArgument :: Parser FilePath
-bundleArgument =
-  strArgument (metavar "BUNDLE" <> help "Path to an OKF bundle directory")
+optionalBundleArgument :: Parser (Maybe FilePath)
+optionalBundleArgument =
+  optional
+    ( strArgument
+        ( metavar "BUNDLE"
+            <> help "Path to an OKF bundle directory; omit to choose one interactively"
+        )
+    )
 
 trustOptionsParser :: Parser TrustOptions
-trustOptionsParser = TrustOptions <$> bundleArgument
+trustOptionsParser = TrustOptions <$> optionalBundleArgument
 
 sourcesOptionsParser :: Parser SourcesOptions
-sourcesOptionsParser = SourcesOptions <$> bundleArgument
+sourcesOptionsParser = SourcesOptions <$> optionalBundleArgument
 
 computationsOptionsParser :: Parser ComputationsOptions
-computationsOptionsParser = ComputationsOptions <$> bundleArgument
+computationsOptionsParser = ComputationsOptions <$> optionalBundleArgument
 
--- | The bundle argument is required and this command never launches @fzf@: per
--- @docs\/adr\/2-interactive-bundle-and-concept-selection.md@, a convenience that
--- can make a scripted invocation behave differently is not a convenience.
---
 -- A malformed filter is rejected here rather than in 'runConcepts', so a typo
 -- fails before the bundle is walked. 'eitherReader' rather than 'maybeReader' so
 -- that the message a user sees is ours: optparse-applicative prints
@@ -715,7 +729,7 @@ computationsOptionsParser = ComputationsOptions <$> bundleArgument
 conceptsOptionsParser :: Parser ConceptsOptions
 conceptsOptionsParser =
   ConceptsOptions
-    <$> bundleArgument
+    <$> optionalBundleArgument
     <*> many
       ( Text.pack
           <$> strOption
@@ -757,6 +771,7 @@ conceptsOptionsParser =
 
 runCommand :: Command -> IO ()
 runCommand = \case
+  Bundles options -> runBundles options
   Validate options -> runValidate options
   Index options -> runIndex options
   Log options -> runLog options
@@ -778,6 +793,48 @@ runCommand = \case
     handleAssistCommand config resolved assistOptions
   Completions shell -> handleCompletions shell
   Help helpCommand -> handleHelpCommand helpCommand
+
+-- | List the same normalized candidates offered by the interactive picker.
+-- Text mode does not walk bundles. JSON mode enriches each candidate with
+-- strict handle prefixes observed in its concepts, degrading to a path-only
+-- entry if the candidate cannot be walked.
+runBundles :: BundlesOptions -> IO ()
+runBundles BundlesOptions {json} = do
+  BundleDiscovery {bundlePaths} <- discoverAvailableBundles
+  if json
+    then do
+      entries <- traverse enrich bundlePaths
+      LazyByteString.putStrLn (Aeson.encode (bundleListJson entries))
+    else traverse_ putStrLn bundlePaths
+  where
+    enrich path = do
+      walked <- walkBundle path
+      pure (path, either (const []) observedIdPrefixes walked)
+
+-- | Sorted, duplicate-free strict handle prefixes observed anywhere in the
+-- top-level string frontmatter of the supplied concepts.
+observedIdPrefixes :: [Concept] -> [Text]
+observedIdPrefixes concepts =
+  List.nub . List.sort $
+    mapMaybe
+      observedPrefix
+      [fieldValue | concept <- concepts, (_, fieldValue) <- documentIdFields concept]
+  where
+    observedPrefix fieldValue = do
+      DocumentId {prefix} <- parseDocumentId fieldValue
+      pure prefix
+
+-- | JSON wire format for @okf bundles --json@. An empty prefix list means no
+-- evidence was observed, so the optional field is absent rather than empty.
+bundleListJson :: [(FilePath, [Text])] -> Aeson.Value
+bundleListJson entries =
+  Aeson.toJSON
+    [ Aeson.object
+        ( ["path" Aeson..= path]
+            <> ["idPrefixes" Aeson..= prefixes | not (null prefixes)]
+        )
+    | (path, prefixes) <- entries
+    ]
 
 runConfig :: ConfigCommand -> IO ()
 runConfig = \case
@@ -1311,10 +1368,11 @@ renderProfileUsage ref exportPath =
 
 runValidate :: ValidateOptions -> IO ()
 runValidate ValidateOptions {bundlePath, strictMode, profilePath, profileEnforce, logEnforce} = do
-  concepts <- loadBundleOrExit bundlePath
-  inventory <- loadBundleInventoryOrExit bundlePath
-  logs <- loadLogsOrExit bundlePath
-  declaration <- loadBundleVersionOrExit bundlePath
+  resolvedBundle <- resolveBundlePath bundlePath
+  concepts <- loadBundleOrExit resolvedBundle
+  inventory <- loadBundleInventoryOrExit resolvedBundle
+  logs <- loadLogsOrExit resolvedBundle
+  declaration <- loadBundleVersionOrExit resolvedBundle
   let coreProfile = if strictMode then StrictAuthoring else PermissiveConformance
       coreErrors = validateBundle coreProfile declaration inventory concepts <> validateBundleLogs logs
   mapM_ (Text.IO.hPutStrLn stderr . renderBundleValidationError) coreErrors
@@ -1366,15 +1424,16 @@ runValidate ValidateOptions {bundlePath, strictMode, profilePath, profileEnforce
 
 runIndex :: IndexOptions -> IO ()
 runIndex IndexOptions {bundlePath, write, okfVersion} = do
+  resolvedBundle <- resolveBundlePath bundlePath
   override <- traverse requestedVersion okfVersion
   if write
     then do
-      result <- writeBundleIndexesWith override bundlePath
+      result <- writeBundleIndexesWith override resolvedBundle
       case result of
         Left bundleError -> dieText (renderBundleError bundleError)
         Right () -> Text.IO.putStrLn "Wrote index.md files"
     else do
-      indexes <- loadIndexesOrExit override bundlePath
+      indexes <- loadIndexesOrExit override resolvedBundle
       mapM_ renderIndexPreview indexes
   where
     requestedVersion rawVersion =
@@ -1384,23 +1443,25 @@ runIndex IndexOptions {bundlePath, write, okfVersion} = do
 
 runLog :: LogOptions -> IO ()
 runLog LogOptions {bundlePath, checkStale, sinceRef, logSub = LogPreview} = do
-  logs <- loadLogsOrExit bundlePath
+  resolvedBundle <- resolveBundlePath bundlePath
+  logs <- loadLogsOrExit resolvedBundle
   mapM_ renderLogPreview logs
   let logErrors = validateBundleLogs logs
   mapM_ (Text.IO.hPutStrLn stderr . renderBundleValidationError) logErrors
   case sinceRef of
     Nothing -> pure ()
-    Just ref -> runGitDriftCheck bundlePath ref logs
+    Just ref -> runGitDriftCheck resolvedBundle ref logs
   logStalenessReport <-
     if checkStale
       then do
-        concepts <- loadBundleOrExit bundlePath
+        concepts <- loadBundleOrExit resolvedBundle
         pure (logStaleness concepts logs)
       else pure []
   mapM_ (Text.IO.hPutStrLn stderr . ("log: " <>) . renderLogStaleness) logStalenessReport
   when (any bundleValidationErrorIsFailure logErrors) exitFailure
-runLog LogOptions {bundlePath, logSub = LogAdd addOptions} =
-  runLogAdd bundlePath addOptions
+runLog LogOptions {bundlePath, logSub = LogAdd addOptions} = do
+  resolvedBundle <- resolveBundlePath bundlePath
+  runLogAdd resolvedBundle addOptions
 
 runLogAdd :: FilePath -> LogAddOptions -> IO ()
 runLogAdd bundlePath LogAddOptions {conceptId, kind, message, date} = do
@@ -1511,29 +1572,31 @@ firstNonEmpty primary fallback
 
 runGraph :: GraphOptions -> IO ()
 runGraph GraphOptions {bundlePath} = do
-  concepts <- loadBundleOrExit bundlePath
+  resolvedBundle <- resolveBundlePath bundlePath
+  concepts <- loadBundleOrExit resolvedBundle
   LazyByteString.putStrLn (Aeson.encode (buildGraph concepts))
 
 runShow :: ShowOptions -> IO ()
 runShow ShowOptions {bundlePath, conceptIdText, profilePath, computationOnly, conceptOrder} = do
-  fzfConfig <- detectFzfConfig
-  resolvedBundle <- resolveBundlePath fzfConfig bundlePath
-  concepts <- loadBundleOrExit resolvedBundle
-  -- Which renderer runs is decided once, here, so that @--computation@ behaves
-  -- identically whether the concept was named on the command line or picked
-  -- interactively.
-  let render = if computationOnly then renderComputation resolvedBundle else renderConcept
   case conceptIdText of
-    Just rawIdentifier -> showConceptByIdentifier render profilePath concepts rawIdentifier
+    Just rawIdentifier -> do
+      resolvedBundle <- resolveBundlePath bundlePath
+      concepts <- loadBundleOrExit resolvedBundle
+      let render = if computationOnly then renderComputation resolvedBundle else renderConcept
+      showConceptByIdentifier render profilePath concepts rawIdentifier
     Nothing -> do
+      fzfConfig <- detectFzfConfig
+      resolvedBundle <- resolveBundlePathWith fzfConfig bundlePath
+      concepts <- loadBundleOrExit resolvedBundle
+      let render = if computationOnly then renderComputation resolvedBundle else renderConcept
       selection <- selectConcept fzfConfig conceptOrder resolvedBundle concepts
       case selection of
         ConceptChosen concept -> render concept
         ConceptNoCandidates ->
           dieText ("No concepts found in " <> Text.pack resolvedBundle)
         ConceptSelectionCancelled -> exitWith (ExitFailure 130)
-        ConceptSelectionUnavailable -> dieNoPicker "CONCEPT_ID"
-        ConceptSelectionError message -> dieFzf message
+        ConceptSelectionUnavailable -> dieNoConceptPicker
+        ConceptSelectionError message -> dieConceptFzf message
 
 -- | Report the OKF v0.2 trust tier (§5.3), lifecycle status (§5.4), and
 -- staleness (§5.5) for every concept in a bundle, one aligned line each.
@@ -1547,7 +1610,8 @@ runShow ShowOptions {bundlePath, conceptIdText, profilePath, computationOnly, co
 -- report is stable and diffable in pipelines and CI.
 runTrust :: TrustOptions -> IO ()
 runTrust TrustOptions {bundlePath} = do
-  concepts <- loadBundleOrExit bundlePath
+  resolvedBundle <- resolveBundlePath bundlePath
+  concepts <- loadBundleOrExit resolvedBundle
   today <- utctDay <$> getCurrentTime
   let rows = trustRow today <$> concepts
       widthOf column = maximum (0 : map (Text.length . column) rows)
@@ -1588,7 +1652,8 @@ runTrust TrustOptions {bundlePath} = do
 -- would imply a precision the signal does not carry.
 runSources :: SourcesOptions -> IO ()
 runSources SourcesOptions {bundlePath} = do
-  concepts <- loadBundleOrExit bundlePath
+  resolvedBundle <- resolveBundlePath bundlePath
+  concepts <- loadBundleOrExit resolvedBundle
   let withSources = [concept | concept <- concepts, not (null (conceptSources concept))]
       labelWidth = maximum (0 : [Text.length (sourceLabel source) | concept <- withSources, source <- conceptSources concept])
   mapM_ (renderConceptSources labelWidth) withSources
@@ -1662,7 +1727,8 @@ sourceSignals window Source {sourceAuthor, sourceUsageCount, sourceLastModified}
 -- with no provenance: an empty report is not an error.
 runComputations :: ComputationsOptions -> IO ()
 runComputations ComputationsOptions {bundlePath} = do
-  concepts <- loadBundleOrExit bundlePath
+  resolvedBundle <- resolveBundlePath bundlePath
+  concepts <- loadBundleOrExit resolvedBundle
   mapM_ Text.IO.putStrLn (computationReport concepts)
 
 -- | The lines @okf computations@ prints, as data. Pure and separate from
@@ -1761,8 +1827,9 @@ runConcepts
       profilePath,
       json
     } = do
+    resolvedBundle <- resolveBundlePath bundlePath
     traverse_ checkFiltersWithProfile profilePath
-    concepts <- loadBundleOrExit bundlePath
+    concepts <- loadBundleOrExit resolvedBundle
     let selected = filterConcepts allFilters concepts
     if json
       then LazyByteString.putStrLn (Aeson.encode (conceptReportJson selected))
@@ -1879,10 +1946,19 @@ conceptReportJson concepts =
 showSelector :: Text -> FieldSelector
 showSelector key = either (const (TopLevelField key)) Prelude.id (parseFieldSelector key)
 
--- | Use the given bundle, or ask the user to pick one.
-resolveBundlePath :: FzfConfig -> Maybe FilePath -> IO FilePath
-resolveBundlePath _ (Just path) = pure path
-resolveBundlePath fzfConfig Nothing = do
+-- | Use an explicit bundle without consulting interactive availability, or
+-- detect the picker configuration only when the positional was omitted.
+resolveBundlePath :: Maybe FilePath -> IO FilePath
+resolveBundlePath (Just path) = pure path
+resolveBundlePath Nothing = do
+  fzfConfig <- detectFzfConfig
+  resolveBundlePathWith fzfConfig Nothing
+
+-- | Resolve a bundle with an already-detected picker configuration. @show@
+-- uses this when it may need the same configuration for its concept picker.
+resolveBundlePathWith :: FzfConfig -> Maybe FilePath -> IO FilePath
+resolveBundlePathWith _ (Just path) = pure path
+resolveBundlePathWith fzfConfig Nothing = do
   selection <- selectBundle fzfConfig
   case selection of
     BundleChosen path -> pure path
@@ -1897,23 +1973,33 @@ resolveBundlePath fzfConfig Nothing = do
             <> " to a colon-separated list of directories to search."
         )
     BundleSelectionCancelled -> exitWith (ExitFailure 130)
-    BundleSelectionUnavailable -> dieNoPicker "BUNDLE"
-    BundleSelectionError message -> dieFzf message
+    BundleSelectionUnavailable -> dieNoBundlePicker
+    BundleSelectionError message -> dieBundleFzf message
 
--- | The argument was omitted but no interactive picker can run.
-dieNoPicker :: Text -> IO a
-dieNoPicker missingArgument =
+dieNoBundlePicker :: IO a
+dieNoBundlePicker =
   dieTextWith
     (ExitFailure 2)
-    ( "okf show: no "
-        <> missingArgument
-        <> " given and interactive selection is unavailable."
+    ( "No BUNDLE given and interactive selection is unavailable."
+        <> "\nInstall fzf (https://github.com/junegunn/fzf) and run okf from a terminal,"
+        <> " or pass BUNDLE explicitly."
+    )
+
+dieBundleFzf :: Text -> IO a
+dieBundleFzf message =
+  dieTextWith (ExitFailure 2) ("Interactive bundle selection failed: " <> message)
+
+dieNoConceptPicker :: IO a
+dieNoConceptPicker =
+  dieTextWith
+    (ExitFailure 2)
+    ( "okf show: no CONCEPT_ID given and interactive selection is unavailable."
         <> "\nInstall fzf (https://github.com/junegunn/fzf) and run okf from a terminal,"
         <> " or pass the argument: okf show [BUNDLE] [CONCEPT_ID]"
     )
 
-dieFzf :: Text -> IO a
-dieFzf message =
+dieConceptFzf :: Text -> IO a
+dieConceptFzf message =
   dieTextWith (ExitFailure 2) ("okf show: interactive selection failed: " <> message)
 
 -- | Resolve one identifier against a walked bundle: canonical concept path
@@ -1963,11 +2049,12 @@ showConceptByIdentifier renderChosen profilePath concepts conceptIdText =
 
 runId :: IdOptions -> IO ()
 runId IdOptions {bundlePath, profilePath, idSub} = do
+  resolvedBundle <- resolveBundlePath bundlePath
   spec <- loadProfileOrExit profilePath
   ProfileSpec {idField = profileIdField, types = typeRules} <- pure spec
   when (isNothing profileIdField) $
     dieText ("Profile " <> Text.pack profilePath <> " declares no idField")
-  concepts <- loadBundleOrExit bundlePath
+  concepts <- loadBundleOrExit resolvedBundle
   case idSub of
     IdNext requestedPrefix -> do
       let declaredPrefixes =
