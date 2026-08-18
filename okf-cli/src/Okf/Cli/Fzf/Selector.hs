@@ -4,6 +4,7 @@ module Okf.Cli.Fzf.Selector
   ( BundleSelection (..),
     ConceptOrder (..),
     ConceptSelection (..),
+    ProfileSelection (..),
     bundleSearchRootsEnvVar,
     parseBundleSearchRoots,
     parseConceptOrder,
@@ -11,17 +12,20 @@ module Okf.Cli.Fzf.Selector
     conceptCandidates,
     conceptModificationTimes,
     conceptPreviewCommand,
+    profileCandidates,
+    profilePreviewCommand,
     orderConcepts,
     renderConceptOrder,
     selectBundle,
     selectConcept,
+    selectProfileDescriptor,
     sortConceptsByModified,
   )
 where
 
 import Control.Exception (IOException, try)
 import Data.List qualified as List
-import Data.Maybe (fromMaybe)
+import Data.Maybe (catMaybes, fromMaybe)
 import Data.Ord (Down (..))
 import Data.Text (Text)
 import Data.Text qualified as Text
@@ -35,7 +39,10 @@ import Okf.Cli.BundleDiscovery
     parseBundleSearchRoots,
   )
 import Okf.Cli.Fzf
+import Okf.Cli.ProfileDiscovery (ProfileDiscovery (..), discoverAvailableProfiles)
 import Okf.ConceptId (renderConceptId)
+import Okf.Profile (ProfileSpec (..))
+import Okf.Profile.Discovery (loadProfileDescriptorWithoutNetwork)
 import System.Directory (getModificationTime)
 import System.Environment (getExecutablePath)
 import System.FilePath ((</>))
@@ -59,6 +66,15 @@ data ConceptSelection
   | ConceptSelectionCancelled
   | ConceptSelectionUnavailable
   | ConceptSelectionError !Text
+  deriving stock (Show, Eq)
+
+-- | Outcome of asking the user to pick one discovered local descriptor.
+data ProfileSelection
+  = ProfileChosen !FilePath
+  | ProfileNoCandidates ![FilePath]
+  | ProfileSelectionCancelled
+  | ProfileSelectionUnavailable
+  | ProfileSelectionError !Text
   deriving stock (Show, Eq)
 
 -- | The order concepts appear in the interactive menu.
@@ -105,6 +121,36 @@ selectBundle fzfConfig
             FzfNoMatch -> BundleNoCandidates roots
             FzfCancelled -> BundleSelectionCancelled
             FzfError message -> BundleSelectionError message
+
+selectProfileDescriptor :: FzfConfig -> IO ProfileSelection
+selectProfileDescriptor fzfConfig
+  | not (isFzfAvailable fzfConfig) = pure ProfileSelectionUnavailable
+  | otherwise = do
+      ProfileDiscovery {searchRoots = roots, descriptorPaths} <- discoverAvailableProfiles
+      loaded <-
+        catMaybes
+          <$> traverse
+            ( \path -> do
+                decoded <- loadProfileDescriptorWithoutNetwork path
+                pure (fmap (\profile -> (path, profile)) (either (const Nothing) Just decoded))
+            )
+            descriptorPaths
+      case loaded of
+        [] -> pure (ProfileNoCandidates roots)
+        profiles -> do
+          executablePath <- getExecutablePath
+          let opts =
+                withPrompt "profile> "
+                  <> withHeader "Select a local OKF profile descriptor"
+                  <> withHeight "60%"
+                  <> withNoSort
+                  <> withPreview (profilePreviewCommand executablePath)
+          result <- runFzf fzfConfig opts (profileCandidates profiles)
+          pure $ case result of
+            FzfSelected path -> ProfileChosen path
+            FzfNoMatch -> ProfileNoCandidates roots
+            FzfCancelled -> ProfileSelectionCancelled
+            FzfError message -> ProfileSelectionError message
 
 selectConcept :: FzfConfig -> ConceptOrder -> FilePath -> [Concept] -> IO ConceptSelection
 selectConcept fzfConfig order bundlePath concepts
@@ -191,6 +237,28 @@ conceptCandidates concepts =
     typeWidth = maximum (0 : map (Text.length . conceptType) concepts)
     pad width value = value <> Text.replicate (max 0 (width - Text.length value)) " "
 
+-- | One candidate per descriptor, displayed as path, profile name, and OKF
+-- version. The path is display field 1 and therefore fzf preview field 2 after
+-- the hidden numeric index added by 'renderCandidateLines'.
+profileCandidates :: [(FilePath, ProfileSpec)] -> [Candidate FilePath]
+profileCandidates profiles =
+  [ Candidate
+      { candidateDisplay =
+          Text.intercalate
+            "\t"
+            [ pad pathWidth (Text.pack path),
+              pad nameWidth name,
+              okfVersion
+            ],
+        candidateValue = path
+      }
+  | (path, ProfileSpec {name, okfVersion}) <- profiles
+  ]
+  where
+    pathWidth = maximum (0 : [Text.length (Text.pack path) | (path, _) <- profiles])
+    nameWidth = maximum (0 : [Text.length name | (_, ProfileSpec {name}) <- profiles])
+    pad width value = value <> Text.replicate (max 0 (width - Text.length value)) " "
+
 -- | The preview command fzf runs for the highlighted concept. @{2}@ is the
 -- concept ID: fzf extracts preview fields from the original input line, where
 -- field 1 is the hidden index, and it quotes the substitution itself.
@@ -200,3 +268,10 @@ conceptPreviewCommand executablePath bundlePath =
     <> " show "
     <> shellQuote (Text.pack bundlePath)
     <> " {2}"
+
+-- | Preview exactly one descriptor through the normal explicit registry path.
+-- @--no-local@ prevents the preview from recursively appending discovery.
+profilePreviewCommand :: FilePath -> Text
+profilePreviewCommand executablePath =
+  shellQuote (Text.pack executablePath)
+    <> " profile show --no-local --registry {2}"

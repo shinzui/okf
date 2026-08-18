@@ -16,6 +16,7 @@ module Okf.Cli
     ProfileCommand (..),
     ProfileDocumentOptions (..),
     ProfileListOptions (..),
+    ProfilesOptions (..),
     ProfileSourceOrigin (..),
     ProfileShowOptions (..),
     ResolvedProfileSource (..),
@@ -33,6 +34,9 @@ module Okf.Cli
     profileRegistriesEnvVar,
     profileRegistryEnvVar,
     registryListJson,
+    profileDescriptorJson,
+    resolveEffectiveProfileSources,
+    resolveProfilePathWith,
     resolveProfileSources,
     renderProfileDetail,
     renderProfileViolation,
@@ -54,7 +58,7 @@ import Data.Foldable (toList, traverse_)
 import Data.List qualified as List
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map.Strict qualified as Map
-import Data.Maybe (mapMaybe)
+import Data.Maybe (catMaybes, mapMaybe)
 import Data.Set qualified as Set
 import Data.Text qualified as Text
 import Data.Text.Encoding qualified as Text.Encoding
@@ -84,14 +88,21 @@ import Okf.Cli.Fzf.Selector
   ( BundleSelection (..),
     ConceptOrder (..),
     ConceptSelection (..),
+    ProfileSelection (..),
     bundleSearchRootsEnvVar,
     parseConceptOrder,
     renderConceptOrder,
     selectBundle,
     selectConcept,
+    selectProfileDescriptor,
   )
 import Okf.Cli.Help (HelpCommand, handleHelpCommand, helpCommandParser)
 import Okf.Cli.Kit (KitCommand, handleKitCommand, kitCommandParser)
+import Okf.Cli.ProfileDiscovery
+  ( ProfileDiscovery (..),
+    discoverAvailableProfiles,
+    profileSearchRootsEnvVar,
+  )
 import Okf.Cli.Version (appVersionWithGit)
 import Okf.ConceptId
 import Okf.Document
@@ -149,6 +160,7 @@ import Okf.Profile
     validateProfileVersion,
     validateProfileWith,
   )
+import Okf.Profile.Discovery (loadProfileDescriptorWithoutNetwork)
 import Okf.Profile.Documentation
   ( DocumentationError (..),
     DocumentationOptions (..),
@@ -204,6 +216,7 @@ import System.Process (readProcessWithExitCode)
 
 data Command
   = Bundles BundlesOptions
+  | Profiles ProfilesOptions
   | Validate ValidateOptions
   | Index IndexOptions
   | Log LogOptions
@@ -227,10 +240,16 @@ data BundlesOptions = BundlesOptions
   }
   deriving stock (Show, Eq)
 
+data ProfilesOptions = ProfilesOptions
+  { json :: !Bool
+  }
+  deriving stock (Show, Eq)
+
 data ValidateOptions = ValidateOptions
   { bundlePath :: !(Maybe FilePath),
     strictMode :: !Bool,
     profilePath :: !(Maybe FilePath),
+    pickProfile :: !Bool,
     profileEnforce :: !Bool,
     logEnforce :: !Bool
   }
@@ -335,6 +354,7 @@ data ProfileCommand
 
 data ProfileListOptions = ProfileListOptions
   { registryRefs :: ![Text],
+    noLocal :: !Bool,
     json :: !Bool
   }
   deriving stock (Show, Eq)
@@ -342,6 +362,7 @@ data ProfileListOptions = ProfileListOptions
 data ProfileShowOptions = ProfileShowOptions
   { registryRefs :: ![Text],
     export :: !(Maybe Text),
+    noLocal :: !Bool,
     json :: !Bool
   }
   deriving stock (Show, Eq)
@@ -350,6 +371,7 @@ data ProfileDocumentOptions = ProfileDocumentOptions
   { registryRefs :: ![Text],
     export :: !(Maybe Text),
     profilePath :: !(Maybe FilePath),
+    noLocal :: !Bool,
     outputPath :: !(Maybe FilePath),
     write :: !Bool,
     timestamp :: !(Maybe Text),
@@ -367,6 +389,7 @@ data ProfileSourceOrigin
   | LegacyRegistryEnvironmentOrigin
   | ProfileConfigOrigin !FilePath
   | BuiltInRegistryOrigin
+  | ProfileDiscoveryOrigin ![FilePath]
   deriving stock (Show, Eq)
 
 data ResolvedProfileSource = ResolvedProfileSource
@@ -407,6 +430,7 @@ commandParser :: Parser Command
 commandParser =
   hsubparser
     ( command "bundles" (info (Bundles <$> bundlesOptionsParser <**> helper) (progDesc "List discovered OKF bundles"))
+        <> command "profiles" (info (Profiles <$> profilesOptionsParser <**> helper) (progDesc "List local profile descriptor paths; use `okf profile list` for all effective sources"))
         <> command "validate" (info (Validate <$> validateOptionsParser <**> helper) (progDesc "Validate an OKF bundle"))
         <> command "index" (info (Index <$> indexOptionsParser <**> helper) (progDesc "Preview or write generated index.md files"))
         <> command "log" (info (Log <$> logOptionsParser <**> helper) (progDesc "Preview and check log.md files"))
@@ -418,7 +442,7 @@ commandParser =
         <> command "concepts" (info (Concepts <$> conceptsOptionsParser <**> helper) (progDesc "List the concepts a bundle holds, with optional filters"))
         <> command "id" (info (Id <$> idOptionsParser <**> helper) (progDesc "Allocate and list document IDs"))
         <> command "config" (info (Config <$> configCommandParser <**> helper) (progDesc "Show and manage okf configuration"))
-        <> command "profile" (info (Profile <$> profileCommandParser <**> helper) (progDesc "List and inspect profiles published by a registry"))
+        <> command "profile" (info (Profile <$> profileCommandParser <**> helper) (progDesc "List and inspect profiles from registries and local descriptors"))
         <> command "kit" (info (Kit <$> kitCommandParser <**> helper) (progDesc "Install and manage agent skills and subagents"))
         <> command "assist" (info (Assist <$> assistOptionsParser <**> helper) (progDesc "Launch an interactive agent session with installed okf skills"))
         <> command "completions" (info (Completions <$> completionsParser <**> helper) (progDesc "Generate a shell completion script (bash, zsh, fish)"))
@@ -427,6 +451,9 @@ commandParser =
 
 bundlesOptionsParser :: Parser BundlesOptions
 bundlesOptionsParser = BundlesOptions <$> jsonSwitch
+
+profilesOptionsParser :: Parser ProfilesOptions
+profilesOptionsParser = ProfilesOptions <$> jsonSwitch
 
 validateOptionsParser :: Parser ValidateOptions
 validateOptionsParser =
@@ -440,6 +467,7 @@ validateOptionsParser =
               <> help "Path to a Dhall profile descriptor to check (advisory)"
           )
       )
+    <*> switch (long "pick-profile" <> help "Choose a discovered local profile descriptor interactively")
     <*> switch (long "profile-enforce" <> help "Exit non-zero when profile checks find deviations")
     <*> switch (long "log-enforce" <> help "Exit non-zero when log staleness advisories are found")
 
@@ -622,7 +650,7 @@ profileCommandParser =
         "list"
         ( info
             (ProfileList <$> profileListOptionsParser <**> helper)
-            (progDesc "List the profiles a registry publishes")
+            (progDesc "List profiles from registries and local descriptors; use `okf profiles` for local paths only")
         )
         <> command
           "show"
@@ -637,12 +665,13 @@ profileCommandParser =
               (progDesc "Generate an OKF bundle documenting a profile")
           )
     )
-    <|> pure (ProfileList (ProfileListOptions [] False))
+    <|> pure (ProfileList (ProfileListOptions [] False False))
 
 profileListOptionsParser :: Parser ProfileListOptions
 profileListOptionsParser =
   ProfileListOptions
     <$> many registryOption
+    <*> noLocalSwitch
     <*> jsonSwitch
 
 profileShowOptionsParser :: Parser ProfileShowOptions
@@ -656,6 +685,7 @@ profileShowOptionsParser =
                 <> help "Dotted export path of the profile, as printed by `okf profile list`"
             )
       )
+    <*> noLocalSwitch
     <*> jsonSwitch
 
 profileDocumentOptionsParser :: Parser ProfileDocumentOptions
@@ -676,6 +706,7 @@ profileDocumentOptionsParser =
               <> help "Document a Dhall descriptor file directly instead of a registry export"
           )
       )
+    <*> noLocalSwitch
     <*> optional
       ( strOption
           ( long "out"
@@ -727,6 +758,9 @@ registryOption =
           <> metavar "REGISTRY"
           <> help "Dhall file, directory holding package.dhall, or Dhall expression publishing profiles; repeat to merge sources"
       )
+
+noLocalSwitch :: Parser Bool
+noLocalSwitch = switch (long "no-local" <> help "Do not append discovered local profile descriptors")
 
 jsonSwitch :: Parser Bool
 jsonSwitch = switch (long "json" <> help "Emit JSON instead of text")
@@ -800,6 +834,7 @@ conceptsOptionsParser =
 runCommand :: Command -> IO ()
 runCommand = \case
   Bundles options -> runBundles options
+  Profiles options -> runProfiles options
   Validate options -> runValidate options
   Index options -> runIndex options
   Log options -> runLog options
@@ -838,6 +873,38 @@ runBundles BundlesOptions {json} = do
     enrich path = do
       walked <- walkBundle path
       pure (path, either (const []) observedIdPrefixes walked)
+
+-- | List the same normalized descriptor paths offered by the profile picker.
+-- Text mode prints paths only. JSON mode decodes each already-qualified file
+-- again under the same network-silent loader to attach useful profile metadata;
+-- a file that changed between discovery and enrichment is silently omitted.
+runProfiles :: ProfilesOptions -> IO ()
+runProfiles ProfilesOptions {json} = do
+  ProfileDiscovery {descriptorPaths} <- discoverAvailableProfiles
+  if json
+    then do
+      entries <-
+        catMaybes
+          <$> traverse
+            ( \path -> do
+                loaded <- loadProfileDescriptorWithoutNetwork path
+                pure (profileDescriptorJson path <$> either (const Nothing) Just loaded)
+            )
+            descriptorPaths
+      LazyByteString.putStrLn (Aeson.encode entries)
+    else traverse_ putStrLn descriptorPaths
+
+-- | JSON wire format for one discovered descriptor. Optional prose is omitted
+-- rather than rendered as null, matching the bundle-listing convention.
+profileDescriptorJson :: FilePath -> ProfileSpec -> Aeson.Value
+profileDescriptorJson path ProfileSpec {name, description, okfVersion} =
+  Aeson.object
+    ( [ "path" Aeson..= path,
+        "name" Aeson..= name,
+        "okfVersion" Aeson..= okfVersion
+      ]
+        <> maybe [] (\descriptionText -> ["description" Aeson..= descriptionText]) description
+    )
 
 -- | Sorted, duplicate-free strict handle prefixes observed anywhere in the
 -- top-level string frontmatter of the supplied concepts.
@@ -1015,6 +1082,25 @@ resolveProfileSources explicit
       SourceDot path -> ProfileConfigOrigin path
       SourceDefaults -> BuiltInRegistryOrigin
 
+-- | Resolve the winning registry layer and append network-silent local
+-- descriptors unless the caller explicitly requested registry-only behavior.
+resolveEffectiveProfileSources :: [Text] -> Bool -> IO [ResolvedProfileSource]
+resolveEffectiveProfileSources explicit omitLocal = do
+  registries <- resolveProfileSources explicit
+  if omitLocal
+    then pure registries
+    else do
+      ProfileDiscovery {searchRoots, descriptorPaths} <- discoverAvailableProfiles
+      pure
+        ( registries
+            <> [ ResolvedProfileSource
+                   { resolvedSource = DescriptorSource path,
+                     sourceOrigin = ProfileDiscoveryOrigin searchRoots
+                   }
+               | path <- descriptorPaths
+               ]
+        )
+
 resolveReferences :: ProfileSourceOrigin -> [Text] -> IO [ResolvedProfileSource]
 resolveReferences origin references = do
   resolved <-
@@ -1034,29 +1120,36 @@ resolveReferences origin references = do
 -- successful entries, and the command succeeds whenever at least one profile
 -- was enumerated.
 loadProfileSourcesForSurvey :: [ResolvedProfileSource] -> IO ([SourceFailure], [SourcedProfile])
-loadProfileSourcesForSurvey [] = dieText "No profile registry sources selected."
+loadProfileSourcesForSurvey [] = dieText "No profile sources selected."
 loadProfileSourcesForSurvey resolved = do
   loaded@(failures, profiles) <- loadProfileSources (map resolvedSource resolved)
   traverse_ (Text.IO.hPutStrLn stderr . renderSourceFailure) failures
   when (null profiles) $
-    dieText "No profiles found in the selected registry sources."
+    dieText "No profiles found in the selected sources."
   pure loaded
 
 -- | Load sources for a named lookup. Any failed source makes uniqueness
 -- unknowable, so lookup fails closed before examining the surviving entries.
 loadProfileSourcesForNamedLookup :: [ResolvedProfileSource] -> IO [SourcedProfile]
-loadProfileSourcesForNamedLookup [] = dieText "No profile registry sources selected."
+loadProfileSourcesForNamedLookup [] = dieText "No profile sources selected."
 loadProfileSourcesForNamedLookup resolved = do
   (failures, profiles) <- loadProfileSources (map resolvedSource resolved)
   unless (null failures) $
     dieText (Text.intercalate "\n" (map renderSourceFailure failures))
   when (null profiles) $
-    dieText "No profiles found in the selected registry sources."
+    dieText "No profiles found in the selected sources."
   pure profiles
 
 renderSourceFailure :: SourceFailure -> Text
 renderSourceFailure SourceFailure {failedSource, failureReason} =
-  renderRegistryLoadError (renderProfileSourceReference failedSource) failureReason
+  case failedSource of
+    RegistrySource _reference _resolved ->
+      renderRegistryLoadError (renderProfileSourceReference failedSource) failureReason
+    DescriptorSource _path ->
+      "Failed to load local profile descriptor "
+        <> renderProfileSourceReference failedSource
+        <> ": "
+        <> failureReason
 
 -- | A load failure is usually a mistyped path or a missing network, so say what
 -- a reference may be and how to work offline.
@@ -1070,8 +1163,8 @@ renderRegistryLoadError reference err =
     ]
 
 runProfileList :: ProfileListOptions -> IO ()
-runProfileList ProfileListOptions {registryRefs, json} = do
-  resolved <- resolveProfileSources registryRefs
+runProfileList ProfileListOptions {registryRefs, noLocal, json} = do
+  resolved <- resolveEffectiveProfileSources registryRefs noLocal
   (_failures, profiles) <- loadProfileSourcesForSurvey resolved
   if json
     then LazyByteString.putStrLn (Aeson.encode (registryListJson resolved profiles))
@@ -1095,7 +1188,7 @@ registryListJson resolved profiles =
   where
     legacyRegistryField =
       case resolved of
-        [ResolvedProfileSource {resolvedSource = singleSource}] ->
+        [ResolvedProfileSource {resolvedSource = singleSource@(RegistrySource _reference _resolved)}] ->
           ["registry" Aeson..= renderProfileSourceReference singleSource]
         _ -> []
 
@@ -1111,11 +1204,14 @@ resolvedSourceJson ResolvedProfileSource {resolvedSource, sourceOrigin} =
 sourceJson :: ProfileSource -> Aeson.Value -> Aeson.Value
 sourceJson profileSource origin =
   Aeson.object
-    [ "kind" Aeson..= ("registry" :: Text),
+    [ "kind" Aeson..= sourceKind profileSource,
       "label" Aeson..= renderProfileSourceLabel profileSource,
       "reference" Aeson..= renderProfileSourceReference profileSource,
       "origin" Aeson..= origin
     ]
+  where
+    sourceKind (RegistrySource _reference _resolved) = "registry" :: Text
+    sourceKind (DescriptorSource _path) = "descriptor"
 
 profileSourceOriginJson :: ProfileSourceOrigin -> Aeson.Value
 profileSourceOriginJson = \case
@@ -1124,6 +1220,7 @@ profileSourceOriginJson = \case
   LegacyRegistryEnvironmentOrigin -> Aeson.object ["kind" Aeson..= ("environment" :: Text), "name" Aeson..= profileRegistryEnvVar]
   ProfileConfigOrigin path -> Aeson.object ["kind" Aeson..= ("config" :: Text), "path" Aeson..= path]
   BuiltInRegistryOrigin -> Aeson.object ["kind" Aeson..= ("built-in" :: Text)]
+  ProfileDiscoveryOrigin roots -> Aeson.object ["kind" Aeson..= ("discovery" :: Text), "roots" Aeson..= roots]
 
 -- | An aligned table: a header row plus one row per profile, columns padded to
 -- their widest value. Pure so it can be tested without evaluating any Dhall.
@@ -1172,11 +1269,11 @@ displayExport exportPath
   | otherwise = exportPath
 
 runProfileShow :: ProfileShowOptions -> IO ()
-runProfileShow ProfileShowOptions {registryRefs, export = requestedExport, json} = do
-  resolved <- resolveProfileSources registryRefs
+runProfileShow ProfileShowOptions {registryRefs, export = requestedExport, noLocal, json} = do
+  resolved <- resolveEffectiveProfileSources registryRefs noLocal
   profiles <- loadProfileSourcesForNamedLookup resolved
   SourcedProfile
-    { source = RegistrySource _reference ref,
+    { source,
       entry = RegistryEntry {export = foundExport, spec}
     } <-
     selectEntry profiles requestedExport
@@ -1184,7 +1281,10 @@ runProfileShow ProfileShowOptions {registryRefs, export = requestedExport, json}
     then LazyByteString.putStrLn (Aeson.encode spec)
     else do
       traverse_ Text.IO.putStrLn (renderProfileDetail foundExport spec)
-      traverse_ Text.IO.putStrLn (renderProfileUsage ref foundExport)
+      traverse_ Text.IO.putStrLn (profileUsage source foundExport)
+  where
+    profileUsage (RegistrySource _reference ref) foundExport = renderProfileUsage ref foundExport
+    profileUsage (DescriptorSource path) _foundExport = renderProfileUsage (RegistryFile path) ""
 
 -- | Pick the profile to show. With no @EXPORT@ argument a single-profile
 -- registry needs no disambiguation; otherwise the available exports are listed,
@@ -1223,7 +1323,8 @@ selectSourcedProfile profiles = \case
               [ "  " <> renderProfileSourceReference source
               | SourcedProfile {source} <- collisions
               ]
-            <> "Rerun with exactly one intended --registry REFERENCE."
+            <> "Rerun with --no-local and exactly one intended --registry REFERENCE."
+            <> " If REFERENCE is a descriptor file, omit EXPORT."
         )
   where
     availableExports found =
@@ -1247,6 +1348,7 @@ runProfileDocument
     { registryRefs,
       export = requestedExport,
       profilePath,
+      noLocal,
       outputPath,
       write,
       timestamp,
@@ -1255,7 +1357,7 @@ runProfileDocument
       okfVersion
     } = do
     when (isJust profilePath && (isJust requestedExport || not (null registryRefs))) $
-      dieText "Pass either --profile PATH or an EXPORT argument, not both."
+      dieText "Pass --profile PATH by itself, or select a registry profile with [--registry REGISTRY] [EXPORT]."
     when (write && isNothing outputPath) $
       dieText "--write needs a destination; pass --out DIR."
     -- Parse the requested version before anything is written, so a malformed
@@ -1297,12 +1399,17 @@ runProfileDocument
           Just path -> do
             loadedSpec <- loadProfileOrExit path
             pure (Text.pack path, loadedSpec)
-          Nothing -> do
-            resolved <- resolveProfileSources registryRefs
-            profiles <- loadProfileSourcesForNamedLookup resolved
-            SourcedProfile {entry = RegistryEntry {export = foundExport, spec}} <-
-              selectEntry profiles requestedExport
-            pure (displayExport foundExport, spec)
+          Nothing
+            | isNothing requestedExport && null registryRefs -> do
+                path <- resolveProfilePath Nothing
+                loadedSpec <- loadProfileOrExit path
+                pure (Text.pack path, loadedSpec)
+            | otherwise -> do
+                resolved <- resolveEffectiveProfileSources registryRefs noLocal
+                profiles <- loadProfileSourcesForNamedLookup resolved
+                SourcedProfile {entry = RegistryEntry {export = foundExport, spec}} <-
+                  selectEntry profiles requestedExport
+                pure (displayExport foundExport, spec)
         compileProfileOrExit label spec
 
 -- | Print every file the command would generate, in the same shape
@@ -1534,8 +1641,14 @@ renderProfileUsage ref exportPath =
         rendered = renderRegistryRef (RegistryFile path)
 
 runValidate :: ValidateOptions -> IO ()
-runValidate ValidateOptions {bundlePath, strictMode, profilePath, profileEnforce, logEnforce} = do
+runValidate ValidateOptions {bundlePath, strictMode, profilePath, pickProfile, profileEnforce, logEnforce} = do
+  when (pickProfile && isJust profilePath) $
+    dieText "Pass either --profile PATH or --pick-profile, not both."
   resolvedBundle <- resolveBundlePath bundlePath
+  resolvedProfilePath <-
+    if pickProfile
+      then Just <$> resolveProfilePath Nothing
+      else traverse (resolveProfilePath . Just) profilePath
   concepts <- loadBundleOrExit resolvedBundle
   inventory <- loadBundleInventoryOrExit resolvedBundle
   logs <- loadLogsOrExit resolvedBundle
@@ -1547,7 +1660,7 @@ runValidate ValidateOptions {bundlePath, strictMode, profilePath, profileEnforce
   let logStalenessReport = logStaleness concepts logs
   mapM_ (Text.IO.hPutStrLn stderr . ("log: " <>) . renderLogStaleness) logStalenessReport
 
-  profileViolations <- case profilePath of
+  profileViolations <- case resolvedProfilePath of
     Nothing -> pure []
     Just path -> do
       spec <- loadProfileOrExit path
@@ -2143,6 +2256,35 @@ resolveBundlePathWith fzfConfig Nothing = do
     BundleSelectionUnavailable -> dieNoBundlePicker
     BundleSelectionError message -> dieBundleFzf message
 
+-- | Use an explicit descriptor without probing interactivity, or detect the
+-- picker only when no path was supplied.
+resolveProfilePath :: Maybe FilePath -> IO FilePath
+resolveProfilePath (Just path) = pure path
+resolveProfilePath Nothing = do
+  fzfConfig <- detectFzfConfig
+  resolveProfilePathWith fzfConfig Nothing
+
+-- | Resolve a descriptor with an already-detected picker configuration. This
+-- is exported so tests can prove the explicit branch ignores availability.
+resolveProfilePathWith :: FzfConfig -> Maybe FilePath -> IO FilePath
+resolveProfilePathWith _ (Just path) = pure path
+resolveProfilePathWith fzfConfig Nothing = do
+  selection <- selectProfileDescriptor fzfConfig
+  case selection of
+    ProfileChosen path -> pure path
+    ProfileNoCandidates roots ->
+      dieText
+        ( "No OKF profile descriptors found under "
+            <> Text.intercalate ", " (Text.pack <$> roots)
+            <> ".\nA descriptor is a .dhall file that decodes as an OKF profile."
+            <> "\nPass --profile PATH explicitly, or set "
+            <> Text.pack profileSearchRootsEnvVar
+            <> " to a colon-separated list of directories to search."
+        )
+    ProfileSelectionCancelled -> exitWith (ExitFailure 130)
+    ProfileSelectionUnavailable -> dieNoProfilePicker
+    ProfileSelectionError message -> dieProfileFzf message
+
 dieNoBundlePicker :: IO a
 dieNoBundlePicker =
   dieTextWith
@@ -2155,6 +2297,19 @@ dieNoBundlePicker =
 dieBundleFzf :: Text -> IO a
 dieBundleFzf message =
   dieTextWith (ExitFailure 2) ("Interactive bundle selection failed: " <> message)
+
+dieNoProfilePicker :: IO a
+dieNoProfilePicker =
+  dieTextWith
+    (ExitFailure 2)
+    ( "No profile descriptor given and interactive selection is unavailable."
+        <> "\nInstall fzf (https://github.com/junegunn/fzf) and run okf from a terminal,"
+        <> " or pass --profile PATH explicitly."
+    )
+
+dieProfileFzf :: Text -> IO a
+dieProfileFzf message =
+  dieTextWith (ExitFailure 2) ("Interactive profile selection failed: " <> message)
 
 dieNoConceptPicker :: IO a
 dieNoConceptPicker =

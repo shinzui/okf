@@ -78,14 +78,14 @@ problems; those belong to
 - [x] (2026-08-18 20:30Z) Add discovery fixtures that never touch the network
 - [x] (2026-08-18 20:30Z) Cover discovery with `okf-core/test/Main.hs` cases, including the negative cases
 - [x] (2026-08-18 20:30Z) Add the descriptor-file constructor to `ProfileSource` and enumerate it
-- [ ] Add `Okf.Cli.ProfileDiscovery` with `OKF_PROFILE_ROOTS` handling
-- [ ] Add the `okf profiles` command, text and `--json` modes
-- [ ] Include discovered descriptors as a source in `okf profile list`
-- [ ] Add `selectProfileDescriptor` to `okf-cli/src/Okf/Cli/Fzf/Selector.hs`
-- [ ] Add explicit `--pick-profile` to `okf validate`; keep bare validation unchanged
-- [ ] Make `--profile` optional on `okf profile document` and resolve it the same way
-- [ ] Honour the 1 / 2 / 130 exit contract and test each code
-- [ ] Add shell-completion support if `Okf.Cli.Completions` covers comparable commands
+- [x] (2026-08-18 20:43Z) Add `Okf.Cli.ProfileDiscovery` with `OKF_PROFILE_ROOTS` handling
+- [x] (2026-08-18 20:43Z) Add the `okf profiles` command, text and `--json` modes
+- [x] (2026-08-18 20:43Z) Include discovered descriptors as a source in `okf profile list`
+- [x] (2026-08-18 20:43Z) Add `selectProfileDescriptor` to `okf-cli/src/Okf/Cli/Fzf/Selector.hs`
+- [x] (2026-08-18 20:43Z) Add explicit `--pick-profile` to `okf validate`; keep bare validation unchanged
+- [x] (2026-08-18 20:43Z) Make `--profile` optional on `okf profile document` and resolve it the same way
+- [x] (2026-08-18 20:43Z) Honour the 1 / 2 / 130 exit contract and test each code
+- [x] (2026-08-18 20:43Z) Verify shell completion through optparse-applicative's live parser protocol
 - [ ] Run `cabal build all` and `cabal test all` clean
 - [ ] Paste real transcripts for listing, picking, and each exit code into this plan
 - [ ] Update `okf-cli/help/profiles.md`, `okf-cli/help/interactive.md`, `docs/user/profiles.md`, `docs/user/cli.md`, `README.md`
@@ -111,6 +111,17 @@ problems; those belong to
   Evidence: `cabal test okf-core-test --test-show-details=failures` passed on 2026-08-18
   after the text and bytes remote fixtures each produced "Remote imports are disabled during
   profile discovery" through the captured load error.
+
+- Observation: The repository-root scan evaluates the real descriptor and test-fixture
+  population in 1.93 seconds (`user` 1.89 seconds, `sys` 0.76 seconds) on the development
+  machine, while `OKF_PROFILE_ROOTS=docs/profiles` returns exactly the three user-facing
+  descriptors. No traversal or evaluation optimization was necessary.
+  Evidence: `/usr/bin/time -p okf profiles` against the built executable on 2026-08-18.
+
+- Observation: optparse-applicative's runtime completion protocol exposed `profiles`,
+  `--pick-profile`, and `--no-local` without any hand-maintained completion table change.
+  Evidence: completion queries against the built executable returned each command or flag
+  from the live parser on 2026-08-18.
 
 
 ## Decision Log

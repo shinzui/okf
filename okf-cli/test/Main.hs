@@ -1,6 +1,6 @@
 module Main (main) where
 
-import Control.Exception (bracket)
+import Control.Exception (bracket, try)
 import Control.Monad (unless)
 import Data.Aeson (Value (..), toJSON)
 import Data.Aeson qualified as Aeson
@@ -17,9 +17,10 @@ import Okf.Cli.Agent.Config (AgentCommandName (..), AgentConfigSource (..), Agen
 import Okf.Cli.Assist (AssistOptions (..), buildAgentCommand)
 import Okf.Cli.BundleDiscovery (BundleDiscovery (..), bundleSearchRootsEnvVar, discoverAvailableBundles)
 import Okf.Cli.Config (AgentFieldSettings (..), AgentSettings (..), ConfigSource (..), OkfConfig (..), OkfEffort (..), OkfProvider (..), ProfileSettings (..), agentSharedDefaults, defaultOkfConfig, exampleConfigText, findConfigSource, loadAgentScopes, loadOkfConfig, okfConfigEnvVar, projectConfigPath)
-import Okf.Cli.Fzf (Candidate (..), FzfOpts (..), optsToArgs, parseSelectionIndex, renderCandidateLines, shellQuote, withAnsi, withHeight, withNoSort, withPrompt)
-import Okf.Cli.Fzf.Selector (ConceptOrder (..), conceptCandidates, conceptPreviewCommand, orderConcepts, parseBundleSearchRoots)
+import Okf.Cli.Fzf (Candidate (..), FzfConfig (..), FzfOpts (..), optsToArgs, parseSelectionIndex, renderCandidateLines, shellQuote, withAnsi, withHeight, withNoSort, withPrompt)
+import Okf.Cli.Fzf.Selector (ConceptOrder (..), conceptCandidates, conceptPreviewCommand, orderConcepts, parseBundleSearchRoots, profileCandidates, profilePreviewCommand)
 import Okf.Cli.Help (HelpTopic (..), helpTopics)
+import Okf.Cli.ProfileDiscovery (ProfileDiscovery (..), discoverAvailableProfiles, parseProfileSearchRoots, profileSearchRootsEnvVar)
 import Okf.ConceptId (ConceptId, parseConceptId, renderConceptId)
 import Okf.Document (Attester (..), Executor (..), Parameter (..), parseDocument)
 import Okf.Index (OkfVersion (..), VersionDeclaration (..), parseOkfVersion, readBundleVersion)
@@ -28,15 +29,18 @@ import Okf.Profile.Registry (ProfileSource (..), RegistryEntry (..), RegistryRef
 import Okf.Query (ConceptFilter (..), FieldSelector (..), filterConcepts)
 import Okf.Validation (ValidationProfile (..), validateBundle)
 import Options.Applicative
-import System.Directory (createDirectoryIfMissing, doesDirectoryExist, doesFileExist, getCurrentDirectory, getTemporaryDirectory, listDirectory, removeDirectoryRecursive, setModificationTime, withCurrentDirectory)
+import System.Directory (Permissions (..), createDirectoryIfMissing, doesDirectoryExist, doesFileExist, getCurrentDirectory, getPermissions, getTemporaryDirectory, listDirectory, makeAbsolute, removeDirectoryRecursive, setModificationTime, setPermissions, withCurrentDirectory)
 import System.Environment (lookupEnv, setEnv, unsetEnv)
-import System.Exit (exitFailure)
-import System.FilePath ((</>))
+import System.Exit (ExitCode (..), exitFailure)
+import System.FilePath (normalise, (</>))
 import System.IO.Temp (createTempDirectory)
 
 main :: IO ()
 main = do
   bundleDiscoveryListing <- testBundleDiscoveryListing
+  profileDiscoveryListing <- testProfileDiscoveryListing
+  profilePickerExitCodes <- testProfilePickerExitCodes
+  effectiveProfileSources <- testEffectiveProfileSources
   logAddWrites <- testLogAddWritesFile
   configDefaults <- testConfigDefaults
   configProjectPrecedence <- testConfigProjectPrecedence
@@ -74,6 +78,8 @@ main = do
   let results =
         [ parseBundlesMatches ["bundles"] (BundlesOptions False),
           parseBundlesMatches ["bundles", "--json"] (BundlesOptions True),
+          parseProfilesMatches ["profiles"] (ProfilesOptions False),
+          parseProfilesMatches ["profiles", "--json"] (ProfilesOptions True),
           observedIdPrefixes sampleHandleConcepts == ["ADR", "RFC"],
           bundleListJson [("a", []), ("b", ["ADR", "RFC"])]
             == Aeson.toJSON
@@ -85,7 +91,7 @@ main = do
               ],
           parseCommandMatches
             ["validate"]
-            (Validate (ValidateOptions Nothing False Nothing False False)),
+            (Validate (ValidateOptions Nothing False Nothing False False False)),
           parseCommandMatches
             ["index"]
             (Index (IndexOptions Nothing False Nothing)),
@@ -137,6 +143,7 @@ main = do
           parseSucceeds ["validate", "bundle"],
           parseSucceeds ["validate", "bundle", "--strict"],
           parseSucceeds ["validate", "bundle", "--profile", "p.dhall"],
+          parseSucceeds ["validate", "bundle", "--pick-profile"],
           parseSucceeds ["validate", "bundle", "--profile", "p.dhall", "--profile-enforce"],
           parseSucceeds ["validate", "bundle", "--log-enforce"],
           parseValidateMatches
@@ -145,6 +152,7 @@ main = do
               { bundlePath = Just "b",
                 strictMode = False,
                 profilePath = Just "p.dhall",
+                pickProfile = False,
                 profileEnforce = True,
                 logEnforce = False
               },
@@ -154,6 +162,7 @@ main = do
               { bundlePath = Just "b",
                 strictMode = False,
                 profilePath = Nothing,
+                pickProfile = False,
                 profileEnforce = False,
                 logEnforce = False
               },
@@ -163,8 +172,19 @@ main = do
               { bundlePath = Just "b",
                 strictMode = False,
                 profilePath = Nothing,
+                pickProfile = False,
                 profileEnforce = False,
                 logEnforce = True
+              },
+          parseValidateMatches
+            ["validate", "b", "--pick-profile"]
+            ValidateOptions
+              { bundlePath = Just "b",
+                strictMode = False,
+                profilePath = Nothing,
+                pickProfile = True,
+                profileEnforce = False,
+                logEnforce = False
               },
           parseSucceeds ["index", "bundle", "--write"],
           parseSucceeds ["log", "bundle"],
@@ -332,10 +352,15 @@ main = do
           parseBundleSearchRoots "/a:/b" == ["/a", "/b"],
           parseBundleSearchRoots "" == [],
           parseBundleSearchRoots " /a : : /b " == ["/a", "/b"],
+          parseProfileSearchRoots " /a : : /b " == ["/a", "/b"],
           conceptPreviewCommand "/usr/local/bin/okf" "my bundle"
             == "'/usr/local/bin/okf' show 'my bundle' {2}",
           conceptPreviewCommand "/opt/o'kf/okf" "b"
             == "'/opt/o'\\''kf/okf' show 'b' {2}",
+          profilePreviewCommand "/usr/local/bin/okf"
+            == "'/usr/local/bin/okf' profile show --no-local --registry {2}",
+          map candidateDisplay (profileCandidates [("p.dhall", samplePostgresqlProfile)])
+            == ["p.dhall\tshinzui-postgresql\t0.1"],
           sampleConceptDisplays
             == ["tables/orders\tTable\tOrders", "x            \t     \t"],
           parseSucceeds ["profile"],
@@ -344,22 +369,29 @@ main = do
           parseSucceeds ["profile", "list", "--registry", "./r.dhall"],
           parseSucceeds ["profile", "show"],
           parseSucceeds ["profile", "show", "postgresql"],
-          parseProfileMatches ["profile"] (ProfileList (ProfileListOptions [] False)),
+          parseProfileMatches ["profile"] (ProfileList (ProfileListOptions [] False False)),
           parseProfileMatches
             ["profile", "list", "--registry", "r", "--json"]
-            (ProfileList (ProfileListOptions ["r"] True)),
+            (ProfileList (ProfileListOptions ["r"] False True)),
           parseProfileMatches
             ["profile", "list", "--registry", "a", "--registry", "b"]
-            (ProfileList (ProfileListOptions ["a", "b"] False)),
+            (ProfileList (ProfileListOptions ["a", "b"] False False)),
+          parseProfileMatches
+            ["profile", "list", "--no-local"]
+            (ProfileList (ProfileListOptions [] True False)),
           parseProfileMatches
             ["profile", "show", "x", "--registry", "r", "--json"]
-            (ProfileShow (ProfileShowOptions ["r"] (Just "x") True)),
+            (ProfileShow (ProfileShowOptions ["r"] (Just "x") False True)),
           parseProfileMatches
             ["profile", "show"]
-            (ProfileShow (ProfileShowOptions [] Nothing False)),
+            (ProfileShow (ProfileShowOptions [] Nothing False False)),
+          parseProfileMatches
+            ["profile", "show", "x", "--no-local"]
+            (ProfileShow (ProfileShowOptions [] (Just "x") True False)),
           parseSucceeds ["profile", "document"],
           parseSucceeds ["profile", "document", "acme"],
           parseSucceeds ["profile", "document", "--profile", "p.dhall"],
+          parseSucceeds ["profile", "document", "--no-local", "acme"],
           parseSucceeds ["profile", "document", "--out", "docs/p", "--write"],
           parseSucceeds
             ["profile", "document", "--registry", "./r.dhall", "acme", "--out", "d", "--write", "--timestamp", "2026-07-31T00:00:00Z"],
@@ -372,6 +404,7 @@ main = do
                   { registryRefs = ["./r.dhall"],
                     export = Just "acme",
                     profilePath = Nothing,
+                    noLocal = False,
                     outputPath = Just "d",
                     write = True,
                     timestamp = Just "2026-07-31T00:00:00Z",
@@ -401,6 +434,7 @@ main = do
                   { registryRefs = [],
                     export = Nothing,
                     profilePath = Just "p.dhall",
+                    noLocal = False,
                     outputPath = Just "d",
                     write = True,
                     timestamp = Nothing,
@@ -416,6 +450,7 @@ main = do
                   { registryRefs = [],
                     export = Nothing,
                     profilePath = Nothing,
+                    noLocal = False,
                     outputPath = Nothing,
                     write = False,
                     timestamp = Nothing,
@@ -431,6 +466,7 @@ main = do
                   { registryRefs = [],
                     export = Nothing,
                     profilePath = Just "p.dhall",
+                    noLocal = False,
                     outputPath = Nothing,
                     write = False,
                     timestamp = Nothing,
@@ -501,6 +537,8 @@ main = do
           renderRegistryTable sampleRegistryEntries == sampleRegistryTable,
           testRegistryEnvironmentJson,
           testRegistryListJsonShape,
+          testDescriptorSourceJsonShape,
+          testProfileDescriptorJsonShape,
           testAmbiguousSourcedProfile,
           renderProfileDetail "nested.decisions" sampleDecisionsProfile == sampleProfileDetail,
           renderProfileDetail "" samplePostgresqlProfile == sampleUndocumentedProfileDetail,
@@ -509,6 +547,9 @@ main = do
           parseFails ["hello"],
           logAddWrites,
           bundleDiscoveryListing,
+          profileDiscoveryListing,
+          profilePickerExitCodes,
+          effectiveProfileSources,
           profileDocumentWrites,
           profileDocumentDeclaresVersion,
           profileDocMatchesExample,
@@ -600,6 +641,12 @@ parseBundlesMatches :: [String] -> BundlesOptions -> Bool
 parseBundlesMatches args expected =
   case execParserPure defaultPrefs parserInfo args of
     Success (Options (Bundles opts)) -> opts == expected
+    _ -> False
+
+parseProfilesMatches :: [String] -> ProfilesOptions -> Bool
+parseProfilesMatches args expected =
+  case execParserPure defaultPrefs parserInfo args of
+    Success (Options (Profiles opts)) -> opts == expected
     _ -> False
 
 -- | Parse a @validate@ invocation and check it yields exactly the expected
@@ -766,6 +813,52 @@ testRegistryListJsonShape =
               [ "kind" Aeson..= ("flag" :: Text.Text),
                 "name" Aeson..= ("--registry" :: Text.Text)
               ]
+        ]
+
+testDescriptorSourceJsonShape :: Bool
+testDescriptorSourceJsonShape =
+  registryListJson [resolved] [profile]
+    == Aeson.object
+      [ "sources" Aeson..= [sourceObject],
+        "profiles"
+          Aeson..= [ Aeson.object
+                       [ "source" Aeson..= sourceObject,
+                         "export" Aeson..= ("postgresql" :: Text.Text),
+                         "profile" Aeson..= samplePostgresqlProfile
+                       ]
+                   ]
+      ]
+  where
+    path = normalise "docs/profiles/postgresql.dhall"
+    source = DescriptorSource path
+    resolved = ResolvedProfileSource source (ProfileDiscoveryOrigin ["docs/profiles"])
+    profile = SourcedProfile source (RegistryEntry "postgresql" samplePostgresqlProfile)
+    sourceObject =
+      Aeson.object
+        [ "kind" Aeson..= ("descriptor" :: Text.Text),
+          "label" Aeson..= ("local" :: Text.Text),
+          "reference" Aeson..= path,
+          "origin"
+            Aeson..= Aeson.object
+              [ "kind" Aeson..= ("discovery" :: Text.Text),
+                "roots" Aeson..= (["docs/profiles"] :: [FilePath])
+              ]
+        ]
+
+testProfileDescriptorJsonShape :: Bool
+testProfileDescriptorJsonShape =
+  profileDescriptorJson "profile.dhall" sampleDecisionsProfile
+    == Aeson.object
+      [ "path" Aeson..= ("profile.dhall" :: FilePath),
+        "name" Aeson..= ("decisions" :: Text.Text),
+        "okfVersion" Aeson..= ("0.1" :: Text.Text),
+        "description" Aeson..= ("How this team records architectural decisions." :: Text.Text)
+      ]
+    && profileDescriptorJson "postgresql.dhall" samplePostgresqlProfile
+      == Aeson.object
+        [ "path" Aeson..= ("postgresql.dhall" :: FilePath),
+          "name" Aeson..= ("shinzui-postgresql" :: Text.Text),
+          "okfVersion" Aeson..= ("0.1" :: Text.Text)
         ]
 
 testAmbiguousSourcedProfile :: Bool
@@ -1243,6 +1336,7 @@ exampleDocumentOptions descriptor destination stamp version =
     { registryRefs = [],
       export = Nothing,
       profilePath = Just descriptor,
+      noLocal = False,
       outputPath = Just destination,
       write = True,
       timestamp = stamp,
@@ -1713,6 +1807,7 @@ testProfileDocumentWritesBundle =
               { registryRefs = [],
                 export = Nothing,
                 profilePath = Just descriptorPath,
+                noLocal = False,
                 outputPath = Just destination,
                 write = True,
                 timestamp = Nothing,
@@ -1876,6 +1971,111 @@ testBundleDiscoveryListing = do
     enrich path = do
       walked <- walkBundle path
       pure (path, either (const []) observedIdPrefixes walked)
+    setMaybeEnv key = \case
+      Nothing -> unsetEnv key
+      Just envValue -> setEnv key envValue
+
+testProfileDiscoveryListing :: IO Bool
+testProfileDiscoveryListing =
+  withRepositoryPath "profile discovery listing" ("docs" </> "profiles") $ \profileRoot -> do
+    absoluteRoot <- makeAbsolute profileRoot
+    originalRoots <- lookupEnv profileSearchRootsEnvVar
+    bracket
+      (setEnv profileSearchRootsEnvVar (absoluteRoot <> ":" <> absoluteRoot))
+      (\() -> setMaybeEnv profileSearchRootsEnvVar originalRoots)
+      ( \() -> do
+          ProfileDiscovery {searchRoots, descriptorPaths} <- discoverAvailableProfiles
+          let expectedPaths =
+                [ absoluteRoot </> "okf-v0-2.dhall",
+                  absoluteRoot </> "postgresql.dhall",
+                  absoluteRoot </> "profile-documentation.dhall"
+                ]
+              passed =
+                searchRoots == [absoluteRoot, absoluteRoot]
+                  && descriptorPaths == expectedPaths
+          unless passed $
+            putStrLn
+              ( "profile discovery listing mismatch:\nroots: "
+                  <> show searchRoots
+                  <> "\npaths: "
+                  <> show descriptorPaths
+              )
+          pure passed
+      )
+  where
+    setMaybeEnv key = \case
+      Nothing -> unsetEnv key
+      Just envValue -> setEnv key envValue
+
+-- | The profile picker preserves ADR 2's exact 1 / 2 / 130 exits, while an
+-- explicit path returns even with a deliberately unavailable configuration.
+testProfilePickerExitCodes :: IO Bool
+testProfilePickerExitCodes =
+  withRepositoryPath "profile picker exits" ("docs" </> "profiles" </> "postgresql.dhall") $ \descriptor -> do
+    absoluteDescriptor <- makeAbsolute descriptor
+    temporaryDirectory <- getTemporaryDirectory
+    originalRoots <- lookupEnv profileSearchRootsEnvVar
+    bracket
+      (createTempDirectory temporaryDirectory "okf-cli-profile-picker")
+      ( \root -> do
+          setMaybeEnv profileSearchRootsEnvVar originalRoots
+          removeDirectoryRecursive root
+      )
+      ( \root -> do
+          setEnv profileSearchRootsEnvVar root
+          let unavailable = FzfConfig "fzf" False False False False
+              pickerReady binary = FzfConfig binary True True False False
+          explicit <- resolveProfilePathWith unavailable (Just absoluteDescriptor)
+          unavailableExit <- try @ExitCode (resolveProfilePathWith unavailable Nothing)
+          noCandidatesExit <- try @ExitCode (resolveProfilePathWith (pickerReady "/usr/bin/false") Nothing)
+
+          let localDescriptor = root </> "postgresql.dhall"
+              fakeFzf = root </> "fzf-cancel"
+          Text.IO.writeFile localDescriptor (Text.pack absoluteDescriptor <> "\n")
+          Text.IO.writeFile fakeFzf "#!/bin/sh\n/bin/cat >/dev/null\nexit 130\n"
+          permissions <- getPermissions fakeFzf
+          setPermissions fakeFzf permissions {executable = True}
+          cancelledExit <- try @ExitCode (resolveProfilePathWith (pickerReady fakeFzf) Nothing)
+
+          pure
+            ( explicit == absoluteDescriptor
+                && unavailableExit == Left (ExitFailure 2)
+                && noCandidatesExit == Left (ExitFailure 1)
+                && cancelledExit == Left (ExitFailure 130)
+            )
+      )
+  where
+    setMaybeEnv key = \case
+      Nothing -> unsetEnv key
+      Just envValue -> setEnv key envValue
+
+testEffectiveProfileSources :: IO Bool
+testEffectiveProfileSources =
+  withRepositoryPath "effective profile sources" ("docs" </> "profiles") $ \profileRoot -> do
+    absoluteRoot <- makeAbsolute profileRoot
+    originalRoots <- lookupEnv profileSearchRootsEnvVar
+    bracket
+      (setEnv profileSearchRootsEnvVar absoluteRoot)
+      (\() -> setMaybeEnv profileSearchRootsEnvVar originalRoots)
+      ( \() -> do
+          effective <- resolveEffectiveProfileSources ["registry"] False
+          registryOnly <- resolveEffectiveProfileSources ["registry"] True
+          pure $
+            case (effective, registryOnly) of
+              ( ResolvedProfileSource (RegistrySource "registry" _) RegistryFlagOrigin : discovered,
+                [ResolvedProfileSource (RegistrySource "registry" _) RegistryFlagOrigin]
+                ) ->
+                  map (\ResolvedProfileSource {resolvedSource = source} -> source) discovered
+                    == [ DescriptorSource (absoluteRoot </> "okf-v0-2.dhall"),
+                         DescriptorSource (absoluteRoot </> "postgresql.dhall"),
+                         DescriptorSource (absoluteRoot </> "profile-documentation.dhall")
+                       ]
+                    && all
+                      (\ResolvedProfileSource {sourceOrigin} -> sourceOrigin == ProfileDiscoveryOrigin [absoluteRoot])
+                      discovered
+              _ -> False
+      )
+  where
     setMaybeEnv key = \case
       Nothing -> unsetEnv key
       Just envValue -> setEnv key envValue
