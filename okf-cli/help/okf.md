@@ -57,7 +57,9 @@ WHAT THE okf TOOL DOES
   computations  List the attested computations a bundle declares.
   concepts      List the concepts a bundle holds, with optional filters.
   id            Allocate and list profile-declared document IDs.
-  profile       List and inspect profiles published by a registry.
+  profile       List and inspect profiles from registries and local
+                descriptors.
+  profiles      List local profile descriptor paths without opening a menu.
   config        Show and manage okf configuration.
   kit           Install and manage agent skills and subagents.
   assist        Launch an interactive agent session with installed okf skills.

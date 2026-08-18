@@ -48,4 +48,5 @@ SEARCH ROOTS
 SEE ALSO
 
   okf help interactive   Choosing an omitted BUNDLE with fzf.
+  okf help profiles      The same discovery, for profile descriptors.
   okf help ids           The strict document-handle grammar.

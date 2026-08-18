@@ -27,6 +27,11 @@ SEARCH ORDER
     4. ~/.okf/config.dhall
     5. built-in defaults
 
+  profiles.registries is the file-level layer only. A repeatable --registry
+  flag, then OKF_PROFILE_REGISTRIES holding a JSON array, then the legacy
+  singular OKF_PROFILE_REGISTRY each replace it before the file is consulted.
+  Run 'okf profile sources' to see which layer won and why.
+
   For agent.*, the project file and the global file are both read, and each
   setting is resolved separately across them, highest first:
 
