@@ -436,14 +436,18 @@ Entry points, in rough order of how much machinery they need:
 ```bash
 okf trust BUNDLE                        # tier, status, staleness per concept
 okf sources BUNDLE                      # recorded provenance with signals
-okf concepts BUNDLE --json --show generated.by
+okf concepts BUNDLE --json
 okf graph BUNDLE --json                 # nodes and edges for a traversal
 ```
 
 ```text
-$ okf concepts examples/ddd-ordering --type Metric --json --show generated.by
-[{"fields":{"generated.by":"human:nadeem"},"id":"metrics/order-total-value","path":"metrics/order-total-value.md","title":"Order total value","type":"Metric"}]
+$ okf concepts examples/ddd-ordering --type Metric --json
+[{"description":"The monetary total of a placed order, as reported to the business.","generated":{"at":"2026-08-01T00:00:00Z","by":"human:nadeem"},"key":"order-total-value","status":"stable","tags":["ddd","ordering","metric"],"title":"Order total value","type":"Metric"}]
 ```
+
+The JSON row is the complete stored frontmatter object. It has no file-derived
+concept ID or path and no Markdown body; filters select rows, while `--show`
+remains a text-column option.
 
 Because staleness is computed against today, `okf trust` output changes with the
 date even when the bundle does not — cache its result at your peril.

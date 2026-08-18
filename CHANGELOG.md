@@ -7,6 +7,16 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking: `okf concepts BUNDLE --json` now emits each selected concept's
+  complete stored frontmatter object.** The former CLI-owned
+  `id`/`path`/`type`/`title`/`fields` envelope is gone; file-derived identity,
+  Markdown bodies, and derived readings are not added. Filters still select the
+  array entries in concept-ID order, while `--show` affects text columns only.
+  The exported `conceptReportJson` Haskell API changes from `[Text] -> [Concept]
+  -> Aeson.Value` to `[Concept] -> Aeson.Value`.
+
 ## [0.6.0.1] - 2026-08-16
 
 ### Fixed

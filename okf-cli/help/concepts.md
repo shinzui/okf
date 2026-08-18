@@ -104,13 +104,16 @@ CHECKING THE QUESTION AGAINST A PROFILE
 
 JSON OUTPUT
 
-  okf concepts BUNDLE --show status --json
+  okf concepts BUNDLE --json | jq '.[] | select(.status == "draft")'
 
-  An array of objects with stable keys id, path, type, title, and fields. title
-  is null when the concept has none, and fields is present even when no --show
-  key was given, so a consumer never has to test for it. The values under fields
-  are the raw frontmatter values rather than the display text a column shows: a
-  list comes back as a list.
+  The array contains one complete parsed frontmatter object per selected
+  concept, in concept-ID order. Filters still choose which concepts enter the
+  array. Each object preserves ordinary producer-defined keys and structured
+  values, so the example reads status directly rather than through a wrapper.
+
+  File-derived concept IDs and paths, Markdown bodies, derived readings, and a
+  CLI-owned fields envelope are absent. --show adds columns to text output only;
+  it never projects or limits JSON output.
 
 SEE ALSO
 

@@ -617,7 +617,8 @@ cabal run okf -- concepts BUNDLE
 cabal run okf -- concepts BUNDLE --type TYPE
 cabal run okf -- concepts BUNDLE --where KEY=VALUE
 cabal run okf -- concepts BUNDLE --has KEY --missing KEY
-cabal run okf -- concepts BUNDLE --show KEY --json
+cabal run okf -- concepts BUNDLE --show KEY
+cabal run okf -- concepts BUNDLE --json
 cabal run okf -- concepts BUNDLE --profile PROFILE
 ```
 
@@ -718,14 +719,18 @@ deviation; that is `okf validate --profile`'s job.
 ### JSON output
 
 ```bash
-cabal run okf -- concepts examples/ddd-ordering --show status --json
+cabal run okf -- concepts examples/ddd-ordering --json \
+  | jq '.[] | select(.status == "draft")'
 ```
 
-An array of objects with stable keys `id`, `path`, `type`, `title`, and `fields`.
-`title` is `null` when the concept has none, and `fields` is present even when no
-`--show` key was given, so a consumer never has to test for it. The values under
-`fields` are the raw frontmatter values rather than the display text a column
-shows — a list comes back as a list.
+The array contains one complete parsed frontmatter object per selected concept,
+in concept-ID order. Filters still choose which concepts enter the array, but
+they do not alter those objects. Producer-defined keys and structured values are
+ordinary top-level JSON values, so the example reads `status` directly.
+
+File-derived concept IDs and paths, Markdown bodies, derived readings, and a
+CLI-owned `fields` envelope are absent. `--show` adds columns to text output
+only; it never projects or limits JSON output.
 
 
 ## id

@@ -40,6 +40,12 @@ The fourth is precedence between two sets okf already maintains that overlap:
 `Okf.Document.coreFrontmatterFields`, the keys OKF itself owns, and the keys a
 profile declares. `status` is in both.
 
+The fifth is what a machine-readable concept listing represents. A CLI-owned
+row can mix stored frontmatter with identity derived from a file path, projected
+defaults, and fields requested for a human-readable table. That makes a consumer
+reverse the presentation layer before it can recover the document it wanted to
+query.
+
 
 ## Decision
 
@@ -91,6 +97,14 @@ everywhere. The base map is a scope only where it can actually govern a concept:
 when the profile declares no types at all, and when `allowUnknownTypes = True`,
 whose concepts of an undeclared type fall back to exactly those rules.
 
+**Machine-readable concept listings expose stored frontmatter directly.**
+`okf concepts --json` emits one complete parsed frontmatter object for each
+selected concept. `filterConcepts` selects concepts before rendering and
+preserves their core-provided order, so the JSON array follows concept-ID order
+without adding the concept ID to each value. File-derived identity and paths,
+Markdown bodies, derived trust or staleness readings, and CLI-owned envelopes
+are absent. `--show` is a text-column option and has no effect on JSON.
+
 
 ## Consequences
 
@@ -140,3 +154,10 @@ for.
 Nothing here changes what `okf validate --profile` does. `okf concepts` never
 reports a bundle deviation, and duplicating that would give two commands that
 disagree about severity.
+
+The JSON contract means a consumer can inspect arbitrary producer-defined keys
+and nested values without first naming them with `--show`, and a missing key
+stays missing rather than becoming a projected default. The tradeoff is that a
+consumer needing a concept ID, source path, Markdown body, or derived trust
+reading must use the corresponding core model or purpose-specific command; the
+listing does not mix those distinct concerns into frontmatter.

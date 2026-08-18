@@ -51,11 +51,11 @@ with one of those names.
       including arbitrary keys, lists, nested objects, non-ASCII text, concept order, and
       the absence of the old envelope.
 - [x] (2026-08-18 13:56Z) Run `cabal build all` and `cabal test okf-cli-test` after the renderer change.
-- [ ] Milestone 2: update command help, both user guides, the root and CLI changelogs, and
+- [x] (2026-08-18 14:00Z) Milestone 2: update command help, both user guides, the root and CLI changelogs, and
       the durable query contract in `docs/adr/15-querying-a-bundle-and-where-filter-semantics-live.md`.
-- [ ] Run the manual fixture and example-bundle checks, `cabal test all`, and the repository
+- [x] (2026-08-18 14:01Z) Run the manual fixture and example-bundle checks, `cabal test all`, and the repository
       formatter check.
-- [ ] Complete the ADR distillation pass and fill in Outcomes & Retrospective.
+- [x] (2026-08-18 14:01Z) Complete the ADR distillation pass and fill in Outcomes & Retrospective.
 
 
 ## Surprises & Discoveries
@@ -67,6 +67,13 @@ with one of those names.
   line 1, column 6`; running the built executable through the same `cabal run` command then
   produced the expected four-row JSON summary. Running `cabal build all` immediately before
   piped manual checks prevents this transient contamination.
+
+- Observation: Concurrent Cabal invocations cannot safely share this repository's
+  `dist-newstyle` build directory.
+  Evidence: three simultaneous manual `cabal run` checks raced while rebuilding the
+  executable; one reported `package.conf.inplace already exists`, and all three fed build
+  chatter to `jq`. A sequential `cabal build all` repaired the partial state, after which
+  every manual check passed in sequence.
 
 
 ## Decision Log
@@ -105,10 +112,32 @@ with one of those names.
   `Aeson.Object` is sufficient.
   Date: 2026-08-18
 
+- Decision: Extend ADR 15 as the sole durable record for this output contract; keep the
+  observed Cabal command-scheduling constraints in this ExecPlan.
+  Rationale: Frontmatter-only JSON is part of the lasting `okf concepts` query surface that
+  ADR 15 already owns. First-run stdout chatter and shared-build-directory races are transient
+  execution details, not architectural constraints on OKF consumers.
+  Date: 2026-08-18
+
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+`okf concepts BUNDLE --json` now returns one complete stored frontmatter object per selected
+concept and nothing from the former CLI envelope. The exported renderer takes only the
+selected concepts, and a focused `Aeson.Value` regression test pins arbitrary scalar, list,
+nested, list-of-object, non-ASCII, and ordering behavior while excluding file identity and
+Markdown bodies.
+
+The live help, CLI guide, v0.2 consumer guide, root and CLI changelogs, and ADR 15 now state
+the same contract. Filters still select concepts before rendering, `--show` remains a
+text-only column option, and the breaking command-output and Haskell API changes are called
+out under `Unreleased`.
+
+Validation succeeded with `cabal build all`, `cabal test okf-cli-test`, and `cabal test all`;
+both package test suites passed. The fixture, filtered-result, `--show` hash-equivalence,
+empty-result, and Metric example checks produced the expected values. `nix fmt --
+--fail-on-change --no-cache` completed with zero changed files. No work remains in this plan;
+version changes and publishing remain intentionally outside its scope.
 
 
 ## Context and Orientation
@@ -542,3 +571,10 @@ argument from `conceptReportJson`.
 Revision note (2026-08-18 13:56Z): Recorded Milestone 1 implementation and validation,
 including the transient first-run `cabal run` stdout contamination discovered during the
 fixture check. The remaining plan is unchanged.
+
+Revision note (2026-08-18 14:00Z): Recorded the completed Milestone 2 documentation and ADR
+edits, plus the observed need to run Cabal manual checks sequentially. Final whole-repository
+validation and retrospective remain.
+
+Revision note (2026-08-18 14:01Z): Recorded successful whole-repository validation, completed
+the ADR distillation judgment, and closed the plan with its outcomes and retrospective.
