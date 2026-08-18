@@ -14,6 +14,7 @@ The help output lists these commands:
 
 ```text
 bundles
+profiles
 validate
 index
 log
@@ -99,6 +100,30 @@ Hidden, symlinked, common build, missing, and unreadable directories are
 skipped. A bundle whose top directory has neither an index nor a concept may be
 reported as its first qualifying subdirectory; set a more specific root or pass
 the intended path explicitly when that happens.
+
+
+## profiles
+
+List local Dhall files that decode as profile descriptors, without opening a
+menu or requiring `fzf` or a terminal.
+
+```bash
+cabal run okf -- profiles
+cabal run okf -- profiles --json
+OKF_PROFILE_ROOTS=docs/profiles:house/profiles cabal run okf -- profiles
+```
+
+Text output is one normalized path per line in sorted, duplicate-free order.
+The default search root is the current directory; `OKF_PROFILE_ROOTS` replaces
+it with a colon-separated list. Missing roots and no candidates are successful
+empty results. JSON is a top-level array whose entries contain `path`, `name`,
+and `okfVersion`, plus `description` when the descriptor supplies one.
+
+Discovery searches four levels deep and skips hidden, symlinked, unreadable,
+and common build directories. A `.dhall` file qualifies only when it evaluates
+and decodes as a profile. Local imports and already cached integrity-protected
+imports work, but automatic discovery never performs a remote fetch. A bad or
+unavailable candidate is skipped rather than breaking the command.
 
 
 ## validate
@@ -199,12 +224,14 @@ against it. See [Profiles](profiles.md) for the descriptor schema.
 
 ```bash
 cabal run okf -- validate [BUNDLE] --profile PROFILE.dhall
+cabal run okf -- validate [BUNDLE] --pick-profile
 cabal run okf -- validate [BUNDLE] --profile PROFILE.dhall --profile-enforce
 ```
 
 | Option | Effect |
 |--------|--------|
 | `--profile PROFILE` | Run profile checks after structural validation. Deviations print to stderr (each line prefixed `profile:`). By default they are **advisory** — they do not change the exit code. |
+| `--pick-profile` | Choose a discovered local descriptor interactively. Cannot be combined with `--profile`; bare validation remains profile-free. |
 | `--profile-enforce` | Make profile deviations fail the command (non-zero exit). |
 
 Exit codes with `--profile`:
@@ -828,11 +855,12 @@ no `idField` is a hard error.
 
 ## profile
 
-List and inspect the profiles a *registry* publishes, and generate documentation
-for one. A registry is any Dhall expression that evaluates to a record of profile
-values; the [okf-profiles](https://github.com/shinzui/okf-profiles) repository is
-one. All three subcommands behave identically whether or not a terminal is
-attached, and only `profile document --write` touches the filesystem.
+List and inspect profiles from effective registry and local-descriptor sources,
+and generate documentation for one. A registry is any Dhall expression that
+evaluates to a record of profile values; the
+[okf-profiles](mori://shinzui/okf-profiles) repository is one. `list` and `show`
+are always non-interactive. Input-free `document` opens the local descriptor
+picker, and only `profile document --write` touches the filesystem.
 
 ```bash
 cabal run okf -- profile list \
@@ -845,6 +873,7 @@ cabal run okf -- profile list \
 
 cabal run okf -- profile show postgresql --registry /path/to/okf-profiles
 cabal run okf -- profile list --json --registry /path/to/okf-profiles
+cabal run okf -- profile list --no-local
 ```
 
 A bare `okf profile` means `okf profile list`.
@@ -889,6 +918,7 @@ unless you ask, which is what keeps regeneration byte-identical.
 | Flag | Applies to | Meaning |
 |------|------------|---------|
 | `--registry REGISTRY` | `list`, `show`, `document` | A Dhall file, a directory holding `package.dhall`, or a Dhall expression such as a hash-pinned URL. Repeat the flag to merge sources in the order given. |
+| `--no-local` | `list`, `show`, `document` | Do not append descriptors discovered under `OKF_PROFILE_ROOTS` (the current directory by default). |
 | `--json` | `list`, `show` | Emit JSON instead of text. |
 | `EXPORT` | `show`, `document` | The dotted export path printed in the `EXPORT` column. Optional when the registry publishes exactly one profile. |
 | `--profile PROFILE` | `document` | Document a Dhall descriptor file directly instead of a registry export. Cannot be combined with `EXPORT` or `--registry`. |
@@ -905,6 +935,12 @@ The source list comes from the first winning layer: repeated `--registry` flags,
 default. Layers replace rather than concatenate; sources inside the winning list
 merge in order and exact duplicates are dropped. Existing configuration files
 using `profiles.registry` still load as one-element lists.
+
+Discovered descriptors are a separate source class appended after that winning
+registry list, including when registry flags were explicit. Each file is one
+source and uses its basename without `.dhall` as its export. `--no-local`
+suppresses them. A collision with a registry or another local descriptor remains
+visible and must be narrowed rather than silently resolved.
 
 The built-in default is the `okf-profiles` package pinned by tag and sha256 hash.
 The pin means the first run fetches over the network and every later run is
@@ -930,7 +966,9 @@ which is all `okf validate --profile` needs — there is no separate install ste
 | `0` | the listing or profile was printed, or the documentation was previewed or written |
 | `1` | every selected source failed or published no profiles, a named lookup had any failed source, or the requested export was missing or ambiguous |
 | `1` | the descriptor named by `--profile` failed to load, or failed to compile because it contradicts itself |
-| `1` | `--write` was passed without `--out`, or `--profile` was combined with `EXPORT` or `--registry` |
+| `1` | no discovered descriptor was available to the input-free picker, `--write` was passed without `--out`, or `--profile` was combined with `EXPORT` or `--registry` |
+| `2` | the input-free descriptor picker was unavailable; pass `--profile PATH` or a registry export explicitly |
+| `130` | the descriptor picker was cancelled with Esc or ctrl-c; nothing is printed |
 
 Every failure prints to stderr. A load failure also explains what a registry
 reference may be and how to work offline; an unknown or omitted `EXPORT` lists

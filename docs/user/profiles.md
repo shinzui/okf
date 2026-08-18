@@ -824,6 +824,40 @@ to check it, and a profile can demand that the means be named and be findable �
 neither can say a run succeeded.
 
 
+## Local profile discovery
+
+`okf profiles` answers which descriptor files are available in the current
+repository without requiring you to know their paths:
+
+```bash
+OKF_PROFILE_ROOTS=docs/profiles okf profiles
+```
+
+```text
+docs/profiles/okf-v0-2.dhall
+docs/profiles/postgresql.dhall
+docs/profiles/profile-documentation.dhall
+```
+
+The default root is the current directory. `OKF_PROFILE_ROOTS` replaces it with
+a colon-separated list. Discovery searches four levels deep, skips hidden,
+symlinked, unreadable, and common build directories, and returns normalized,
+sorted, duplicate-free paths. Missing roots and an empty result both succeed.
+`--json` returns objects with `path`, `name`, `okfVersion`, and an optional
+`description`.
+
+Qualification is structural: every `.dhall` candidate is evaluated and must
+decode as a profile. Local imports work. Discovery may reuse an
+integrity-protected remote import already present in Dhall's semantic cache, but
+it never fetches from the network. An unreadable, malformed, non-profile, or
+uncached remote-dependent file is omitted without breaking the listing.
+
+Use `okf validate BUNDLE --pick-profile` to choose one interactively. A bare
+`okf validate BUNDLE` deliberately remains profile-free. With no explicit
+profile input, `okf profile document` opens the same picker; passing
+`--profile PATH`, an `EXPORT`, or `--registry` bypasses it.
+
+
 ## Profile registries
 
 Writing a descriptor from scratch is not the only way to get one. A **registry**
@@ -854,6 +888,13 @@ configuration expresses the same setup:
 , …
 }
 ```
+
+After the winning registry list, `okf profile list` appends every discovered
+local descriptor as its own source. `profile show` and registry-backed
+`profile document` resolve across that same combined list. Local descriptors
+stay present even with explicit `--registry` flags; pass `--no-local` to
+suppress exactly them. Their export is the filename without `.dhall`, and a
+duplicate export remains an ambiguity rather than being chosen by precedence.
 
 With no override, okf currently pins v0.10.0 of that catalogue. It reports the
 following ten profiles; the final `DESCRIPTION` column is omitted here for
@@ -932,6 +973,10 @@ display and are not unique identifiers.
 
 Nothing about profile registries requires the network unless you point okf at a
 remote one. Passing `--registry` with a local checkout is fully offline.
+
+Automatic local discovery is stricter: it never initiates a remote request,
+even if a candidate descriptor contains an HTTPS import. Explicit `--profile`
+and `--registry` inputs retain the ordinary Dhall fetch-and-cache behavior.
 
 The built-in default is a URL, but it is pinned by integrity hash, so Dhall
 writes it into its content-addressed cache under `~/.cache/dhall` on first use
@@ -1291,8 +1336,10 @@ Wrote 4 concepts and 2 index.md files to /tmp/pg-profile
 
 `--write` without `--out` is an error, as is combining `--profile` with an
 `EXPORT` argument or `--registry` — a profile comes from one place or the other,
-never both. Without `--profile` the profile comes from a registry export, using
-the same `--registry` precedence as `okf profile list` and `okf profile show`.
+never both. An explicit `EXPORT` or `--registry` resolves across the same
+effective registry-plus-local list as `okf profile list` and `show`. With no
+profile input at all, the command opens the local descriptor picker. Pass an
+explicit input in scripts and CI.
 
 The root page, `profile.md`, carries the profile's settings, its profile-wide
 frontmatter rules, and a link to each type page. Each type page carries that

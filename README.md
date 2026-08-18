@@ -79,9 +79,11 @@ The CLI surface is intentionally small:
 ```bash
 cabal run okf -- --version
 cabal run okf -- bundles [--json]
+cabal run okf -- profiles [--json]
 cabal run okf -- validate [<bundle>]
 cabal run okf -- validate [<bundle>] --strict
 cabal run okf -- validate [<bundle>] --profile <descriptor>.dhall [--profile-enforce]
+cabal run okf -- validate [<bundle>] --pick-profile
 cabal run okf -- validate [<bundle>] --log-enforce
 cabal run okf -- index [<bundle>] [--write] [--okf-version MAJOR.MINOR]
 cabal run okf -- trust [<bundle>]
@@ -95,6 +97,9 @@ cabal run okf -- show [<bundle>] [<concept-id-or-document-id>] [--profile <descr
 cabal run okf -- id next [<bundle>] <PREFIX> --profile <descriptor>
 cabal run okf -- id list [<bundle>] --profile <descriptor>
 cabal run okf -- config show
+cabal run okf -- profile list [--registry <registry>] [--no-local]
+cabal run okf -- profile show [<export>]
+cabal run okf -- profile document [--profile <descriptor>.dhall]
 cabal run okf -- kit list
 cabal run okf -- assist --print-command "PROMPT"
 cabal run okf -- completions <bash|zsh|fish>
@@ -134,6 +139,10 @@ offers a concept menu with a preview pane. Passing paths explicitly bypasses the
 bundle picker, so scripts and CI stay non-interactive. fzf is an optional
 dependency; without it, an omitted-bundle command explains which argument to
 pass.
+`profiles` similarly lists locally discovered descriptor files under the current
+directory or `OKF_PROFILE_ROOTS`, without opening a menu. Automatic discovery
+never fetches remote imports. `validate --pick-profile` explicitly selects a
+descriptor; bare validation remains profile-free.
 `id next` allocates the next numbered handle
 without writing, and `id list` prints all allocated handles. `config` shows or initializes the Dhall
 configuration used by the agent commands. `kit` installs reusable AI-agent
@@ -177,14 +186,14 @@ such as `ADR-7`, stored in an ordinary frontmatter key. The `okf id` command
 lists and allocates those handles, and `okf show` resolves them after canonical
 path lookup.
 You do not have to write a descriptor from scratch. `okf profile list` shows what
-a *registry* — any Dhall expression evaluating to a record of profiles, such as
-the separate [okf-profiles](mori://shinzui/okf-profiles) repository —
-publishes, and `okf profile show` prints one profile's complete rule set along
-with the two lines needed to pass it to `okf validate --profile`.
+registries and locally discovered descriptor files publish, and `okf profile
+show` prints one profile's complete rule set. `okf profiles` lists only the
+local descriptor paths, which is useful when you do not yet know their names.
 
 ```bash
 cabal run okf -- profile list
 cabal run okf -- profile show postgresql
+cabal run okf -- profiles
 ```
 
 Repeat `--registry` to merge a public catalogue with house registries; the
@@ -193,7 +202,9 @@ live in `profiles.registries` or in the JSON-array environment variable
 `OKF_PROFILE_REGISTRIES`. The legacy singular `OKF_PROFILE_REGISTRY` and older
 `profiles.registry` configuration spelling remain supported. Listings preserve
 successful rows when another source fails, while named lookups refuse to guess
-through a failed source or duplicate export.
+through a failed source or duplicate export. Local descriptors follow the
+winning registry list even when `--registry` is explicit; `--no-local` suppresses
+them.
 
 The built-in default is pinned to `mori://shinzui/okf-profiles` v0.10.0, which
 publishes ten OKF 0.2 profiles with descriptions. Repository maintainers move
@@ -214,6 +225,8 @@ process:okf-profile-document`, so the output passes `okf validate --strict`
 with no extra flag. `--generated-by ACTOR` and `--generated-at RFC3339` name a
 different producer and a time, and `--okf-version MAJOR.MINOR` declares the OKF
 version in the generated bundle's root index just as `okf index` does.
+With no explicit profile or registry input, `profile document` opens the local
+descriptor picker. Scripts should pass `--profile PATH` or a registry export.
 
 ```bash
 cabal run okf -- profile document --profile docs/profiles/postgresql.dhall --out /tmp/pg-profile --write --okf-version 0.2

@@ -198,7 +198,7 @@ additive local-source composition, basename exports, and picker compatibility.
 |---|-------|------|-----------|-----------|--------|
 | 60 | Refresh the default profile registry pin and prove the current catalogue decodes | [docs/plans/60-refresh-the-default-profile-registry-pin-and-prove-the-current-catalogue-decodes.md](../plans/60-refresh-the-default-profile-registry-pin-and-prove-the-current-catalogue-decodes.md) | None | None | Complete |
 | 61 | Read profiles from more than one registry | [docs/plans/61-read-profiles-from-more-than-one-registry.md](../plans/61-read-profiles-from-more-than-one-registry.md) | None | EP-60 | Complete |
-| 62 | Discover and select local profile descriptors in the repository | [docs/plans/62-discover-and-select-local-profile-descriptors-in-the-repository.md](../plans/62-discover-and-select-local-profile-descriptors-in-the-repository.md) | EP-61 | None | In Progress |
+| 62 | Discover and select local profile descriptors in the repository | [docs/plans/62-discover-and-select-local-profile-descriptors-in-the-repository.md](../plans/62-discover-and-select-local-profile-descriptors-in-the-repository.md) | EP-61 | None | Complete |
 | 63 | Show where every profile came from and how to refresh it | [docs/plans/63-show-where-every-profile-came-from-and-how-to-refresh-it.md](../plans/63-show-where-every-profile-came-from-and-how-to-refresh-it.md) | EP-60, EP-61, EP-62 | None | Not Started |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
@@ -368,10 +368,10 @@ layering for the `profiles` block.
 - [x] (2026-08-18 19:42Z) EP-61: `--registry` is repeatable, `OKF_PROFILE_REGISTRIES` accepts a JSON array, and legacy singular `OKF_PROFILE_REGISTRY` still works
 - [x] (2026-08-18 19:42Z) EP-61: `okf profile list` prints one merged, source-grouped listing with a source label on every row
 - [x] (2026-08-18 19:42Z) EP-61: listing tolerates partial source failure, while named `profile show` / `profile document` resolution fails closed on a failed or ambiguous source set
-- [ ] EP-62: `Okf.Profile.Discovery` finds descriptor files on disk and is covered by fixtures that never touch the network
-- [ ] EP-62: `okf profiles` lists discovered local descriptors non-interactively, and an empty result exits 0
-- [ ] EP-62: local descriptors appear in `okf profile list` as their own source
-- [ ] EP-62: `okf validate --pick-profile` and a profile-less `okf profile document` open a picker over discovered descriptors, honouring the 1 / 2 / 130 exit contract while bare `okf validate BUNDLE` remains non-interactive
+- [x] (2026-08-18 20:50Z) EP-62: `Okf.Profile.Discovery` finds descriptor files on disk and is covered by fixtures that never touch the network
+- [x] (2026-08-18 20:50Z) EP-62: `okf profiles` lists discovered local descriptors non-interactively, and an empty result exits 0
+- [x] (2026-08-18 20:50Z) EP-62: local descriptors appear in `okf profile list` as their own source
+- [x] (2026-08-18 20:50Z) EP-62: `okf validate --pick-profile` and a profile-less `okf profile document` open a picker over discovered descriptors, honouring the 1 / 2 / 130 exit contract while bare `okf validate BUNDLE` remains non-interactive
 - [ ] EP-63: an inspection command prints every effective profile source with the provenance of each
 - [ ] EP-63: `okf profile list` uses a deterministic compact two-line row layout for the current catalogue's long descriptions, with `--wide` for full text
 - [ ] EP-63: an explicitly opt-in flag compares the pinned catalogue tag against upstream and says how to update it
@@ -460,6 +460,15 @@ latest Hackage release is 1.42.3. Its high-level `InputSettings` does not expose
 Replacing the status's `_remote` and `_remoteBytes` callbacks with rejecting actions lets
 relative local imports and cached integrity-protected imports resolve normally while
 guaranteeing an uncached remote import is skipped rather than fetched.
+
+**Structural discovery is fast enough without a textual pre-filter** (2026-08-18, EP-62
+implementation). The repository-root scan deliberately includes valid descriptor fixtures,
+so it evaluates substantially more than the three files under `docs/profiles/`; it still
+completed in 1.93 seconds on the development machine. A deliberate all-true qualification
+mutation made four discovery tests fail, while a mode-000 candidate was skipped without
+hiding a readable neighbor. The evidence supports ADR 18's structural rule and
+failure-locality without adding a size limit, filename convention, or repository-specific
+fixture exclusion.
 
 **Partial loading and named resolution need different safety rules** (2026-08-18,
 architecture validation). Returning local entries while one remote source is offline is
@@ -634,13 +643,16 @@ reconstruct precedence.
 
 ## Outcomes & Retrospective
 
-EP-60 and EP-61 are complete. The default exposes ten current OKF 0.2 profiles, and profile
+EP-60, EP-61, and EP-62 are complete. The default exposes ten current OKF 0.2 profiles, and profile
 commands now resolve ordered registry lists with backwards-compatible configuration and
 environment fallbacks, source-labelled text and provenance JSON, partial survey results,
-and fail-closed named lookup. The source model remained additive around `RegistryEntry`,
-and its structured origin is recorded in ADR 3 for EP-63 to render directly. EP-62 is now
-the first dependency-ready incomplete child plan; EP-63 remains blocked on EP-62. The known
-wide-description rendering and raw Dhall failure text remain intentionally queued for EP-63.
+and fail-closed named lookup. Local descriptors are discovered with bounded, network-silent
+evaluation, append as one-file sources, list through `okf profiles`, and can be selected
+through the optional picker without changing bare validation. The source model remained
+additive around `RegistryEntry`, and its structured origins are recorded in ADR 3 and ADR 18
+for EP-63 to render directly. EP-63 is now dependency-ready and is the only incomplete child
+plan. The known wide-description rendering and raw Dhall failure text remain intentionally
+queued there.
 
 
 ## Revision Note (2026-08-18)

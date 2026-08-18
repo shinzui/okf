@@ -44,6 +44,24 @@ WHERE BUNDLES COME FROM
   bundle path explicitly when that happens. See 'okf help bundles' for the full
   discovery and JSON-listing contract.
 
+THE PROFILE MENU
+
+  Profile descriptors have their own picker. It opens only when requested:
+
+    okf validate BUNDLE --pick-profile
+    okf profile document
+
+  Bare `okf validate BUNDLE` still validates without a profile. Passing
+  --profile PATH always bypasses profile-picker detection and process spawning.
+  For `profile document`, an explicit --profile PATH, EXPORT, or --registry also
+  bypasses the menu.
+
+  The menu searches for `.dhall` files that decode as profiles and shows path,
+  profile name, and OKF version. Its preview is the same profile detail printed
+  by `okf profile show`. Set OKF_PROFILE_ROOTS to a colon-separated root list;
+  the default is the current directory. `okf profiles` lists the same paths
+  without a menu, and an empty listing succeeds.
+
 THE CONCEPT MENU
 
   Concept selection remains specific to okf show. When CONCEPT_ID is omitted,
@@ -64,7 +82,7 @@ KEYS
 EXIT STATUS
 
   0    the selected operation completed successfully
-  1    no bundles found, no concepts found for show, or the selected operation
+  1    no bundles, profiles, or concepts found, or the selected operation
        reported its ordinary failure
   2    no interactive selection available, or fzf failed
   130  you cancelled with Esc or ctrl-c

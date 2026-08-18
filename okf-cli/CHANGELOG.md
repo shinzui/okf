@@ -9,6 +9,14 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- `okf profiles` lists local descriptor paths and emits their metadata with
+  `--json`; `OKF_PROFILE_ROOTS` supplies colon-separated search roots. Profile
+  listings and named lookups append those descriptors after registry sources,
+  with `--no-local` available for registry-only resolution.
+- `okf validate --pick-profile` and input-free `okf profile document` use the
+  optional `fzf` descriptor picker. Explicit paths and registry inputs stay
+  non-interactive, with exit codes 1 for no candidates, 2 for unavailable
+  selection, and 130 for cancellation.
 - `--registry` is repeatable across `profile list`, `show`, and `document`;
   `OKF_PROFILE_REGISTRIES` accepts the same ordered list as a JSON array. Text
   listings add a `SOURCE` column, and `profile list --json` includes the source

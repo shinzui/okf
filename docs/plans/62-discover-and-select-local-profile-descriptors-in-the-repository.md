@@ -86,11 +86,11 @@ problems; those belong to
 - [x] (2026-08-18 20:43Z) Make `--profile` optional on `okf profile document` and resolve it the same way
 - [x] (2026-08-18 20:43Z) Honour the 1 / 2 / 130 exit contract and test each code
 - [x] (2026-08-18 20:43Z) Verify shell completion through optparse-applicative's live parser protocol
-- [ ] Run `cabal build all` and `cabal test all` clean
-- [ ] Paste real transcripts for listing, picking, and each exit code into this plan
-- [ ] Update `okf-cli/help/profiles.md`, `okf-cli/help/interactive.md`, `docs/user/profiles.md`, `docs/user/cli.md`, `README.md`
-- [ ] Update `CHANGELOG.md`, `okf-core/CHANGELOG.md`, `okf-cli/CHANGELOG.md`
-- [ ] Implement and verify the rules recorded in ADR 18 on local descriptor discovery
+- [x] (2026-08-18 20:50Z) Run `cabal build all` and `cabal test all` clean
+- [x] (2026-08-18 20:50Z) Paste real transcripts for listing, picking, and each exit code into this plan
+- [x] (2026-08-18 20:50Z) Update `okf-cli/help/profiles.md`, `okf-cli/help/interactive.md`, `docs/user/profiles.md`, `docs/user/cli.md`, `README.md`
+- [x] (2026-08-18 20:50Z) Update `CHANGELOG.md`, `okf-core/CHANGELOG.md`, `okf-cli/CHANGELOG.md`
+- [x] (2026-08-18 20:50Z) Implement and verify the rules recorded in ADR 18 on local descriptor discovery
 
 
 ## Surprises & Discoveries
@@ -122,6 +122,49 @@ problems; those belong to
   `--pick-profile`, and `--no-local` without any hand-maintained completion table change.
   Evidence: completion queries against the built executable returned each command or flag
   from the live parser on 2026-08-18.
+
+- Observation: The negative discovery assertions genuinely constrain qualification. With
+  `fileQualifiesAsProfileDescriptor` temporarily changed to return `True` unconditionally,
+  four named tests failed: the walk admitted malformed and non-profile Dhall files, the
+  direct negative vector became all true, a symlink qualified, and both remote fixtures
+  qualified. Restoring the implementation made the full suite pass.
+  Evidence: deliberate mutation run with
+  `cabal test okf-core-test --test-show-details=direct` on 2026-08-18; the mutation was
+  restored before any commit.
+
+- Observation: A real unreadable descriptor does not poison its directory. With mode 000
+  on `valid.dhall`, the same root also contained malformed, non-profile, and remote-import
+  fixtures; discovery printed only `nested/valid-nested.dhall` and exited 0. The original
+  mode was restored immediately.
+  Evidence: `OKF_PROFILE_ROOTS=okf-core/test/fixtures/profile-discovery okf profiles` on
+  2026-08-18.
+
+- Observation: The built binary produced the required listing and picker exit contract.
+  The scoped listing was exactly:
+
+  ```text
+  $ OKF_PROFILE_ROOTS=docs/profiles okf profiles
+  docs/profiles/okf-v0-2.dhall
+  docs/profiles/postgresql.dhall
+  docs/profiles/profile-documentation.dhall
+  ```
+
+  A nonexistent root printed nothing and exited 0. In a terminal, an empty root produced
+  the no-candidate diagnostic naming `OKF_PROFILE_ROOTS` and exited 1. With fzf removed
+  from `PATH`, input-free `profile document` said to pass `--profile PATH` and exited 2.
+  Pressing Esc in the real picker produced no documentation output and exited 130. An
+  explicit descriptor with fzf removed remained inert to the picker:
+
+  ```text
+  $ PATH=/usr/bin:/bin okf validate examples/postgresql-sample \
+      --profile docs/profiles/postgresql.dhall
+  log: schemas/sales/tables/customers: generated date 2026-06-22 has no enclosing log.md
+  log: schemas/sales/tables/orders: generated date 2026-06-22 has no enclosing log.md
+  OK: 2 concepts (okf_version 0.2)
+  log: 2 stale concept advisory/advisories (use --log-enforce to fail)
+  $ echo $?
+  0
+  ```
 
 
 ## Decision Log
@@ -915,7 +958,23 @@ deviating from them needs a reason recorded in the Decision Log.
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+Local descriptor discovery is now a first-class, provenance-carrying profile source.
+`okf profiles` supplies the non-interactive inventory; `profile list`, `show`, and explicit
+registry-backed `document` append those sources unless `--no-local` is passed; and the
+shared picker serves input-free documentation plus explicit `validate --pick-profile`.
+Bare validation and every explicit descriptor path remain non-interactive.
+
+The implementation adds no dependency and preserves the no-network discovery boundary by
+replacing both Dhall remote callbacks while retaining local imports and semantic-cache
+lookup. `cabal build all`, `cabal test all --test-show-details=failures`, and `cabal sdist
+all` pass. A deliberate qualification mutation proved the negative tests fail, and a real
+mode-000 fixture proved filesystem failure remains local to one candidate.
+
+The implementation was reviewed against ADR 18 after validation. Qualification, traversal,
+network behavior, additive source composition, basename exports, picker asymmetry, and exit
+codes all match the recorded decision, so no ADR amendment was necessary. Compact profile
+tables, source inspection, freshness reporting, and sanitizing raw Dhall source failures
+remain intentionally scoped to EP-63.
 
 
 ## Revision Note

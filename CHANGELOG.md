@@ -9,6 +9,14 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- `okf profiles` discovers local Dhall profile descriptors with bounded,
+  network-silent filesystem evaluation; `OKF_PROFILE_ROOTS` selects search
+  roots and `--json` includes descriptor metadata. Discovered descriptors are
+  appended to effective profile sources unless `--no-local` is passed.
+- `okf validate --pick-profile` and input-free `okf profile document` open the
+  shared optional descriptor picker. Explicit inputs bypass picker detection;
+  no candidates, unavailability, and cancellation retain exit codes 1, 2, and
+  130 respectively.
 - Profile commands can read several registries at once. Repeat `--registry`, set
   `OKF_PROFILE_REGISTRIES` to a JSON array, or configure
   `profiles.registries`; listings stay grouped by source and carry source

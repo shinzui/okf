@@ -9,6 +9,10 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- `Okf.Profile.Discovery` finds `.dhall` files that decode as profiles using a
+  bounded, failure-tolerant walk and a loader that rejects fresh remote
+  imports. `ProfileSource` now includes one-file `DescriptorSource` values so
+  local descriptors participate in provenance-aware enumeration.
 - `ProfileSource`, `SourcedProfile`, and `SourceFailure` add provenance-aware,
   ordered multi-source registry enumeration without changing `RegistryEntry` or
   the existing single-registry functions. Partial failures are returned beside

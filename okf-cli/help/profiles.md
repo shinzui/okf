@@ -7,7 +7,10 @@ columns. Profiles are written as Dhall descriptors.
 
 USAGE
 
+  okf profiles
+  okf profiles --json
   okf validate BUNDLE --profile PROFILE.dhall
+  okf validate BUNDLE --pick-profile
   okf validate BUNDLE --profile PROFILE.dhall --profile-enforce
 
 ADVISORY VS ENFORCED
@@ -71,6 +74,26 @@ DOCUMENT IDS
   handle, `okf id list BUNDLE --profile PROFILE.dhall` to list allocations, and
   `okf show BUNDLE ADR-7` to resolve one.
 
+LOCAL DISCOVERY
+
+  `okf profiles` searches the current directory, four levels deep, for `.dhall`
+  files that decode as profile descriptors. It prints normalized paths in
+  sorted, duplicate-free order. --json adds each profile's name, OKF version,
+  and optional description. No candidates is a successful empty result.
+
+  Set OKF_PROFILE_ROOTS to a colon-separated list of directories to search:
+
+    OKF_PROFILE_ROOTS=docs/profiles:house/profiles okf profiles
+
+  Missing, unreadable, hidden, symlinked, and common build directories are
+  skipped. Discovery may resolve local imports and cached integrity-protected
+  imports, but never makes a network request. A descriptor that cannot be read,
+  evaluated without a fetch, or decoded is simply omitted.
+
+  `okf profile list` and `show` append these local descriptors after the
+  effective registry list. Pass --no-local to inspect registry sources only.
+  A local descriptor's export is its filename without `.dhall`.
+
 REGISTRIES
 
   You do not have to write a descriptor from scratch. A registry is any Dhall
@@ -85,10 +108,12 @@ REGISTRIES
     okf profile show postgresql --registry /path/to/okf-profiles
 
   A bare `okf profile` means `okf profile list`. Both subcommands accept
-  --json. Repeat --registry to merge sources; every row starts with a SOURCE
-  label and sources stay grouped in flag order. The EXPORT column reads
-  "(root)" when the reference is itself a profile rather than a record of
-  profiles; the ID FIELD column reads "-" when the profile declares no idField.
+  --json. Repeat --registry to merge registry sources; discovered local
+  descriptors follow them unless --no-local is passed. Every row starts with a
+  SOURCE label and sources stay grouped in resolution order. The EXPORT column
+  reads "(root)" when a registry reference is itself a profile rather than a
+  record of profiles; the ID FIELD column reads "-" when the profile declares
+  no idField.
 
 GENERATING DOCUMENTATION
 
@@ -103,8 +128,10 @@ GENERATING DOCUMENTATION
   and prints a one-line summary. --write without --out is an error, and so is
   combining --profile with an EXPORT argument or --registry.
 
-  Without --profile the profile comes from a registry export, using the same
-  --registry precedence as list and show.
+  With an EXPORT or --registry, the profile comes from the same effective
+  registry-plus-local source list as list and show. With no profile input at
+  all, the command opens a picker over discovered local descriptors. Pass an
+  explicit --profile path or registry EXPORT in scripts and CI.
 
   Each type page shows the EFFECTIVE rules for that type: the profile-wide
   rules and the type's own, already merged. That is the difference from
