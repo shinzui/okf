@@ -7,6 +7,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.7.0.0] - 2026-08-18
+
 ### Added
 
 - `okf profile sources` renders every effective source with its carried origin,
@@ -54,6 +56,7 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   array entries in concept-ID order, while `--show` affects text columns only.
   The exported `conceptReportJson` API changes from `[Text] -> [Concept] ->
   Aeson.Value` to `[Concept] -> Aeson.Value`.
+- Requires `okf-core ^>=0.7.0.0`, released alongside this version.
 
 ### Fixed
 

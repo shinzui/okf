@@ -1,6 +1,6 @@
 cabal-version:      3.4
 name:               okf-core
-version:            0.6.0.1
+version:            0.7.0.0
 synopsis:
   Read, validate, index, and traverse Open Knowledge Format bundles
 
@@ -31,6 +31,7 @@ extra-source-files:
   test/fixtures/**/*.md
   test/fixtures/**/*.py
   test/fixtures/**/*.sql
+  test/fixtures/**/*.txt
 
 common common-options
   ghc-options:

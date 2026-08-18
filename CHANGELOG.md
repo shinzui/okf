@@ -7,6 +7,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.7.0.0] - 2026-08-18
+
 ### Added
 
 - `okf profile sources` loads every effective registry and local descriptor,
