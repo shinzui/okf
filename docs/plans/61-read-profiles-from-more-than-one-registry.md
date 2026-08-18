@@ -70,9 +70,9 @@ command that explains resolution, nor fix the listing's width problems; those ar
 
 ## Progress
 
-- [ ] Define `ProfileSource` and a `SourcedProfile` wrapper without changing `RegistryEntry`
-- [ ] Add multi-source enumeration with a documented collision rule, and cover it with fixtures
-- [ ] Extend `okf-core/test/Main.hs` with the merge, ordering, and collision cases
+- [x] (2026-08-18 19:26Z) Define `ProfileSource` and a `SourcedProfile` wrapper without changing `RegistryEntry`
+- [x] (2026-08-18 19:26Z) Add multi-source enumeration with a documented collision rule, and cover it with fixtures
+- [x] (2026-08-18 19:26Z) Extend `okf-core/test/Main.hs` with the merge, ordering, and collision cases
 - [ ] Change `ProfileSettings` to a list-valued field in `okf-cli/src/Okf/Cli/Config.hs`
 - [ ] Add the legacy single-`registry` shape to the fallback chain in `decodeConfigFile`
 - [ ] Confirm a config file using the old spelling still loads, with a test

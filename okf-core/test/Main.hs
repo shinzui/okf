@@ -173,6 +173,12 @@ main = do
         testIO "loadRegistry reports a bare profile as a root entry" testRegistryRootProfile,
         testIO "resolveRegistryRef prefers package.dhall inside a directory" testResolveRegistryRef,
         testIO "loadRegistry reports a missing registry as Left" testRegistryLoadFailure,
+        test "profile source labels are compact and readable" testProfileSourceLabels,
+        testIO "loadProfileSource attaches source provenance" testProfileSourceWrapper,
+        testIO "loadProfileSources merges registries in source order" testProfileSourcesMergeInOrder,
+        testIO "loadProfileSources retains entries after a partial failure" testProfileSourcesPartialFailure,
+        testIO "findSourcedProfiles exposes cross-source collisions" testProfileSourcesExposeCollisions,
+        testIO "loadProfileSources drops exact duplicate references" testProfileSourcesDropDuplicates,
         test "parseDocumentId accepts only canonical handles" testParseDocumentId,
         testIO "documentIdsInBundle sorts handles by prefix and number" testDocumentIdsInBundle,
         test "nextDocumentId skips gaps and starts unused prefixes at one" testNextDocumentId,
@@ -3096,6 +3102,91 @@ testRegistryLoadFailure = do
   pure $ case loaded of
     Right entries -> Left ("expected a load failure, got " <> Text.pack (show (length entries)) <> " entries")
     Left message -> assertBool "expected a non-empty error message" (not (Text.null message))
+
+testProfileSourceLabels :: Either Text ()
+testProfileSourceLabels = do
+  assertEqual
+    "okf-profiles"
+    ( renderProfileSourceLabel
+        (RegistrySource defaultRegistryReference (RegistryExpression defaultRegistryReference))
+    )
+  assertEqual
+    "okf-v0-2"
+    ( renderProfileSourceLabel
+        (RegistrySource "docs/profiles/okf-v0-2.dhall" (RegistryFile "docs/profiles/okf-v0-2.dhall"))
+    )
+
+-- | Loading one source wraps every otherwise unchanged registry entry with its
+-- provenance.
+testProfileSourceWrapper :: IO (Either Text ())
+testProfileSourceWrapper = do
+  path <- fixtureFilePath "profiles/decisions.dhall"
+  let profileSource = RegistrySource (Text.pack path) (RegistryFile path)
+  loaded <- loadProfileSource profileSource
+  pure $ case loaded of
+    Left err -> Left ("failed to load sourced profile fixture: " <> err)
+    Right profiles -> do
+      assertEqual [profileSource] (map (^. #source) profiles)
+      assertEqual [""] (map (^. #entry . #export) profiles)
+
+-- | Multi-source enumeration preserves source order and each registry's
+-- export ordering rather than globally interleaving equal-looking paths.
+testProfileSourcesMergeInOrder :: IO (Either Text ())
+testProfileSourcesMergeInOrder = do
+  (publicSource, houseSource) <- fixtureProfileSources
+  (failures, profiles) <- loadProfileSources [publicSource, houseSource]
+  pure $ do
+    assertEqual [] failures
+    assertEqual
+      [ "legacy",
+        "nested.decisions",
+        "postgresql",
+        "postgresql",
+        "runbooks"
+      ]
+      (map (^. #entry . #export) profiles)
+    assertEqual
+      (replicate 3 publicSource <> replicate 2 houseSource)
+      (map (^. #source) profiles)
+
+testProfileSourcesPartialFailure :: IO (Either Text ())
+testProfileSourcesPartialFailure = do
+  (_publicSource, houseSource) <- fixtureProfileSources
+  let missingSource = RegistrySource "/nonexistent/registry.dhall" (RegistryFile "/nonexistent/registry.dhall")
+  (failures, profiles) <- loadProfileSources [missingSource, houseSource]
+  pure $ do
+    assertEqual [missingSource] (map (^. #failedSource) failures)
+    assertBool
+      "expected the captured source failure to include a reason"
+      (all (not . Text.null . (^. #failureReason)) failures)
+    assertEqual ["postgresql", "runbooks"] (map (^. #entry . #export) profiles)
+
+testProfileSourcesExposeCollisions :: IO (Either Text ())
+testProfileSourcesExposeCollisions = do
+  (publicSource, houseSource) <- fixtureProfileSources
+  (_failures, profiles) <- loadProfileSources [publicSource, houseSource]
+  pure $
+    assertEqual
+      [publicSource, houseSource]
+      (map (^. #source) (findSourcedProfiles "postgresql" profiles))
+
+testProfileSourcesDropDuplicates :: IO (Either Text ())
+testProfileSourcesDropDuplicates = do
+  (_publicSource, houseSource) <- fixtureProfileSources
+  (failures, profiles) <- loadProfileSources [houseSource, houseSource]
+  pure $ do
+    assertEqual [] failures
+    assertEqual [houseSource] (normalizeProfileSources [houseSource, houseSource])
+    assertEqual ["postgresql", "runbooks"] (map (^. #entry . #export) profiles)
+
+fixtureProfileSources :: IO (ProfileSource, ProfileSource)
+fixtureProfileSources = do
+  publicPath <- fixtureFilePath "registry/package.dhall"
+  housePath <- fixtureFilePath "registry-house/package.dhall"
+  pure
+    ( RegistrySource (Text.pack publicPath) (RegistryFile publicPath),
+      RegistrySource (Text.pack housePath) (RegistryFile housePath)
+    )
 
 testParseDocumentId :: Either Text ()
 testParseDocumentId = do

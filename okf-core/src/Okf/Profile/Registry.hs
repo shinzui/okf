@@ -13,15 +13,24 @@
 module Okf.Profile.Registry
   ( -- * References
     RegistryRef (..),
+    ProfileSource (..),
     defaultRegistryReference,
     resolveRegistryRef,
     renderRegistryRef,
+    renderProfileSourceLabel,
+    renderProfileSourceReference,
 
     -- * Enumeration
     RegistryEntry (..),
+    SourceFailure (..),
+    SourcedProfile (..),
     loadRegistry,
+    loadProfileSource,
+    loadProfileSources,
+    normalizeProfileSources,
     registryEntries,
     findRegistryEntry,
+    findSourcedProfiles,
     rootExportLabel,
   )
 where
@@ -38,7 +47,7 @@ import Dhall.Src (Src)
 import Okf.Prelude
 import Okf.Profile (ProfileSpec, decodeProfileExpr)
 import System.Directory (doesDirectoryExist, doesFileExist)
-import System.FilePath (takeDirectory, (</>))
+import System.FilePath (takeBaseName, takeDirectory, takeFileName, (</>))
 import "generic-lens" Data.Generics.Labels ()
 
 -- | How a registry reference is to be evaluated. A file must be evaluated with
@@ -51,12 +60,41 @@ data RegistryRef
     RegistryExpression !Text
   deriving stock (Generic, Eq, Show)
 
+-- | One place profiles can come from. The text is the reference exactly as the
+-- user supplied it; the resolved reference records how it will be evaluated.
+--
+-- This is deliberately a sum type even though registries are the only source
+-- kind today. Other structural discovery mechanisms can add constructors
+-- without overloading what a registry reference means.
+data ProfileSource
+  = -- | A registry reference, as the user wrote it, and how it resolved.
+    RegistrySource !Text !RegistryRef
+  deriving stock (Generic, Eq, Show)
+
 -- | One profile published by a registry, under the dotted field path at which
 -- it was found. The export path is empty when the registry reference is itself
 -- a profile; 'rootExportLabel' is the display form for that case.
 data RegistryEntry = RegistryEntry
   { export :: !Text,
     spec :: !ProfileSpec
+  }
+  deriving stock (Generic, Eq, Show)
+
+-- | One source that could not be enumerated, together with the captured load
+-- error. Multi-source survey operations report these without hiding entries
+-- from sources that did load.
+data SourceFailure = SourceFailure
+  { failedSource :: !ProfileSource,
+    failureReason :: !Text
+  }
+  deriving stock (Generic, Eq, Show)
+
+-- | One registry entry paired with the source that published it. Provenance
+-- wraps the existing source-agnostic 'RegistryEntry' rather than changing that
+-- public type.
+data SourcedProfile = SourcedProfile
+  { source :: !ProfileSource,
+    entry :: !RegistryEntry
   }
   deriving stock (Generic, Eq, Show)
 
@@ -102,6 +140,41 @@ renderRegistryRef :: RegistryRef -> Text
 renderRegistryRef (RegistryFile path) = Text.pack path
 renderRegistryRef (RegistryExpression expression) = expression
 
+-- | Render the complete user-facing identity of a source. Display labels are
+-- intentionally not unique, so diagnostics that disambiguate sources use this
+-- full reference instead.
+renderProfileSourceReference :: ProfileSource -> Text
+renderProfileSourceReference (RegistrySource reference _resolved) = reference
+
+-- | Render a compact source label suitable for a table column. A local package
+-- uses its directory name, a direct file uses its basename, and a raw GitHub
+-- URL uses the repository name. Other expressions fall back to a bounded form
+-- of the original reference. Labels are display text, not source identity.
+renderProfileSourceLabel :: ProfileSource -> Text
+renderProfileSourceLabel (RegistrySource original resolved) =
+  case resolved of
+    RegistryFile path
+      | takeFileName path == "package.dhall" -> Text.pack (takeFileName (takeDirectory path))
+      | otherwise -> Text.pack (takeBaseName path)
+    RegistryExpression _expression ->
+      fromMaybe (truncateLabel (Text.strip original)) (rawGitHubRepository original)
+  where
+    rawGitHubRepository reference =
+      case Text.splitOn "/" (Text.strip reference) of
+        "https:" : "" : "raw.githubusercontent.com" : _owner : repository : _rest ->
+          nonEmptyText repository
+        "http:" : "" : "raw.githubusercontent.com" : _owner : repository : _rest ->
+          nonEmptyText repository
+        _ -> Nothing
+
+    nonEmptyText value
+      | Text.null value = Nothing
+      | otherwise = Just value
+
+    truncateLabel value
+      | Text.length value <= 32 = value
+      | otherwise = Text.take 31 value <> "…"
+
 -- | Evaluate a registry and enumerate the profiles it publishes. Any parse,
 -- import, type, or IO failure is captured as a human-readable 'Left', matching
 -- how 'Okf.Profile.loadProfileFile' behaves.
@@ -109,6 +182,35 @@ loadRegistry :: RegistryRef -> IO (Either Text [RegistryEntry])
 loadRegistry reference =
   (Right . registryEntries <$> evaluateRef reference)
     `catch` \(e :: SomeException) -> pure (Left (Text.pack (show e)))
+
+-- | Load one profile source and attach it to every enumerated registry entry.
+-- Pattern matches are exhaustive so adding another source kind requires its
+-- loading behavior to be defined explicitly.
+loadProfileSource :: ProfileSource -> IO (Either Text [SourcedProfile])
+loadProfileSource profileSource@(RegistrySource _reference resolved) =
+  fmap (map (SourcedProfile profileSource)) <$> loadRegistry resolved
+
+-- | Drop exact duplicate sources while preserving first-occurrence order.
+-- Distinct sources are never deduplicated merely because their display labels
+-- or export paths happen to collide.
+normalizeProfileSources :: [ProfileSource] -> [ProfileSource]
+normalizeProfileSources = List.nub
+
+-- | Enumerate several sources in the order given. Results remain grouped by
+-- source position, while 'registryEntries' keeps each source internally sorted
+-- by export path. A failure from one source is returned alongside successful
+-- entries from every other source rather than hiding them.
+loadProfileSources :: [ProfileSource] -> IO ([SourceFailure], [SourcedProfile])
+loadProfileSources sources = go (normalizeProfileSources sources) [] []
+  where
+    go [] failures profiles = pure (reverse failures, reverse profiles)
+    go (profileSource : rest) failures profiles = do
+      loaded <- loadProfileSource profileSource
+      case loaded of
+        Left reason ->
+          go rest (SourceFailure profileSource reason : failures) profiles
+        Right sourceProfiles ->
+          go rest failures (reverse sourceProfiles <> profiles)
 
 -- | Parse, resolve imports, type check, and normalize a registry reference.
 evaluateRef :: RegistryRef -> IO (Expr Src Void)
@@ -172,3 +274,8 @@ profileAt = decodeProfileExpr
 -- | Look up an entry by its exact export path.
 findRegistryEntry :: Text -> [RegistryEntry] -> Maybe RegistryEntry
 findRegistryEntry path = List.find ((== path) . (^. #export))
+
+-- | Find every source that publishes an exact export path. A list result makes
+-- collisions explicit instead of silently choosing the first match.
+findSourcedProfiles :: Text -> [SourcedProfile] -> [SourcedProfile]
+findSourcedProfiles path = List.filter ((== path) . (^. #entry . #export))
