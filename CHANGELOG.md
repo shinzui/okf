@@ -9,6 +9,12 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- `okf profile sources` loads every effective registry and local descriptor,
+  reports its carried flag/environment/configuration/discovery origin, status,
+  and profile count in text or JSON, and prints the precedence rules on every
+  run. It always identifies the pinned `okf-profiles` tag without network
+  access; `--check-latest` explicitly queries upstream tags and names the
+  refresh script when a newer semantic version exists.
 - `okf profiles` discovers local Dhall profile descriptors with bounded,
   network-silent filesystem evaluation; `OKF_PROFILE_ROOTS` selects search
   roots and `--json` includes descriptor metadata. Discovered descriptors are
@@ -39,9 +45,9 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   duplicate registry references are dropped in first-occurrence order.
 - The built-in profile registry now pins `mori://shinzui/okf-profiles` v0.10.0,
   so `okf profile list` with no overrides reports ten OKF 0.2 profiles with
-  descriptions instead of five OKF 0.1 profiles without them. Those descriptions
-  currently print in full, so the one-line listing is wide until the compact
-  profile-table work lands.
+  descriptions instead of five OKF 0.1 profiles without them. The default table
+  renders capped two-line rows no wider than 100 Unicode code points;
+  `--wide` keeps every identity and description value in full.
 - Commands that consume an existing bundle now accept an omitted `BUNDLE` and
   select one with the shared `fzf` picker: `validate`, `index`, both `log`
   forms, `graph`, `show`, `trust`, `sources`, `computations`, `concepts`, and
@@ -55,6 +61,13 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   array entries in concept-ID order, while `--show` affects text columns only.
   The exported `conceptReportJson` Haskell API changes from `[Text] -> [Concept]
   -> Aeson.Value` to `[Concept] -> Aeson.Value`.
+
+### Fixed
+
+- Registry load failures now distinguish missing paths, loose descriptor
+  directories, integrity mismatches, import failures, invalid Dhall, and
+  unexpected evaluation failures with actionable plain text and stable JSON
+  categories. They no longer leak Dhall source excerpts or ANSI escape codes.
 
 ## [0.6.0.1] - 2026-08-16
 

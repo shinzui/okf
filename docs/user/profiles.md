@@ -896,28 +896,27 @@ stay present even with explicit `--registry` flags; pass `--no-local` to
 suppress exactly them. Their export is the filename without `.dhall`, and a
 duplicate export remains an ambiguity rather than being chosen by precedence.
 
-With no override, okf currently pins v0.10.0 of that catalogue. It reports the
-following ten profiles; the final `DESCRIPTION` column is omitted here for
-width, but the command prints each catalogue description in full:
+With no override, okf currently pins v0.10.0 of that catalogue. The default
+table keeps every line to at most 100 Unicode code points. Each profile uses an
+aligned identity-and-rules line plus an indented description line; long source,
+export, name, and description values end in `…`:
 
 ```text
-SOURCE        EXPORT                               NAME                                   OKF  TYPES  ID FIELD
-okf-profiles  coordination.bugReports              bug-reports                            0.2      1  bugId
-okf-profiles  coordination.capabilities            capabilities                           0.2      1  capabilityId
-okf-profiles  coordination.improvementRequests     cross-repository-improvement-requests  0.2      1  requestId
-okf-profiles  coordination.useCases                jtbd-use-cases                         0.2      2  useCaseId
-okf-profiles  documentation.architectureDecisions  architecture-decision-records          0.2      1  docId
-okf-profiles  documentation.patternCatalog         mori-documentation-pattern-catalog     0.2      8  -
-okf-profiles  documentation.researchDocuments      research-documents                     0.2      1  researchId
-okf-profiles  okfV02                               okf-v0-2                               0.2      0  -
-okf-profiles  postgresql                           shinzui-postgresql                     0.2      3  -
-okf-profiles  tanPostgresql                        tan-postgresql                         0.2      4  -
+SOURCE          EXPORT                        NAME                          OKF  TYPES  ID FIELD
+okf-profiles    coordination.bugReports       bug-reports                   0.2      1  bugId
+  Defect reports against behavior a repository already provides, with stable BUG handles, an observ…
+okf-profiles    coordination.capabilities     capabilities                  0.2      1  capabilityId
+  Consumer-facing catalog of what a repository provides today: stable CAP-N handles, an explicit co…
+okf-profiles    coordination.improvementReq…  cross-repository-improvemen…  0.2      1  requestId
+  Cross-repository improvement proposals with stable IR handles and review provenance. The house `r…
 ```
 
-The `DESCRIPTION` column shows the profile's own one-line summary. Descriptions
-are optional; a profile that omits one shows `-`. The v0.10.0 catalogue supplies
-descriptions for all ten profiles. They currently print without truncation, so
-the one-line table can wrap at ordinary terminal widths.
+Descriptions are optional; a profile that omits one shows `-`. Whitespace inside
+a description is collapsed so embedded newlines cannot split the layout. Pass
+`--wide` to preserve the two-line structure while printing every identity and
+description value in full, or use `--json` for a machine interface. The width
+budget counts Unicode code points rather than terminal display cells, so
+combining and double-width characters can still occupy a different visual width.
 
 A profile that carries no description is not out of date and needs no migration:
 okf reads descriptor shapes both with and without descriptions. `okf profile show`
@@ -969,6 +968,43 @@ Using that name is an ambiguity error that names both full references; rerun
 with exactly one intended `--registry REFERENCE`. Short source labels are for
 display and are not unique identifiers.
 
+### Inspecting effective sources
+
+`okf profile sources` answers which source layer won and whether every selected
+source actually loads. It consumes the provenance carried by ordinary profile
+resolution, rather than reconstructing the precedence chain. The command can be
+slow and can fetch an explicitly selected remote registry on first use because
+it evaluates each source to count its profiles:
+
+```text
+$ okf profile sources --no-local
+SOURCE                         ORIGIN              STATUS  PROFILES
+okf-profiles v0.10.0 (pinned)  [built-in default]  loaded  10
+
+Pinned catalogue: okf-profiles v0.10.0 (not checked; pass --check-latest to query upstream tags)
+
+Precedence, highest first:
+  1. --registry flag (repeatable); the flag list replaces every other registry layer
+  2. OKF_PROFILE_REGISTRIES (JSON array)
+  3. OKF_PROFILE_REGISTRY (legacy single reference)
+  4. profiles.registries in the effective config file
+  5. built-in default when the decoded configuration has no profiles block
+Within a list, order is preserved and exact duplicates are dropped. Every source is
+enumerated; sources merge rather than replace. Local descriptors follow the winning
+registry list unless --no-local is passed. Survey commands report partial failure; named
+lookup fails closed.
+```
+
+The footer is printed on every text run. `--json` carries the same rules in a
+`precedence` array and emits each complete source object with `status`,
+`profileCount`, and a stable `{ category, message }` error object for failures.
+It also includes `pinnedVersion` and structured `freshness` state. A directory
+without `package.dhall`, a path that does not exist, an integrity mismatch, an
+import failure, invalid Dhall, and an unexpected evaluation failure have
+distinct categories. Human diagnostics never include Dhall's source excerpt or
+ANSI styling; the directory case points at `okf profiles` and
+`OKF_PROFILE_ROOTS` for loose descriptors.
+
 ### Working offline
 
 Nothing about profile registries requires the network unless you point okf at a
@@ -984,6 +1020,18 @@ and serves it from there afterwards. In practice `okf profile list` costs one
 network fetch ever. The pin also means a later `okf-profiles` release cannot
 silently change what okf reports; moving to a newer tag means changing the URL
 and the hash together.
+
+The pinned tag is visible without another network request. An upstream query is
+strictly opt-in:
+
+```bash
+okf profile sources --no-local --check-latest
+```
+
+The command compares numeric `vMAJOR.MINOR.PATCH` components, so v0.10.0 is
+newer than v0.9.3. If upstream cannot be reached or its tags cannot be parsed,
+the check reports that it was unavailable without changing the source command's
+exit status. It never updates the pin automatically.
 
 For repository maintainers, refreshing a deliberately reviewed release is one
 command:

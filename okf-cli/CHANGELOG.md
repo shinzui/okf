@@ -9,6 +9,10 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- `okf profile sources` renders every effective source with its carried origin,
+  load status, and profile count, or the same complete source objects with
+  stable errors in JSON. It reports the built-in pinned tag without a network
+  request; `--check-latest` is the explicit, graceful upstream comparison.
 - `okf profiles` lists local descriptor paths and emits their metadata with
   `--json`; `OKF_PROFILE_ROOTS` supplies colon-separated search roots. Profile
   listings and named lookups append those descriptors after registry sources,
@@ -37,8 +41,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - With no registry override, `okf profile list` now reports the ten OKF 0.2
   profiles in `mori://shinzui/okf-profiles` v0.10.0, including their
   descriptions, instead of the five undescribed OKF 0.1 profiles from v0.4.2.
-  The descriptions currently print in full, so this one-line listing is wider
-  than a normal terminal until the compact profile-table work lands.
+  Compact output uses deterministic two-line rows no wider than 100 Unicode
+  code points; `--wide` removes every source, export, name, and description cap.
 - Every command that consumes an existing bundle accepts an omitted `BUNDLE`
   and selects one through the shared picker. Explicit paths remain fully
   non-interactive. `id next PREFIX` selects a bundle, while the existing
@@ -50,6 +54,13 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   array entries in concept-ID order, while `--show` affects text columns only.
   The exported `conceptReportJson` API changes from `[Text] -> [Concept] ->
   Aeson.Value` to `[Concept] -> Aeson.Value`.
+
+### Fixed
+
+- Registry source failures are now plain, actionable summaries with no raw
+  Dhall internals or ANSI styling. Missing paths, directories without
+  `package.dhall`, hash mismatches, import failures, invalid Dhall, and
+  unexpected evaluation failures remain distinct in text and JSON.
 
 ## [0.6.0.1] - 2026-08-16
 

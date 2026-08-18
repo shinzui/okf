@@ -97,7 +97,8 @@ cabal run okf -- show [<bundle>] [<concept-id-or-document-id>] [--profile <descr
 cabal run okf -- id next [<bundle>] <PREFIX> --profile <descriptor>
 cabal run okf -- id list [<bundle>] --profile <descriptor>
 cabal run okf -- config show
-cabal run okf -- profile list [--registry <registry>] [--no-local]
+cabal run okf -- profile list [--registry <registry>] [--no-local] [--wide]
+cabal run okf -- profile sources [--registry <registry>] [--no-local] [--check-latest]
 cabal run okf -- profile show [<export>]
 cabal run okf -- profile document [--profile <descriptor>.dhall]
 cabal run okf -- kit list
@@ -194,6 +195,7 @@ local descriptor paths, which is useful when you do not yet know their names.
 cabal run okf -- profile list
 cabal run okf -- profile show postgresql
 cabal run okf -- profiles
+cabal run okf -- profile sources --no-local
 ```
 
 Repeat `--registry` to merge a public catalogue with house registries; the
@@ -205,6 +207,15 @@ successful rows when another source fails, while named lookups refuse to guess
 through a failed source or duplicate export. Local descriptors follow the
 winning registry list even when `--registry` is explicit; `--no-local` suppresses
 them.
+
+The default profile table uses a capped identity line plus an indented
+description line, keeping every line at most 100 Unicode code points;
+`profile list --wide` prints every value in full. `okf profile sources` loads
+the same effective sources and shows each complete reference, carried origin,
+status, and profile count before restating the precedence rules. Its JSON mode
+uses stable error categories. It reports the pinned release without network
+access, and `--check-latest` is the only mode that separately queries upstream
+tags.
 
 The built-in default is pinned to `mori://shinzui/okf-profiles` v0.10.0, which
 publishes ten OKF 0.2 profiles with descriptions. Repository maintainers move

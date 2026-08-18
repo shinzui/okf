@@ -211,6 +211,16 @@ rows, and succeed when at least one source publishes profiles. `profile show`
 and registry-backed `profile document` fail closed if any selected source fails,
 because the failed source might publish the requested export or a collision.
 
+**Registry failures cross the library boundary as typed, stable categories.**
+The additive detailed loaders distinguish a missing path, a directory without
+`package.dhall`, an integrity mismatch, an import failure, invalid Dhall, and an
+unexpected evaluation failure. The original text-returning APIs keep their
+signatures and render those categories as short actionable summaries. CLI text
+and JSON are derived from the typed values rather than a third-party exception's
+`Show` instance, so diagnostics do not expose Dhall source excerpts or ANSI
+styling. A directory of loose descriptors points users to ADR 18's discovery
+mechanism instead of being silently treated as a registry.
+
 **Keeping the built-in pin current is a release obligation, not automatic
 runtime behavior.** `scripts/refresh-default-registry.sh TAG` requires an
 explicit reviewed release tag, computes the normalized Dhall hash, and updates

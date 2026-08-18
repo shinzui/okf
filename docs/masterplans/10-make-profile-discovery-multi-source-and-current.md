@@ -199,7 +199,7 @@ additive local-source composition, basename exports, and picker compatibility.
 | 60 | Refresh the default profile registry pin and prove the current catalogue decodes | [docs/plans/60-refresh-the-default-profile-registry-pin-and-prove-the-current-catalogue-decodes.md](../plans/60-refresh-the-default-profile-registry-pin-and-prove-the-current-catalogue-decodes.md) | None | None | Complete |
 | 61 | Read profiles from more than one registry | [docs/plans/61-read-profiles-from-more-than-one-registry.md](../plans/61-read-profiles-from-more-than-one-registry.md) | None | EP-60 | Complete |
 | 62 | Discover and select local profile descriptors in the repository | [docs/plans/62-discover-and-select-local-profile-descriptors-in-the-repository.md](../plans/62-discover-and-select-local-profile-descriptors-in-the-repository.md) | EP-61 | None | Complete |
-| 63 | Show where every profile came from and how to refresh it | [docs/plans/63-show-where-every-profile-came-from-and-how-to-refresh-it.md](../plans/63-show-where-every-profile-came-from-and-how-to-refresh-it.md) | EP-60, EP-61, EP-62 | None | In Progress |
+| 63 | Show where every profile came from and how to refresh it | [docs/plans/63-show-where-every-profile-came-from-and-how-to-refresh-it.md](../plans/63-show-where-every-profile-came-from-and-how-to-refresh-it.md) | EP-60, EP-61, EP-62 | None | Complete |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
 Hard Deps and Soft Deps reference other rows by their `EP-<number>` prefix.
@@ -372,11 +372,11 @@ layering for the `profiles` block.
 - [x] (2026-08-18 20:50Z) EP-62: `okf profiles` lists discovered local descriptors non-interactively, and an empty result exits 0
 - [x] (2026-08-18 20:50Z) EP-62: local descriptors appear in `okf profile list` as their own source
 - [x] (2026-08-18 20:50Z) EP-62: `okf validate --pick-profile` and a profile-less `okf profile document` open a picker over discovered descriptors, honouring the 1 / 2 / 130 exit contract while bare `okf validate BUNDLE` remains non-interactive
-- [ ] EP-63: an inspection command prints every effective profile source with the provenance of each
-- [ ] EP-63: `okf profile list` uses a deterministic compact two-line row layout for the current catalogue's long descriptions, with `--wide` for full text
-- [ ] EP-63: an explicitly opt-in flag compares the pinned catalogue tag against upstream and says how to update it
-- [ ] EP-63: registry load failures report the reference and what a reference may be without leaking raw Dhall internals or ANSI escapes
-- [ ] Initiative: final implementation distillation confirms ADR 3 and ADR 18 match the delivered behavior
+- [x] (2026-08-18 21:53Z) EP-63: an inspection command prints every effective profile source with the provenance of each
+- [x] (2026-08-18 21:53Z) EP-63: `okf profile list` uses a deterministic compact two-line row layout for the current catalogue's long descriptions, with `--wide` for full text
+- [x] (2026-08-18 21:53Z) EP-63: an explicitly opt-in flag compares the pinned catalogue tag against upstream and says how to update it
+- [x] (2026-08-18 21:53Z) EP-63: registry load failures report the reference and what a reference may be without leaking raw Dhall internals or ANSI escapes
+- [x] (2026-08-18 21:53Z) Initiative: final implementation distillation confirms ADR 3 and ADR 18 match the delivered behavior
 
 
 ## Surprises & Discoveries
@@ -496,6 +496,14 @@ its `origin.kind` distinguishes flag, environment, config, and built-in resoluti
 `name` or `path` where applicable. The legacy top-level `registry` string appears only for
 exactly one registry source. EP-63 can render the carried provenance directly and must not
 reconstruct precedence.
+
+**EP-63's typed error boundary had to inspect Dhall's nested import wrapper** (2026-08-18,
+implementation). Dhall 1.42.3 wraps import failures in `SourcedException MissingImports`,
+but the nested exceptions preserve concrete integrity, parse, and type-error constructors.
+Inspecting that exported structure yields stable categories without matching strings or
+rendering Dhall's ANSI-decorated exception text. The compact table measured exactly 100
+Unicode code points at its longest line, and the explicit upstream query confirmed v0.10.0
+remains current; a no-`git` run degraded to an exit-0 unavailable result.
 
 
 ## Decision Log
@@ -643,16 +651,39 @@ reconstruct precedence.
 
 ## Outcomes & Retrospective
 
-EP-60, EP-61, and EP-62 are complete. The default exposes ten current OKF 0.2 profiles, and profile
-commands now resolve ordered registry lists with backwards-compatible configuration and
-environment fallbacks, source-labelled text and provenance JSON, partial survey results,
-and fail-closed named lookup. Local descriptors are discovered with bounded, network-silent
-evaluation, append as one-file sources, list through `okf profiles`, and can be selected
-through the optional picker without changing bare validation. The source model remained
-additive around `RegistryEntry`, and its structured origins are recorded in ADR 3 and ADR 18
-for EP-63 to render directly. EP-63 is now dependency-ready and is the only incomplete child
-plan. The known wide-description rendering and raw Dhall failure text remain intentionally
-queued there.
+All four child plans are complete. The built-in default is a verified, hash-pinned
+`mori://shinzui/okf-profiles` v0.10.0 catalogue containing ten OKF 0.2 profiles, backed by an
+offline conformance fixture and one-command refresh workflow. Profile resolution now accepts
+ordered registry lists through repeatable flags, plural JSON environment configuration, the
+legacy singular environment variable, and backwards-compatible Dhall configuration. Survey
+commands preserve partial results; named lookup fails closed on source failure or ambiguity.
+
+Repositories contribute bounded, network-silent local descriptors as one-file sources.
+`okf profiles` lists them, ordinary profile listing appends them unless `--no-local` is
+passed, and the optional picker extends documentation and validation without changing bare
+validation semantics.
+
+The integration closure makes the model observable. `okf profile sources` reports complete
+references, carried provenance, load status, profile counts, the pinned release, and exact
+precedence in text and JSON. Its explicitly requested freshness query confirmed v0.10.0 is
+current on 2026-08-18 and degrades without changing the source result. Compact two-line rows
+measure at most 100 Unicode code points, with `--wide` and JSON preserving full values.
+Registry failures now cross the core boundary as typed categories and render actionable
+plain text with no raw Dhall excerpts or ANSI escapes.
+
+Final validation passed `cabal build all` and `cabal test all --test-show-details=failures`.
+A deliberate flag/environment precedence mutation made the named CLI test fail and its
+restoration made it pass. Live runs exercised flag, plural environment, legacy environment,
+configuration, built-in, and discovery origins; all three specified error cases exited 1,
+and an explicit escape scan counted zero ANSI-containing lines.
+
+The final ADR distillation reviewed every child plan's decisions, discoveries, and outcomes.
+[ADR 3](../adr/3-profile-registries.md) now owns registry shape, manual pinning,
+multi-source precedence, structured provenance, collision and failure policy, opt-in
+freshness, and the additive typed-error boundary. [ADR 18](../adr/18-local-profile-descriptor-discovery.md)
+owns bounded network-silent discovery, one-file sources, additive composition, and picker
+semantics. ADRs 2, 4, 16, and 17 remain consistent with the delivered behavior; no new ADR
+was necessary.
 
 
 ## Revision Note (2026-08-18)

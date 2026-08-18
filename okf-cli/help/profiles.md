@@ -105,15 +105,16 @@ REGISTRIES
     okf profile list
     okf profile list --registry /path/to/okf-profiles \
       --registry ./house-profiles
+    okf profile sources
     okf profile show postgresql --registry /path/to/okf-profiles
 
-  A bare `okf profile` means `okf profile list`. Both subcommands accept
+  A bare `okf profile` means `okf profile list`. list, show, and sources accept
   --json. Repeat --registry to merge registry sources; discovered local
-  descriptors follow them unless --no-local is passed. Every row starts with a
-  SOURCE label and sources stay grouped in resolution order. The EXPORT column
-  reads "(root)" when a registry reference is itself a profile rather than a
-  record of profiles; the ID FIELD column reads "-" when the profile declares
-  no idField.
+  descriptors follow them unless --no-local is passed. Every profile uses two
+  lines: a capped SOURCE/EXPORT/NAME/rule line of at most 100 characters and an
+  indented description line. Pass --wide to list for every value in full. The
+  EXPORT column reads "(root)" when a registry reference is itself a profile;
+  ID FIELD reads "-" when the profile declares no idField.
 
 GENERATING DOCUMENTATION
 
@@ -186,8 +187,8 @@ DESCRIPTIONS
   Descriptions are prose for humans -- okf never checks one against a bundle
   and none can produce a deviation.
 
-  `okf profile list` shows the profile's own description in a trailing
-  DESCRIPTION column, reading "-" when it has none. `okf profile show` prints
+  `okf profile list` shows the profile's own description on the indented line
+  below its identity, reading "-" when it has none. `okf profile show` prints
   the profile description under the name, one "  - key: prose" line per
   frontmatter key, and a description line in each type block, all reading
   "(none)" when absent. When a required key is missing from a concept, the
@@ -417,13 +418,25 @@ DOCUMENT REFERENCES
   hard profile-definition errors before any bundle is read.
 
   A registry reference may be a path to a Dhall file, a directory holding
-  package.dhall, or a Dhall expression such as a hash-pinned URL. Source lists
-  come from the first winning layer: repeated --registry flags, then
-  OKF_PROFILE_REGISTRIES as a JSON array of strings, then the legacy singular
-  OKF_PROFILE_REGISTRY, then profiles.registries in configuration, then the
-  built-in default. A configuration using the older profiles.registry spelling
-  still loads as a one-element list. Sources merge only within the winning
-  layer; order is preserved and exact duplicates are dropped.
+  package.dhall, or a Dhall expression such as a hash-pinned URL. `okf profile
+  sources` loads every effective source, prints its complete reference, carried
+  origin, load status, and profile count, then prints these rules on every run.
+  --json reports the same source objects and stable error categories
+  structurally:
+
+  Precedence, highest first:
+    1. --registry flag (repeatable); the flag list replaces every other registry layer
+    2. OKF_PROFILE_REGISTRIES (JSON array)
+    3. OKF_PROFILE_REGISTRY (legacy single reference)
+    4. profiles.registries in the effective config file
+    5. built-in default when the decoded configuration has no profiles block
+  Within a list, order is preserved and exact duplicates are dropped. Every source is
+  enumerated; sources merge rather than replace. Local descriptors follow the winning
+  registry list unless --no-local is passed. Survey commands report partial failure; named
+  lookup fails closed.
+
+  A configuration using the older profiles.registry spelling still loads as a
+  one-element list.
 
   Listings report a failed source without hiding successful rows and exit 0
   when any profile was found. A named show or document lookup fails closed if
@@ -437,9 +450,11 @@ DOCUMENT REFERENCES
   throughout.
 
   The built-in pin currently targets v0.10.0 and publishes ten OKF 0.2 profiles
-  with descriptions. Those descriptions print in full and can wrap on a normal
-  terminal. Repository maintainers refresh an explicitly reviewed tag and the
-  offline conformance fixture together with:
+  with descriptions. `okf profile sources` reports that version without network
+  access. Pass --check-latest to that command for an explicit upstream tag
+  comparison; a failed optional check is reported but does not change the source
+  command's exit status. Repository maintainers refresh an explicitly reviewed
+  tag and the offline conformance fixture together with:
 
     ./scripts/refresh-default-registry.sh TAG
 

@@ -102,12 +102,12 @@ network-disabled discovery semantics.
 - [x] (2026-08-18 21:34Z) Replace the raw Dhall exception text in registry load failures with additive typed core errors and stable summaries
 - [x] (2026-08-18 21:34Z) Avoid ANSI escapes by classifying exceptions rather than rendering Dhall's exception text
 - [x] (2026-08-18 21:43Z) Add the opt-in upstream freshness check with pure numeric tag parsing and graceful unavailability
-- [ ] Run `cabal build all` and `cabal test all` clean
-- [ ] Paste real transcripts for the inspection command, the fixed table, and each error path
-- [ ] Update `okf-cli/help/profiles.md`, `docs/user/profiles.md`, `docs/user/cli.md`, `README.md`
-- [ ] Update `CHANGELOG.md`, `okf-cli/CHANGELOG.md`, and `okf-core/CHANGELOG.md` if core changed
-- [ ] Verify the implementation against ADR 3's freshness amendment
-- [ ] Perform the MasterPlan's ADR distillation pass if this is the last child plan to land
+- [x] (2026-08-18 21:53Z) Run `cabal build all` and `cabal test all` clean
+- [x] (2026-08-18 21:53Z) Paste real transcripts for the inspection command, the fixed table, and each error path
+- [x] (2026-08-18 21:53Z) Update `okf-cli/help/profiles.md`, `docs/user/profiles.md`, `docs/user/cli.md`, `README.md`
+- [x] (2026-08-18 21:53Z) Update `CHANGELOG.md`, `okf-cli/CHANGELOG.md`, and `okf-core/CHANGELOG.md` because core changed
+- [x] (2026-08-18 21:53Z) Verify the implementation against ADR 3's freshness amendment and record typed failures there
+- [x] (2026-08-18 21:53Z) Perform the MasterPlan's final ADR distillation pass across EP 60–63
 
 
 ## Surprises & Discoveries
@@ -125,6 +125,18 @@ network-disabled discovery semantics.
   Evidence: the new offline core test distinguishes a wrong local integrity hash from
   invalid top-level Dhall, a missing path, and a directory without `package.dhall`; the
   complete `okf-core-test` suite passed at 2026-08-18 21:34Z.
+
+- Observation: The released upstream tag remains v0.10.0, so the pin adopted by EP 60 is
+  current at integration closure rather than merely decodable.
+  Evidence: the built binary's explicit `profile sources --no-local --check-latest` query
+  reported `Freshness: pinned okf-profiles v0.10.0 is current.` at 2026-08-18 21:53Z; with
+  `git` removed from `PATH`, the same command reported unavailability and still exited 0.
+
+- Observation: The named flag-over-environment precedence test detects the regression it is
+  intended to guard.
+  Evidence: a temporary mutation that selected `OKF_PROFILE_REGISTRIES` when both it and an
+  explicit flag were present made `okf-cli-test` fail; restoring the resolver made the same
+  suite pass. The mutation was not retained.
 
 
 ## Decision Log
@@ -499,14 +511,16 @@ After Milestone 1:
 cabal run okf -- profile sources
 ```
 
-Expected shape — paste the real output here when you have it:
+Observed from the rebuilt binary with `--no-local`:
 
 ```text
-SOURCE                                  ORIGIN                STATUS  PROFILES
-okf-profiles v0.10.0 (pinned)           [built-in default]    loaded        10
+SOURCE                         ORIGIN              STATUS  PROFILES
+okf-profiles v0.10.0 (pinned)  [built-in default]  loaded  10
+
+Pinned catalogue: okf-profiles v0.10.0 (not checked; pass --check-latest to query upstream tags)
 
 Precedence, highest first:
-  1. --registry flag (repeatable); the flag list replaces every other layer
+  1. --registry flag (repeatable); the flag list replaces every other registry layer
   2. OKF_PROFILE_REGISTRIES (JSON array)
   3. OKF_PROFILE_REGISTRY (legacy single reference)
   4. profiles.registries in the effective config file
@@ -695,7 +709,52 @@ Surprises, Interfaces, and Outcomes.
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+EP 63 completed the integration surface. `okf profile sources` consumes the same carried
+origins as ordinary resolution and loads every effective registry or descriptor, rendering
+complete references, origin, status, and profile counts in text or stable JSON. Its footer
+states the flag, plural environment, legacy environment, configuration, built-in, and local
+discovery rules on every run. Direct acceptance runs observed `[flag]`, both distinct
+environment origins, a configuration-file path, `[built-in default]`, and `[discovery: .]`.
+
+The default profile table is again bounded and scannable:
+
+```text
+SOURCE          EXPORT                        NAME                          OKF  TYPES  ID FIELD
+okf-profiles    coordination.bugReports       bug-reports                   0.2      1  bugId
+  Defect reports against behavior a repository already provides, with stable BUG handles, an observ…
+okf-profiles    coordination.improvementReq…  cross-repository-improvemen…  0.2      1  requestId
+  Cross-repository improvement proposals with stable IR handles and review provenance. The house `r…
+maximum line width: 100
+```
+
+`--wide` preserves the two-line shape and prints the complete identities and normalized
+descriptions. Pure fixtures cover truncation of source, export, name, and description plus a
+description containing a newline.
+
+All three user-facing error cases now exit 1 with distinct actionable first lines:
+
+```text
+Failed to load profile registry docs/profiles: directory docs/profiles does not contain package.dhall; use `okf profiles` to discover loose descriptors and OKF_PROFILE_ROOTS to choose where it searches
+Failed to load profile registry /tmp/definitely-not-here: registry path /tmp/definitely-not-here does not exist; check the spelling
+Failed to load profile registry https://raw.githubusercontent.com/shinzui/okf-profiles/v0.10.0/package.dhall sha256:0000000000000000000000000000000000000000000000000000000000000000: the registry import failed its integrity check; its content does not match the pinned hash
+ANSI-containing lines: 0
+```
+
+The stable categories come from additive `okf-core` detailed loaders; the original
+text-returning APIs remain source-compatible. ADR 3 now records that durable typed boundary.
+
+The pinned tag is parsed without network access. The explicit upstream check reported
+v0.10.0 current on 2026-08-18; with `git` unavailable it printed `could not check upstream
+tags` and still exited 0. Numeric version comparison, malformed output, and the absence of an
+implicit check are covered by pure tests.
+
+Final validation passed `cabal build all`, `cabal test all --test-show-details=failures`, and
+the named precedence negative control described in Surprises. The final ADR distillation
+reviewed the decisions and outcomes of EP 60–63: ADR 3 contains registry shape, pinning,
+multi-source precedence, provenance, collisions, partial/fail-closed loading, opt-in
+freshness, and typed failures; ADR 18 contains bounded network-silent descriptor discovery,
+one-file sources, additive composition, and picker behavior. ADRs 2, 4, 16, and 17 remain
+consistent and need no further amendment.
 
 
 ## Revision Note

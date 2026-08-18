@@ -874,6 +874,9 @@ cabal run okf -- profile list \
 cabal run okf -- profile show postgresql --registry /path/to/okf-profiles
 cabal run okf -- profile list --json --registry /path/to/okf-profiles
 cabal run okf -- profile list --no-local
+cabal run okf -- profile list --wide
+cabal run okf -- profile sources --no-local
+cabal run okf -- profile sources --no-local --check-latest
 ```
 
 A bare `okf profile` means `okf profile list`.
@@ -917,9 +920,11 @@ unless you ask, which is what keeps regeneration byte-identical.
 
 | Flag | Applies to | Meaning |
 |------|------------|---------|
-| `--registry REGISTRY` | `list`, `show`, `document` | A Dhall file, a directory holding `package.dhall`, or a Dhall expression such as a hash-pinned URL. Repeat the flag to merge sources in the order given. |
-| `--no-local` | `list`, `show`, `document` | Do not append descriptors discovered under `OKF_PROFILE_ROOTS` (the current directory by default). |
-| `--json` | `list`, `show` | Emit JSON instead of text. |
+| `--registry REGISTRY` | `list`, `sources`, `show`, `document` | A Dhall file, a directory holding `package.dhall`, or a Dhall expression such as a hash-pinned URL. Repeat the flag to merge sources in the order given. |
+| `--no-local` | `list`, `sources`, `show`, `document` | Do not append descriptors discovered under `OKF_PROFILE_ROOTS` (the current directory by default). |
+| `--json` | `list`, `sources`, `show` | Emit JSON instead of text. |
+| `--wide` | `list` | Print full source, export, name, and normalized description values instead of the default 100-character cap. |
+| `--check-latest` | `sources` | Explicitly query upstream semantic-version tags and compare them with the pinned built-in release. A failed optional check does not change the source result's exit status. |
 | `EXPORT` | `show`, `document` | The dotted export path printed in the `EXPORT` column. Optional when the registry publishes exactly one profile. |
 | `--profile PROFILE` | `document` | Document a Dhall descriptor file directly instead of a registry export. Cannot be combined with `EXPORT` or `--registry`. |
 | `--out DIR` | `document` | Directory to write the generated bundle into. Required by `--write`; without `--write` it only changes the preview's closing line. |
@@ -947,10 +952,21 @@ The pin means the first run fetches over the network and every later run is
 served from Dhall's cache under `~/.cache/dhall`; pass `--registry` with a local
 checkout to stay offline throughout.
 
-The `SOURCE` column labels every row and keeps rows grouped by source order. The
+The default listing renders each profile as a capped identity/rules line plus an
+indented description line; every line is at most 100 Unicode code points. The
+`SOURCE` column labels every row and keeps rows grouped by source order. The
 `EXPORT` column reads `(root)` when the reference is itself a profile rather
 than a record of profiles. The `ID FIELD` column reads `-` when the profile
-declares no `idField`.
+declares no `idField`. `--wide` keeps the two-line structure and removes caps.
+
+`profile sources` loads each effective registry or descriptor and renders the
+complete reference, its carried flag/environment/configuration/discovery origin,
+load status, and profile count. It always names the pinned built-in tag and
+prints the resolution rules. `--json` adds `status`, `profileCount`, structured
+failure details, `pinnedVersion`, `freshness`, and the precedence rules to the
+complete source objects. Because it evaluates sources, an explicitly selected
+remote registry may use Dhall's ordinary fetch/cache path. Only
+`--check-latest` runs the independent upstream tag query.
 
 `profile list` reports a failed source without hiding rows from sources that did
 load, and exits 0 whenever any profile was found. Named `show` and registry-backed

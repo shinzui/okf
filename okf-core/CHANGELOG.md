@@ -9,6 +9,11 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- `RegistryLoadError`, `ProfileSourceLoadError`, `loadRegistryDetailed`,
+  `loadProfileSourceDetailed`, and `loadProfileSourcesDetailed` add stable typed
+  failure categories while the existing text-returning APIs preserve their
+  signatures. `looksLikeRegistryPath` lets callers distinguish actionable
+  filesystem intent from remote URLs and raw Dhall expressions.
 - `Okf.Profile.Discovery` finds `.dhall` files that decode as profiles using a
   bounded, failure-tolerant walk and a loader that rejects fresh remote
   imports. `ProfileSource` now includes one-file `DescriptorSource` values so
