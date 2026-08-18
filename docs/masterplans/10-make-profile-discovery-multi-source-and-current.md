@@ -199,7 +199,7 @@ additive local-source composition, basename exports, and picker compatibility.
 | 60 | Refresh the default profile registry pin and prove the current catalogue decodes | [docs/plans/60-refresh-the-default-profile-registry-pin-and-prove-the-current-catalogue-decodes.md](../plans/60-refresh-the-default-profile-registry-pin-and-prove-the-current-catalogue-decodes.md) | None | None | Complete |
 | 61 | Read profiles from more than one registry | [docs/plans/61-read-profiles-from-more-than-one-registry.md](../plans/61-read-profiles-from-more-than-one-registry.md) | None | EP-60 | Complete |
 | 62 | Discover and select local profile descriptors in the repository | [docs/plans/62-discover-and-select-local-profile-descriptors-in-the-repository.md](../plans/62-discover-and-select-local-profile-descriptors-in-the-repository.md) | EP-61 | None | Complete |
-| 63 | Show where every profile came from and how to refresh it | [docs/plans/63-show-where-every-profile-came-from-and-how-to-refresh-it.md](../plans/63-show-where-every-profile-came-from-and-how-to-refresh-it.md) | EP-60, EP-61, EP-62 | None | Not Started |
+| 63 | Show where every profile came from and how to refresh it | [docs/plans/63-show-where-every-profile-came-from-and-how-to-refresh-it.md](../plans/63-show-where-every-profile-came-from-and-how-to-refresh-it.md) | EP-60, EP-61, EP-62 | None | In Progress |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
 Hard Deps and Soft Deps reference other rows by their `EP-<number>` prefix.

@@ -91,8 +91,8 @@ network-disabled discovery semantics.
 
 ## Progress
 
-- [ ] Confirm `docs/plans/61-read-profiles-from-more-than-one-registry.md` is complete and read its final source model
-- [ ] Confirm EP 60 and EP 62 are complete and read their final interfaces and Outcomes
+- [x] (2026-08-18 21:27Z) Confirm `docs/plans/61-read-profiles-from-more-than-one-registry.md` is complete and read its final source model
+- [x] (2026-08-18 21:27Z) Confirm EP 60 and EP 62 are complete and read their final interfaces and Outcomes
 - [ ] Consume EP 61's `ResolvedProfileSource` provenance without reconstructing it
 - [ ] Add the `okf profile sources` command, text and `--json` modes
 - [ ] Print the precedence rules on every run of it
