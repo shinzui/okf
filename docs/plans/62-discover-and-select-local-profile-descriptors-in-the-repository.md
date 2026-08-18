@@ -72,12 +72,12 @@ problems; those belong to
 
 ## Progress
 
-- [ ] Confirm `docs/plans/61-read-profiles-from-more-than-one-registry.md` is complete and read its final `ProfileSource` shape
-- [ ] Add `Okf.Profile.Discovery` to `okf-core` with descriptor-file discovery
-- [ ] Register it in `okf-core/okf-core.cabal`
-- [ ] Add discovery fixtures that never touch the network
-- [ ] Cover discovery with `okf-core/test/Main.hs` cases, including the negative cases
-- [ ] Add the descriptor-file constructor to `ProfileSource` and enumerate it
+- [x] (2026-08-18 20:30Z) Confirm `docs/plans/61-read-profiles-from-more-than-one-registry.md` is complete and read its final `ProfileSource` shape
+- [x] (2026-08-18 20:30Z) Add `Okf.Profile.Discovery` to `okf-core` with descriptor-file discovery
+- [x] (2026-08-18 20:30Z) Register it in `okf-core/okf-core.cabal`
+- [x] (2026-08-18 20:30Z) Add discovery fixtures that never touch the network
+- [x] (2026-08-18 20:30Z) Cover discovery with `okf-core/test/Main.hs` cases, including the negative cases
+- [x] (2026-08-18 20:30Z) Add the descriptor-file constructor to `ProfileSource` and enumerate it
 - [ ] Add `Okf.Cli.ProfileDiscovery` with `OKF_PROFILE_ROOTS` handling
 - [ ] Add the `okf profiles` command, text and `--json` modes
 - [ ] Include discovered descriptors as a source in `okf profile list`
@@ -102,6 +102,15 @@ problems; those belong to
   Evidence: inspected the registered `dhall-haskell` source located through `mori`, then
   verified 1.42.3 as the current Hackage release within this project's `>=1.41 && <1.43`
   bound on 2026-08-18.
+
+- Observation: The public `Dhall.Import.Status (..)` export includes both callback record
+  selectors, so the restricted loader can replace them directly without adding a direct
+  dependency on `transformers` or `exceptions`. Dedicated exceptions from both the text and
+  bytes fixture paths prove the replacement callbacks were reached; the core test suite
+  passes with all discovery fixtures offline.
+  Evidence: `cabal test okf-core-test --test-show-details=failures` passed on 2026-08-18
+  after the text and bytes remote fixtures each produced "Remote imports are disabled during
+  profile discovery" through the captured load error.
 
 
 ## Decision Log
@@ -182,6 +191,15 @@ problems; those belong to
   `--profile PATH` or `--pick-profile`. Passing both is an error.
   Rationale: Omission already means "validate without house rules" and is used by scripts;
   changing it to an interactive request would be a breaking behavioral change.
+  Date: 2026-08-18
+
+- Decision: Export `loadProfileDescriptorWithoutNetwork` from
+  `Okf.Profile.Discovery` and make both qualification and `DescriptorSource` enumeration use
+  it.
+  Rationale: Re-evaluating a descriptor through `loadProfileFile` after qualification would
+  restore ordinary remote-fetch behavior and make discovery depend on two different loaders.
+  One additive library function keeps the network boundary identical at both call sites and
+  lets tests assert the rejecting callbacks' evidence directly.
   Date: 2026-08-18
 
 

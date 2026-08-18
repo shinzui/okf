@@ -29,6 +29,7 @@ import Okf.Prelude hiding (List, Object, setField, (.=))
 -- reached as 'Profile.HumanActor'.
 import Okf.Profile hiding (HumanActor)
 import Okf.Profile qualified as Profile
+import Okf.Profile.Discovery qualified as ProfileDiscovery
 import Okf.Profile.Documentation
 import Okf.Profile.Registry
 import Okf.Query
@@ -36,9 +37,11 @@ import Okf.Trust
 import Okf.Validation
 import System.Directory
   ( createDirectoryIfMissing,
+    createFileLink,
     doesDirectoryExist,
     doesFileExist,
     getTemporaryDirectory,
+    makeAbsolute,
     removeDirectoryRecursive,
   )
 import System.Exit (exitFailure)
@@ -173,9 +176,18 @@ main = do
         testIO "loadRegistry reports a bare profile as a root entry" testRegistryRootProfile,
         testIO "resolveRegistryRef prefers package.dhall inside a directory" testResolveRegistryRef,
         testIO "loadRegistry reports a missing registry as Left" testRegistryLoadFailure,
+        testIO "profile discovery finds valid descriptors without pruning" testDiscoverProfileDescriptors,
+        testIO "profile discovery excludes every non-descriptor fixture" testProfileDescriptorQualification,
+        testIO "profile discovery treats a missing root as empty" testProfileDiscoveryMissingRoot,
+        testIO "profile discovery skips symbolic links" testProfileDiscoverySkipsSymlink,
+        testIO "profile discovery honours maxDepth" testProfileDiscoveryHonoursMaxDepth,
+        testIO "profile discovery rejects remote text and bytes before I/O" testProfileDiscoveryRejectsRemote,
         test "profile source labels are compact and readable" testProfileSourceLabels,
         testIO "loadProfileSource attaches source provenance" testProfileSourceWrapper,
+        testIO "DescriptorSource enumerates one basename export" testDescriptorSourceWrapper,
+        testIO "DescriptorSource reports a non-profile as a source failure" testDescriptorSourceFailure,
         testIO "loadProfileSources merges registries in source order" testProfileSourcesMergeInOrder,
+        testIO "loadProfileSources merges registry and descriptor sources in order" testMixedProfileSourcesMergeInOrder,
         testIO "loadProfileSources retains entries after a partial failure" testProfileSourcesPartialFailure,
         testIO "findSourcedProfiles exposes cross-source collisions" testProfileSourcesExposeCollisions,
         testIO "loadProfileSources drops exact duplicate references" testProfileSourcesDropDuplicates,
@@ -3103,6 +3115,83 @@ testRegistryLoadFailure = do
     Right entries -> Left ("expected a load failure, got " <> Text.pack (show (length entries)) <> " entries")
     Left message -> assertBool "expected a non-empty error message" (not (Text.null message))
 
+testDiscoverProfileDescriptors :: IO (Either Text ())
+testDiscoverProfileDescriptors = do
+  root <- fixturePath "profile-discovery"
+  found <-
+    ProfileDiscovery.discoverProfileDescriptors
+      ProfileDiscovery.defaultProfileDiscoveryOptions
+      root
+  pure $
+    assertEqual
+      [ normalise (root </> "nested" </> "valid-nested.dhall"),
+        normalise (root </> "valid.dhall")
+      ]
+      found
+
+testProfileDescriptorQualification :: IO (Either Text ())
+testProfileDescriptorQualification = do
+  valid <- fixtureFilePath "profile-discovery/valid.dhall"
+  registry <- fixtureFilePath "profile-discovery/registry.dhall"
+  notProfile <- fixtureFilePath "profile-discovery/not-a-profile.dhall"
+  invalid <- fixtureFilePath "profile-discovery/invalid.dhall"
+  ignoredFile <- fixtureFilePath "profile-discovery/ignored.txt"
+  results <-
+    traverse
+      ProfileDiscovery.fileQualifiesAsProfileDescriptor
+      [valid, registry, notProfile, invalid, ignoredFile]
+  pure (assertEqual [True, False, False, False, False] results)
+
+testProfileDiscoveryMissingRoot :: IO (Either Text ())
+testProfileDiscoveryMissingRoot = do
+  found <-
+    ProfileDiscovery.discoverProfileDescriptors
+      ProfileDiscovery.defaultProfileDiscoveryOptions
+      "/nonexistent/okf-profile-discovery-root"
+  pure (assertEqual [] found)
+
+testProfileDiscoverySkipsSymlink :: IO (Either Text ())
+testProfileDiscoverySkipsSymlink =
+  withDiscoveryTree "okf-profile-discovery-symlink" [] $ \root -> do
+    target <- fixtureFilePath "profile-discovery/valid.dhall" >>= makeAbsolute
+    createFileLink target (root </> "linked.dhall")
+    found <-
+      ProfileDiscovery.discoverProfileDescriptors
+        ProfileDiscovery.defaultProfileDiscoveryOptions
+        root
+    pure (assertEqual [] found)
+
+testProfileDiscoveryHonoursMaxDepth :: IO (Either Text ())
+testProfileDiscoveryHonoursMaxDepth = do
+  root <- fixturePath "profile-discovery"
+  shallow <-
+    ProfileDiscovery.discoverProfileDescriptors
+      ProfileDiscovery.defaultProfileDiscoveryOptions
+      root
+  deeper <-
+    ProfileDiscovery.discoverProfileDescriptors
+      ProfileDiscovery.defaultProfileDiscoveryOptions {ProfileDiscovery.maxDepth = 6}
+      root
+  let deepest = normalise (root </> "deep" </> "a" </> "b" </> "c" </> "d" </> "e" </> "valid-too-deep.dhall")
+  pure $ do
+    assertBool "default depth should exclude the deep descriptor" (deepest `notElem` shallow)
+    assertBool "expanded depth should include the deep descriptor" (deepest `elem` deeper)
+
+testProfileDiscoveryRejectsRemote :: IO (Either Text ())
+testProfileDiscoveryRejectsRemote = do
+  textRemote <- fixtureFilePath "profile-discovery/remote.dhall"
+  bytesRemote <- fixtureFilePath "profile-discovery/remote-bytes.dhall"
+  loaded <- traverse ProfileDiscovery.loadProfileDescriptorWithoutNetwork [textRemote, bytesRemote]
+  qualifies <- traverse ProfileDiscovery.fileQualifiesAsProfileDescriptor [textRemote, bytesRemote]
+  pure $ do
+    for_ loaded $ \case
+      Right profile -> Left ("expected remote descriptor rejection, decoded " <> profile ^. #name)
+      Left message ->
+        assertBool
+          "expected the dedicated no-network callback to reject the import"
+          ("Remote imports are disabled during profile discovery" `Text.isInfixOf` message)
+    assertEqual [False, False] qualifies
+
 testProfileSourceLabels :: Either Text ()
 testProfileSourceLabels = do
   assertEqual
@@ -3115,6 +3204,10 @@ testProfileSourceLabels = do
     ( renderProfileSourceLabel
         (RegistrySource "docs/profiles/okf-v0-2.dhall" (RegistryFile "docs/profiles/okf-v0-2.dhall"))
     )
+  assertEqual "local" (renderProfileSourceLabel (DescriptorSource "docs/profiles/okf-v0-2.dhall"))
+  assertEqual
+    (Text.pack (normalise "docs/profiles/../profiles/okf-v0-2.dhall"))
+    (renderProfileSourceReference (DescriptorSource "docs/profiles/../profiles/okf-v0-2.dhall"))
 
 -- | Loading one source wraps every otherwise unchanged registry entry with its
 -- provenance.
@@ -3128,6 +3221,29 @@ testProfileSourceWrapper = do
     Right profiles -> do
       assertEqual [profileSource] (map (^. #source) profiles)
       assertEqual [""] (map (^. #entry . #export) profiles)
+
+testDescriptorSourceWrapper :: IO (Either Text ())
+testDescriptorSourceWrapper = do
+  path <- fixtureFilePath "profile-discovery/valid.dhall"
+  let profileSource = DescriptorSource (normalise path)
+  loaded <- loadProfileSource (DescriptorSource (takeDirectory path </> "." </> "valid.dhall"))
+  pure $ case loaded of
+    Left err -> Left ("failed to load descriptor source fixture: " <> err)
+    Right profiles -> do
+      assertEqual [profileSource] (map (^. #source) profiles)
+      assertEqual ["valid"] (map (^. #entry . #export) profiles)
+
+testDescriptorSourceFailure :: IO (Either Text ())
+testDescriptorSourceFailure = do
+  path <- fixtureFilePath "profile-discovery/not-a-profile.dhall"
+  let profileSource = DescriptorSource path
+  (failures, profiles) <- loadProfileSources [profileSource]
+  pure $ do
+    assertEqual [] profiles
+    assertEqual [DescriptorSource (normalise path)] (map (^. #failedSource) failures)
+    assertBool
+      "expected the descriptor decode failure to carry a reason"
+      (all (not . Text.null . (^. #failureReason)) failures)
 
 -- | Multi-source enumeration preserves source order and each registry's
 -- export ordering rather than globally interleaving equal-looking paths.
@@ -3147,6 +3263,21 @@ testProfileSourcesMergeInOrder = do
       (map (^. #entry . #export) profiles)
     assertEqual
       (replicate 3 publicSource <> replicate 2 houseSource)
+      (map (^. #source) profiles)
+
+testMixedProfileSourcesMergeInOrder :: IO (Either Text ())
+testMixedProfileSourcesMergeInOrder = do
+  (publicSource, _houseSource) <- fixtureProfileSources
+  descriptorPath <- fixtureFilePath "profile-discovery/valid.dhall"
+  let descriptorSource = DescriptorSource (normalise descriptorPath)
+  (failures, profiles) <- loadProfileSources [publicSource, descriptorSource]
+  pure $ do
+    assertEqual [] failures
+    assertEqual
+      ["legacy", "nested.decisions", "postgresql", "valid"]
+      (map (^. #entry . #export) profiles)
+    assertEqual
+      (replicate 3 publicSource <> [descriptorSource])
       (map (^. #source) profiles)
 
 testProfileSourcesPartialFailure :: IO (Either Text ())

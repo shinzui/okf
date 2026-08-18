@@ -15,6 +15,8 @@ module Okf.Discovery
     defaultDiscoveryOptions,
     discoverBundleRoots,
     directoryQualifiesAsBundleRoot,
+    isSearchableDirectory,
+    listDirectorySafe,
   )
 where
 

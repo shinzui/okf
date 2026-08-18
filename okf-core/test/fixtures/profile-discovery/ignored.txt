@@ -1,0 +1,1 @@
+This non-Dhall file is never evaluated.

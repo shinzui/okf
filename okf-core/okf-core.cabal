@@ -62,6 +62,7 @@ library
     Okf.Path
     Okf.Prelude
     Okf.Profile
+    Okf.Profile.Discovery
     Okf.Profile.Documentation
     Okf.Profile.Registry
     Okf.Query

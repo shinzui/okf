@@ -46,8 +46,9 @@ import Dhall.Map qualified
 import Dhall.Src (Src)
 import Okf.Prelude
 import Okf.Profile (ProfileSpec, decodeProfileExpr)
+import Okf.Profile.Discovery (loadProfileDescriptorWithoutNetwork)
 import System.Directory (doesDirectoryExist, doesFileExist)
-import System.FilePath (takeBaseName, takeDirectory, takeFileName, (</>))
+import System.FilePath (normalise, takeBaseName, takeDirectory, takeFileName, (</>))
 import "generic-lens" Data.Generics.Labels ()
 
 -- | How a registry reference is to be evaluated. A file must be evaluated with
@@ -69,6 +70,8 @@ data RegistryRef
 data ProfileSource
   = -- | A registry reference, as the user wrote it, and how it resolved.
     RegistrySource !Text !RegistryRef
+  | -- | One descriptor file found by bounded, network-silent local discovery.
+    DescriptorSource !FilePath
   deriving stock (Generic, Eq, Show)
 
 -- | One profile published by a registry, under the dotted field path at which
@@ -145,6 +148,7 @@ renderRegistryRef (RegistryExpression expression) = expression
 -- full reference instead.
 renderProfileSourceReference :: ProfileSource -> Text
 renderProfileSourceReference (RegistrySource reference _resolved) = reference
+renderProfileSourceReference (DescriptorSource path) = Text.pack (normalise path)
 
 -- | Render a compact source label suitable for a table column. A local package
 -- uses its directory name, a direct file uses its basename, and a raw GitHub
@@ -174,6 +178,7 @@ renderProfileSourceLabel (RegistrySource original resolved) =
     truncateLabel value
       | Text.length value <= 32 = value
       | otherwise = Text.take 31 value <> "…"
+renderProfileSourceLabel (DescriptorSource _path) = "local"
 
 -- | Evaluate a registry and enumerate the profiles it publishes. Any parse,
 -- import, type, or IO failure is captured as a human-readable 'Left', matching
@@ -189,12 +194,32 @@ loadRegistry reference =
 loadProfileSource :: ProfileSource -> IO (Either Text [SourcedProfile])
 loadProfileSource profileSource@(RegistrySource _reference resolved) =
   fmap (map (SourcedProfile profileSource)) <$> loadRegistry resolved
+loadProfileSource (DescriptorSource path) = do
+  loaded <- loadProfileDescriptorWithoutNetwork normalizedPath
+  pure $
+    fmap
+      ( \profile ->
+          [ SourcedProfile
+              normalizedSource
+              RegistryEntry
+                { export = Text.pack (takeBaseName normalizedPath),
+                  spec = profile
+                }
+          ]
+      )
+      loaded
+  where
+    normalizedPath = normalise path
+    normalizedSource = DescriptorSource normalizedPath
 
 -- | Drop exact duplicate sources while preserving first-occurrence order.
 -- Distinct sources are never deduplicated merely because their display labels
 -- or export paths happen to collide.
 normalizeProfileSources :: [ProfileSource] -> [ProfileSource]
-normalizeProfileSources = List.nub
+normalizeProfileSources = List.nub . map normalizeSource
+  where
+    normalizeSource source@(RegistrySource _reference _resolved) = source
+    normalizeSource (DescriptorSource path) = DescriptorSource (normalise path)
 
 -- | Enumerate several sources in the order given. Results remain grouped by
 -- source position, while 'registryEntries' keeps each source internally sorted
