@@ -176,6 +176,8 @@ main = do
         testIO "loadRegistry reports a bare profile as a root entry" testRegistryRootProfile,
         testIO "resolveRegistryRef prefers package.dhall inside a directory" testResolveRegistryRef,
         testIO "loadRegistry reports a missing registry as Left" testRegistryLoadFailure,
+        test "registry path intent is classified without mistaking remote URLs for paths" testLooksLikeRegistryPath,
+        testIO "loadRegistryDetailed classifies actionable failures without rendered Dhall text" testRegistryDetailedFailures,
         testIO "profile discovery finds valid descriptors without pruning" testDiscoverProfileDescriptors,
         testIO "profile discovery excludes every non-descriptor fixture" testProfileDescriptorQualification,
         testIO "profile discovery treats a missing root as empty" testProfileDiscoveryMissingRoot,
@@ -3114,6 +3116,54 @@ testRegistryLoadFailure = do
   pure $ case loaded of
     Right entries -> Left ("expected a load failure, got " <> Text.pack (show (length entries)) <> " entries")
     Left message -> assertBool "expected a non-empty error message" (not (Text.null message))
+
+testLooksLikeRegistryPath :: Either Text ()
+testLooksLikeRegistryPath = do
+  assertEqual
+    [True, True, True, True, True, True, False, False, False]
+    ( map
+        looksLikeRegistryPath
+        [ "./profiles/package.dhall",
+          "../profiles/package.dhall",
+          "/profiles/package.dhall",
+          "~/profiles/package.dhall",
+          "profiles/package.dhall",
+          "profile.dhall",
+          "https://example.test/package.dhall sha256:abc",
+          "http://example.test/package.dhall",
+          "{ profile = 1 }"
+        ]
+    )
+
+testRegistryDetailedFailures :: IO (Either Text ())
+testRegistryDetailedFailures =
+  withDiscoveryTree "okf-registry-errors" [] $ \root -> do
+    profilePath <- fixtureFilePath "profiles/decisions.dhall"
+    absoluteProfilePath <- makeAbsolute profilePath
+    directoryResult <- loadRegistryDetailed (RegistryExpression (Text.pack root))
+    missingResult <- loadRegistryDetailed (RegistryExpression (Text.pack (root </> "missing" </> "package.dhall")))
+    invalidResult <- loadRegistryDetailed (RegistryExpression "{ profile =")
+    hashResult <-
+      loadRegistryDetailed
+        ( RegistryExpression
+            ( Text.pack absoluteProfilePath
+                <> " sha256:0000000000000000000000000000000000000000000000000000000000000000"
+            )
+        )
+    pure $ do
+      assertEqual (Left (RegistryDirectoryMissingPackage root)) directoryResult
+      assertEqual (Left (RegistryPathNotFound (root </> "missing" </> "package.dhall"))) missingResult
+      assertEqual (Left RegistryInvalidDhall) invalidResult
+      assertEqual (Left RegistryHashMismatch) hashResult
+      assertBool
+        "typed summaries must not contain ANSI escape bytes"
+        ( all
+            (not . Text.isInfixOf "\ESC[")
+            [ renderRegistryLoadErrorMessage (RegistryDirectoryMissingPackage root),
+              renderRegistryLoadErrorMessage RegistryHashMismatch,
+              renderRegistryLoadErrorMessage RegistryInvalidDhall
+            ]
+        )
 
 testDiscoverProfileDescriptors :: IO (Either Text ())
 testDiscoverProfileDescriptors = do

@@ -99,8 +99,8 @@ network-disabled discovery semantics.
 - [ ] Report the pinned catalogue's version, parsed from the reference
 - [ ] Render fixed-width two-line rows and add the `--wide` escape hatch
 - [ ] Update `sampleRegistryTable` in `okf-cli/test/Main.hs` for the new rendering
-- [ ] Replace the raw Dhall exception text in registry load failures
-- [ ] Strip or avoid ANSI escapes in error output
+- [x] (2026-08-18 21:34Z) Replace the raw Dhall exception text in registry load failures with additive typed core errors and stable summaries
+- [x] (2026-08-18 21:34Z) Avoid ANSI escapes by classifying exceptions rather than rendering Dhall's exception text
 - [ ] Add the opt-in upstream freshness check
 - [ ] Run `cabal build all` and `cabal test all` clean
 - [ ] Paste real transcripts for the inspection command, the fixed table, and each error path
@@ -117,6 +117,14 @@ network-disabled discovery semantics.
   rendered. Description-only truncation therefore cannot meet the stated width goal.
   Evidence: measured the verified v0.10.0 catalogue's ten decoded entries during the Master
   Plan 10 architecture audit on 2026-08-18.
+
+- Observation: Dhall 1.42.3 wraps import failures in `SourcedException MissingImports`,
+  whose nested `SomeException` values retain concrete `Imported HashMismatch`, imported
+  parse, and imported type-error types. The stable classifier therefore needs to inspect
+  that exported wrapper rather than only calling `fromException` on the outer exception.
+  Evidence: the new offline core test distinguishes a wrong local integrity hash from
+  invalid top-level Dhall, a missing path, and a directory without `package.dhall`; the
+  complete `okf-core-test` suite passed at 2026-08-18 21:34Z.
 
 
 ## Decision Log

@@ -19,14 +19,25 @@ module Okf.Profile.Registry
     renderRegistryRef,
     renderProfileSourceLabel,
     renderProfileSourceReference,
+    looksLikeRegistryPath,
 
     -- * Enumeration
     RegistryEntry (..),
+    RegistryLoadError (..),
+    registryLoadErrorCategory,
+    renderRegistryLoadErrorMessage,
     SourceFailure (..),
+    ProfileSourceLoadError (..),
+    failedProfileSource,
+    profileSourceLoadErrorCategory,
+    renderProfileSourceLoadError,
     SourcedProfile (..),
     loadRegistry,
+    loadRegistryDetailed,
     loadProfileSource,
+    loadProfileSourceDetailed,
     loadProfileSources,
+    loadProfileSourcesDetailed,
     normalizeProfileSources,
     registryEntries,
     findRegistryEntry,
@@ -35,15 +46,18 @@ module Okf.Profile.Registry
   )
 where
 
-import Control.Exception (SomeException, catch)
+import Control.Exception (SomeException, catch, fromException)
 import Data.List qualified as List
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text.IO
 import Data.Void (Void)
 import Dhall qualified
 import Dhall.Core (Expr (RecordLit), recordFieldValue)
+import Dhall.Import qualified as Dhall.Import
 import Dhall.Map qualified
+import Dhall.Parser qualified as Dhall.Parser
 import Dhall.Src (Src)
+import Dhall.TypeCheck qualified as Dhall.TypeCheck
 import Okf.Prelude
 import Okf.Profile (ProfileSpec, decodeProfileExpr)
 import Okf.Profile.Discovery (loadProfileDescriptorWithoutNetwork)
@@ -83,6 +97,47 @@ data RegistryEntry = RegistryEntry
   }
   deriving stock (Generic, Eq, Show)
 
+-- | A stable, user-facing classification of registry evaluation failures.
+-- Dhall's exception renderers deliberately include source excerpts and ANSI
+-- styling; those are useful to a language implementer but are not a suitable
+-- command-line contract for a user trying to identify a bad source.
+data RegistryLoadError
+  = RegistryDirectoryMissingPackage !FilePath
+  | RegistryPathNotFound !FilePath
+  | RegistryHashMismatch
+  | RegistryImportFailure
+  | RegistryInvalidDhall
+  | RegistryEvaluationFailure
+  deriving stock (Generic, Eq, Show)
+
+registryLoadErrorCategory :: RegistryLoadError -> Text
+registryLoadErrorCategory = \case
+  RegistryDirectoryMissingPackage _path -> "directory-missing-package"
+  RegistryPathNotFound _path -> "path-not-found"
+  RegistryHashMismatch -> "hash-mismatch"
+  RegistryImportFailure -> "import-failure"
+  RegistryInvalidDhall -> "invalid-dhall"
+  RegistryEvaluationFailure -> "evaluation-failure"
+
+-- | Render a plain summary with no third-party exception text or terminal
+-- escape sequences. The CLI adds the source identity and reference guidance.
+renderRegistryLoadErrorMessage :: RegistryLoadError -> Text
+renderRegistryLoadErrorMessage = \case
+  RegistryDirectoryMissingPackage path ->
+    "directory "
+      <> Text.pack path
+      <> " does not contain package.dhall; use `okf profiles` to discover loose descriptors and OKF_PROFILE_ROOTS to choose where it searches"
+  RegistryPathNotFound path ->
+    "registry path " <> Text.pack path <> " does not exist; check the spelling"
+  RegistryHashMismatch ->
+    "the registry import failed its integrity check; its content does not match the pinned hash"
+  RegistryImportFailure ->
+    "one or more registry imports could not be resolved; check local paths and network access"
+  RegistryInvalidDhall ->
+    "the registry is not valid, well-typed Dhall"
+  RegistryEvaluationFailure ->
+    "registry evaluation failed unexpectedly"
+
 -- | One source that could not be enumerated, together with the captured load
 -- error. Multi-source survey operations report these without hiding entries
 -- from sources that did load.
@@ -91,6 +146,32 @@ data SourceFailure = SourceFailure
     failureReason :: !Text
   }
   deriving stock (Generic, Eq, Show)
+
+-- | A typed failure for one source. Registry errors retain their stable
+-- category; descriptor errors remain a separate branch because descriptor
+-- discovery uses a deliberately restricted, no-network evaluator.
+data ProfileSourceLoadError
+  = RegistryProfileSourceLoadError !ProfileSource !RegistryLoadError
+  | DescriptorProfileSourceLoadError !ProfileSource
+  deriving stock (Generic, Eq, Show)
+
+failedProfileSource :: ProfileSourceLoadError -> ProfileSource
+failedProfileSource = \case
+  RegistryProfileSourceLoadError profileSource _error -> profileSource
+  DescriptorProfileSourceLoadError profileSource -> profileSource
+
+profileSourceLoadErrorCategory :: ProfileSourceLoadError -> Text
+profileSourceLoadErrorCategory = \case
+  RegistryProfileSourceLoadError _profileSource registryError ->
+    registryLoadErrorCategory registryError
+  DescriptorProfileSourceLoadError _profileSource -> "descriptor-load-failure"
+
+renderProfileSourceLoadError :: ProfileSourceLoadError -> Text
+renderProfileSourceLoadError = \case
+  RegistryProfileSourceLoadError _profileSource registryError ->
+    renderRegistryLoadErrorMessage registryError
+  DescriptorProfileSourceLoadError _profileSource ->
+    "the local profile descriptor could not be read or decoded"
 
 -- | One registry entry paired with the source that published it. Provenance
 -- wraps the existing source-agnostic 'RegistryEntry' rather than changing that
@@ -138,6 +219,23 @@ resolveRegistryRef reference = do
             )
         else pure (RegistryExpression reference)
 
+-- | Whether text looks intended to name a filesystem path rather than a raw
+-- Dhall expression. Remote URLs are excluded before checking path separators,
+-- because both @https://@ and a hash-pinned URL contain slashes.
+looksLikeRegistryPath :: Text -> Bool
+looksLikeRegistryPath raw
+  | Text.null reference = False
+  | isRemoteReference lowered = False
+  | otherwise =
+      any (`Text.isPrefixOf` reference) ["./", "../", "~/", "/"]
+        || Text.any (\character -> character == '/' || character == '\\') reference
+        || ".dhall" `Text.isSuffixOf` Text.toLower reference
+  where
+    reference = Text.strip raw
+    lowered = Text.toLower reference
+    isRemoteReference value =
+      "http://" `Text.isPrefixOf` value || "https://" `Text.isPrefixOf` value
+
 -- | Render a reference for display in messages.
 renderRegistryRef :: RegistryRef -> Text
 renderRegistryRef (RegistryFile path) = Text.pack path
@@ -184,30 +282,91 @@ renderProfileSourceLabel (DescriptorSource _path) = "local"
 -- import, type, or IO failure is captured as a human-readable 'Left', matching
 -- how 'Okf.Profile.loadProfileFile' behaves.
 loadRegistry :: RegistryRef -> IO (Either Text [RegistryEntry])
-loadRegistry reference =
-  (Right . registryEntries <$> evaluateRef reference)
-    `catch` \(e :: SomeException) -> pure (Left (Text.pack (show e)))
+loadRegistry reference = first renderRegistryLoadErrorMessage <$> loadRegistryDetailed reference
+
+-- | Evaluate a registry while preserving a stable error category. Path-like
+-- expressions are checked before Dhall sees them so a missing file or a loose
+-- descriptor directory produces an actionable message instead of an "unbound
+-- variable" diagnostic.
+loadRegistryDetailed :: RegistryRef -> IO (Either RegistryLoadError [RegistryEntry])
+loadRegistryDetailed reference = do
+  preflight <- registryReferencePreflight reference
+  case preflight of
+    Just registryError -> pure (Left registryError)
+    Nothing ->
+      (Right . registryEntries <$> evaluateRef reference)
+        `catch` \(exception :: SomeException) ->
+          pure (Left (classifyRegistryException exception))
+
+registryReferencePreflight :: RegistryRef -> IO (Maybe RegistryLoadError)
+registryReferencePreflight (RegistryFile path) = do
+  exists <- doesFileExist path
+  pure (if exists then Nothing else Just (RegistryPathNotFound path))
+registryReferencePreflight (RegistryExpression expression) = do
+  let pathExpression = fst (Text.breakOn " sha256:" (Text.strip expression))
+      path = Text.unpack pathExpression
+  isDirectory <- doesDirectoryExist path
+  if isDirectory
+    then pure (Just (RegistryDirectoryMissingPackage path))
+    else do
+      isFile <- doesFileExist path
+      pure
+        ( if looksLikeRegistryPath pathExpression && not isFile
+            then Just (RegistryPathNotFound path)
+            else Nothing
+        )
+
+classifyRegistryException :: SomeException -> RegistryLoadError
+classifyRegistryException exception
+  | isHashMismatch exception = RegistryHashMismatch
+  | isInvalidDhall exception = RegistryInvalidDhall
+  | Just (Dhall.Parser.SourcedException _source (Dhall.Import.MissingImports nested)) <-
+      fromException exception =
+      classifyMissingImports nested
+  | otherwise = RegistryEvaluationFailure
+  where
+    isHashMismatch caught =
+      isJust (fromException caught :: Maybe Dhall.Import.HashMismatch)
+        || isJust (fromException caught :: Maybe (Dhall.Import.Imported Dhall.Import.HashMismatch))
+
+    isInvalidDhall caught =
+      isJust (fromException caught :: Maybe Dhall.Parser.ParseError)
+        || isJust (fromException caught :: Maybe (Dhall.TypeCheck.TypeError Src Void))
+        || isJust (fromException caught :: Maybe (Dhall.Import.Imported Dhall.Parser.ParseError))
+        || isJust (fromException caught :: Maybe (Dhall.Import.Imported (Dhall.TypeCheck.TypeError Src Void)))
+
+    classifyMissingImports nested
+      | any isHashMismatch nested = RegistryHashMismatch
+      | any isInvalidDhall nested = RegistryInvalidDhall
+      | otherwise = RegistryImportFailure
 
 -- | Load one profile source and attach it to every enumerated registry entry.
 -- Pattern matches are exhaustive so adding another source kind requires its
 -- loading behavior to be defined explicitly.
 loadProfileSource :: ProfileSource -> IO (Either Text [SourcedProfile])
-loadProfileSource profileSource@(RegistrySource _reference resolved) =
-  fmap (map (SourcedProfile profileSource)) <$> loadRegistry resolved
-loadProfileSource (DescriptorSource path) = do
+loadProfileSource profileSource =
+  first renderProfileSourceLoadError <$> loadProfileSourceDetailed profileSource
+
+loadProfileSourceDetailed :: ProfileSource -> IO (Either ProfileSourceLoadError [SourcedProfile])
+loadProfileSourceDetailed profileSource@(RegistrySource _reference resolved) =
+  first (RegistryProfileSourceLoadError profileSource)
+    . fmap (map (SourcedProfile profileSource))
+    <$> loadRegistryDetailed resolved
+loadProfileSourceDetailed (DescriptorSource path) = do
   loaded <- loadProfileDescriptorWithoutNetwork normalizedPath
   pure $
-    fmap
-      ( \profile ->
-          [ SourcedProfile
-              normalizedSource
-              RegistryEntry
-                { export = Text.pack (takeBaseName normalizedPath),
-                  spec = profile
-                }
-          ]
-      )
-      loaded
+    first (const (DescriptorProfileSourceLoadError normalizedSource)) $
+      fmap
+        ( \profile ->
+            [ SourcedProfile
+                normalizedSource
+                RegistryEntry
+                  { export = Text.pack (takeBaseName normalizedPath),
+                    spec = profile
+                  }
+            ]
+        )
+        loaded
   where
     normalizedPath = normalise path
     normalizedSource = DescriptorSource normalizedPath
@@ -226,14 +385,27 @@ normalizeProfileSources = List.nub . map normalizeSource
 -- by export path. A failure from one source is returned alongside successful
 -- entries from every other source rather than hiding them.
 loadProfileSources :: [ProfileSource] -> IO ([SourceFailure], [SourcedProfile])
-loadProfileSources sources = go (normalizeProfileSources sources) [] []
+loadProfileSources sources = do
+  (failures, profiles) <- loadProfileSourcesDetailed sources
+  pure
+    ( [ SourceFailure
+          { failedSource = failedProfileSource profileSourceError,
+            failureReason = renderProfileSourceLoadError profileSourceError
+          }
+      | profileSourceError <- failures
+      ],
+      profiles
+    )
+
+loadProfileSourcesDetailed :: [ProfileSource] -> IO ([ProfileSourceLoadError], [SourcedProfile])
+loadProfileSourcesDetailed sources = go (normalizeProfileSources sources) [] []
   where
     go [] failures profiles = pure (reverse failures, reverse profiles)
     go (profileSource : rest) failures profiles = do
-      loaded <- loadProfileSource profileSource
+      loaded <- loadProfileSourceDetailed profileSource
       case loaded of
         Left reason ->
-          go rest (SourceFailure profileSource reason : failures) profiles
+          go rest (reason : failures) profiles
         Right sourceProfiles ->
           go rest failures (reverse sourceProfiles <> profiles)
 
