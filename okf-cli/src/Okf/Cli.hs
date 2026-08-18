@@ -16,7 +16,9 @@ module Okf.Cli
     ProfileCommand (..),
     ProfileDocumentOptions (..),
     ProfileListOptions (..),
+    ProfileSourceOrigin (..),
     ProfileShowOptions (..),
+    ResolvedProfileSource (..),
     ShowOptions (..),
     SourcesOptions (..),
     TrustOptions (..),
@@ -27,13 +29,18 @@ module Okf.Cli
     conceptReportJson,
     observedIdPrefixes,
     parserInfo,
+    parseProfileRegistriesEnv,
+    profileRegistriesEnvVar,
     profileRegistryEnvVar,
+    registryListJson,
+    resolveProfileSources,
     renderProfileDetail,
     renderProfileViolation,
     renderRegistryTable,
     runCli,
     runCommand,
     runLogAdd,
+    selectSourcedProfile,
   )
 where
 
@@ -150,10 +157,15 @@ import Okf.Profile.Documentation
     renderProfileDocumentation,
   )
 import Okf.Profile.Registry
-  ( RegistryEntry (..),
+  ( ProfileSource (..),
+    RegistryEntry (..),
     RegistryRef (..),
-    findRegistryEntry,
-    loadRegistry,
+    SourceFailure (..),
+    SourcedProfile (..),
+    findSourcedProfiles,
+    loadProfileSources,
+    renderProfileSourceLabel,
+    renderProfileSourceReference,
     renderRegistryRef,
     resolveRegistryRef,
     rootExportLabel,
@@ -322,20 +334,20 @@ data ProfileCommand
   deriving stock (Show, Eq)
 
 data ProfileListOptions = ProfileListOptions
-  { registryRef :: !(Maybe Text),
+  { registryRefs :: ![Text],
     json :: !Bool
   }
   deriving stock (Show, Eq)
 
 data ProfileShowOptions = ProfileShowOptions
-  { registryRef :: !(Maybe Text),
+  { registryRefs :: ![Text],
     export :: !(Maybe Text),
     json :: !Bool
   }
   deriving stock (Show, Eq)
 
 data ProfileDocumentOptions = ProfileDocumentOptions
-  { registryRef :: !(Maybe Text),
+  { registryRefs :: ![Text],
     export :: !(Maybe Text),
     profilePath :: !(Maybe FilePath),
     outputPath :: !(Maybe FilePath),
@@ -344,6 +356,22 @@ data ProfileDocumentOptions = ProfileDocumentOptions
     generatedBy :: !(Maybe Text),
     generatedAt :: !(Maybe Text),
     okfVersion :: !(Maybe Text)
+  }
+  deriving stock (Show, Eq)
+
+-- | The winning precedence layer for a resolved profile source. This travels
+-- with the source so inspection never has to reconstruct resolution later.
+data ProfileSourceOrigin
+  = RegistryFlagOrigin
+  | RegistriesEnvironmentOrigin
+  | LegacyRegistryEnvironmentOrigin
+  | ProfileConfigOrigin !FilePath
+  | BuiltInRegistryOrigin
+  deriving stock (Show, Eq)
+
+data ResolvedProfileSource = ResolvedProfileSource
+  { resolvedSource :: !ProfileSource,
+    sourceOrigin :: !ProfileSourceOrigin
   }
   deriving stock (Show, Eq)
 
@@ -609,18 +637,18 @@ profileCommandParser =
               (progDesc "Generate an OKF bundle documenting a profile")
           )
     )
-    <|> pure (ProfileList (ProfileListOptions Nothing False))
+    <|> pure (ProfileList (ProfileListOptions [] False))
 
 profileListOptionsParser :: Parser ProfileListOptions
 profileListOptionsParser =
   ProfileListOptions
-    <$> optional registryOption
+    <$> many registryOption
     <*> jsonSwitch
 
 profileShowOptionsParser :: Parser ProfileShowOptions
 profileShowOptionsParser =
   ProfileShowOptions
-    <$> optional registryOption
+    <$> many registryOption
     <*> optional
       ( Text.pack
           <$> strArgument
@@ -633,7 +661,7 @@ profileShowOptionsParser =
 profileDocumentOptionsParser :: Parser ProfileDocumentOptions
 profileDocumentOptionsParser =
   ProfileDocumentOptions
-    <$> optional registryOption
+    <$> many registryOption
     <*> optional
       ( Text.pack
           <$> strArgument
@@ -697,7 +725,7 @@ registryOption =
     <$> strOption
       ( long "registry"
           <> metavar "REGISTRY"
-          <> help "Dhall file, directory holding package.dhall, or Dhall expression publishing profiles"
+          <> help "Dhall file, directory holding package.dhall, or Dhall expression publishing profiles; repeat to merge sources"
       )
 
 jsonSwitch :: Parser Bool
@@ -919,9 +947,14 @@ readAgentEnvOverrides = do
       let stripped = Text.strip (Text.pack raw)
        in if Text.null stripped then Nothing else Just stripped
 
--- | Environment override for the registry @okf profile@ reads.
+-- | Legacy singular environment override for the registry @okf profile@ reads.
 profileRegistryEnvVar :: String
 profileRegistryEnvVar = "OKF_PROFILE_REGISTRY"
+
+-- | Plural environment override. JSON is used because registry references may
+-- themselves contain colons in URLs and integrity hashes.
+profileRegistriesEnvVar :: String
+profileRegistriesEnvVar = "OKF_PROFILE_REGISTRIES"
 
 runProfile :: ProfileCommand -> IO ()
 runProfile = \case
@@ -929,32 +962,101 @@ runProfile = \case
   ProfileShow options -> runProfileShow options
   ProfileDocument options -> runProfileDocument options
 
--- | Registry reference precedence: @--registry@, then 'profileRegistryEnvVar',
--- then configuration (which falls back to the built-in default). Configuration
--- is read only when it is actually needed, so a broken @okf-config.dhall@
--- cannot stop @okf profile list --registry ./somewhere.dhall@.
-resolveRegistryReference :: Maybe Text -> IO Text
-resolveRegistryReference (Just explicit) = pure explicit
-resolveRegistryReference Nothing = do
-  fromEnvironment <- lookupEnv profileRegistryEnvVar
-  case fromEnvironment of
-    Just fromShell | not (null fromShell) -> pure (Text.pack fromShell)
-    _ -> do
-      OkfConfig {profiles = ProfileSettings {registry}} <- loadConfigOrDie
-      pure registry
+-- | Decode the plural environment value. Aeson decodes directly to @[Text]@,
+-- so a non-array or non-string member is rejected rather than coerced. Blank
+-- elements are discarded and exact duplicates keep their first occurrence.
+parseProfileRegistriesEnv :: Text -> Either Text [Text]
+parseProfileRegistriesEnv encoded =
+  case Aeson.eitherDecodeStrict' (Text.Encoding.encodeUtf8 encoded) of
+    Left err -> Left (Text.pack err)
+    Right references ->
+      Right
+        ( List.nub
+            (filter (not . Text.null) (map Text.strip (references :: [Text])))
+        )
 
--- | Resolve, evaluate, and enumerate a registry, or exit 1 explaining why not.
--- The reference is returned in the form the user gave it, for messages, along
--- with the resolved reference, which is what @show@ quotes back as Dhall.
-loadRegistryOrDie :: Maybe Text -> IO (Text, RegistryRef, [RegistryEntry])
-loadRegistryOrDie explicit = do
-  reference <- resolveRegistryReference explicit
-  ref <- resolveRegistryRef reference
-  loaded <- loadRegistry ref
-  case loaded of
-    Left err -> dieText (renderRegistryLoadError reference err)
-    Right [] -> dieText ("No profiles found in registry " <> reference)
-    Right entries -> pure (reference, ref, entries)
+-- | Profile source precedence: repeated @--registry@ flags, then the plural
+-- JSON environment value, then the legacy singular environment value, then the
+-- effective configuration. Only the winning layer contributes sources.
+-- Configuration is read only when needed, so a broken file cannot stop an
+-- explicit invocation.
+resolveProfileSources :: [Text] -> IO [ResolvedProfileSource]
+resolveProfileSources explicit
+  | not (null explicit) = resolveReferences RegistryFlagOrigin explicit
+  | otherwise = do
+      plural <- lookupEnv profileRegistriesEnvVar
+      case nonBlankEnvironment plural of
+        Just encoded ->
+          case parseProfileRegistriesEnv encoded of
+            Left err ->
+              dieText
+                ( Text.pack profileRegistriesEnvVar
+                    <> ": expected a JSON array of strings: "
+                    <> err
+                )
+            Right references -> resolveReferences RegistriesEnvironmentOrigin references
+        Nothing -> do
+          legacyVariable <- lookupEnv profileRegistryEnvVar
+          case nonBlankEnvironment legacyVariable of
+            Just reference -> resolveReferences LegacyRegistryEnvironmentOrigin [reference]
+            Nothing -> do
+              (OkfConfig {profiles = ProfileSettings {registries}}, configSource) <- loadConfigWithSourceOrDie
+              resolveReferences (profileConfigOrigin configSource) registries
+  where
+    nonBlankEnvironment Nothing = Nothing
+    nonBlankEnvironment (Just raw) =
+      let stripped = Text.strip (Text.pack raw)
+       in if Text.null stripped then Nothing else Just stripped
+
+    profileConfigOrigin = \case
+      SourceEnv path -> ProfileConfigOrigin path
+      SourceProject path -> ProfileConfigOrigin path
+      SourceXdg path -> ProfileConfigOrigin path
+      SourceDot path -> ProfileConfigOrigin path
+      SourceDefaults -> BuiltInRegistryOrigin
+
+resolveReferences :: ProfileSourceOrigin -> [Text] -> IO [ResolvedProfileSource]
+resolveReferences origin references = do
+  resolved <-
+    traverse
+      ( \reference -> do
+          registryRef <- resolveRegistryRef reference
+          pure
+            ResolvedProfileSource
+              { resolvedSource = RegistrySource reference registryRef,
+                sourceOrigin = origin
+              }
+      )
+      (filter (not . Text.null) (map Text.strip references))
+  pure (List.nubBy (\left right -> resolvedSource left == resolvedSource right) resolved)
+
+-- | Load sources for a survey command. Failures are reported but do not hide
+-- successful entries, and the command succeeds whenever at least one profile
+-- was enumerated.
+loadProfileSourcesForSurvey :: [ResolvedProfileSource] -> IO ([SourceFailure], [SourcedProfile])
+loadProfileSourcesForSurvey [] = dieText "No profile registry sources selected."
+loadProfileSourcesForSurvey resolved = do
+  loaded@(failures, profiles) <- loadProfileSources (map resolvedSource resolved)
+  traverse_ (Text.IO.hPutStrLn stderr . renderSourceFailure) failures
+  when (null profiles) $
+    dieText "No profiles found in the selected registry sources."
+  pure loaded
+
+-- | Load sources for a named lookup. Any failed source makes uniqueness
+-- unknowable, so lookup fails closed before examining the surviving entries.
+loadProfileSourcesForNamedLookup :: [ResolvedProfileSource] -> IO [SourcedProfile]
+loadProfileSourcesForNamedLookup [] = dieText "No profile registry sources selected."
+loadProfileSourcesForNamedLookup resolved = do
+  (failures, profiles) <- loadProfileSources (map resolvedSource resolved)
+  unless (null failures) $
+    dieText (Text.intercalate "\n" (map renderSourceFailure failures))
+  when (null profiles) $
+    dieText "No profiles found in the selected registry sources."
+  pure profiles
+
+renderSourceFailure :: SourceFailure -> Text
+renderSourceFailure SourceFailure {failedSource, failureReason} =
+  renderRegistryLoadError (renderProfileSourceReference failedSource) failureReason
 
 -- | A load failure is usually a mistyped path or a missing network, so say what
 -- a reference may be and how to work offline.
@@ -968,24 +1070,60 @@ renderRegistryLoadError reference err =
     ]
 
 runProfileList :: ProfileListOptions -> IO ()
-runProfileList ProfileListOptions {registryRef, json} = do
-  (reference, _ref, entries) <- loadRegistryOrDie registryRef
+runProfileList ProfileListOptions {registryRefs, json} = do
+  resolved <- resolveProfileSources registryRefs
+  (_failures, profiles) <- loadProfileSourcesForSurvey resolved
   if json
-    then LazyByteString.putStrLn (Aeson.encode (registryListJson reference entries))
-    else traverse_ Text.IO.putStrLn (renderRegistryTable entries)
+    then LazyByteString.putStrLn (Aeson.encode (registryListJson resolved profiles))
+    else traverse_ Text.IO.putStrLn (renderRegistryTable profiles)
 
-registryListJson :: Text -> [RegistryEntry] -> Aeson.Value
-registryListJson reference entries =
+registryListJson :: [ResolvedProfileSource] -> [SourcedProfile] -> Aeson.Value
+registryListJson resolved profiles =
   Aeson.object
-    [ "registry" Aeson..= reference,
-      "profiles"
-        Aeson..= [ Aeson.object
-                     [ "export" Aeson..= export,
-                       "profile" Aeson..= spec
-                     ]
-                 | RegistryEntry {export, spec} <- entries
-                 ]
+    ( legacyRegistryField
+        <> [ "sources" Aeson..= map resolvedSourceJson resolved,
+             "profiles"
+               Aeson..= [ Aeson.object
+                            [ "source" Aeson..= profileSourceJson source,
+                              "export" Aeson..= export,
+                              "profile" Aeson..= spec
+                            ]
+                        | SourcedProfile {source, entry = RegistryEntry {export, spec}} <- profiles
+                        ]
+           ]
+    )
+  where
+    legacyRegistryField =
+      case resolved of
+        [ResolvedProfileSource {resolvedSource = singleSource}] ->
+          ["registry" Aeson..= renderProfileSourceReference singleSource]
+        _ -> []
+
+    profileSourceJson profileSource =
+      case List.find ((== profileSource) . resolvedSource) resolved of
+        Just resolvedProfileSource -> resolvedSourceJson resolvedProfileSource
+        Nothing -> sourceJson profileSource Aeson.Null
+
+resolvedSourceJson :: ResolvedProfileSource -> Aeson.Value
+resolvedSourceJson ResolvedProfileSource {resolvedSource, sourceOrigin} =
+  sourceJson resolvedSource (profileSourceOriginJson sourceOrigin)
+
+sourceJson :: ProfileSource -> Aeson.Value -> Aeson.Value
+sourceJson profileSource origin =
+  Aeson.object
+    [ "kind" Aeson..= ("registry" :: Text),
+      "label" Aeson..= renderProfileSourceLabel profileSource,
+      "reference" Aeson..= renderProfileSourceReference profileSource,
+      "origin" Aeson..= origin
     ]
+
+profileSourceOriginJson :: ProfileSourceOrigin -> Aeson.Value
+profileSourceOriginJson = \case
+  RegistryFlagOrigin -> Aeson.object ["kind" Aeson..= ("flag" :: Text), "name" Aeson..= ("--registry" :: Text)]
+  RegistriesEnvironmentOrigin -> Aeson.object ["kind" Aeson..= ("environment" :: Text), "name" Aeson..= profileRegistriesEnvVar]
+  LegacyRegistryEnvironmentOrigin -> Aeson.object ["kind" Aeson..= ("environment" :: Text), "name" Aeson..= profileRegistryEnvVar]
+  ProfileConfigOrigin path -> Aeson.object ["kind" Aeson..= ("config" :: Text), "path" Aeson..= path]
+  BuiltInRegistryOrigin -> Aeson.object ["kind" Aeson..= ("built-in" :: Text)]
 
 -- | An aligned table: a header row plus one row per profile, columns padded to
 -- their widest value. Pure so it can be tested without evaluating any Dhall.
@@ -993,17 +1131,22 @@ registryListJson reference entries =
 -- @DESCRIPTION@ comes last so the existing columns keep their positions and a
 -- long description cannot push anything off the right edge. Nothing follows it,
 -- so it is never padded; an absent description reads @-@, matching @ID FIELD@.
-renderRegistryTable :: [RegistryEntry] -> [Text]
-renderRegistryTable entries =
+renderRegistryTable :: [SourcedProfile] -> [Text]
+renderRegistryTable profiles =
   map renderRow rows
   where
-    headerRow = ["EXPORT", "NAME", "OKF", "TYPES", "ID FIELD", "DESCRIPTION"]
+    headerRow = ["SOURCE", "EXPORT", "NAME", "OKF", "TYPES", "ID FIELD", "DESCRIPTION"]
     entryRow
-      RegistryEntry
-        { export = exportPath,
-          spec = ProfileSpec {name, description, okfVersion, idField, types = typeRules}
+      SourcedProfile
+        { source,
+          entry =
+            RegistryEntry
+              { export = exportPath,
+                spec = ProfileSpec {name, description, okfVersion, idField, types = typeRules}
+              }
         } =
-        [ displayExport exportPath,
+        [ renderProfileSourceLabel source,
+          displayExport exportPath,
           name,
           okfVersion,
           Text.pack (show (length typeRules)),
@@ -1011,11 +1154,11 @@ renderRegistryTable entries =
           fromMaybe "-" description
         ]
 
-    rows = headerRow : map entryRow entries
+    rows = headerRow : map entryRow profiles
 
     -- One padder per column, in order; the last column is left as it is.
-    padders = [padRight, padRight, padLeft, padLeft, padRight, \_ cell -> cell]
-    widths = [maximum (0 : map (Text.length . (!! column)) rows) | column <- [0 .. 5]]
+    padders = [padRight, padRight, padRight, padLeft, padLeft, padRight, \_ cell -> cell]
+    widths = [maximum (0 : map (Text.length . (!! column)) rows) | column <- [0 .. 6]]
 
     renderRow cells = Text.intercalate "  " (zipWith3 id padders widths cells)
 
@@ -1029,9 +1172,14 @@ displayExport exportPath
   | otherwise = exportPath
 
 runProfileShow :: ProfileShowOptions -> IO ()
-runProfileShow ProfileShowOptions {registryRef, export = requestedExport, json} = do
-  (reference, ref, entries) <- loadRegistryOrDie registryRef
-  RegistryEntry {export = foundExport, spec} <- selectEntry reference entries requestedExport
+runProfileShow ProfileShowOptions {registryRefs, export = requestedExport, json} = do
+  resolved <- resolveProfileSources registryRefs
+  profiles <- loadProfileSourcesForNamedLookup resolved
+  SourcedProfile
+    { source = RegistrySource _reference ref,
+      entry = RegistryEntry {export = foundExport, spec}
+    } <-
+    selectEntry profiles requestedExport
   if json
     then LazyByteString.putStrLn (Aeson.encode spec)
     else do
@@ -1041,32 +1189,50 @@ runProfileShow ProfileShowOptions {registryRef, export = requestedExport, json} 
 -- | Pick the profile to show. With no @EXPORT@ argument a single-profile
 -- registry needs no disambiguation; otherwise the available exports are listed,
 -- which is also what an unknown export reports.
-selectEntry :: Text -> [RegistryEntry] -> Maybe Text -> IO RegistryEntry
-selectEntry reference entries = \case
-  Nothing -> case entries of
-    [single] -> pure single
+selectEntry :: [SourcedProfile] -> Maybe Text -> IO SourcedProfile
+selectEntry profiles requested = either dieText pure (selectSourcedProfile profiles requested)
+
+-- | Resolve one profile from a complete, successfully loaded source set. The
+-- pure result keeps ambiguity behavior directly testable; command policy turns
+-- the 'Left' into exit status 1.
+selectSourcedProfile :: [SourcedProfile] -> Maybe Text -> Either Text SourcedProfile
+selectSourcedProfile profiles = \case
+  Nothing -> case profiles of
+    [single] -> Right single
     _ ->
-      dieText
-        ( "Registry "
-            <> reference
-            <> " publishes more than one profile; name one.\n"
-            <> availableExports entries
+      Left
+        ( "The selected sources publish more than one profile; name one.\n"
+            <> availableExports profiles
         )
-  Just requested -> case findRegistryEntry requested entries of
-    Just entry -> pure entry
-    Nothing ->
-      dieText
+  Just requested -> case findSourcedProfiles requested profiles of
+    [single] -> Right single
+    [] ->
+      Left
         ( "No profile named "
             <> requested
-            <> " in registry "
-            <> reference
+            <> " in the selected sources"
             <> "\n"
-            <> availableExports entries
+            <> availableExports profiles
+        )
+    collisions ->
+      Left
+        ( "Profile export "
+            <> requested
+            <> " is ambiguous; it is published by:\n"
+            <> Text.unlines
+              [ "  " <> renderProfileSourceReference source
+              | SourcedProfile {source} <- collisions
+              ]
+            <> "Rerun with exactly one intended --registry REFERENCE."
         )
   where
     availableExports found =
       "Available exports: "
-        <> Text.intercalate ", " [displayExport exportPath | RegistryEntry {export = exportPath} <- found]
+        <> Text.intercalate
+          ", "
+          [ displayExport exportPath <> " (" <> renderProfileSourceLabel source <> ")"
+          | SourcedProfile {source, entry = RegistryEntry {export = exportPath}} <- found
+          ]
 
 -- | Generate an OKF bundle documenting a profile.
 --
@@ -1078,7 +1244,7 @@ selectEntry reference entries = \case
 runProfileDocument :: ProfileDocumentOptions -> IO ()
 runProfileDocument
   ProfileDocumentOptions
-    { registryRef,
+    { registryRefs,
       export = requestedExport,
       profilePath,
       outputPath,
@@ -1088,7 +1254,7 @@ runProfileDocument
       generatedAt,
       okfVersion
     } = do
-    when (isJust profilePath && (isJust requestedExport || isJust registryRef)) $
+    when (isJust profilePath && (isJust requestedExport || not (null registryRefs))) $
       dieText "Pass either --profile PATH or an EXPORT argument, not both."
     when (write && isNothing outputPath) $
       dieText "--write needs a destination; pass --out DIR."
@@ -1132,9 +1298,10 @@ runProfileDocument
             loadedSpec <- loadProfileOrExit path
             pure (Text.pack path, loadedSpec)
           Nothing -> do
-            (reference, _ref, entries) <- loadRegistryOrDie registryRef
-            RegistryEntry {export = foundExport, spec} <-
-              selectEntry reference entries requestedExport
+            resolved <- resolveProfileSources registryRefs
+            profiles <- loadProfileSourcesForNamedLookup resolved
+            SourcedProfile {entry = RegistryEntry {export = foundExport, spec}} <-
+              selectEntry profiles requestedExport
             pure (displayExport foundExport, spec)
         compileProfileOrExit label spec
 

@@ -837,7 +837,22 @@ The [okf-profiles](mori://shinzui/okf-profiles) repository is already
 exactly this shape, so it works as a registry with no changes:
 
 ```bash
-okf profile list --registry /path/to/okf-profiles
+okf profile list \
+  --registry /path/to/okf-profiles \
+  --registry ./house-profiles
+```
+
+`--registry` is repeatable. Every selected source is enumerated, sources remain
+grouped in the order given, and every row identifies its source. A list in
+configuration expresses the same setup:
+
+```dhall
+{ profiles.registries =
+    [ "/path/to/okf-profiles"
+    , "./house-profiles"
+    ]
+, …
+}
 ```
 
 With no override, okf currently pins v0.10.0 of that catalogue. It reports the
@@ -845,17 +860,17 @@ following ten profiles; the final `DESCRIPTION` column is omitted here for
 width, but the command prints each catalogue description in full:
 
 ```text
-EXPORT                               NAME                                   OKF  TYPES  ID FIELD
-coordination.bugReports              bug-reports                            0.2      1  bugId
-coordination.capabilities            capabilities                           0.2      1  capabilityId
-coordination.improvementRequests     cross-repository-improvement-requests  0.2      1  requestId
-coordination.useCases                jtbd-use-cases                         0.2      2  useCaseId
-documentation.architectureDecisions  architecture-decision-records          0.2      1  docId
-documentation.patternCatalog         mori-documentation-pattern-catalog     0.2      8  -
-documentation.researchDocuments      research-documents                     0.2      1  researchId
-okfV02                               okf-v0-2                               0.2      0  -
-postgresql                           shinzui-postgresql                     0.2      3  -
-tanPostgresql                        tan-postgresql                         0.2      4  -
+SOURCE        EXPORT                               NAME                                   OKF  TYPES  ID FIELD
+okf-profiles  coordination.bugReports              bug-reports                            0.2      1  bugId
+okf-profiles  coordination.capabilities            capabilities                           0.2      1  capabilityId
+okf-profiles  coordination.improvementRequests     cross-repository-improvement-requests  0.2      1  requestId
+okf-profiles  coordination.useCases                jtbd-use-cases                         0.2      2  useCaseId
+okf-profiles  documentation.architectureDecisions  architecture-decision-records          0.2      1  docId
+okf-profiles  documentation.patternCatalog         mori-documentation-pattern-catalog     0.2      8  -
+okf-profiles  documentation.researchDocuments      research-documents                     0.2      1  researchId
+okf-profiles  okfV02                               okf-v0-2                               0.2      0  -
+okf-profiles  postgresql                           shinzui-postgresql                     0.2      3  -
+okf-profiles  tanPostgresql                        tan-postgresql                         0.2      4  -
 ```
 
 The `DESCRIPTION` column shows the profile's own one-line summary. Descriptions
@@ -880,16 +895,38 @@ A registry reference may take three forms, tried in this order:
 A reference that is itself a profile rather than a record of profiles lists as a
 single entry whose export path prints as `(root)`.
 
-The reference is chosen from the first of these that is set:
+The source list is chosen from the first of these that is set:
 
-1. `--registry`
-2. the `OKF_PROFILE_REGISTRY` environment variable
-3. `profiles.registry` in [configuration](./cli.md)
-4. the built-in default — the `okf-profiles` package pinned by tag *and* sha256
+1. one or more `--registry` flags
+2. `OKF_PROFILE_REGISTRIES`, encoded as a JSON array of strings
+3. the legacy singular `OKF_PROFILE_REGISTRY` environment variable
+4. `profiles.registries` in [configuration](./cli.md)
+5. the built-in default — the `okf-profiles` package pinned by tag *and* sha256
    hash
 
-Configuration is read only when it is actually needed, so a broken
-`okf-config.dhall` cannot stop `okf profile list --registry ./somewhere.dhall`.
+Each layer replaces the layers below it; sources merge only inside the winning
+list. Order is preserved and exact duplicate references are dropped. A blank
+environment variable is unset, while `OKF_PROFILE_REGISTRIES='[]'` and an
+explicit `profiles.registries = [] : List Text` select no registry sources. The
+plural environment value is JSON because URLs and `sha256:` hashes contain
+colons and cannot be split safely like filesystem paths.
+
+A configuration file using the older `profiles.registry` key still loads and
+means a one-element list. The `profiles` block remains first-found-wins rather
+than layered across project and global configuration. Configuration is read
+only when it is actually needed, so a broken `okf-config.dhall` cannot stop
+`okf profile list --registry ./somewhere.dhall`.
+
+Listing is a survey: if one source fails, okf reports that failure on standard
+error, prints every profile from sources that did load, and exits 0 when at
+least one profile was found. Named `profile show` and registry-backed `profile
+document` lookups fail closed when any selected source failed, because the
+unavailable source might publish the requested export or collide with it.
+
+Two loaded sources that publish the same export both appear in the listing.
+Using that name is an ambiguity error that names both full references; rerun
+with exactly one intended `--registry REFERENCE`. Short source labels are for
+display and are not unique identifiers.
 
 ### Working offline
 
@@ -1159,10 +1196,42 @@ okf validate ./my-bundle --profile ./house-profile.dhall
 ```
 
 Both commands also accept `--json`, so scripts and agents consume the same data.
-`profile list --json` wraps the entries with the reference that produced them
-(`{ "registry": …, "profiles": [ { "export": …, "profile": … } ] }`);
-`profile show --json` emits the profile object alone. Note that the JSON key for
-a type rule's name is `type`, matching the Dhall field.
+`profile list --json` emits the selected sources and repeats the complete source
+object on every profile:
+
+```json
+{
+  "sources": [
+    {
+      "kind": "registry",
+      "label": "okf-profiles",
+      "reference": "/path/to/okf-profiles",
+      "origin": { "kind": "flag", "name": "--registry" }
+    }
+  ],
+  "registry": "/path/to/okf-profiles",
+  "profiles": [
+    {
+      "source": {
+        "kind": "registry",
+        "label": "okf-profiles",
+        "reference": "/path/to/okf-profiles",
+        "origin": { "kind": "flag", "name": "--registry" }
+      },
+      "export": "postgresql",
+      "profile": { "name": "shinzui-postgresql" }
+    }
+  ]
+}
+```
+
+The compatibility `registry` key is present only when exactly one registry
+source is selected; it is absent when several sources resolve. Configuration
+origins use `{ "kind": "config", "path": … }`, environment origins name the
+winning variable, and the default uses `{ "kind": "built-in" }`.
+`profile show --json` still emits the profile object alone. The abbreviated
+`profile` object above only illustrates the envelope; real output contains the
+complete profile, whose type-rule name key is `type`, matching the Dhall field.
 
 
 ## Generating profile documentation

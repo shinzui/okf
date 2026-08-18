@@ -65,7 +65,8 @@ FIELDS
                                     own rather than replacing it.
   agent.assist.*                    The same four fields for 'okf assist' alone.
                                     These win over the shared defaults above.
-  profiles.registry                 Registry okf profile reads by default.
+  profiles.registries               Ordered registry list okf profile reads by
+                                    default. An explicit [] selects none.
 
   Providers are Dhall union values: Provider.Claude or Provider.Codex. Both are
   supported; the corresponding CLI ('claude' or 'codex') must be installed.
@@ -76,6 +77,8 @@ FIELDS
 
   A configuration file written for an earlier okf, with an 'assist' block instead
   of 'agent', still loads; its values are read as agent.assist.* .
+  The older singular profiles.registry field also still loads and becomes a
+  one-element profiles.registries list.
 
 EXAMPLE
 
@@ -102,6 +105,6 @@ EXAMPLE
                 }
             }
         , profiles =
-            { registry = "..."
+            { registries = [ "..." ]
             }
         }

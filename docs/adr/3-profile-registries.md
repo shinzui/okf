@@ -189,6 +189,15 @@ Preserving the existing public type is a compatibility decision in its own
 right. The earlier reference to a particular downstream consumer is not relied
 upon as evidence for this rule; registered dependents can change independently.
 
+JSON renders origin as a structured object rather than an opaque label:
+`kind` identifies flag, environment, config, or built-in provenance, while
+`name` identifies the winning flag or environment variable and `path`
+identifies a configuration file. The same full source object appears in the
+top-level source list and on every profile row. A compatibility `registry`
+string is emitted only for exactly one registry source and is absent for a
+multi-source result, so older consumers do not silently mistake one source for
+the complete set.
+
 **Collisions are visible and named lookup never guesses.** Listings show every
 source/export pair, including duplicate export paths. A named export with more
 than one match fails and names the full source references. The actionable

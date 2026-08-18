@@ -187,6 +187,14 @@ cabal run okf -- profile list
 cabal run okf -- profile show postgresql
 ```
 
+Repeat `--registry` to merge a public catalogue with house registries; the
+listing stays grouped by source and labels every row. The same ordered list can
+live in `profiles.registries` or in the JSON-array environment variable
+`OKF_PROFILE_REGISTRIES`. The legacy singular `OKF_PROFILE_REGISTRY` and older
+`profiles.registry` configuration spelling remain supported. Listings preserve
+successful rows when another source fails, while named lookups refuse to guess
+through a failed source or duplicate export.
+
 The built-in default is pinned to `mori://shinzui/okf-profiles` v0.10.0, which
 publishes ten OKF 0.2 profiles with descriptions. Repository maintainers move
 that reviewed pin and its offline conformance fixture together with

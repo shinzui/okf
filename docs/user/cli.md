@@ -835,13 +835,13 @@ one. All three subcommands behave identically whether or not a terminal is
 attached, and only `profile document --write` touches the filesystem.
 
 ```bash
-cabal run okf -- profile list --registry /path/to/okf-profiles
-# EXPORT                               NAME                                   OKF  TYPES  ID FIELD
-# coordination.improvementRequests     cross-repository-improvement-requests  0.1      1  requestId
-# documentation.architectureDecisions  architecture-decision-records          0.1      1  docId
-# documentation.patternCatalog         mori-documentation-pattern-catalog     0.1      8  -
-# postgresql                           shinzui-postgresql                     0.1      3  -
-# tanPostgresql                        tan-postgresql                         0.1      4  -
+cabal run okf -- profile list \
+  --registry /path/to/okf-profiles \
+  --registry ./house-profiles
+# SOURCE        EXPORT                               NAME                                   OKF  TYPES  ID FIELD
+# okf-profiles  coordination.improvementRequests     cross-repository-improvement-requests  0.2      1  requestId
+# okf-profiles  documentation.architectureDecisions  architecture-decision-records          0.2      1  docId
+# house         runbooks                             acme-runbooks                           0.2      1  runbookId
 
 cabal run okf -- profile show postgresql --registry /path/to/okf-profiles
 cabal run okf -- profile list --json --registry /path/to/okf-profiles
@@ -888,7 +888,7 @@ unless you ask, which is what keeps regeneration byte-identical.
 
 | Flag | Applies to | Meaning |
 |------|------------|---------|
-| `--registry REGISTRY` | `list`, `show`, `document` | A Dhall file, a directory holding `package.dhall`, or a Dhall expression such as a hash-pinned URL. |
+| `--registry REGISTRY` | `list`, `show`, `document` | A Dhall file, a directory holding `package.dhall`, or a Dhall expression such as a hash-pinned URL. Repeat the flag to merge sources in the order given. |
 | `--json` | `list`, `show` | Emit JSON instead of text. |
 | `EXPORT` | `show`, `document` | The dotted export path printed in the `EXPORT` column. Optional when the registry publishes exactly one profile. |
 | `--profile PROFILE` | `document` | Document a Dhall descriptor file directly instead of a registry export. Cannot be combined with `EXPORT` or `--registry`. |
@@ -899,16 +899,28 @@ unless you ask, which is what keeps regeneration byte-identical.
 | `--generated-at RFC3339` | `document` | Timestamp recorded in `generated.at`. Omitted entirely when not given, which is what makes regeneration byte-identical: generation never reads the clock. |
 | `--okf-version MAJOR.MINOR` | `document` | Declare the OKF version in the generated bundle's root index, exactly as `okf index --okf-version` does. Omitting it preserves any declaration the destination already carries. |
 
-Without `--registry`, the reference comes from `OKF_PROFILE_REGISTRY`, then
-`profiles.registry` in configuration, then the built-in default — the
-`okf-profiles` package pinned by tag and sha256 hash. The pin means the first run
-fetches over the network and every later run is served from Dhall's cache under
-`~/.cache/dhall`; pass `--registry` with a local checkout to stay offline
-throughout.
+The source list comes from the first winning layer: repeated `--registry` flags,
+`OKF_PROFILE_REGISTRIES` as a JSON array of strings, the legacy singular
+`OKF_PROFILE_REGISTRY`, `profiles.registries` in configuration, or the built-in
+default. Layers replace rather than concatenate; sources inside the winning list
+merge in order and exact duplicates are dropped. Existing configuration files
+using `profiles.registry` still load as one-element lists.
 
-The `EXPORT` column reads `(root)` when the reference is itself a profile rather
+The built-in default is the `okf-profiles` package pinned by tag and sha256 hash.
+The pin means the first run fetches over the network and every later run is
+served from Dhall's cache under `~/.cache/dhall`; pass `--registry` with a local
+checkout to stay offline throughout.
+
+The `SOURCE` column labels every row and keeps rows grouped by source order. The
+`EXPORT` column reads `(root)` when the reference is itself a profile rather
 than a record of profiles. The `ID FIELD` column reads `-` when the profile
 declares no `idField`.
+
+`profile list` reports a failed source without hiding rows from sources that did
+load, and exits 0 whenever any profile was found. Named `show` and registry-backed
+`document` lookups fail closed if any source failed. A duplicate export remains
+visible as two rows; using it is an ambiguity error naming both full references
+and must be narrowed with exactly one `--registry`.
 
 `profile show` closes with the two-line Dhall snippet that consumes the profile,
 which is all `okf validate --profile` needs — there is no separate install step.
@@ -916,7 +928,7 @@ which is all `okf validate --profile` needs — there is no separate install ste
 | Exit code | Meaning |
 |-----------|---------|
 | `0` | the listing or profile was printed, or the documentation was previewed or written |
-| `1` | the registry failed to load, published no profiles, or does not have the requested export |
+| `1` | every selected source failed or published no profiles, a named lookup had any failed source, or the requested export was missing or ambiguous |
 | `1` | the descriptor named by `--profile` failed to load, or failed to compile because it contradicts itself |
 | `1` | `--write` was passed without `--out`, or `--profile` was combined with `EXPORT` or `--registry` |
 

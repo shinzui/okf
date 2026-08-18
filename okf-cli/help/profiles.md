@@ -80,13 +80,15 @@ REGISTRIES
   was found at. That path is the profile's export path.
 
     okf profile list
-    okf profile list --registry /path/to/okf-profiles
+    okf profile list --registry /path/to/okf-profiles \
+      --registry ./house-profiles
     okf profile show postgresql --registry /path/to/okf-profiles
 
   A bare `okf profile` means `okf profile list`. Both subcommands accept
-  --json. The EXPORT column reads "(root)" when the reference is itself a
-  profile rather than a record of profiles; the ID FIELD column reads "-" when
-  the profile declares no idField.
+  --json. Repeat --registry to merge sources; every row starts with a SOURCE
+  label and sources stay grouped in flag order. The EXPORT column reads
+  "(root)" when the reference is itself a profile rather than a record of
+  profiles; the ID FIELD column reads "-" when the profile declares no idField.
 
 GENERATING DOCUMENTATION
 
@@ -388,12 +390,24 @@ DOCUMENT REFERENCES
   hard profile-definition errors before any bundle is read.
 
   A registry reference may be a path to a Dhall file, a directory holding
-  package.dhall, or a Dhall expression such as a hash-pinned URL. Without
-  --registry, okf uses OKF_PROFILE_REGISTRY, then profiles.registry from
-  configuration, then the built-in default: the okf-profiles package pinned by
-  tag and sha256 hash. Because it is pinned, Dhall caches it under
-  ~/.cache/dhall after the first fetch, so later runs are offline. Pass
-  --registry with a local checkout to be offline throughout.
+  package.dhall, or a Dhall expression such as a hash-pinned URL. Source lists
+  come from the first winning layer: repeated --registry flags, then
+  OKF_PROFILE_REGISTRIES as a JSON array of strings, then the legacy singular
+  OKF_PROFILE_REGISTRY, then profiles.registries in configuration, then the
+  built-in default. A configuration using the older profiles.registry spelling
+  still loads as a one-element list. Sources merge only within the winning
+  layer; order is preserved and exact duplicates are dropped.
+
+  Listings report a failed source without hiding successful rows and exit 0
+  when any profile was found. A named show or document lookup fails closed if
+  any source failed. Two sources may list the same export, but using that export
+  is ambiguous and fails with both full references; rerun with exactly one
+  intended --registry REFERENCE.
+
+  The built-in default is the okf-profiles package pinned by tag and sha256
+  hash. Dhall caches it under ~/.cache/dhall after the first fetch, so later
+  runs are offline. Pass --registry with a local checkout to be offline
+  throughout.
 
   The built-in pin currently targets v0.10.0 and publishes ten OKF 0.2 profiles
   with descriptions. Those descriptions print in full and can wrap on a normal

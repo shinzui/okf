@@ -21,6 +21,7 @@ module Okf.Cli.Config
     ConfigScope (..),
     ConfigScopes (..),
     defaultOkfConfig,
+    defaultProfileSettings,
     defaultAgentSettings,
     emptyAgentFieldSettings,
     agentSharedDefaults,
@@ -116,8 +117,17 @@ data LegacyAssistSettings = LegacyAssistSettings
   deriving stock (Generic, Eq, Show)
   deriving anyclass (FromDhall)
 
--- | Profile-related settings: which registry @okf profile@ reads by default.
+-- | Profile-related settings: which registries @okf profile@ reads by default.
 data ProfileSettings = ProfileSettings
+  { registries :: ![Text]
+  }
+  deriving stock (Generic, Eq, Show)
+  deriving anyclass (FromDhall)
+
+-- | The @profiles@ block okf wrote before several registry sources were
+-- supported. It survives only as a decode shape; one old reference maps to a
+-- one-element current list.
+data LegacyProfileSettings = LegacyProfileSettings
   { registry :: !Text
   }
   deriving stock (Generic, Eq, Show)
@@ -181,13 +191,24 @@ data OkfConfig = OkfConfig
   deriving stock (Generic, Eq, Show)
   deriving anyclass (FromDhall)
 
+-- | The current whole configuration record with the legacy singular
+-- @profiles.registry@ spelling. This was the last shape okf wrote before
+-- multi-source profile discovery.
+data ConfigShapeWithLegacyProfiles = ConfigShapeWithLegacyProfiles
+  { kit :: !KitSettings,
+    agent :: !AgentSettings,
+    profiles :: !LegacyProfileSettings
+  }
+  deriving stock (Generic, Eq, Show)
+  deriving anyclass (FromDhall)
+
 -- | The configuration record as it stood before the @agent@ block replaced
 -- @assist@. Dhall decodes records strictly, so without this fallback changing
 -- the record would stop every existing config file from loading.
 data ConfigShapeWithoutAgent = ConfigShapeWithoutAgent
   { kit :: !KitSettings,
     assist :: !LegacyAssistSettings,
-    profiles :: !ProfileSettings
+    profiles :: !LegacyProfileSettings
   }
   deriving stock (Generic, Eq, Show)
   deriving anyclass (FromDhall)
@@ -238,7 +259,7 @@ defaultOkfConfig =
 defaultProfileSettings :: ProfileSettings
 defaultProfileSettings =
   ProfileSettings
-    { registry = defaultRegistryReference
+    { registries = [defaultRegistryReference]
     }
 
 okfConfigEnvVar :: String
@@ -334,7 +355,7 @@ loadAgentScopes = do
                 <> ": "
                 <> err
             )
-        Right config -> Right (Just (agent config))
+        Right OkfConfig {agent = loadedAgent} -> Right (Just loadedAgent)
 
 -- | Decode one configuration file, trying each record shape okf has written, in
 -- order from newest to oldest, and filling the missing pieces from defaults.
@@ -348,16 +369,20 @@ decodeConfigFile :: FilePath -> IO (Either Text OkfConfig)
 decodeConfigFile path = do
   current <- tryDecode (Dhall.inputFile auto path)
   case current of
-    Right config -> pure (Right config)
+    Right config -> pure (Right (normalizeProfileConfig config))
     Left currentError -> do
-      withoutAgent <- tryDecode (Dhall.inputFile auto path)
-      case withoutAgent of
-        Right shape -> pure (Right (fromShapeWithoutAgent shape))
-        Left _withoutAgentError -> do
-          v020 <- tryDecode (Dhall.inputFile auto path)
-          pure $ case v020 of
-            Right shape -> Right (fromShapeV020 shape)
-            Left _v020Error -> Left currentError
+      withLegacyProfiles <- tryDecode (Dhall.inputFile auto path)
+      case withLegacyProfiles of
+        Right shape -> pure (Right (fromShapeWithLegacyProfiles shape))
+        Left _withLegacyProfilesError -> do
+          withoutAgent <- tryDecode (Dhall.inputFile auto path)
+          case withoutAgent of
+            Right shape -> pure (Right (fromShapeWithoutAgent shape))
+            Left _withoutAgentError -> do
+              v020 <- tryDecode (Dhall.inputFile auto path)
+              pure $ case v020 of
+                Right shape -> Right (fromShapeV020 shape)
+                Left _v020Error -> Left currentError
   where
     tryDecode :: IO a -> IO (Either Text a)
     tryDecode action =
@@ -365,9 +390,29 @@ decodeConfigFile path = do
         `catch` \(exception :: SomeException) ->
           pure (Left (Text.pack (show exception)))
 
+normalizeProfileConfig :: OkfConfig -> OkfConfig
+normalizeProfileConfig OkfConfig {kit, agent, profiles} =
+  OkfConfig {kit, agent, profiles = normalizeProfileSettings profiles}
+
+normalizeProfileSettings :: ProfileSettings -> ProfileSettings
+normalizeProfileSettings ProfileSettings {registries} =
+  ProfileSettings {registries = filter (not . Text.null) (map Text.strip registries)}
+
+profileSettingsFromLegacy :: LegacyProfileSettings -> ProfileSettings
+profileSettingsFromLegacy LegacyProfileSettings {registry} =
+  normalizeProfileSettings (ProfileSettings {registries = [registry]})
+
+fromShapeWithLegacyProfiles :: ConfigShapeWithLegacyProfiles -> OkfConfig
+fromShapeWithLegacyProfiles ConfigShapeWithLegacyProfiles {kit, agent, profiles} =
+  OkfConfig {kit, agent, profiles = profileSettingsFromLegacy profiles}
+
 fromShapeWithoutAgent :: ConfigShapeWithoutAgent -> OkfConfig
 fromShapeWithoutAgent ConfigShapeWithoutAgent {kit, assist, profiles} =
-  OkfConfig {kit, agent = agentSettingsFromAssist assist, profiles}
+  OkfConfig
+    { kit,
+      agent = agentSettingsFromAssist assist,
+      profiles = profileSettingsFromLegacy profiles
+    }
 
 fromShapeV020 :: ConfigShapeV020 -> OkfConfig
 fromShapeV020 ConfigShapeV020 {kit, assist} =
@@ -423,7 +468,7 @@ renderConfig
   OkfConfig
     { kit = KitSettings {repoUrl, providers},
       agent = agentSettings@AgentSettings {assist = agentAssist},
-      profiles = ProfileSettings {registry}
+      profiles = ProfileSettings {registries}
     } =
     Text.unlines
       ( [ "kit.repoUrl     = " <> repoUrl,
@@ -431,8 +476,12 @@ renderConfig
         ]
           <> renderAgentFields "agent." (agentSharedDefaults agentSettings)
           <> renderAgentFields "agent.assist." agentAssist
-          <> ["profiles.registry = " <> registry]
+          <> renderProfileRegistries registries
       )
+
+renderProfileRegistries :: [Text] -> [Text]
+renderProfileRegistries [] = ["profiles.registries = []"]
+renderProfileRegistries registries = map ("profiles.registries = " <>) registries
 
 renderAgentFields :: Text -> AgentFieldSettings -> [Text]
 renderAgentFields keyPrefix AgentFieldSettings {provider, model, effort, systemPrompt} =
@@ -479,7 +528,9 @@ exampleConfigText =
       "            }",
       "        }",
       "    , profiles =",
-      "        { registry = \"" <> defaultRegistryReference <> "\"",
+      "        { registries =",
+      "            [ \"" <> defaultRegistryReference <> "\"",
+      "            ]",
       "        }",
       "    }"
     ]

@@ -9,6 +9,12 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- Profile commands can read several registries at once. Repeat `--registry`, set
+  `OKF_PROFILE_REGISTRIES` to a JSON array, or configure
+  `profiles.registries`; listings stay grouped by source and carry source
+  provenance in text and JSON. A failed source no longer hides profiles from
+  sources that loaded, while named lookups fail closed and reject duplicate
+  exports rather than guessing.
 - `okf bundles` lists discovered bundle paths without opening `fzf`; `--json`
   emits a top-level array whose entries always contain `path` and optionally
   contain sorted `idPrefixes` observed in strict top-level document handles.
@@ -20,6 +26,9 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
+- The legacy `OKF_PROFILE_REGISTRY` variable and `profiles.registry`
+  configuration shape remain supported as one-element source lists. Exact
+  duplicate registry references are dropped in first-occurrence order.
 - The built-in profile registry now pins `mori://shinzui/okf-profiles` v0.10.0,
   so `okf profile list` with no overrides reports ten OKF 0.2 profiles with
   descriptions instead of five OKF 0.1 profiles without them. Those descriptions

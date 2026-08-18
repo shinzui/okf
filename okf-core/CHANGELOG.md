@@ -9,6 +9,11 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- `ProfileSource`, `SourcedProfile`, and `SourceFailure` add provenance-aware,
+  ordered multi-source registry enumeration without changing `RegistryEntry` or
+  the existing single-registry functions. Partial failures are returned beside
+  successful profiles, collisions remain visible, and exact duplicate sources
+  are normalized in first-occurrence order.
 - An offline snapshot of the built-in profile catalogue and a registry
   conformance test prove that every pinned export decodes under the current
   `ProfileSpec` compatibility chain. The exact ten export paths are asserted so

@@ -73,26 +73,35 @@ command that explains resolution, nor fix the listing's width problems; those ar
 - [x] (2026-08-18 19:26Z) Define `ProfileSource` and a `SourcedProfile` wrapper without changing `RegistryEntry`
 - [x] (2026-08-18 19:26Z) Add multi-source enumeration with a documented collision rule, and cover it with fixtures
 - [x] (2026-08-18 19:26Z) Extend `okf-core/test/Main.hs` with the merge, ordering, and collision cases
-- [ ] Change `ProfileSettings` to a list-valued field in `okf-cli/src/Okf/Cli/Config.hs`
-- [ ] Add the legacy single-`registry` shape to the fallback chain in `decodeConfigFile`
-- [ ] Confirm a config file using the old spelling still loads, with a test
-- [ ] Make `--registry` repeatable and add JSON-array `OKF_PROFILE_REGISTRIES`
-- [ ] Preserve singular `OKF_PROFILE_REGISTRY` as a one-reference compatibility override
-- [ ] Carry source-selection origin through resolution for EP 63 to render
-- [ ] Add the `SOURCE` column to `renderRegistryTable` and update `sampleRegistryTable`
-- [ ] Extend `registryListJson` so each profile carries its source
-- [ ] Resolve a named export across all sources and fail closed if any source failed
-- [ ] Report an ambiguous export name with the sources that publish it
-- [ ] Run `cabal build all` and `cabal test all` clean
-- [ ] Paste a real multi-source transcript into this plan
-- [ ] Update `docs/user/profiles.md`, `okf-cli/help/profiles.md`, `docs/user/cli.md`, `README.md`
-- [ ] Update `CHANGELOG.md`, `okf-core/CHANGELOG.md`, `okf-cli/CHANGELOG.md`
-- [ ] Amend `docs/adr/3-profile-registries.md` with the multi-source resolution rules
+- [x] (2026-08-18 19:36Z) Change `ProfileSettings` to a list-valued field in `okf-cli/src/Okf/Cli/Config.hs`
+- [x] (2026-08-18 19:36Z) Add the legacy single-`registry` shape to the fallback chain in `decodeConfigFile`
+- [x] (2026-08-18 19:36Z) Confirm a config file using the old spelling still loads, with a test
+- [x] (2026-08-18 19:36Z) Make `--registry` repeatable and add JSON-array `OKF_PROFILE_REGISTRIES`
+- [x] (2026-08-18 19:36Z) Preserve singular `OKF_PROFILE_REGISTRY` as a one-reference compatibility override
+- [x] (2026-08-18 19:36Z) Carry source-selection origin through resolution for EP 63 to render
+- [x] (2026-08-18 19:36Z) Add the `SOURCE` column to `renderRegistryTable` and update `sampleRegistryTable`
+- [x] (2026-08-18 19:36Z) Extend `registryListJson` so each profile carries its source
+- [x] (2026-08-18 19:36Z) Resolve a named export across all sources and fail closed if any source failed
+- [x] (2026-08-18 19:36Z) Report an ambiguous export name with the sources that publish it
+- [x] (2026-08-18 19:42Z) Run `cabal build all` and `cabal test all` clean
+- [x] (2026-08-18 19:42Z) Paste a real multi-source transcript into this plan
+- [x] (2026-08-18 19:42Z) Update `docs/user/profiles.md`, `okf-cli/help/profiles.md`, `docs/user/cli.md`, `README.md`
+- [x] (2026-08-18 19:42Z) Update `CHANGELOG.md`, `okf-core/CHANGELOG.md`, `okf-cli/CHANGELOG.md`
+- [x] (2026-08-18 19:42Z) Amend `docs/adr/3-profile-registries.md` with the multi-source resolution rules
 
 
 ## Surprises & Discoveries
 
-(None yet.)
+**The existing config loader already exposed the exact provenance EP 63 needs**
+(2026-08-18). `loadConfigWithSourceOrDie` returns both `OkfConfig` and `ConfigSource`, so
+multi-source resolution could attach `ProfileConfigOrigin path` without adding another
+configuration lookup or reconstructing search precedence. Tests now pin flag, plural
+environment, and configuration-path origins separately.
+
+**The planned collision test is capable of detecting a silent first-match regression**
+(2026-08-18). Temporarily changing the ambiguous branch to return its first match made
+`okf-cli-test` fail; restoring the refusal returned the suite to green. This validates the
+test rather than only the implementation.
 
 
 ## Decision Log
@@ -161,6 +170,14 @@ command that explains resolution, nor fix the listing's width problems; those ar
   selected source. EP 63 renders that provenance and does not reconstruct it.
   Rationale: Reconstruction would be a second precedence implementation that could diverge
   from command execution, contrary to ADR 16.
+  Date: 2026-08-18
+
+- Decision: JSON encodes source origin as an object with a `kind` plus `name` for flags and
+  environment variables or `path` for configuration, and keeps the legacy top-level
+  `registry` key only for exactly one registry source.
+  Rationale: A structured origin has no parsing ambiguity and can be rendered directly by
+  EP 63. Omitting the singular key for several sources makes older consumers fail loudly
+  rather than treating one source as the whole resolved set.
   Date: 2026-08-18
 
 
@@ -715,18 +732,17 @@ Adjust the absolute path to your checkout. Then, after Milestone 4:
 ```bash
 cabal run okf -- profile list \
   --registry docs/profiles/okf-v0-2.dhall \
-  --registry /tmp/house-profiles
+  --registry okf-core/test/fixtures/registry-house
 ```
 
-Expected shape — two sources, grouped, each row labelled:
+Observed on 2026-08-18 — two sources, grouped, each row labelled:
 
 ```text
-SOURCE           EXPORT      NAME               OKF  TYPES  ID FIELD  DESCRIPTION
-okf-v0-2         (root)      okf-v0-2           0.2      0  -         Reference profile for …
-house-profiles   incidents   shinzui-postgresql 0.2      3  -         Conventions for documenting …
+SOURCE          EXPORT      NAME                OKF  TYPES  ID FIELD  DESCRIPTION
+okf-v0-2        (root)      okf-v0-2            0.2      0  -         Reference profile for the OKF v0.2 frontmatter families: provenance, trust, lifecycle, and sources.
+registry-house  postgresql  shinzui-postgresql  0.1      3  -         Conventions for documenting a PostgreSQL database as an OKF bundle.
+registry-house  runbooks    decisions           0.1      1  docId     How this team records architectural decisions.
 ```
-
-Paste the real output here when you have it, rather than trusting this sketch.
 
 Test the plural environment form with a JSON array and the singular compatibility form:
 
@@ -768,6 +784,20 @@ check `runConfig`'s `ConfigInit` branch around line 848 of `okf-cli/src/Okf/Cli.
 template it writes, and confirm the "Refusing to overwrite existing config" guard at line
 852 still behaves.
 
+Observed with two real files selected through `OKF_CONFIG`: the old singular shape printed
+one normalized line and loaded its profile, while the new shape printed both values and
+loaded all three fixture profiles:
+
+```text
+profiles.registries = docs/profiles/okf-v0-2.dhall
+
+profiles.registries = docs/profiles/okf-v0-2.dhall
+profiles.registries = okf-core/test/fixtures/registry-house
+```
+
+The first `config init` wrote the list-valued shape and exited 0. Running it again exited 1
+with `Refusing to overwrite existing config`, preserving the existing guard.
+
 Test the collision path:
 
 ```bash
@@ -787,6 +817,16 @@ And the all-failed path, which must exit 1:
 ```bash
 cabal run okf -- profile list --registry /tmp/does-not-exist
 echo "exit=$?"
+```
+
+Observed exit statuses were 0 for one good plus one failed source, 1 when every source
+failed, and 1 for a named lookup with any failed source. The collision fixture produced:
+
+```text
+Profile export postgresql is ambiguous; it is published by:
+  okf-core/test/fixtures/registry
+  okf-core/test/fixtures/registry-house
+Rerun with exactly one intended --registry REFERENCE.
 ```
 
 Then the full suite:
@@ -951,7 +991,26 @@ data ResolvedProfileSource = ResolvedProfileSource
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+EP 61 is complete. `okf-core` now exposes additive source-aware registry APIs while leaving
+`RegistryEntry` and every single-registry entry point unchanged. `okf-cli` resolves ordered
+source lists from repeatable flags, the plural JSON environment value, the legacy singular
+environment value, current or legacy configuration, and built-in defaults. Listings retain
+successful sources after a failure; named lookup fails closed and reports collisions by full
+reference. Text output labels each row, and JSON carries the same structured provenance on
+the source list and each profile.
+
+Compatibility was exercised with files on disk: both the old `profiles.registry` spelling
+and the new `profiles.registries` list loaded through `OKF_CONFIG`, `config init` emitted the
+new shape without weakening its overwrite guard, and an explicit empty list remained empty.
+`cabal build all` and `cabal test all` passed on 2026-08-18, as did real repeated-flag,
+plural/singular environment, partial-failure, fail-closed, collision, `show`, and `document`
+commands. The repository has no `justfile` or other ADR validation hook; ADR 3 was reviewed
+directly and amended with the delivered structured-origin wire format.
+
+EP 62 can now add discovered descriptor files as the next `ProfileSource` constructor and
+append them to `ResolvedProfileSource` values without inventing another listing model. EP 63
+still owns compact rendering and typed registry diagnostics; the existing raw Dhall failure
+text and ANSI escapes remain deliberately unchanged here.
 
 
 ## Revision Note

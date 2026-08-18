@@ -16,7 +16,7 @@ import Okf.Cli
 import Okf.Cli.Agent.Config (AgentCommandName (..), AgentConfigSource (..), AgentField (..), AgentOverrides (..), ResolvedAgent (..), ResolvedField (..), agentSourceLabel, noAgentOverrides, parseOkfEffort, parseOkfProvider, renderAgentResolution, resolveAgent)
 import Okf.Cli.Assist (AssistOptions (..), buildAgentCommand)
 import Okf.Cli.BundleDiscovery (BundleDiscovery (..), bundleSearchRootsEnvVar, discoverAvailableBundles)
-import Okf.Cli.Config (AgentFieldSettings (..), AgentSettings (..), ConfigSource (..), OkfConfig (..), OkfEffort (..), OkfProvider (..), agentSharedDefaults, defaultOkfConfig, exampleConfigText, findConfigSource, loadAgentScopes, loadOkfConfig, okfConfigEnvVar, projectConfigPath)
+import Okf.Cli.Config (AgentFieldSettings (..), AgentSettings (..), ConfigSource (..), OkfConfig (..), OkfEffort (..), OkfProvider (..), ProfileSettings (..), agentSharedDefaults, defaultOkfConfig, exampleConfigText, findConfigSource, loadAgentScopes, loadOkfConfig, okfConfigEnvVar, projectConfigPath)
 import Okf.Cli.Fzf (Candidate (..), FzfOpts (..), optsToArgs, parseSelectionIndex, renderCandidateLines, shellQuote, withAnsi, withHeight, withNoSort, withPrompt)
 import Okf.Cli.Fzf.Selector (ConceptOrder (..), conceptCandidates, conceptPreviewCommand, orderConcepts, parseBundleSearchRoots)
 import Okf.Cli.Help (HelpTopic (..), helpTopics)
@@ -24,7 +24,7 @@ import Okf.ConceptId (ConceptId, parseConceptId, renderConceptId)
 import Okf.Document (Attester (..), Executor (..), Parameter (..), parseDocument)
 import Okf.Index (OkfVersion (..), VersionDeclaration (..), parseOkfVersion, readBundleVersion)
 import Okf.Profile (Cardinality (..), CompiledProfile, FieldCondition (..), FieldFormat (..), FieldPath (..), FieldPathSegment (..), FieldRule (..), FrontmatterRules (..), HandleReferenceRule (..), NestedFieldRule (..), NestedRules (..), PathReferenceRule (..), ProfileSpec (..), ProfileViolation (..), TypeRule (..), compileProfile, loadProfileFile, validateProfile, validateProfileVersion)
-import Okf.Profile.Registry (RegistryEntry (..), defaultRegistryReference)
+import Okf.Profile.Registry (ProfileSource (..), RegistryEntry (..), RegistryRef (..), SourcedProfile (..), defaultRegistryReference)
 import Okf.Query (ConceptFilter (..), FieldSelector (..), filterConcepts)
 import Okf.Validation (ValidationProfile (..), validateBundle)
 import Options.Applicative
@@ -43,6 +43,11 @@ main = do
   configEnvPrecedence <- testConfigEnvPrecedence
   configLegacyWithoutProfiles <- testConfigLegacyWithoutProfiles
   configLegacyWithoutAgent <- testConfigLegacyWithoutAgent
+  configLegacyProfilesWithAgent <- testConfigLegacyProfilesWithAgent
+  configNormalizesRegistryList <- testConfigNormalizesRegistryList
+  profileFlagSources <- testProfileFlagSources
+  profileEnvironmentSources <- testProfileEnvironmentSources
+  profileConfigOrigin <- testProfileConfigOrigin
   agentScopesLoadsBothFiles <- testAgentScopesLoadsBothFiles
   configInvalidDhall <- testConfigInvalidDhall
   assistCommandBuilder <- testAssistCommandBuilder
@@ -339,27 +344,32 @@ main = do
           parseSucceeds ["profile", "list", "--registry", "./r.dhall"],
           parseSucceeds ["profile", "show"],
           parseSucceeds ["profile", "show", "postgresql"],
-          parseProfileMatches ["profile"] (ProfileList (ProfileListOptions Nothing False)),
+          parseProfileMatches ["profile"] (ProfileList (ProfileListOptions [] False)),
           parseProfileMatches
             ["profile", "list", "--registry", "r", "--json"]
-            (ProfileList (ProfileListOptions (Just "r") True)),
+            (ProfileList (ProfileListOptions ["r"] True)),
+          parseProfileMatches
+            ["profile", "list", "--registry", "a", "--registry", "b"]
+            (ProfileList (ProfileListOptions ["a", "b"] False)),
           parseProfileMatches
             ["profile", "show", "x", "--registry", "r", "--json"]
-            (ProfileShow (ProfileShowOptions (Just "r") (Just "x") True)),
+            (ProfileShow (ProfileShowOptions ["r"] (Just "x") True)),
           parseProfileMatches
             ["profile", "show"]
-            (ProfileShow (ProfileShowOptions Nothing Nothing False)),
+            (ProfileShow (ProfileShowOptions [] Nothing False)),
           parseSucceeds ["profile", "document"],
           parseSucceeds ["profile", "document", "acme"],
           parseSucceeds ["profile", "document", "--profile", "p.dhall"],
           parseSucceeds ["profile", "document", "--out", "docs/p", "--write"],
           parseSucceeds
             ["profile", "document", "--registry", "./r.dhall", "acme", "--out", "d", "--write", "--timestamp", "2026-07-31T00:00:00Z"],
+          parseSucceeds
+            ["profile", "document", "--registry", "a", "--registry", "b", "acme"],
           parseProfileMatches
             ["profile", "document", "--registry", "./r.dhall", "acme", "--out", "d", "--write", "--timestamp", "2026-07-31T00:00:00Z"]
             ( ProfileDocument
                 ProfileDocumentOptions
-                  { registryRef = Just "./r.dhall",
+                  { registryRefs = ["./r.dhall"],
                     export = Just "acme",
                     profilePath = Nothing,
                     outputPath = Just "d",
@@ -388,7 +398,7 @@ main = do
             ]
             ( ProfileDocument
                 ProfileDocumentOptions
-                  { registryRef = Nothing,
+                  { registryRefs = [],
                     export = Nothing,
                     profilePath = Just "p.dhall",
                     outputPath = Just "d",
@@ -403,7 +413,7 @@ main = do
             ["profile", "document"]
             ( ProfileDocument
                 ProfileDocumentOptions
-                  { registryRef = Nothing,
+                  { registryRefs = [],
                     export = Nothing,
                     profilePath = Nothing,
                     outputPath = Nothing,
@@ -418,7 +428,7 @@ main = do
             ["profile", "document", "--profile", "p.dhall"]
             ( ProfileDocument
                 ProfileDocumentOptions
-                  { registryRef = Nothing,
+                  { registryRefs = [],
                     export = Nothing,
                     profilePath = Just "p.dhall",
                     outputPath = Nothing,
@@ -489,6 +499,9 @@ main = do
           parseFails ["concepts", "b", "--where", "a.b.c=x"],
           parseFails ["concepts", "b", "--has", "a.b.c"],
           renderRegistryTable sampleRegistryEntries == sampleRegistryTable,
+          testRegistryEnvironmentJson,
+          testRegistryListJsonShape,
+          testAmbiguousSourcedProfile,
           renderProfileDetail "nested.decisions" sampleDecisionsProfile == sampleProfileDetail,
           renderProfileDetail "" samplePostgresqlProfile == sampleUndocumentedProfileDetail,
           renderProfileDetail "" sampleNestedProfile == sampleNestedProfileDetail,
@@ -519,6 +532,11 @@ main = do
           configEnvPrecedence,
           configLegacyWithoutProfiles,
           configLegacyWithoutAgent,
+          configLegacyProfilesWithAgent,
+          configNormalizesRegistryList,
+          profileFlagSources,
+          profileEnvironmentSources,
+          profileConfigOrigin,
           agentScopesLoadsBothFiles,
           configInvalidDhall,
           assistCommandBuilder,
@@ -660,23 +678,107 @@ expectedVocabularyLine :: Text.Text
 expectedVocabularyLine =
   "places/tokyo: frontmatter value at prefecture must be one of [東京都, 京都府], found: \"東京\""
 
--- | One root-level entry and one nested entry whose columns differ in width, so
--- the padding in 'renderRegistryTable' is actually exercised, and the @(root)@
--- and @-@ placeholders both appear.
-sampleRegistryEntries :: [RegistryEntry]
+-- | One root-level entry and one nested entry from differently sized source
+-- labels, so every positional padder in 'renderRegistryTable' is exercised.
+sampleRegistryEntries :: [SourcedProfile]
 sampleRegistryEntries =
-  [ RegistryEntry {export = "", spec = samplePostgresqlProfile},
-    RegistryEntry {export = "nested.decisions", spec = sampleDecisionsProfile}
+  [ SourcedProfile
+      { source = sampleCatalogueSource,
+        entry = RegistryEntry {export = "", spec = samplePostgresqlProfile}
+      },
+    SourcedProfile
+      { source = sampleHouseSource,
+        entry = RegistryEntry {export = "nested.decisions", spec = sampleDecisionsProfile}
+      }
+  ]
+
+sampleCatalogueSource :: ProfileSource
+sampleCatalogueSource = RegistrySource "catalogue" (RegistryExpression "catalogue")
+
+sampleHouseSource :: ProfileSource
+sampleHouseSource = RegistrySource "house" (RegistryExpression "house")
+
+sampleResolvedSources :: [ResolvedProfileSource]
+sampleResolvedSources =
+  [ ResolvedProfileSource sampleCatalogueSource RegistryFlagOrigin,
+    ResolvedProfileSource sampleHouseSource RegistryFlagOrigin
   ]
 
 -- | @DESCRIPTION@ is last and unpadded; the postgresql sample has none, so the
 -- @-@ placeholder appears there as well as in @ID FIELD@.
 sampleRegistryTable :: [Text.Text]
 sampleRegistryTable =
-  [ "EXPORT            NAME                OKF  TYPES  ID FIELD  DESCRIPTION",
-    "(root)            shinzui-postgresql  0.1      1  -         -",
-    "nested.decisions  decisions           0.1      1  docId     How this team records architectural decisions."
+  [ "SOURCE     EXPORT            NAME                OKF  TYPES  ID FIELD  DESCRIPTION",
+    "catalogue  (root)            shinzui-postgresql  0.1      1  -         -",
+    "house      nested.decisions  decisions           0.1      1  docId     How this team records architectural decisions."
   ]
+
+testRegistryEnvironmentJson :: Bool
+testRegistryEnvironmentJson =
+  parseProfileRegistriesEnv
+    "[\"https://example.test/package.dhall sha256:abc\",\"  \",\"./house\",\"./house\"]"
+    == Right ["https://example.test/package.dhall sha256:abc", "./house"]
+    && case parseProfileRegistriesEnv "[\"ok\", 1]" of
+      Left _ -> True
+      Right _ -> False
+
+-- | JSON repeats the full source object on every profile and omits the legacy
+-- singular key when more than one source is selected.
+testRegistryListJsonShape :: Bool
+testRegistryListJsonShape =
+  registryListJson sampleResolvedSources sampleRegistryEntries
+    == Aeson.object
+      [ "sources"
+          Aeson..= [sourceObject "catalogue", sourceObject "house"],
+        "profiles"
+          Aeson..= [ Aeson.object
+                       [ "source" Aeson..= sourceObject "catalogue",
+                         "export" Aeson..= ("" :: Text.Text),
+                         "profile" Aeson..= samplePostgresqlProfile
+                       ],
+                     Aeson.object
+                       [ "source" Aeson..= sourceObject "house",
+                         "export" Aeson..= ("nested.decisions" :: Text.Text),
+                         "profile" Aeson..= sampleDecisionsProfile
+                       ]
+                   ]
+      ]
+    && registryListJson (take 1 sampleResolvedSources) (take 1 sampleRegistryEntries)
+      == Aeson.object
+        [ "registry" Aeson..= ("catalogue" :: Text.Text),
+          "sources" Aeson..= [sourceObject "catalogue"],
+          "profiles"
+            Aeson..= [ Aeson.object
+                         [ "source" Aeson..= sourceObject "catalogue",
+                           "export" Aeson..= ("" :: Text.Text),
+                           "profile" Aeson..= samplePostgresqlProfile
+                         ]
+                     ]
+        ]
+  where
+    sourceObject reference =
+      Aeson.object
+        [ "kind" Aeson..= ("registry" :: Text.Text),
+          "label" Aeson..= (reference :: Text.Text),
+          "reference" Aeson..= (reference :: Text.Text),
+          "origin"
+            Aeson..= Aeson.object
+              [ "kind" Aeson..= ("flag" :: Text.Text),
+                "name" Aeson..= ("--registry" :: Text.Text)
+              ]
+        ]
+
+testAmbiguousSourcedProfile :: Bool
+testAmbiguousSourcedProfile =
+  case selectSourcedProfile collidingProfiles (Just "same") of
+    Right _ -> False
+    Left message ->
+      all (`Text.isInfixOf` message) ["catalogue", "house", "exactly one intended --registry"]
+  where
+    collidingProfiles =
+      [ SourcedProfile sampleCatalogueSource (RegistryEntry "same" samplePostgresqlProfile),
+        SourcedProfile sampleHouseSource (RegistryEntry "same" sampleDecisionsProfile)
+      ]
 
 -- | A profile with no descriptions anywhere — the shape an okf 0.2.x descriptor
 -- upgrades into.
@@ -1138,7 +1240,7 @@ exampleDocumentOptions ::
   ProfileDocumentOptions
 exampleDocumentOptions descriptor destination stamp version =
   ProfileDocumentOptions
-    { registryRef = Nothing,
+    { registryRefs = [],
       export = Nothing,
       profilePath = Just descriptor,
       outputPath = Just destination,
@@ -1608,7 +1710,7 @@ testProfileDocumentWritesBundle =
       let destination = scratch </> "bundle"
           options =
             ProfileDocumentOptions
-              { registryRef = Nothing,
+              { registryRefs = [],
                 export = Nothing,
                 profilePath = Just descriptorPath,
                 outputPath = Just destination,
@@ -1885,6 +1987,88 @@ testConfigLegacyWithoutAgent =
     loaded <- loadOkfConfig
     pure (loaded == Right (configWithMappedAssist (Just "legacy-model"), SourceProject projectPath))
 
+-- | The configuration shape immediately preceding multi-source discovery had
+-- the current @agent@ block and the singular @profiles.registry@ field. It is
+-- distinct from the older pre-agent shape and needs its own decode fallback.
+testConfigLegacyProfilesWithAgent :: IO Bool
+testConfigLegacyProfilesWithAgent =
+  withIsolatedConfigEnv "okf-cli-config-legacy-profiles" $ do
+    projectPath <- projectConfigPath
+    Text.IO.writeFile projectPath (legacyAgentModelConfigText "legacy-agent-model")
+    loaded <- loadOkfConfig
+    pure $
+      loaded
+        == Right
+          ( defaultOkfConfig {agent = agentSettingsWithSharedModel "legacy-agent-model"},
+            SourceProject projectPath
+          )
+
+-- | Current list-valued settings strip surrounding whitespace and discard
+-- blank elements without treating an explicit empty result as the default.
+testConfigNormalizesRegistryList :: IO Bool
+testConfigNormalizesRegistryList =
+  withIsolatedConfigEnv "okf-cli-config-registry-list" $ do
+    projectPath <- projectConfigPath
+    Text.IO.writeFile projectPath currentConfigWithRegistryList
+    loaded <- loadOkfConfig
+    Text.IO.writeFile projectPath currentConfigWithEmptyRegistryList
+    emptyLoaded <- loadOkfConfig
+    pure $
+      loaded
+        == Right
+          ( defaultOkfConfig
+              { agent = agentSettingsWithSharedModel "",
+                profiles = ProfileSettings {registries = ["./house.dhall"]}
+              },
+            SourceProject projectPath
+          )
+        && emptyLoaded
+          == Right
+            ( defaultOkfConfig
+                { agent = agentSettingsWithSharedModel "",
+                  profiles = ProfileSettings {registries = []}
+                },
+              SourceProject projectPath
+            )
+
+testProfileFlagSources :: IO Bool
+testProfileFlagSources = do
+  resolved <- resolveProfileSources ["first", "second", "first"]
+  pure $
+    case resolved of
+      [ ResolvedProfileSource (RegistrySource "first" _) RegistryFlagOrigin,
+        ResolvedProfileSource (RegistrySource "second" _) RegistryFlagOrigin
+        ] -> True
+      _ -> False
+
+-- | The plural environment list wins over the legacy singular value and keeps
+-- a hash-pinned URL intact as one reference.
+testProfileEnvironmentSources :: IO Bool
+testProfileEnvironmentSources =
+  withIsolatedConfigEnv "okf-cli-profile-source-environment" $ do
+    let pinned = "https://example.test/package.dhall sha256:abc"
+    setEnv profileRegistriesEnvVar ("[\"" <> Text.unpack pinned <> "\",\"./house\"]")
+    setEnv profileRegistryEnvVar "ignored"
+    resolved <- resolveProfileSources []
+    pure $
+      case resolved of
+        [ ResolvedProfileSource (RegistrySource first _) RegistriesEnvironmentOrigin,
+          ResolvedProfileSource (RegistrySource second _) RegistriesEnvironmentOrigin
+          ] -> first == pinned && second == "./house"
+        _ -> False
+
+testProfileConfigOrigin :: IO Bool
+testProfileConfigOrigin =
+  withIsolatedConfigEnv "okf-cli-profile-source-config" $ do
+    projectPath <- projectConfigPath
+    Text.IO.writeFile projectPath currentConfigWithRegistryList
+    resolved <- resolveProfileSources []
+    pure $
+      case resolved of
+        [ResolvedProfileSource (RegistrySource "./house.dhall" _) (ProfileConfigOrigin path)] ->
+          path == projectPath
+        _ -> False
+
 -- | The shape okf wrote after @profiles@ arrived and before @agent@ did.
 legacyWithProfilesConfigText :: Text.Text
 legacyWithProfilesConfigText =
@@ -1973,10 +2157,47 @@ agentModelConfigText modelName =
       "            }",
       "        }",
       "    , profiles =",
-      "        { registry = \"" <> defaultRegistryReference <> "\"",
+      "        { registries = [ \"" <> defaultRegistryReference <> "\" ]",
       "        }",
       "    }"
     ]
+
+legacyAgentModelConfigText :: Text.Text -> Text.Text
+legacyAgentModelConfigText modelName =
+  Text.replace
+    ("        { registries = [ \"" <> defaultRegistryReference <> "\" ]")
+    ("        { registry = \"" <> defaultRegistryReference <> "\"")
+    (agentModelConfigText modelName)
+
+currentConfigWithRegistryList :: Text.Text
+currentConfigWithRegistryList =
+  Text.replace
+    ("        { registries = [ \"" <> defaultRegistryReference <> "\" ]")
+    "        { registries = [ \"   \" , \" ./house.dhall \" ]"
+    (agentModelConfigText "")
+
+currentConfigWithEmptyRegistryList :: Text.Text
+currentConfigWithEmptyRegistryList =
+  Text.replace
+    ("        { registries = [ \"" <> defaultRegistryReference <> "\" ]")
+    "        { registries = [] : List Text"
+    (agentModelConfigText "")
+
+agentSettingsWithSharedModel :: Text.Text -> AgentSettings
+agentSettingsWithSharedModel modelName =
+  AgentSettings
+    { provider = Nothing,
+      model = Just modelName,
+      effort = Nothing,
+      systemPrompt = Nothing,
+      assist =
+        AgentFieldSettings
+          { provider = Nothing,
+            model = Nothing,
+            effort = Nothing,
+            systemPrompt = Nothing
+          }
+    }
 
 testConfigInvalidDhall :: IO Bool
 testConfigInvalidDhall =
@@ -2111,16 +2332,22 @@ withIsolatedConfigEnv name runTest = do
   temporaryDirectory <- getTemporaryDirectory
   originalCwd <- getCurrentDirectory
   originalOkfConfig <- lookupEnv okfConfigEnvVar
+  originalProfileRegistries <- lookupEnv profileRegistriesEnvVar
+  originalProfileRegistry <- lookupEnv profileRegistryEnvVar
   originalHome <- lookupEnv "HOME"
   bracket
     (createTempDirectory temporaryDirectory name)
     ( \root -> do
         setMaybeEnv okfConfigEnvVar originalOkfConfig
+        setMaybeEnv profileRegistriesEnvVar originalProfileRegistries
+        setMaybeEnv profileRegistryEnvVar originalProfileRegistry
         setMaybeEnv "HOME" originalHome
         withCurrentDirectory originalCwd (removeDirectoryRecursive root)
     )
     ( \root -> do
         unsetEnv okfConfigEnvVar
+        unsetEnv profileRegistriesEnvVar
+        unsetEnv profileRegistryEnvVar
         setEnv "HOME" root
         withCurrentDirectory root runTest
     )

@@ -197,7 +197,7 @@ additive local-source composition, basename exports, and picker compatibility.
 | # | Title | Path | Hard Deps | Soft Deps | Status |
 |---|-------|------|-----------|-----------|--------|
 | 60 | Refresh the default profile registry pin and prove the current catalogue decodes | [docs/plans/60-refresh-the-default-profile-registry-pin-and-prove-the-current-catalogue-decodes.md](../plans/60-refresh-the-default-profile-registry-pin-and-prove-the-current-catalogue-decodes.md) | None | None | Complete |
-| 61 | Read profiles from more than one registry | [docs/plans/61-read-profiles-from-more-than-one-registry.md](../plans/61-read-profiles-from-more-than-one-registry.md) | None | EP-60 | In Progress |
+| 61 | Read profiles from more than one registry | [docs/plans/61-read-profiles-from-more-than-one-registry.md](../plans/61-read-profiles-from-more-than-one-registry.md) | None | EP-60 | Complete |
 | 62 | Discover and select local profile descriptors in the repository | [docs/plans/62-discover-and-select-local-profile-descriptors-in-the-repository.md](../plans/62-discover-and-select-local-profile-descriptors-in-the-repository.md) | EP-61 | None | Not Started |
 | 63 | Show where every profile came from and how to refresh it | [docs/plans/63-show-where-every-profile-came-from-and-how-to-refresh-it.md](../plans/63-show-where-every-profile-came-from-and-how-to-refresh-it.md) | EP-60, EP-61, EP-62 | None | Not Started |
 
@@ -291,8 +291,10 @@ widths already consume roughly 100 columns before any description is printed.
 
 `registryListJson` is a separate wire format. EP-61 adds a `sources` array and a full
 `source` object to each profile entry; the object carries kind, display label, full
-reference, and the origin already carried by resolution. The full reference—not the
-possibly colliding label—is identity.
+reference, and the origin already carried by resolution. Origins are structured objects:
+`kind` distinguishes flag, environment, config, and built-in provenance, while `name` or
+`path` identifies the concrete winner. The full reference—not the possibly colliding
+label—is identity.
 The legacy top-level `registry` key remains only for the exactly-one-registry, no-local
 case. EP-62 extends the source object with the local
 descriptor kind and discovery origin; EP-63 adds load status and failure detail to the
@@ -362,10 +364,10 @@ layering for the `profiles` block.
 - [x] (2026-08-18 19:14Z) EP-60: default registry pin moved to `mori://shinzui/okf-profiles` v0.10.0 with hash `sha256:c6882a5cb6ece28027f5f9d219d323cff64f131b97ecbf536ed54d77263f5edf`, and `okf profile list` with no configuration shows the ten current profiles
 - [x] (2026-08-18 19:14Z) EP-60: an offline fixture plus a decode-conformance test prove every profile in the pinned catalogue decodes under the current `ProfileSpec` decoder
 - [x] (2026-08-18 19:14Z) EP-60: refreshing the pin is a single scripted command, and the release checklist says to run it
-- [ ] EP-61: `profiles.registries` accepts a list in configuration, and a file using the old single `registry` key still loads
-- [ ] EP-61: `--registry` is repeatable, `OKF_PROFILE_REGISTRIES` accepts a JSON array, and legacy singular `OKF_PROFILE_REGISTRY` still works
-- [ ] EP-61: `okf profile list` prints one merged, source-grouped listing with a source label on every row
-- [ ] EP-61: listing tolerates partial source failure, while named `profile show` / `profile document` resolution fails closed on a failed or ambiguous source set
+- [x] (2026-08-18 19:42Z) EP-61: `profiles.registries` accepts a list in configuration, and a file using the old single `registry` key still loads
+- [x] (2026-08-18 19:42Z) EP-61: `--registry` is repeatable, `OKF_PROFILE_REGISTRIES` accepts a JSON array, and legacy singular `OKF_PROFILE_REGISTRY` still works
+- [x] (2026-08-18 19:42Z) EP-61: `okf profile list` prints one merged, source-grouped listing with a source label on every row
+- [x] (2026-08-18 19:42Z) EP-61: listing tolerates partial source failure, while named `profile show` / `profile document` resolution fails closed on a failed or ambiguous source set
 - [ ] EP-62: `Okf.Profile.Discovery` finds descriptor files on disk and is covered by fixtures that never touch the network
 - [ ] EP-62: `okf profiles` lists discovered local descriptors non-interactively, and an empty result exits 0
 - [ ] EP-62: local descriptors appear in `okf profile list` as their own source
@@ -478,6 +480,13 @@ blocked HTTP proxies, its intentional failure names the exact descriptor that st
 decoding, and all 19 generated fixture files are present in the okf-core sdist. The public
 `RegistryEntry` and registry-loading signatures remain unchanged, so EP-61's planned
 source wrapper can proceed without a compatibility adjustment.
+
+**EP-61 made source origin a structured JSON value** (2026-08-18, implementation).
+The same source object now appears in the top-level `sources` array and on every profile;
+its `origin.kind` distinguishes flag, environment, config, and built-in resolution, with a
+`name` or `path` where applicable. The legacy top-level `registry` string appears only for
+exactly one registry source. EP-63 can render the carried provenance directly and must not
+reconstruct precedence.
 
 
 ## Decision Log
@@ -613,15 +622,25 @@ source wrapper can proceed without a compatibility adjustment.
   `RegistryEntry` and multi-source loading.
   Date: 2026-08-18
 
+- Decision: Encode profile-source origin as a structured JSON object and retain the legacy
+  top-level `registry` key only for an exactly-one-registry result.
+  Rationale: A string cannot distinguish a flag from an environment variable or carry a
+  configuration path without an ad hoc grammar. Structured provenance is extensible and
+  gives EP-63 the exact winning source to render, while omitting the singular compatibility
+  key from multi-source results makes an older consumer fail loudly instead of reading an
+  incomplete identity.
+  Date: 2026-08-18
+
 
 ## Outcomes & Retrospective
 
-EP-60 is complete: the default now exposes ten current OKF 0.2 profiles, the pin and
-offline snapshot refresh together through one explicit-tag script, and both runtime and
-packaging checks prove the snapshot decodes without network access. The known wide
-description rendering remains intentionally queued for EP-63. EP-61 is now the first
-dependency-ready incomplete child plan; EP-62 and EP-63 remain blocked by their documented
-hard dependencies.
+EP-60 and EP-61 are complete. The default exposes ten current OKF 0.2 profiles, and profile
+commands now resolve ordered registry lists with backwards-compatible configuration and
+environment fallbacks, source-labelled text and provenance JSON, partial survey results,
+and fail-closed named lookup. The source model remained additive around `RegistryEntry`,
+and its structured origin is recorded in ADR 3 for EP-63 to render directly. EP-62 is now
+the first dependency-ready incomplete child plan; EP-63 remains blocked on EP-62. The known
+wide-description rendering and raw Dhall failure text remain intentionally queued for EP-63.
 
 
 ## Revision Note (2026-08-18)
