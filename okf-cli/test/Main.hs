@@ -3,6 +3,7 @@ module Main (main) where
 import Control.Exception (bracket)
 import Control.Monad (unless)
 import Data.Aeson (Value (..), toJSON)
+import Data.Aeson qualified as Aeson
 import Data.Foldable (traverse_)
 import Data.List qualified as List
 import Data.List.NonEmpty (NonEmpty (..))
@@ -57,6 +58,7 @@ main = do
   computationsReportsExample <- testComputationsReportsExampleBundle
   conceptsReportsFixtures <- testConceptsReportsFixtureBundle
   conceptsShowsFilteredColumns <- testConceptsShowsFilteredColumns
+  conceptsReportJson <- testConceptReportJson
   conceptsReportsExample <- testConceptsReportsExampleBundle
   conceptsKeepsStatusDefaultOut <- testConceptsDoesNotApplyStatusDefault
   profileDocStrictWithTimestamp <- testProfileDocumentationStrictWithTimestamp
@@ -440,6 +442,7 @@ main = do
           computationsReportsExample,
           conceptsReportsFixtures,
           conceptsShowsFilteredColumns,
+          conceptsReportJson,
           conceptsReportsExample,
           conceptsKeepsStatusDefaultOut,
           profileDocStrictWithTimestamp,
@@ -1339,6 +1342,56 @@ testConceptsShowsFilteredColumns =
       "requests/beta   Improvement Request  proposed   Beta",
       "requests/gamma  Improvement Request  completed  Gamma"
     ]
+
+-- | JSON rows are exactly the stored frontmatter objects in the input order.
+-- The deliberately reverse-sorted concept IDs prove that the renderer does not
+-- reorder or inject path-derived identity. Comparing 'Value' rather than bytes
+-- ignores object-key order while pinning nested, list, scalar, and non-ASCII
+-- values as well as the absence of the old @id@/@path@/@fields@ envelope.
+testConceptReportJson :: IO Bool
+testConceptReportJson = do
+  let concepts =
+        [ buildConcept
+            "z/rich"
+            "---\ntype: Signal\ntitle: 東京 signal\nproducerKey: custom\nlabels:\n  - alpha\n  - βeta\nnested:\n  region: 東京\n  active: true\nreviews:\n  - outcome: approved\n    reviewer: Renée\n---\n\nBody is not JSON.\n",
+          buildConcept
+            "a/minimal"
+            "---\ntype: Note\ntitle: Second\ncount: 2\n---\n\nAnother body.\n"
+        ]
+      expected =
+        Aeson.toJSON
+          [ Aeson.object
+              [ "type" Aeson..= ("Signal" :: Text.Text),
+                "title" Aeson..= ("東京 signal" :: Text.Text),
+                "producerKey" Aeson..= ("custom" :: Text.Text),
+                "labels" Aeson..= (["alpha", "βeta"] :: [Text.Text]),
+                "nested"
+                  Aeson..= Aeson.object
+                    [ "region" Aeson..= ("東京" :: Text.Text),
+                      "active" Aeson..= True
+                    ],
+                "reviews"
+                  Aeson..= [ Aeson.object
+                               [ "outcome" Aeson..= ("approved" :: Text.Text),
+                                 "reviewer" Aeson..= ("Renée" :: Text.Text)
+                               ]
+                           ]
+              ],
+            Aeson.object
+              [ "type" Aeson..= ("Note" :: Text.Text),
+                "title" Aeson..= ("Second" :: Text.Text),
+                "count" Aeson..= (2 :: Int)
+              ]
+          ]
+      actual = conceptReportJson concepts
+  unless (actual == expected) $
+    putStrLn
+      ( "unexpected okf concepts JSON report:\nexpected: "
+          <> show expected
+          <> "\nactual:   "
+          <> show actual
+      )
+  pure (actual == expected)
 
 -- | @okf concepts --type Policy@ over the shipped example. This is the
 -- transcript @docs\/user\/cli.md@ documents, pinned so the documentation cannot

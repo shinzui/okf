@@ -95,7 +95,6 @@ import Okf.Document
     attestedComputationType,
     body,
     effectiveUsageWindow,
-    frontmatterLookup,
     renderStatus,
   )
 import Okf.Graph (buildGraph)
@@ -1746,6 +1745,10 @@ computationReport concepts =
 -- restates frontmatter; a reading derived from absence is derived and not
 -- stored, per @docs\/adr\/8-derived-not-stored-trust-and-credibility.md@.
 -- @okf trust@ is the command whose @status@ column does apply the default.
+--
+-- In text mode, @--show@ adds frontmatter columns to the aligned report. In
+-- JSON mode, every selected row is instead the concept's complete stored
+-- frontmatter object; @--show@ does not project or otherwise change it.
 runConcepts :: ConceptsOptions -> IO ()
 runConcepts
   ConceptsOptions
@@ -1762,7 +1765,7 @@ runConcepts
     concepts <- loadBundleOrExit bundlePath
     let selected = filterConcepts allFilters concepts
     if json
-      then LazyByteString.putStrLn (Aeson.encode (conceptReportJson showFields selected))
+      then LazyByteString.putStrLn (Aeson.encode (conceptReportJson selected))
       else mapM_ Text.IO.putStrLn (conceptReport showFields selected)
     where
       -- @--type@ is sugar for a filter on the @type@ key rather than a separate
@@ -1813,9 +1816,11 @@ renderFilterProfileError = \case
       <> Text.intercalate ", " vocabulary
 
 -- | The lines @okf concepts@ prints, as data: concept ID, @type@, one column per
--- requested key, and @title@ last. Pure and separate from 'runConcepts' so a
--- test can assert the whole report rather than only the accessors behind it, as
--- 'computationReport' and 'renderProfileDetail' already are.
+-- key requested with @--show@, and @title@ last. The @--show@ option affects
+-- this text report only; JSON output always carries complete stored
+-- frontmatter. Pure and separate from 'runConcepts' so a test can assert the
+-- whole report rather than only the accessors behind it, as 'computationReport'
+-- and 'renderProfileDetail' already are.
 --
 -- The three default columns are the ones
 -- 'Okf.Cli.Fzf.Selector.conceptCandidates' shows in the interactive concept
@@ -1855,39 +1860,17 @@ conceptReport shown concepts =
 
 -- | The rows @okf concepts --json@ emits.
 --
--- @title@ is @null@ when the concept has none, and @fields@ is present even when
--- no key was requested, so a consumer never has to test for it. The values under
--- @fields@ are the raw frontmatter values rather than the display text a column
--- shows: a JSON consumer wants a list back as a list.
-conceptReportJson :: [Text] -> [Concept] -> Aeson.Value
-conceptReportJson shown concepts =
-  Aeson.toJSON (conceptObject <$> concepts)
+-- Each row is the complete stored frontmatter object. File-derived identity,
+-- source paths, Markdown bodies, derived readings, and a CLI-owned envelope are
+-- deliberately absent. Filters choose the rows before this renderer runs, and
+-- @--show@ is not an input because it controls text columns only.
+conceptReportJson :: [Concept] -> Aeson.Value
+conceptReportJson concepts =
+  Aeson.toJSON (frontmatterValue <$> concepts)
   where
-    conceptObject concept =
-      Aeson.object
-        [ "id" Aeson..= renderConceptId (conceptIdOf concept),
-          "path" Aeson..= conceptSourcePath concept,
-          "type" Aeson..= conceptType concept,
-          "title" Aeson..= conceptTitle concept,
-          "fields"
-            Aeson..= Aeson.object
-              [ AesonKey.fromText key Aeson..= rawField (showSelector key) concept
-              | key <- shown
-              ]
-        ]
-    -- A top-level key reports exactly the value the document carries. A nested
-    -- one has no single stored value — @reviews.outcome@ names one member of
-    -- every element — so it reports the values it selected: nothing as @null@,
-    -- one as itself, several as a list.
-    rawField selector concept =
-      case selector of
-        TopLevelField key ->
-          fromMaybe Aeson.Null (frontmatterLookup key (conceptDocument concept ^. #frontmatter))
-        NestedField _ _ ->
-          case conceptFieldValues selector concept of
-            [] -> Aeson.Null
-            [single] -> single
-            values -> Aeson.toJSON values
+    frontmatterValue concept =
+      case conceptDocument concept ^. #frontmatter of
+        Frontmatter rawFields -> Aeson.Object rawFields
 
 -- | Read a @--show@ key as a field selector. A key too deep to be one cannot
 -- name a real frontmatter path either, so it is kept as a top-level key and

@@ -45,12 +45,12 @@ with one of those names.
 
 ## Progress
 
-- [ ] Milestone 1: change `conceptReportJson` and `runConcepts` so JSON contains only raw
+- [x] (2026-08-18 13:56Z) Milestone 1: change `conceptReportJson` and `runConcepts` so JSON contains only raw
       frontmatter objects.
-- [ ] Add a focused `okf-cli/test/Main.hs` regression test that pins the entire JSON value,
+- [x] (2026-08-18 13:56Z) Add a focused `okf-cli/test/Main.hs` regression test that pins the entire JSON value,
       including arbitrary keys, lists, nested objects, non-ASCII text, concept order, and
       the absence of the old envelope.
-- [ ] Run `cabal build all` and `cabal test okf-cli-test` after the renderer change.
+- [x] (2026-08-18 13:56Z) Run `cabal build all` and `cabal test okf-cli-test` after the renderer change.
 - [ ] Milestone 2: update command help, both user guides, the root and CLI changelogs, and
       the durable query contract in `docs/adr/15-querying-a-bundle-and-where-filter-semantics-live.md`.
 - [ ] Run the manual fixture and example-bundle checks, `cabal test all`, and the repository
@@ -60,7 +60,13 @@ with one of those names.
 
 ## Surprises & Discoveries
 
-(None yet.)
+- Observation: A piped `cabal run okf -- ... --json | jq ...` can fail on the first run
+  after a source edit because Cabal writes rebuild progress to the same stdout stream as the
+  executable's JSON.
+  Evidence: the first fixture check failed with `jq: parse error: Invalid numeric literal at
+  line 1, column 6`; running the built executable through the same `cabal run` command then
+  produced the expected four-row JSON summary. Running `cabal build all` immediately before
+  piped manual checks prevents this transient contamination.
 
 
 ## Decision Log
@@ -531,3 +537,8 @@ There is no `ToJSON Frontmatter` instance, no new `okf-core` export, no new flag
 change to `ConceptsOptions`. The public behavioral contract is the JSON array described in
 Validation and Acceptance, and the public source-level break is the removed `[Text]`
 argument from `conceptReportJson`.
+
+
+Revision note (2026-08-18 13:56Z): Recorded Milestone 1 implementation and validation,
+including the transient first-run `cabal run` stdout contamination discovered during the
+fixture check. The remaining plan is unchanged.
