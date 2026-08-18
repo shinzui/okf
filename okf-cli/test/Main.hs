@@ -25,7 +25,7 @@ import Okf.ConceptId (ConceptId, parseConceptId, renderConceptId)
 import Okf.Document (Attester (..), Executor (..), Parameter (..), parseDocument)
 import Okf.Index (OkfVersion (..), VersionDeclaration (..), parseOkfVersion, readBundleVersion)
 import Okf.Profile (Cardinality (..), CompiledProfile, FieldCondition (..), FieldFormat (..), FieldPath (..), FieldPathSegment (..), FieldRule (..), FrontmatterRules (..), HandleReferenceRule (..), NestedFieldRule (..), NestedRules (..), PathReferenceRule (..), ProfileSpec (..), ProfileViolation (..), TypeRule (..), compileProfile, loadProfileFile, validateProfile, validateProfileVersion)
-import Okf.Profile.Registry (ProfileSource (..), RegistryEntry (..), RegistryRef (..), SourcedProfile (..), defaultRegistryReference)
+import Okf.Profile.Registry (ProfileSource (..), ProfileSourceLoadError (..), RegistryEntry (..), RegistryLoadError (..), RegistryRef (..), SourcedProfile (..), defaultRegistryReference)
 import Okf.Query (ConceptFilter (..), FieldSelector (..), filterConcepts)
 import Okf.Validation (ValidationProfile (..), validateBundle)
 import Options.Applicative
@@ -50,6 +50,7 @@ main = do
   configLegacyProfilesWithAgent <- testConfigLegacyProfilesWithAgent
   configNormalizesRegistryList <- testConfigNormalizesRegistryList
   profileFlagSources <- testProfileFlagSources
+  profileFlagPrecedence <- testProfileFlagSourcesBeatEnvironmentSources
   profileEnvironmentSources <- testProfileEnvironmentSources
   profileConfigOrigin <- testProfileConfigOrigin
   agentScopesLoadsBothFiles <- testAgentScopesLoadsBothFiles
@@ -369,16 +370,22 @@ main = do
           parseSucceeds ["profile", "list", "--registry", "./r.dhall"],
           parseSucceeds ["profile", "show"],
           parseSucceeds ["profile", "show", "postgresql"],
-          parseProfileMatches ["profile"] (ProfileList (ProfileListOptions [] False False)),
+          parseProfileMatches ["profile"] (ProfileList (ProfileListOptions [] False False False)),
           parseProfileMatches
             ["profile", "list", "--registry", "r", "--json"]
-            (ProfileList (ProfileListOptions ["r"] False True)),
+            (ProfileList (ProfileListOptions ["r"] False True False)),
           parseProfileMatches
             ["profile", "list", "--registry", "a", "--registry", "b"]
-            (ProfileList (ProfileListOptions ["a", "b"] False False)),
+            (ProfileList (ProfileListOptions ["a", "b"] False False False)),
           parseProfileMatches
             ["profile", "list", "--no-local"]
-            (ProfileList (ProfileListOptions [] True False)),
+            (ProfileList (ProfileListOptions [] True False False)),
+          parseProfileMatches
+            ["profile", "list", "--wide"]
+            (ProfileList (ProfileListOptions [] False False True)),
+          parseProfileMatches
+            ["profile", "sources", "--registry", "r", "--no-local", "--json", "--check-latest"]
+            (ProfileSources (ProfileSourcesOptions ["r"] True True True)),
           parseProfileMatches
             ["profile", "show", "x", "--registry", "r", "--json"]
             (ProfileShow (ProfileShowOptions ["r"] (Just "x") False True)),
@@ -534,10 +541,15 @@ main = do
           parseFails ["concepts", "b", "--where", "status"],
           parseFails ["concepts", "b", "--where", "a.b.c=x"],
           parseFails ["concepts", "b", "--has", "a.b.c"],
-          renderRegistryTable sampleRegistryEntries == sampleRegistryTable,
+          renderRegistryTable CompactTable sampleRegistryEntries == sampleRegistryTable,
+          renderRegistryTable WideTable sampleRegistryEntries == sampleRegistryWideTable,
+          testRegistryTableCapsEveryTextField,
           testRegistryEnvironmentJson,
           testRegistryListJsonShape,
           testDescriptorSourceJsonShape,
+          testProfileSourceResolutionRendering,
+          testProfileSourcesJsonShape,
+          testProfileReleaseTagParsing,
           testProfileDescriptorJsonShape,
           testAmbiguousSourcedProfile,
           renderProfileDetail "nested.decisions" sampleDecisionsProfile == sampleProfileDetail,
@@ -576,6 +588,7 @@ main = do
           configLegacyProfilesWithAgent,
           configNormalizesRegistryList,
           profileFlagSources,
+          profileFlagPrecedence,
           profileEnvironmentSources,
           profileConfigOrigin,
           agentScopesLoadsBothFiles,
@@ -751,14 +764,80 @@ sampleResolvedSources =
     ResolvedProfileSource sampleHouseSource RegistryFlagOrigin
   ]
 
--- | @DESCRIPTION@ is last and unpadded; the postgresql sample has none, so the
--- @-@ placeholder appears there as well as in @ID FIELD@.
+-- | Compact output pins the fixed budgets and the indented description line.
 sampleRegistryTable :: [Text.Text]
 sampleRegistryTable =
-  [ "SOURCE     EXPORT            NAME                OKF  TYPES  ID FIELD  DESCRIPTION",
-    "catalogue  (root)            shinzui-postgresql  0.1      1  -         -",
-    "house      nested.decisions  decisions           0.1      1  docId     How this team records architectural decisions."
+  [ Text.concat
+      [ "SOURCE",
+        Text.replicate 10 " ",
+        "EXPORT",
+        Text.replicate 24 " ",
+        "NAME",
+        Text.replicate 26 " ",
+        "OKF  TYPES  ID FIELD"
+      ],
+    Text.concat
+      [ "catalogue",
+        Text.replicate 7 " ",
+        "(root)",
+        Text.replicate 24 " ",
+        "shinzui-postgresql",
+        Text.replicate 12 " ",
+        "0.1",
+        Text.replicate 6 " ",
+        "1  -"
+      ],
+    "  -",
+    Text.concat
+      [ "house",
+        Text.replicate 11 " ",
+        "nested.decisions",
+        Text.replicate 14 " ",
+        "decisions",
+        Text.replicate 21 " ",
+        "0.1",
+        Text.replicate 6 " ",
+        "1  docId"
+      ],
+    "  How this team records architectural decisions."
   ]
+
+sampleRegistryWideTable :: [Text.Text]
+sampleRegistryWideTable =
+  [ "SOURCE     EXPORT            NAME                OKF  TYPES  ID FIELD",
+    "catalogue  (root)            shinzui-postgresql  0.1      1  -",
+    "  -",
+    "house      nested.decisions  decisions           0.1      1  docId",
+    "  How this team records architectural decisions."
+  ]
+
+testRegistryTableCapsEveryTextField :: Bool
+testRegistryTableCapsEveryTextField =
+  case renderRegistryTable CompactTable [longEntry] of
+    [_header, identity, description] ->
+      maximum (map Text.length (renderRegistryTable CompactTable [longEntry])) <= 100
+        && Text.last (Text.take 14 identity) == '…'
+        && Text.last (Text.take 28 (Text.drop 16 identity)) == '…'
+        && Text.last (Text.take 28 (Text.drop 46 identity)) == '…'
+        && Text.last description == '…'
+        && '\n' `notElem` Text.unpack description
+        && longExport `Text.isInfixOf` Text.unlines (renderRegistryTable WideTable [longEntry])
+        && longName `Text.isInfixOf` Text.unlines (renderRegistryTable WideTable [longEntry])
+        && normalizedDescription `Text.isInfixOf` Text.unlines (renderRegistryTable WideTable [longEntry])
+    _ -> False
+  where
+    longSourceText = Text.replicate 40 "source"
+    longExport = Text.replicate 8 "nested.export."
+    longName = Text.replicate 8 "long-profile-name-"
+    longDescription = Text.replicate 10 "long description\nwith whitespace "
+    normalizedDescription = Text.unwords (Text.words longDescription)
+    longSource = RegistrySource longSourceText (RegistryExpression longSourceText)
+    longSpec =
+      sampleDecisionsProfile
+        { name = longName,
+          description = Just longDescription
+        }
+    longEntry = SourcedProfile longSource (RegistryEntry longExport longSpec)
 
 testRegistryEnvironmentJson :: Bool
 testRegistryEnvironmentJson =
@@ -844,6 +923,104 @@ testDescriptorSourceJsonShape =
                 "roots" Aeson..= (["docs/profiles"] :: [FilePath])
               ]
         ]
+
+sampleProfileSourceResolutions :: [ProfileSourceResolution]
+sampleProfileSourceResolutions =
+  [ ProfileSourceResolution
+      ( ResolvedProfileSource
+          (RegistrySource defaultRegistryReference (RegistryExpression defaultRegistryReference))
+          BuiltInRegistryOrigin
+      )
+      (ProfileSourceLoaded 10),
+    ProfileSourceResolution
+      (ResolvedProfileSource sampleHouseSource RegistriesEnvironmentOrigin)
+      ( ProfileSourceFailed
+          (RegistryProfileSourceLoadError sampleHouseSource RegistryImportFailure)
+      )
+  ]
+
+testProfileSourceResolutionRendering :: Bool
+testProfileSourceResolutionRendering =
+  let rendered = renderProfileSourceResolution sampleProfileSourceResolutions FreshnessNotChecked
+   in all
+        (`Text.isInfixOf` rendered)
+        [ "okf-profiles v0.10.0 (pinned)",
+          "[built-in default]",
+          "[env: OKF_PROFILE_REGISTRIES]",
+          "failed (import-failure)",
+          "Pinned catalogue: okf-profiles v0.10.0",
+          "1. --registry flag (repeatable)",
+          "lookup fails closed."
+        ]
+
+testProfileSourcesJsonShape :: Bool
+testProfileSourcesJsonShape =
+  profileSourcesJson sampleProfileSourceResolutions (FreshnessOutdated "v0.10.0" "v0.11.0")
+    == Aeson.object
+      [ "sources"
+          Aeson..= [ Aeson.object
+                       [ "kind" Aeson..= ("registry" :: Text.Text),
+                         "label" Aeson..= ("okf-profiles" :: Text.Text),
+                         "reference" Aeson..= defaultRegistryReference,
+                         "origin" Aeson..= Aeson.object ["kind" Aeson..= ("built-in" :: Text.Text)],
+                         "status" Aeson..= ("loaded" :: Text.Text),
+                         "profileCount" Aeson..= (10 :: Int)
+                       ],
+                     Aeson.object
+                       [ "kind" Aeson..= ("registry" :: Text.Text),
+                         "label" Aeson..= ("house" :: Text.Text),
+                         "reference" Aeson..= ("house" :: Text.Text),
+                         "origin"
+                           Aeson..= Aeson.object
+                             [ "kind" Aeson..= ("environment" :: Text.Text),
+                               "name" Aeson..= profileRegistriesEnvVar
+                             ],
+                         "status" Aeson..= ("failed" :: Text.Text),
+                         "profileCount" Aeson..= (0 :: Int),
+                         "error"
+                           Aeson..= Aeson.object
+                             [ "category" Aeson..= ("import-failure" :: Text.Text),
+                               "message"
+                                 Aeson..= ("one or more registry imports could not be resolved; check local paths and network access" :: Text.Text)
+                             ]
+                       ]
+                   ],
+        "pinnedVersion" Aeson..= Just ("v0.10.0" :: Text.Text),
+        "freshness"
+          Aeson..= Aeson.object
+            [ "status" Aeson..= ("outdated" :: Text.Text),
+              "pinnedVersion" Aeson..= ("v0.10.0" :: Text.Text),
+              "latestVersion" Aeson..= ("v0.11.0" :: Text.Text),
+              "refreshCommand" Aeson..= ("scripts/refresh-default-registry.sh v0.11.0" :: Text.Text)
+            ],
+        "precedence" Aeson..= profileSourcePrecedenceFixture
+      ]
+
+profileSourcePrecedenceFixture :: [Text.Text]
+profileSourcePrecedenceFixture =
+  [ "Precedence, highest first:",
+    "  1. --registry flag (repeatable); the flag list replaces every other registry layer",
+    "  2. OKF_PROFILE_REGISTRIES (JSON array)",
+    "  3. OKF_PROFILE_REGISTRY (legacy single reference)",
+    "  4. profiles.registries in the effective config file",
+    "  5. built-in default when the decoded configuration has no profiles block",
+    "Within a list, order is preserved and exact duplicates are dropped. Every source is",
+    "enumerated; sources merge rather than replace. Local descriptors follow the winning",
+    "registry list unless --no-local is passed. Survey commands report partial failure; named",
+    "lookup fails closed."
+  ]
+
+testProfileReleaseTagParsing :: Bool
+testProfileReleaseTagParsing =
+  parseReleaseVersionTag "v0.10.0" == Just (ReleaseVersion 0 10 0)
+    && parseReleaseVersionTag "v0.9.3" == Just (ReleaseVersion 0 9 3)
+    && parseReleaseVersionTag "0.10.0" == Nothing
+    && parseReleaseVersionTag "v0.10" == Nothing
+    && pinnedRegistryTag defaultRegistryReference == Just "v0.10.0"
+    && latestReleaseTag
+      "aaa\trefs/tags/v0.9.3\nbbb\trefs/tags/not-a-version\nccc\trefs/tags/v0.10.0\n"
+      == Just "v0.10.0"
+    && latestReleaseTag "" == Nothing
 
 testProfileDescriptorJsonShape :: Bool
 testProfileDescriptorJsonShape =
@@ -2240,6 +2417,19 @@ testProfileFlagSources = do
         ResolvedProfileSource (RegistrySource "second" _) RegistryFlagOrigin
         ] -> True
       _ -> False
+
+-- | The flag list is one authoritative layer. This assertion fails if the
+-- resolver ever consults or concatenates the plural environment list ahead of
+-- explicit flags.
+testProfileFlagSourcesBeatEnvironmentSources :: IO Bool
+testProfileFlagSourcesBeatEnvironmentSources =
+  withIsolatedConfigEnv "okf-cli-profile-flag-precedence" $ do
+    setEnv profileRegistriesEnvVar "[\"environment\"]"
+    resolved <- resolveProfileSources ["flag"]
+    pure $
+      case resolved of
+        [ResolvedProfileSource (RegistrySource "flag" _) RegistryFlagOrigin] -> True
+        _ -> False
 
 -- | The plural environment list wins over the legacy singular value and keeps
 -- a hash-pinned URL intact as one reference.

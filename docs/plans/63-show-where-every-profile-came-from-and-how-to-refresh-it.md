@@ -93,15 +93,15 @@ network-disabled discovery semantics.
 
 - [x] (2026-08-18 21:27Z) Confirm `docs/plans/61-read-profiles-from-more-than-one-registry.md` is complete and read its final source model
 - [x] (2026-08-18 21:27Z) Confirm EP 60 and EP 62 are complete and read their final interfaces and Outcomes
-- [ ] Consume EP 61's `ResolvedProfileSource` provenance without reconstructing it
-- [ ] Add the `okf profile sources` command, text and `--json` modes
-- [ ] Print the precedence rules on every run of it
-- [ ] Report the pinned catalogue's version, parsed from the reference
-- [ ] Render fixed-width two-line rows and add the `--wide` escape hatch
-- [ ] Update `sampleRegistryTable` in `okf-cli/test/Main.hs` for the new rendering
+- [x] (2026-08-18 21:43Z) Consume EP 61's `ResolvedProfileSource` provenance without reconstructing it
+- [x] (2026-08-18 21:43Z) Add the `okf profile sources` command, text and `--json` modes
+- [x] (2026-08-18 21:43Z) Print the precedence rules in text and carry them structurally in JSON on every run
+- [x] (2026-08-18 21:43Z) Report the pinned catalogue's version, parsed from the reference
+- [x] (2026-08-18 21:43Z) Render fixed-width two-line rows and add the `--wide` escape hatch
+- [x] (2026-08-18 21:43Z) Update `sampleRegistryTable` in `okf-cli/test/Main.hs` and add a wide fixture plus cap coverage
 - [x] (2026-08-18 21:34Z) Replace the raw Dhall exception text in registry load failures with additive typed core errors and stable summaries
 - [x] (2026-08-18 21:34Z) Avoid ANSI escapes by classifying exceptions rather than rendering Dhall's exception text
-- [ ] Add the opt-in upstream freshness check
+- [x] (2026-08-18 21:43Z) Add the opt-in upstream freshness check with pure numeric tag parsing and graceful unavailability
 - [ ] Run `cabal build all` and `cabal test all` clean
 - [ ] Paste real transcripts for the inspection command, the fixed table, and each error path
 - [ ] Update `okf-cli/help/profiles.md`, `docs/user/profiles.md`, `docs/user/cli.md`, `README.md`

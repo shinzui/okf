@@ -16,10 +16,16 @@ module Okf.Cli
     ProfileCommand (..),
     ProfileDocumentOptions (..),
     ProfileListOptions (..),
+    ProfileSourcesOptions (..),
+    ProfileSourceResolution (..),
+    ProfileSourceStatus (..),
+    ProfileFreshness (..),
     ProfilesOptions (..),
     ProfileSourceOrigin (..),
     ProfileShowOptions (..),
     ResolvedProfileSource (..),
+    RegistryTableMode (..),
+    ReleaseVersion (..),
     ShowOptions (..),
     SourcesOptions (..),
     TrustOptions (..),
@@ -31,9 +37,13 @@ module Okf.Cli
     observedIdPrefixes,
     parserInfo,
     parseProfileRegistriesEnv,
+    parseReleaseVersionTag,
+    latestReleaseTag,
+    pinnedRegistryTag,
     profileRegistriesEnvVar,
     profileRegistryEnvVar,
     registryListJson,
+    profileSourcesJson,
     profileDescriptorJson,
     resolveEffectiveProfileSources,
     resolveProfilePathWith,
@@ -41,6 +51,7 @@ module Okf.Cli
     renderProfileDetail,
     renderProfileViolation,
     renderRegistryTable,
+    renderProfileSourceResolution,
     runCli,
     runCommand,
     runLogAdd,
@@ -54,11 +65,12 @@ import Data.Aeson.Key qualified as AesonKey
 import Data.Aeson.KeyMap qualified as KeyMap
 import Data.ByteString.Lazy qualified as LazyBytes
 import Data.ByteString.Lazy.Char8 qualified as LazyByteString
+import Data.Char (isDigit)
 import Data.Foldable (toList, traverse_)
 import Data.List qualified as List
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map.Strict qualified as Map
-import Data.Maybe (catMaybes, mapMaybe)
+import Data.Maybe (catMaybes, listToMaybe, mapMaybe)
 import Data.Set qualified as Set
 import Data.Text qualified as Text
 import Data.Text.Encoding qualified as Text.Encoding
@@ -170,13 +182,18 @@ import Okf.Profile.Documentation
   )
 import Okf.Profile.Registry
   ( ProfileSource (..),
+    ProfileSourceLoadError,
     RegistryEntry (..),
     RegistryRef (..),
     SourceFailure (..),
     SourcedProfile (..),
+    defaultRegistryReference,
     findSourcedProfiles,
+    loadProfileSourceDetailed,
     loadProfileSources,
+    profileSourceLoadErrorCategory,
     renderProfileSourceLabel,
+    renderProfileSourceLoadError,
     renderProfileSourceReference,
     renderRegistryRef,
     resolveRegistryRef,
@@ -213,6 +230,7 @@ import System.FilePath ((</>))
 import System.FilePath qualified as FilePath
 import System.IO (stderr)
 import System.Process (readProcessWithExitCode)
+import Text.Read (readMaybe)
 
 data Command
   = Bundles BundlesOptions
@@ -348,6 +366,7 @@ data ConfigCommand
 
 data ProfileCommand
   = ProfileList ProfileListOptions
+  | ProfileSources ProfileSourcesOptions
   | ProfileShow ProfileShowOptions
   | ProfileDocument ProfileDocumentOptions
   deriving stock (Show, Eq)
@@ -355,7 +374,16 @@ data ProfileCommand
 data ProfileListOptions = ProfileListOptions
   { registryRefs :: ![Text],
     noLocal :: !Bool,
-    json :: !Bool
+    json :: !Bool,
+    wide :: !Bool
+  }
+  deriving stock (Show, Eq)
+
+data ProfileSourcesOptions = ProfileSourcesOptions
+  { registryRefs :: ![Text],
+    noLocal :: !Bool,
+    json :: !Bool,
+    checkLatest :: !Bool
   }
   deriving stock (Show, Eq)
 
@@ -397,6 +425,30 @@ data ResolvedProfileSource = ResolvedProfileSource
     sourceOrigin :: !ProfileSourceOrigin
   }
   deriving stock (Show, Eq)
+
+data ProfileSourceStatus
+  = ProfileSourceLoaded !Int
+  | ProfileSourceFailed !ProfileSourceLoadError
+  deriving stock (Show, Eq)
+
+data ProfileSourceResolution = ProfileSourceResolution
+  { resolvedProfileSource :: !ResolvedProfileSource,
+    profileSourceStatus :: !ProfileSourceStatus
+  }
+  deriving stock (Show, Eq)
+
+data ProfileFreshness
+  = FreshnessNotChecked
+  | FreshnessCurrent !Text
+  | FreshnessOutdated !Text !Text
+  | FreshnessUnavailable !Text
+  deriving stock (Show, Eq)
+
+data RegistryTableMode = CompactTable | WideTable
+  deriving stock (Show, Eq)
+
+data ReleaseVersion = ReleaseVersion !Int !Int !Int
+  deriving stock (Show, Eq, Ord)
 
 data Options = Options
   { cmd :: !Command
@@ -653,6 +705,12 @@ profileCommandParser =
             (progDesc "List profiles from registries and local descriptors; use `okf profiles` for local paths only")
         )
         <> command
+          "sources"
+          ( info
+              (ProfileSources <$> profileSourcesOptionsParser <**> helper)
+              (progDesc "Show effective profile sources, their origins, and whether they load")
+          )
+        <> command
           "show"
           ( info
               (ProfileShow <$> profileShowOptionsParser <**> helper)
@@ -665,7 +723,7 @@ profileCommandParser =
               (progDesc "Generate an OKF bundle documenting a profile")
           )
     )
-    <|> pure (ProfileList (ProfileListOptions [] False False))
+    <|> pure (ProfileList (ProfileListOptions [] False False False))
 
 profileListOptionsParser :: Parser ProfileListOptions
 profileListOptionsParser =
@@ -673,6 +731,15 @@ profileListOptionsParser =
     <$> many registryOption
     <*> noLocalSwitch
     <*> jsonSwitch
+    <*> switch (long "wide" <> help "Print full source, export, name, and description values")
+
+profileSourcesOptionsParser :: Parser ProfileSourcesOptions
+profileSourcesOptionsParser =
+  ProfileSourcesOptions
+    <$> many registryOption
+    <*> noLocalSwitch
+    <*> jsonSwitch
+    <*> switch (long "check-latest" <> help "Query upstream tags and compare them with the pinned default release")
 
 profileShowOptionsParser :: Parser ProfileShowOptions
 profileShowOptionsParser =
@@ -1026,6 +1093,7 @@ profileRegistriesEnvVar = "OKF_PROFILE_REGISTRIES"
 runProfile :: ProfileCommand -> IO ()
 runProfile = \case
   ProfileList options -> runProfileList options
+  ProfileSources options -> runProfileSources options
   ProfileShow options -> runProfileShow options
   ProfileDocument options -> runProfileDocument options
 
@@ -1163,12 +1231,15 @@ renderRegistryLoadError reference err =
     ]
 
 runProfileList :: ProfileListOptions -> IO ()
-runProfileList ProfileListOptions {registryRefs, noLocal, json} = do
+runProfileList ProfileListOptions {registryRefs, noLocal, json, wide} = do
   resolved <- resolveEffectiveProfileSources registryRefs noLocal
   (_failures, profiles) <- loadProfileSourcesForSurvey resolved
   if json
     then LazyByteString.putStrLn (Aeson.encode (registryListJson resolved profiles))
-    else traverse_ Text.IO.putStrLn (renderRegistryTable profiles)
+    else
+      traverse_
+        Text.IO.putStrLn
+        (renderRegistryTable (if wide then WideTable else CompactTable) profiles)
 
 registryListJson :: [ResolvedProfileSource] -> [SourcedProfile] -> Aeson.Value
 registryListJson resolved profiles =
@@ -1222,17 +1293,270 @@ profileSourceOriginJson = \case
   BuiltInRegistryOrigin -> Aeson.object ["kind" Aeson..= ("built-in" :: Text)]
   ProfileDiscoveryOrigin roots -> Aeson.object ["kind" Aeson..= ("discovery" :: Text), "roots" Aeson..= roots]
 
--- | An aligned table: a header row plus one row per profile, columns padded to
--- their widest value. Pure so it can be tested without evaluating any Dhall.
---
--- @DESCRIPTION@ comes last so the existing columns keep their positions and a
--- long description cannot push anything off the right edge. Nothing follows it,
--- so it is never padded; an absent description reads @-@, matching @ID FIELD@.
-renderRegistryTable :: [SourcedProfile] -> [Text]
-renderRegistryTable profiles =
-  map renderRow rows
+runProfileSources :: ProfileSourcesOptions -> IO ()
+runProfileSources ProfileSourcesOptions {registryRefs, noLocal, json, checkLatest} = do
+  resolved <- resolveEffectiveProfileSources registryRefs noLocal
+  resolutions <- traverse inspectProfileSource resolved
+  freshness <-
+    if checkLatest
+      then checkProfileRegistryFreshness
+      else pure FreshnessNotChecked
+  if json
+    then LazyByteString.putStrLn (Aeson.encode (profileSourcesJson resolutions freshness))
+    else Text.IO.putStr (renderProfileSourceResolution resolutions freshness)
+  unless (any sourcePublishedProfiles resolutions) exitFailure
+
+inspectProfileSource :: ResolvedProfileSource -> IO ProfileSourceResolution
+inspectProfileSource resolved@ResolvedProfileSource {resolvedSource} = do
+  loaded <- loadProfileSourceDetailed resolvedSource
+  pure
+    ProfileSourceResolution
+      { resolvedProfileSource = resolved,
+        profileSourceStatus =
+          case loaded of
+            Left profileSourceError -> ProfileSourceFailed profileSourceError
+            Right profiles -> ProfileSourceLoaded (length profiles)
+      }
+
+sourcePublishedProfiles :: ProfileSourceResolution -> Bool
+sourcePublishedProfiles ProfileSourceResolution {profileSourceStatus = ProfileSourceLoaded count} = count > 0
+sourcePublishedProfiles ProfileSourceResolution {profileSourceStatus = ProfileSourceFailed _error} = False
+
+-- | The source inspection table and its precedence legend are pure so the
+-- command can be pinned without evaluating Dhall or consulting the network.
+renderProfileSourceResolution :: [ProfileSourceResolution] -> ProfileFreshness -> Text
+renderProfileSourceResolution resolutions freshness =
+  Text.unlines (map renderRow rows <> ["", renderFreshness freshness, ""] <> profileSourcePrecedence)
   where
-    headerRow = ["SOURCE", "EXPORT", "NAME", "OKF", "TYPES", "ID FIELD", "DESCRIPTION"]
+    rows = sourceHeader : map resolutionRow resolutions
+    sourceHeader = ["SOURCE", "ORIGIN", "STATUS", "PROFILES"]
+    widths = [maximum (0 : map (Text.length . (!! column)) rows) | column <- [0 .. 3]]
+    renderRow cells = Text.stripEnd (Text.intercalate "  " (zipWith padRight widths cells))
+    padRight width cell = cell <> Text.replicate (max 0 (width - Text.length cell)) " "
+
+resolutionRow :: ProfileSourceResolution -> [Text]
+resolutionRow
+  ProfileSourceResolution
+    { resolvedProfileSource = resolved@ResolvedProfileSource {sourceOrigin},
+      profileSourceStatus
+    } =
+    [ profileSourceInspectionLabel resolved,
+      "[" <> profileSourceOriginLabel sourceOrigin <> "]",
+      case profileSourceStatus of
+        ProfileSourceLoaded _count -> "loaded"
+        ProfileSourceFailed profileSourceError ->
+          "failed (" <> profileSourceLoadErrorCategory profileSourceError <> ")",
+      case profileSourceStatus of
+        ProfileSourceLoaded count -> Text.pack (show count)
+        ProfileSourceFailed _error -> "0"
+    ]
+
+profileSourceInspectionLabel :: ResolvedProfileSource -> Text
+profileSourceInspectionLabel ResolvedProfileSource {resolvedSource, sourceOrigin} =
+  case (resolvedSource, sourceOrigin) of
+    (RegistrySource reference _registryRef, BuiltInRegistryOrigin) ->
+      case pinnedRegistryTag reference of
+        Just tag -> "okf-profiles " <> tag <> " (pinned)"
+        Nothing -> renderProfileSourceReference resolvedSource
+    (RegistrySource _reference _registryRef, _) -> renderProfileSourceReference resolvedSource
+    (DescriptorSource _path, _) -> renderProfileSourceReference resolvedSource
+
+profileSourceOriginLabel :: ProfileSourceOrigin -> Text
+profileSourceOriginLabel = \case
+  RegistryFlagOrigin -> "flag"
+  RegistriesEnvironmentOrigin -> "env: " <> Text.pack profileRegistriesEnvVar
+  LegacyRegistryEnvironmentOrigin -> "env: " <> Text.pack profileRegistryEnvVar
+  ProfileConfigOrigin path -> "config: " <> Text.pack path
+  BuiltInRegistryOrigin -> "built-in default"
+  ProfileDiscoveryOrigin roots ->
+    "discovery: " <> Text.intercalate ":" (map Text.pack roots)
+
+profileSourcePrecedence :: [Text]
+profileSourcePrecedence =
+  [ "Precedence, highest first:",
+    "  1. --registry flag (repeatable); the flag list replaces every other registry layer",
+    "  2. OKF_PROFILE_REGISTRIES (JSON array)",
+    "  3. OKF_PROFILE_REGISTRY (legacy single reference)",
+    "  4. profiles.registries in the effective config file",
+    "  5. built-in default when the decoded configuration has no profiles block",
+    "Within a list, order is preserved and exact duplicates are dropped. Every source is",
+    "enumerated; sources merge rather than replace. Local descriptors follow the winning",
+    "registry list unless --no-local is passed. Survey commands report partial failure; named",
+    "lookup fails closed."
+  ]
+
+profileSourcesJson :: [ProfileSourceResolution] -> ProfileFreshness -> Aeson.Value
+profileSourcesJson resolutions freshness =
+  Aeson.object
+    [ "sources" Aeson..= map profileSourceResolutionJson resolutions,
+      "pinnedVersion" Aeson..= pinnedRegistryTag defaultRegistryReference,
+      "freshness" Aeson..= profileFreshnessJson freshness,
+      "precedence" Aeson..= profileSourcePrecedence
+    ]
+
+profileSourceResolutionJson :: ProfileSourceResolution -> Aeson.Value
+profileSourceResolutionJson
+  ProfileSourceResolution
+    { resolvedProfileSource,
+      profileSourceStatus
+    } =
+    extendObject fields (resolvedSourceJson resolvedProfileSource)
+    where
+      fields =
+        case profileSourceStatus of
+          ProfileSourceLoaded count ->
+            [ ("status", Aeson.String "loaded"),
+              ("profileCount", Aeson.toJSON count)
+            ]
+          ProfileSourceFailed profileSourceError ->
+            [ ("status", Aeson.String "failed"),
+              ("profileCount", Aeson.toJSON (0 :: Int)),
+              ( "error",
+                Aeson.object
+                  [ "category" Aeson..= profileSourceLoadErrorCategory profileSourceError,
+                    "message" Aeson..= renderProfileSourceLoadError profileSourceError
+                  ]
+              )
+            ]
+
+extendObject :: [(Text, Aeson.Value)] -> Aeson.Value -> Aeson.Value
+extendObject fields (Aeson.Object object) =
+  Aeson.Object
+    ( foldr
+        (\(key, fieldValue) accumulated -> KeyMap.insert (AesonKey.fromText key) fieldValue accumulated)
+        object
+        fields
+    )
+extendObject _fields originalValue = originalValue
+
+profileFreshnessJson :: ProfileFreshness -> Aeson.Value
+profileFreshnessJson = \case
+  FreshnessNotChecked -> Aeson.object ["status" Aeson..= ("not-checked" :: Text)]
+  FreshnessCurrent pinned ->
+    Aeson.object ["status" Aeson..= ("current" :: Text), "pinnedVersion" Aeson..= pinned]
+  FreshnessOutdated pinned latest ->
+    Aeson.object
+      [ "status" Aeson..= ("outdated" :: Text),
+        "pinnedVersion" Aeson..= pinned,
+        "latestVersion" Aeson..= latest,
+        "refreshCommand" Aeson..= ("scripts/refresh-default-registry.sh " <> latest)
+      ]
+  FreshnessUnavailable message ->
+    Aeson.object ["status" Aeson..= ("unavailable" :: Text), "message" Aeson..= message]
+
+renderFreshness :: ProfileFreshness -> Text
+renderFreshness = \case
+  FreshnessNotChecked ->
+    case pinnedRegistryTag defaultRegistryReference of
+      Just pinned ->
+        "Pinned catalogue: okf-profiles "
+          <> pinned
+          <> " (not checked; pass --check-latest to query upstream tags)"
+      Nothing -> "Pinned catalogue: version could not be parsed from the built-in reference"
+  FreshnessCurrent pinned -> "Freshness: pinned okf-profiles " <> pinned <> " is current."
+  FreshnessOutdated pinned latest ->
+    "Freshness: pinned okf-profiles "
+      <> pinned
+      <> " is behind "
+      <> latest
+      <> "; review and run scripts/refresh-default-registry.sh "
+      <> latest
+  FreshnessUnavailable message -> "Freshness: could not check upstream tags: " <> message
+
+parseReleaseVersionTag :: Text -> Maybe ReleaseVersion
+parseReleaseVersionTag raw = do
+  version <- Text.stripPrefix "v" (Text.strip raw)
+  case Text.splitOn "." version of
+    [majorText, minorText, patchText] ->
+      ReleaseVersion
+        <$> parseComponent majorText
+        <*> parseComponent minorText
+        <*> parseComponent patchText
+    _ -> Nothing
+  where
+    parseComponent component
+      | Text.null component || not (Text.all isDigit component) = Nothing
+      | otherwise = readMaybe (Text.unpack component)
+
+renderReleaseVersion :: ReleaseVersion -> Text
+renderReleaseVersion (ReleaseVersion major minor patch) =
+  "v"
+    <> Text.pack (show major)
+    <> "."
+    <> Text.pack (show minor)
+    <> "."
+    <> Text.pack (show patch)
+
+pinnedRegistryTag :: Text -> Maybe Text
+pinnedRegistryTag reference = do
+  expression <- listToMaybe (Text.words reference)
+  listToMaybe
+    [ renderReleaseVersion version
+    | segment <- Text.splitOn "/" expression,
+      Just version <- [parseReleaseVersionTag segment]
+    ]
+
+latestReleaseTag :: Text -> Maybe Text
+latestReleaseTag output =
+  snd
+    <$> listToMaybe
+      ( reverse
+          ( List.sortOn
+              fst
+              [ (version, renderReleaseVersion version)
+              | line <- Text.lines output,
+                ref <- take 1 (drop 1 (Text.words line)),
+                Just tag <- [Text.stripPrefix "refs/tags/" ref],
+                Just version <- [parseReleaseVersionTag tag]
+              ]
+          )
+      )
+
+checkProfileRegistryFreshness :: IO ProfileFreshness
+checkProfileRegistryFreshness =
+  case pinnedRegistryTag defaultRegistryReference of
+    Nothing -> pure (FreshnessUnavailable "the pinned tag could not be parsed")
+    Just pinned -> do
+      result <-
+        try
+          ( readProcessWithExitCode
+              "git"
+              [ "ls-remote",
+                "--refs",
+                "--sort=-version:refname",
+                "--tags",
+                "https://github.com/shinzui/okf-profiles.git",
+                "v*"
+              ]
+              ""
+          )
+      pure $
+        case result of
+          Left (_exception :: IOException) ->
+            FreshnessUnavailable "git could not query https://github.com/shinzui/okf-profiles.git"
+          Right (ExitFailure _code, _output, _errorOutput) ->
+            FreshnessUnavailable "git could not query https://github.com/shinzui/okf-profiles.git"
+          Right (ExitSuccess, output, _errorOutput) ->
+            case latestReleaseTag (Text.pack output) of
+              Nothing -> FreshnessUnavailable "upstream returned no well-formed vMAJOR.MINOR.PATCH tags"
+              Just latest ->
+                case (parseReleaseVersionTag pinned, parseReleaseVersionTag latest) of
+                  (Just pinnedVersion, Just latestVersion)
+                    | latestVersion > pinnedVersion -> FreshnessOutdated pinned latest
+                  _ -> FreshnessCurrent pinned
+
+-- | A deterministic two-line row per profile. Compact mode uses fixed column
+-- budgets whose separators sum to 100 Unicode code points, then caps the
+-- indented description to 98. Wide mode derives widths from the full identity
+-- values and keeps the complete normalized description. Unicode code points
+-- are intentionally used instead of terminal display cells so rendering stays
+-- pure and terminal-independent; combining and double-width glyphs may not
+-- visually occupy exactly one cell.
+renderRegistryTable :: RegistryTableMode -> [SourcedProfile] -> [Text]
+renderRegistryTable mode profiles =
+  renderIdentity headerRow : concatMap renderEntry entryRows
+  where
+    headerRow = ["SOURCE", "EXPORT", "NAME", "OKF", "TYPES", "ID FIELD"]
     entryRow
       SourcedProfile
         { source,
@@ -1242,25 +1566,55 @@ renderRegistryTable profiles =
                 spec = ProfileSpec {name, description, okfVersion, idField, types = typeRules}
               }
         } =
-        [ renderProfileSourceLabel source,
-          displayExport exportPath,
-          name,
-          okfVersion,
-          Text.pack (show (length typeRules)),
-          fromMaybe "-" idField,
+        ( [ renderProfileSourceLabel source,
+            displayExport exportPath,
+            name,
+            okfVersion,
+            Text.pack (show (length typeRules)),
+            fromMaybe "-" idField
+          ],
           fromMaybe "-" description
-        ]
+        )
 
-    rows = headerRow : map entryRow profiles
+    entryRows = map entryRow profiles
+    identityRows = headerRow : map fst entryRows
+    widths =
+      case mode of
+        CompactTable -> [14, 28, 28, 3, 5, 12]
+        WideTable ->
+          [maximum (0 : map (Text.length . (!! column)) identityRows) | column <- [0 .. 5]]
+    padders = [padRight, padRight, padRight, padLeft, padLeft, padRight]
 
-    -- One padder per column, in order; the last column is left as it is.
-    padders = [padRight, padRight, padRight, padLeft, padLeft, padRight, \_ cell -> cell]
-    widths = [maximum (0 : map (Text.length . (!! column)) rows) | column <- [0 .. 6]]
+    renderEntry (identity, description) =
+      [renderIdentity identity, "  " <> renderDescription description]
 
-    renderRow cells = Text.intercalate "  " (zipWith3 id padders widths cells)
+    renderIdentity cells =
+      Text.stripEnd
+        ( Text.intercalate
+            "  "
+            (zipWith3 id padders widths (zipWith capIdentity widths cells))
+        )
+
+    capIdentity width cell =
+      case mode of
+        CompactTable -> capText width cell
+        WideTable -> cell
+
+    renderDescription descriptionText =
+      case mode of
+        CompactTable -> capText 98 (oneLine descriptionText)
+        WideTable -> oneLine descriptionText
+
+    oneLine = Text.unwords . Text.words
 
     padRight width cell = cell <> Text.replicate (max 0 (width - Text.length cell)) " "
     padLeft width cell = Text.replicate (max 0 (width - Text.length cell)) " " <> cell
+
+capText :: Int -> Text -> Text
+capText width textValue
+  | width <= 0 = ""
+  | Text.length textValue <= width = textValue
+  | otherwise = Text.take (width - 1) textValue <> "…"
 
 -- | An entry found at the registry root has no export path of its own.
 displayExport :: Text -> Text
