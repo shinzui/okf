@@ -47,31 +47,38 @@ Error: Unbound variable: docs/profiles
 
 The third is that the built-in default is **stale, silently**. It is pinned by tag *and*
 sha256 hash to `okf-profiles` v0.4.2, which was correct when
-[ADR 3](../adr/3-profile-registries.md) was written on 2026-07-26. Upstream is now at
-v0.9.3. Pinning is deliberate and correct — it buys integrity plus a content-addressed
+[ADR 3](../adr/3-profile-registries.md) was written on 2026-07-26. The latest published
+release is now `v0.10.0`, verified from the upstream git tags on 2026-08-18. Pinning is
+deliberate and correct — it buys integrity plus a content-addressed
 cache, so the default costs one network fetch ever — but it means the constant is the only
 thing that moves, and nothing in the tool or its tests notices that it has not moved. A
 user running `okf profile list` with no configuration sees five OKF 0.1 profiles with no
-descriptions when nine OKF 0.2 profiles with full descriptions are published.
+descriptions when ten OKF 0.2 profiles with full descriptions are published.
 
 After this initiative:
 
 A user can name **several registries** and see one merged listing, with each row saying
 which registry it came from. `profiles.registries` accepts a list in configuration,
-`--registry` is repeatable, and `OKF_PROFILE_REGISTRY` accepts a colon-separated list in
-the style of `PATH`. An export named on the command line resolves across all of them, and
-a name published by two registries is reported as the ambiguity it is rather than silently
-resolved.
+`--registry` is repeatable, and a new `OKF_PROFILE_REGISTRIES` environment variable accepts
+a JSON array of strings. The existing `OKF_PROFILE_REGISTRY` remains a backwards-compatible
+single-reference override. A colon-delimited format was rejected during architecture
+validation because the reference language itself contains colons in `https://` URLs and
+`sha256:` hashes. An export named on the command line resolves across all successfully
+loaded sources only when that resolution is provably unambiguous; any failed source makes a
+named lookup fail closed, and a name published by two loaded sources is reported as the
+ambiguity it is rather than silently resolved.
 
 A user can **discover the descriptors in their own repository** without knowing their
 paths. `okf profiles` lists them non-interactively, the way `okf bundles` lists bundles.
-They also appear in `okf profile list` as a source alongside registries. Omitting
-`--profile` on `okf validate` and `okf profile document` opens a picker over the
-discovered descriptors, exactly as omitting `BUNDLE` opens a picker over discovered
-bundles.
+They also appear in `okf profile list` as a source alongside registries. Omitting both a
+descriptor and an export on `okf profile document` opens a picker over the discovered
+descriptors. `okf validate BUNDLE` keeps its current meaning — validation with no profile —
+and a new `--pick-profile` flag opts into the same picker. This asymmetry is required for
+command-line compatibility: `--profile` is optional today, so making its absence interactive
+would change every existing bare validation invocation.
 
 A user can see **where every profile came from and how current it is**. The default pin is
-refreshed to v0.9.3, a dedicated inspection command prints the effective sources with
+refreshed to v0.10.0, a dedicated inspection command prints the effective sources with
 their provenance the way `okf config agent` prints resolved agent fields, an explicitly
 opt-in check compares the pinned tag against upstream when the user asks for it, and
 refreshing the pin is a scripted one-liner instead of a manual hash computation.
@@ -80,19 +87,21 @@ refreshing the pin is a scripted one-liner instead of a manual hash computation.
 project; `okf profile show` still closes with the two-line Dhall snippet that consumes a
 profile, and ADR 3's deferral of a writing command stands except for the documentation
 generation ADR 6 already permits. No registry gains a manifest, metadata file, or
-registry-specific format; discovery stays structural. No okf command acquires an
-unconditional network dependency: fetching still happens only when a user names a remote
-reference or explicitly passes the opt-in freshness flag. The `okf` → `okf-profiles`
-dependency stays one-way, and no change is required in the `okf-profiles` repository. The
-profile Dhall schema itself is not extended — this initiative is about finding and
-reporting profiles, not about what a profile can express.
+registry-specific format; discovery stays structural. Effective registry evaluation keeps
+its existing network semantics: a selected remote reference — including the built-in
+default — may fetch on first use before Dhall's cache can satisfy it. This initiative adds
+no second implicit network path: automatic local discovery never fetches a remote import,
+and the independent upstream freshness query runs only behind its explicit flag. The `okf` →
+[`okf-profiles`](mori://shinzui/okf-profiles) dependency stays one-way, and no change is
+required in that repository. The profile Dhall schema itself is not extended — this
+initiative is about finding and reporting profiles, not about what a profile can express.
 
 
 ## Decomposition Strategy
 
 The initiative splits into four work streams. Each ships a behavior a user can exercise
-from a terminal, and each is independently verifiable by tests that do not require the
-others.
+from a terminal, and each is independently verifiable once its hard dependencies are
+complete.
 
 The ordering principle is **cheapest acute fix first, then structure**. The stale pin is
 the defect a user notices immediately, and fixing it is a one-constant edit plus evidence
@@ -102,12 +111,15 @@ develop against the current catalogue rather than a two-month-old one, so their 
 and transcripts do not have to be redone later.
 
 The structural work then goes **generalize the source model, then add a second kind of
-source, then explain the result**. EP-2 replaces "one registry reference" with "an ordered
+source, then explain the result**. EP-61 replaces "one registry reference" with "an ordered
 list of sources, each entry carrying its origin", which is the type change every later
-plan needs. EP-3 adds local filesystem descriptors as a second kind of source, reusing
-that model rather than introducing a parallel one. EP-4 makes the resolution rules the
+plan needs. EP-62 adds local filesystem descriptors as a second kind of source, reusing
+that model rather than introducing a parallel one. EP-63 makes the resolution rules the
 first two plans establish visible and the pin refreshable, which is only meaningful once
-there is more than one source to disambiguate.
+there is more than one source to disambiguate. Architecture validation made EP-63 a hard
+successor of EP-62: both extend exhaustive source handling, the resolver, JSON output, table
+rendering, and the same documentation, so parallel implementation would manufacture an
+avoidable reconciliation step.
 
 An alternative decomposition was considered and rejected: splitting each work stream into
 a library plan and a CLI plan, matching this repository's `okf-core` / `okf-cli`
@@ -118,32 +130,35 @@ parsing, rendering, and exit codes in `okf-cli`, so each vertical plan crosses i
 a well-understood way. Keeping the slices vertical also means each plan's acceptance is a
 command transcript rather than a test-suite assertion.
 
-A second alternative — folding EP-4 into EP-2 and EP-3, on the grounds that each plan
-should explain its own resolution rules — was rejected because it would leave EP-2 doing
-most of the initiative's work and EP-4 empty, which the decomposition principles in
-`.claude/skills/master-plan/MASTERPLAN.md` warn against. The split drawn instead gives
-EP-2 the *semantics* of multi-source resolution (which sources, in what order, and what
-happens on collision) and EP-4 the *explanation* of them (a command that answers "why
+A second alternative — folding EP-63 into EP-61 and EP-62, on the grounds that each plan
+should explain its own resolution rules — was rejected because it would leave EP-61 doing
+most of the initiative's work and EP-63 empty, which the decomposition principles in
+`agents/skills/master-plan/MASTERPLAN.md` warn against. The split drawn instead gives
+EP-61 the *semantics* of multi-source resolution (which sources, in what order, and what
+happens on collision) and EP-63 the *explanation* of them (a command that answers "why
 this profile, from where, and is it current?"). Each is separately demonstrable.
 
 ### Relevant ADRs
 
-Four ADRs constrain this work and their constraints are carried into the child plans that
+Five ADRs constrain this work and their constraints are carried into the child plans that
 touch them.
 
 [ADR 3: Profile registries](../adr/3-profile-registries.md) is the governing decision. It
 establishes that a registry is any Dhall record of profile values with no manifest, that
 discovery is structural rather than declared and tests "decodes successfully" rather than
-type equality, that enumeration lives in `okf-core` because Mori consumes the library
-directly, that the `okf` → `okf-profiles` dependency is one-way and no command requires
-network access unless the user names a remote registry, that the default registry is
-pinned by tag *and* hash with `defaultRegistryReference` as the single place both live,
-and — critically for EP-2 — that **adding a field to the configuration record must not
+type equality, and that reusable enumeration lives in `okf-core`. Its 2026-08-18 amendment
+records multi-source precedence, collisions, partial failure, and pin freshness. It also
+establishes that the `okf` →
+[`okf-profiles`](mori://shinzui/okf-profiles) dependency is one-way, that resolving an
+effective remote registry — including the built-in default — may use Dhall's fetch/cache
+path while test fixtures remain offline, that the default registry is pinned by tag *and*
+hash with `defaultRegistryReference` as the single place both live,
+and — critically for EP-61 — that **adding a field to the configuration record must not
 invalidate existing config files**, which it calls "a general obligation for future config
 fields, not a one-off".
 
 [ADR 2: Interactive bundle and concept selection](../adr/2-interactive-bundle-and-concept-selection.md),
-including its 2026-08-18 amendment, is the template for EP-3. It establishes that
+including its 2026-08-18 amendment, is the template for EP-62. It establishes that
 interactive selection is always optional and never required, that an explicit argument
 returns before availability detection is even attempted so a script cannot be affected by
 whether `fzf` exists, that discovery is a convenience rather than a validation step and
@@ -157,23 +172,24 @@ listing, where an empty result is a successful answer rather than a failure.
 matters twice. It records that two-scope config layering applies to the `agent` block and
 **nothing else** — `findConfigSource` and `loadOkfConfig` keep first-found-wins for `kit`
 and `profiles` — and it gives the reason: layering those would mean making every field
-optional in the Dhall schema, breaking every configuration file already written. EP-2 must
+optional in the Dhall schema, breaking every configuration file already written. EP-61 must
 respect that boundary; a list of registries is a single value that happens to be a list,
-not a layered block. ADR 16 also establishes the provenance precedent EP-4 follows:
+not a layered block. ADR 16 also establishes the provenance precedent EP-61 follows:
 `resolveAgent` returns `ResolvedField` values carrying an `AgentConfigSource` rather than
 bare values, computed on every resolution rather than reconstructed by the inspection
 command, because a reconstruction is a second implementation that can disagree with the
-first.
+first. EP-61 therefore owns provenance-carrying resolution; EP-63 only renders it.
 
 [ADR 4: Self-documenting profiles](../adr/4-self-documenting-profiles.md) supersedes ADR
 3's "profile listings deliberately carry no description" paragraph and is why
 `ProfileSpec` has a `description` field and `renderRegistryTable` has a `DESCRIPTION`
-column at all. It matters to EP-4 because the descriptions in the current catalogue are
+column at all. It matters to EP-63 because the descriptions in the current catalogue are
 long enough to make that column unusable at a terminal width — see Surprises &
 Discoveries.
 
-No ADR currently covers multi-source profile resolution or local descriptor discovery.
-Both are cross-plan decisions that should become ADR records; see Integration Points.
+[ADR 18: Local profile descriptor discovery](../adr/18-local-profile-descriptor-discovery.md)
+records descriptor qualification, bounded traversal, network-disabled Dhall evaluation,
+additive local-source composition, basename exports, and picker compatibility.
 
 
 ## Exec-Plan Registry
@@ -183,7 +199,7 @@ Both are cross-plan decisions that should become ADR records; see Integration Po
 | 60 | Refresh the default profile registry pin and prove the current catalogue decodes | [docs/plans/60-refresh-the-default-profile-registry-pin-and-prove-the-current-catalogue-decodes.md](../plans/60-refresh-the-default-profile-registry-pin-and-prove-the-current-catalogue-decodes.md) | None | None | Not Started |
 | 61 | Read profiles from more than one registry | [docs/plans/61-read-profiles-from-more-than-one-registry.md](../plans/61-read-profiles-from-more-than-one-registry.md) | None | EP-60 | Not Started |
 | 62 | Discover and select local profile descriptors in the repository | [docs/plans/62-discover-and-select-local-profile-descriptors-in-the-repository.md](../plans/62-discover-and-select-local-profile-descriptors-in-the-repository.md) | EP-61 | None | Not Started |
-| 63 | Show where every profile came from and how to refresh it | [docs/plans/63-show-where-every-profile-came-from-and-how-to-refresh-it.md](../plans/63-show-where-every-profile-came-from-and-how-to-refresh-it.md) | EP-61 | EP-60, EP-62 | Not Started |
+| 63 | Show where every profile came from and how to refresh it | [docs/plans/63-show-where-every-profile-came-from-and-how-to-refresh-it.md](../plans/63-show-where-every-profile-came-from-and-how-to-refresh-it.md) | EP-60, EP-61, EP-62 | None | Not Started |
 
 Status values: Not Started, In Progress, Complete, Cancelled.
 Hard Deps and Soft Deps reference other rows by their `EP-<number>` prefix.
@@ -191,13 +207,13 @@ Hard Deps and Soft Deps reference other rows by their `EP-<number>` prefix.
 
 ## Dependency Graph
 
-Implementation order is EP-60, then EP-61, then EP-62 and EP-63 which may proceed in
-parallel.
+EP-60 and EP-61 may begin independently. EP-62 follows EP-61. EP-63 follows EP-60, EP-61,
+and EP-62 and is the integration closure for the initiative.
 
 **EP-60 has no dependencies.** It edits one constant in
 `okf-core/src/Okf/Profile/Registry.hs`, adds an offline fixture and a decode-conformance
 test, and adds a script that recomputes the hash. Nothing in the initiative blocks it and
-it blocks nothing hard.
+it is a hard prerequisite only for EP-63's refresh/freshness integration.
 
 **EP-61 depends softly on EP-60.** The soft dependency is about evidence, not code: EP-61's
 tests and documented transcripts show a merged listing across registries, and writing
@@ -207,75 +223,107 @@ constant's value — but the transcripts will need refreshing.
 
 **EP-62 depends hard on EP-61.** EP-61 introduces the type that represents "a place
 profiles came from" and threads provenance through enumeration; `Okf.Profile.Registry`
-gains a source-tagged entry type and `Okf.Cli` gains a resolver that returns an ordered
+gains a source-tagged wrapper and `Okf.Cli` gains a resolver that returns an ordered
 list of sources rather than a single reference. EP-62 adds local filesystem descriptors as
 a second constructor of exactly that type. Without EP-61 the code EP-62 writes has nothing
 to plug into, and implementing local discovery first would mean inventing a parallel
 single-source path and then deleting it.
 
-**EP-63 depends hard on EP-61 and softly on EP-62.** The inspection command EP-63 adds
-reports the resolved source list with provenance, which is EP-61's artifact — it cannot be
-written before that list exists. The soft dependency on EP-62 is coverage: once local
-descriptors are a source kind, the inspection command should report them too. EP-63 is
-implementable with only EP-61 complete, and gains a section when EP-62 lands. Whichever of
-EP-62 and EP-63 lands second must extend the other's output rather than replace it; see
-Integration Points.
-
-EP-62 and EP-63 touch different parts of `okf-cli/src/Okf/Cli.hs` — EP-62 the `validate`
-and `profile document` argument resolution plus a new `profiles` command, EP-63 a new
-subcommand under `profile` and the listing's rendering — so running them in parallel is
-safe provided both are rebased on EP-61 and the shared artifacts below are respected.
+**EP-63 depends hard on EP-60, EP-61, and EP-62.** The inspection command reports the
+provenance-carrying source list EP-61 defines, including the local source kind EP-62 adds.
+Its freshness guidance names the refresh script EP-60 creates. EP-62 and EP-63 also share
+the resolver, exhaustive `ProfileSource` matches, `registryListJson`, table rendering, and
+four documentation files. Treating EP-62 as soft would require EP-63 to ship incomplete
+source handling and then be reopened; the hard edge makes EP-63 the single integration and
+polish pass.
 
 
 ## Integration Points
 
 **The profile source type (`Okf.Profile.Registry`).** EP-61 defines it; EP-62 extends it;
 EP-63 reads it. EP-61 owns the definition: a value naming one place profiles can come from
-and, for each enumerated profile, which place it came from. EP-61 must define it as an
-extensible sum rather than a pair of registry-specific fields, because EP-62 adds a
-constructor for "a descriptor file discovered on disk" and EP-63 pattern-matches on every
-constructor to render provenance. EP-62 must extend the existing type rather than
-introduce a second one. EP-63 must handle every constructor exhaustively — a non-exhaustive
-match here is the failure mode that shows up as a crash on a user's machine, so EP-63
-should not use a catch-all pattern.
+and, for each enumerated profile, which place it came from. EP-61 defines `ProfileSource`
+as an extensible sum and introduces a separate `SourcedProfile` wrapper around the existing
+`RegistryEntry`. It must not add a field to `RegistryEntry`: registry enumeration does not
+need provenance, and preserving that public type avoids an unnecessary PVP break for
+`okf-core` consumers. EP-62 adds a constructor for "a descriptor file discovered on disk"
+and must extend the existing source type rather than introduce a second one. EP-63 must
+handle every constructor exhaustively — a non-exhaustive match here is the failure mode
+that shows up as a crash on a user's machine, so EP-63 should not use a catch-all pattern.
 
 **`defaultRegistryReference` in `okf-core/src/Okf/Profile/Registry.hs`.** EP-60 changes its
-value; EP-61 may change its type if the default becomes a one-element source list; EP-63
-reads it to report which catalogue version is pinned and to compare against upstream. ADR
-3 makes this the single place the URL and hash live, and `okf-cli` imports it rather than
-repeating the string — `okf-cli/test/Main.hs` also references it when asserting the config
-fallback fills in the default. Any plan changing its type must update that test. If EP-61
-converts the default to a list, it must keep a single-reference accessor or update all
-three call sites in the same change.
+value and EP-63 reads it to report which catalogue version is pinned and to compare against
+upstream. Its type stays `Text`; EP-61 wraps it in a one-element list only in
+`defaultProfileSettings`. ADR 3 makes this the single place the URL and hash live, and
+`okf-cli` imports it rather than repeating the string — `okf-cli/test/Main.hs` also
+references it when asserting the config fallback fills in the default.
 
-**The `profiles` block in `okf-cli/src/Okf/Cli/Config.hs`.** EP-61 owns the change from
-`registry :: Text` to a list-valued field. ADR 3 obliges it to extend the legacy fallback
+**The `profiles` block and environment overrides.** EP-61 owns the change from
+`registry :: Text` to `registries :: [Text]`. ADR 3 obliges it to extend the legacy fallback
 chain in `decodeConfigFile` rather than replace a shape: a configuration file written for
-today's schema must keep loading. The chain currently tries `OkfConfig`, then
+today’s schema must keep loading. The chain currently tries `OkfConfig`, then
 `ConfigShapeWithoutAgent`, then `ConfigShapeV020`, reporting the *first* error because
-that names the schema the user should be writing against. EP-61 adds a shape for the
-single-`registry` spelling and maps it onto the list. `okf-cli/test/Main.hs` has tests
+that names the schema the user should be writing against. EP-61 adds the current-agent shape
+with the legacy single-`registry` spelling and keeps the pre-agent shape on that legacy
+profile type, mapping both onto a one-element list. `okf-cli/test/Main.hs` has tests
 around lines 1849 to 1976 that pin this behavior by asserting the rendered default config;
 they must be extended, not rewritten. EP-63 reads the block to report provenance but must
-not change its shape.
+not change its shape. An explicit empty `profiles.registries` list means no configured
+registry sources; only an absent profiles block receives the built-in default.
+
+Several arbitrary Dhall references cannot use a path-style delimiter: both `https://` and
+`sha256:` contain colons. EP-61 therefore adds `OKF_PROFILE_REGISTRIES` as a JSON array of
+strings and preserves `OKF_PROFILE_REGISTRY` as one legacy string. Precedence is repeatable
+`--registry`, plural environment variable, singular environment variable, effective config
+file, built-in default. A blank variable is unset; malformed plural JSON is an error naming
+the variable; when both variables are set, the plural one wins.
 
 **`renderRegistryTable` in `okf-cli/src/Okf/Cli.hs`.** EP-61 adds a source column; EP-62's
 local descriptors appear as rows in it; EP-63 fixes its width behavior. The function is
-pure and pinned by `okf-cli/test/Main.hs:491`, which compares it against a literal
-expected table in `sampleRegistryTable` around line 674. Every plan that changes a column
-must update that fixture in the same change. EP-61 owns the column set; EP-63 owns
-truncation and any `--wide` escape hatch. Neither should change the JSON shape without the
-other knowing: `registryListJson` is a separate wire format and EP-61 owns its extension
-to carry source information per entry.
+pure and pinned by `okf-cli/test/Main.hs:491`, which compares it against a literal expected
+table in `sampleRegistryTable` around line 674. Every plan that changes a column must update
+that fixture in the same change. EP-61 owns the column set; EP-63 owns the deterministic
+compact layout: identity and rule-count columns stay on one aligned line, while each
+description moves to an indented continuation line capped with an ellipsis. `--wide` prints
+all source, export, name, and description values in full. Truncating only the final column
+in the original one-line layout was rejected because the current SOURCE, EXPORT, and NAME
+widths already consume roughly 100 columns before any description is printed.
+
+`registryListJson` is a separate wire format. EP-61 adds a `sources` array and a full
+`source` object to each profile entry; the object carries kind, display label, full
+reference, and the origin already carried by resolution. The full reference—not the
+possibly colliding label—is identity.
+The legacy top-level `registry` key remains only for the exactly-one-registry, no-local
+case. EP-62 extends the source object with the local
+descriptor kind and discovery origin; EP-63 adds load status and failure detail to the
+inspection command's JSON rather than retrofitting CLI-only concepts into `okf-core`.
 
 **The search-root environment variable convention.** EP-62 introduces
 `OKF_PROFILE_ROOTS`, parsed colon-separated in the style of `PATH`, and must reuse the
 parsing shape already in `okf-cli/src/Okf/Cli/BundleDiscovery.hs`
 (`parseBundleSearchRoots`) rather than write a second parser with different
-blank-and-whitespace handling. EP-61 separately makes `OKF_PROFILE_REGISTRY` accept a
-colon-separated list. The two must agree on what an empty entry and a whitespace-only
-entry mean, and both must treat a variable set to blank as unset, which is the convention
-`readAgentEnvOverrides` already establishes for `OKF_AGENT_*`.
+blank-and-whitespace handling. This convention applies only to filesystem paths. Registry
+references use the JSON array described above because they are not paths and cannot be
+split safely on a character that is part of their grammar.
+
+**Local discovery and effective-source composition.** EP-62 appends discovered descriptor
+sources after the registry list selected by EP-61, regardless of whether that registry list
+came from flags, environment, configuration, or defaults. `--no-local` suppresses that
+orthogonal source class. Discovery evaluates candidate descriptors with remote fetching
+disabled through Dhall 1.42.3's `loadWithStatus` and a custom import `Status`; a cached
+integrity-protected remote may resolve from cache, while both fresh remote callbacks reject
+before network I/O. A failed or uncached remote import simply makes that candidate
+non-discoverable. Explicit `--profile`
+and `--registry` loading retain normal Dhall behavior.
+
+**Partial failure policy.** Listing commands (`profile list`, `profile sources`) report
+source failures, return every successfully loaded entry, and exit 0 when at least one source
+produces profiles. Named resolution (`profile show` and registry-backed `profile document`)
+fails closed if any effective source failed, even when one loaded source contains the
+requested export: the failed source might publish the same export, so choosing would make an
+unprovable ambiguity disappear. The diagnostic tells the user to rerun with `--no-local`
+and exactly one chosen `--registry REFERENCE`; a descriptor path is itself a valid
+one-profile registry reference.
 
 **Documentation surfaces.** Four files describe profile behavior to users and all four are
 touched by more than one plan: `okf-cli/help/profiles.md` (embedded at compile time by
@@ -284,68 +332,68 @@ touched by more than one plan: `okf-cli/help/profiles.md` (embedded at compile t
 that lands last should read the other three plans' edits for consistency — the precedence
 rules in particular are stated in all four files and must not drift between them.
 
-### Cross-plan decisions that should become ADRs
+### ADR ownership for cross-plan decisions
 
-**Multi-source profile resolution** (EP-61, distilled at EP-63 completion). Whether
+**Multi-source profile resolution** is recorded by ADR 3's 2026-08-18 amendment. Whether
 sources merge or replace, in what order, what happens when two sources publish the same
 export name, and why configuration takes a list while ADR 16 kept `profiles`
-unlayered. This is exactly the kind of rule ADR 16 says to write down because "the
-opposite reading is equally defensible". Expect to amend
-[ADR 3](../adr/3-profile-registries.md) rather than create a new record, since it already
-owns what a registry is and how references resolve.
+unlayered all remain owned by [ADR 3](../adr/3-profile-registries.md). EP-63's final
+distillation verifies the implementation did not introduce an unrecorded variant.
 
-**Local descriptor discovery as a profile source** (EP-62). What counts as a discoverable
+**Local descriptor discovery as a profile source** is recorded by
+[ADR 18](../adr/18-local-profile-descriptor-discovery.md): what counts as a discoverable
 descriptor, why a directory of loose `.dhall` files is not a registry, why discovery
 synthesizes source entries instead of a synthetic registry record, and the depth and skip
-heuristics. This warrants a new ADR, cross-referencing
-[ADR 2](../adr/2-interactive-bundle-and-concept-selection.md) for the discovery-as-
-convenience and exit-code contracts it inherits.
+heuristics, no-network evaluation, additive composition, and the picker contract inherited
+from [ADR 2](../adr/2-interactive-bundle-and-concept-selection.md).
 
-**Pin freshness as a release obligation** (EP-60, EP-63). That the default registry pin is
-deliberately manual, that no okf command checks it without being asked, and that keeping
-it current is a release-checklist step rather than a runtime behavior. Amend
-[ADR 3](../adr/3-profile-registries.md), whose pinning paragraph already states the cost
-but not the obligation.
+**Pin freshness as a release obligation** is also in ADR 3's amendment: the default pin is
+deliberately manual, no command checks it without being asked, and keeping it current is a
+release-checklist step rather than automatic runtime behavior.
 
-**Deliberate exclusions** worth recording so they are not relitigated: no registry
-manifest, no descriptor vendoring command, no unconditional network access, no change to
-the profile Dhall schema, and no two-scope layering for the `profiles` block.
+**Deliberate exclusions** are divided between ADR 3 and ADR 18 so they are not relitigated:
+no registry manifest, no descriptor vendoring command, no new implicit network path beyond
+resolving the effective registry, no change to the profile Dhall schema, and no two-scope
+layering for the `profiles` block.
 
 
 ## Progress
 
-- [ ] EP-60: default registry pin moved to `okf-profiles` v0.9.3 with a matching hash, and `okf profile list` with no configuration shows the nine current profiles
+- [ ] EP-60: default registry pin moved to `okf-profiles` v0.10.0 with hash `sha256:c6882a5cb6ece28027f5f9d219d323cff64f131b97ecbf536ed54d77263f5edf`, and `okf profile list` with no configuration shows the ten current profiles
 - [ ] EP-60: an offline fixture plus a decode-conformance test prove every profile in the pinned catalogue decodes under the current `ProfileSpec` decoder
 - [ ] EP-60: refreshing the pin is a single scripted command, and the release checklist says to run it
 - [ ] EP-61: `profiles.registries` accepts a list in configuration, and a file using the old single `registry` key still loads
-- [ ] EP-61: `--registry` is repeatable and `OKF_PROFILE_REGISTRY` accepts a colon-separated list
-- [ ] EP-61: `okf profile list` prints one merged, sorted listing across every source with a column naming each row's origin
-- [ ] EP-61: an export named for `profile show` or `profile document` resolves across all sources, and a name published by two sources reports the ambiguity
+- [ ] EP-61: `--registry` is repeatable, `OKF_PROFILE_REGISTRIES` accepts a JSON array, and legacy singular `OKF_PROFILE_REGISTRY` still works
+- [ ] EP-61: `okf profile list` prints one merged, source-grouped listing with a source label on every row
+- [ ] EP-61: listing tolerates partial source failure, while named `profile show` / `profile document` resolution fails closed on a failed or ambiguous source set
 - [ ] EP-62: `Okf.Profile.Discovery` finds descriptor files on disk and is covered by fixtures that never touch the network
 - [ ] EP-62: `okf profiles` lists discovered local descriptors non-interactively, and an empty result exits 0
 - [ ] EP-62: local descriptors appear in `okf profile list` as their own source
-- [ ] EP-62: omitting `--profile` on `okf validate` and `okf profile document` opens a picker over discovered descriptors, honouring the 1 / 2 / 130 exit contract
+- [ ] EP-62: `okf validate --pick-profile` and a profile-less `okf profile document` open a picker over discovered descriptors, honouring the 1 / 2 / 130 exit contract while bare `okf validate BUNDLE` remains non-interactive
 - [ ] EP-63: an inspection command prints every effective profile source with the provenance of each
-- [ ] EP-63: `okf profile list` output stays readable at a terminal width with the current catalogue's long descriptions
+- [ ] EP-63: `okf profile list` uses a deterministic compact two-line row layout for the current catalogue's long descriptions, with `--wide` for full text
 - [ ] EP-63: an explicitly opt-in flag compares the pinned catalogue tag against upstream and says how to update it
 - [ ] EP-63: registry load failures report the reference and what a reference may be without leaking raw Dhall internals or ANSI escapes
-- [ ] Initiative: ADR distillation pass — amend ADR 3, add a local-discovery ADR, record the deliberate exclusions
+- [ ] Initiative: final implementation distillation confirms ADR 3 and ADR 18 match the delivered behavior
 
 
 ## Surprises & Discoveries
 
 **The current catalogue decodes under the current decoder with no changes** (2026-08-18,
-during MasterPlan research). The pin bump was expected to be the risky part of EP-60,
-because `okf-profiles` v0.9.3 exports a large amount of field-rule vocabulary that v0.4.2
+during MasterPlan research, revalidated during the architecture review). The pin bump was
+expected to be the risky part of EP-60, because `okf-profiles` v0.10.0 exports a large
+amount of field-rule vocabulary that v0.4.2
 did not — `FieldRule`, `NestedRules`, `HandleReferenceRule`, `PathReferenceRule`,
 `Cardinality`, `FieldFormat`, `mk`, `reviewRule`, `v02` — and a descriptor annotated
 against a newer schema than okf-core knows would fail to decode. It does not. Running the
-already-built `okf` v0.6.0.1 binary against the v0.9.3 pin enumerates all nine profiles:
+`okf` v0.6.0.1 binary against the released v0.10.0 pin enumerates all ten profiles. The
+hash was independently recomputed with `dhall hash` over the tagged package reference:
 
 ```text
-$ OKF_PROFILE_REGISTRY='https://raw.githubusercontent.com/shinzui/okf-profiles/v0.9.3/package.dhall sha256:a207be12df2a7f13d411981c2c0141c872b7560c39091735f0426a0106a92382' \
+$ OKF_PROFILE_REGISTRY='https://raw.githubusercontent.com/shinzui/okf-profiles/v0.10.0/package.dhall sha256:c6882a5cb6ece28027f5f9d219d323cff64f131b97ecbf536ed54d77263f5edf' \
     okf profile list
 EXPORT                               NAME                                   OKF  TYPES  ID FIELD
+coordination.bugReports              bug-reports                            0.2      1  bugId
 coordination.capabilities            capabilities                           0.2      1  capabilityId
 coordination.improvementRequests     cross-repository-improvement-requests  0.2      1  requestId
 coordination.useCases                jtbd-use-cases                         0.2      2  useCaseId
@@ -358,7 +406,7 @@ tanPostgresql                        tan-postgresql                         0.2 
 ```
 
 Against the current v0.4.2 pin the same command shows five profiles, all OKF 0.1, all with
-an empty description. So EP-60 is a low-risk constant change whose payoff is four new
+an empty description. So EP-60 is a low-risk constant change whose payoff is five new
 profiles, a version bump from 0.1 to 0.2 across the board, and descriptions where there
 were none. This also confirms ADR 4's fallback-decoder design working as intended: the
 newer descriptors decode without forcing a coordinated migration.
@@ -367,7 +415,7 @@ newer descriptors decode without forcing a coordinated migration.
 same investigation). `renderRegistryTable` puts `DESCRIPTION` last specifically so a long
 value "cannot push anything off the right edge", and it is deliberately never padded. That
 reasoning holds for a short description and fails for a real one:
-`coordination.capabilities` in v0.9.3 carries a 400-character description, so the row runs
+`coordination.capabilities` in v0.10.0 carries a long description, so the row runs
 far past any terminal width and wraps into an unreadable block. This is a consequence of
 EP-60, not a pre-existing defect — with v0.4.2 every description is `-`. EP-63 owns the
 fix, and EP-60 should note it in its own Surprises section when it observes it, because a
@@ -395,6 +443,35 @@ implements it: the ANSI codes come from Dhall's own pretty-printer inside the ex
 `show` output, so stripping them means handling the exception more precisely rather than
 post-processing the rendered string.
 
+**A path-style registry list is not an encoding** (2026-08-18, architecture validation).
+The planned `OKF_PROFILE_REGISTRY=A:B` syntax cannot represent the most important registry
+reference: `https://… sha256:…` contains at least two colons of its own. Escaping would also
+reinterpret every existing singular value, so there is no backwards-compatible parser for
+that spelling. The revised design keeps singular `OKF_PROFILE_REGISTRY` and introduces
+`OKF_PROFILE_REGISTRIES` as a JSON array. `OKF_PROFILE_ROOTS` remains colon-separated because
+its domain is filesystem paths, matching `OKF_BUNDLE_ROOTS`.
+
+**Dhall 1.42.3 can make discovery network-silent without forbidding local imports**
+(2026-08-18, dependency-source inspection). The project bounds `dhall >=1.41 && <1.43`; the
+latest Hackage release is 1.42.3. Its high-level `InputSettings` does not expose a
+"no network" switch, but `Dhall.Import.loadWithStatus` accepts a caller-supplied `Status`.
+Replacing the status's `_remote` and `_remoteBytes` callbacks with rejecting actions lets
+relative local imports and cached integrity-protected imports resolve normally while
+guaranteeing an uncached remote import is skipped rather than fetched.
+
+**Partial loading and named resolution need different safety rules** (2026-08-18,
+architecture validation). Returning local entries while one remote source is offline is
+useful and honest for a listing. Selecting a unique-looking export from the same partial
+set is not: the failed source may publish the same export. The design now permits partial
+success only for survey commands and fails closed for commands that choose a profile.
+
+**Inlining the whole catalogue is the wrong offline-fixture shape** (2026-08-18,
+architecture validation). `dhall resolve` over v0.10.0's `package.dhall` emits 2,218,575
+bytes. The tagged relative-import tree is about 88 KB and its only non-local code import,
+`Profile/okf.dhall`, resolves to about 543 KB. EP-60 therefore vendors the tagged tree and
+inlines only that schema import, producing a roughly 630 KB offline fixture without replacing
+the catalogue's own descriptors with one opaque expression.
+
 
 ## Decision Log
 
@@ -403,7 +480,7 @@ post-processing the rendered string.
   library/CLI split per concern.
   Rationale: The initiative spans three distinct functional concerns (source resolution,
   filesystem discovery, and inspection) plus one acute independent fix, which
-  `.claude/skills/master-plan/MASTERPLAN.md` identifies as the threshold for a MasterPlan.
+  `agents/skills/master-plan/MASTERPLAN.md` identifies as the threshold for a MasterPlan.
   A library/CLI split per concern was rejected because a library-only plan delivers no
   behavior a user can exercise, which the ExecPlan specification requires, and because
   `README.md` already makes the `okf-core` / `okf-cli` boundary unambiguous enough that a
@@ -416,6 +493,13 @@ post-processing the rendered string.
   three structural plans write their fixtures and documented transcripts against the
   current catalogue rather than a two-month-old one, avoiding a second pass over all of
   them.
+  Date: 2026-08-18
+
+- Decision: Keep the pinned-catalogue fixture as the tagged relative-import tree and inline
+  only its remote `Profile/okf.dhall` schema import.
+  Rationale: Resolving the whole package produces a 2.2 MB opaque expression. The hybrid
+  fixture is about 630 KB, remains offline, and preserves the upstream descriptor files that
+  make a decoding failure diagnosable.
   Date: 2026-08-18
 
 - Decision: Treat local repository descriptors as an additional *source kind* in one
@@ -452,14 +536,89 @@ post-processing the rendered string.
 
 - Decision: No runtime freshness check by default; the opt-in flag in EP-63 must be
   explicit.
-  Rationale: [ADR 3](../adr/3-profile-registries.md) establishes that no okf command
-  requires network access unless the user names a remote registry. An automatic
-  "is there a newer tag?" check on every `okf profile list` would break that property and
-  make a read-only command depend on GitHub availability. The pin stays a deliberate,
-  manual, release-time decision; EP-63 makes it cheap and visible rather than automatic.
+  Rationale: Registry evaluation already resolves the effective reference, and the built-in
+  default may fetch on first use. An automatic "is there a newer tag?" check would add a
+  second, independent GitHub dependency to every listing even when registry content is
+  cached or entirely local. The pin stays a deliberate, manual, release-time decision;
+  EP-63 makes it cheap and visible rather than automatic.
+  Date: 2026-08-18
+
+- Decision: Use `OKF_PROFILE_REGISTRIES` containing a JSON array for the multi-value
+  environment override, and preserve `OKF_PROFILE_REGISTRY` as a singular legacy layer.
+  Rationale: Registry references are arbitrary Dhall expressions. The default reference
+  alone contains colons in both `https://` and `sha256:`, so a `PATH`-style delimiter is
+  ambiguous and cannot be added without breaking the existing singular variable. JSON is
+  already a dependency of `okf-cli`, is shell-quotable, and round-trips every reference.
+  Date: 2026-08-18
+
+- Decision: Preserve `RegistryEntry` and introduce `SourcedProfile` rather than adding a
+  provenance field to the public registry-entry type.
+  Rationale: A profile inside one registry has an export and a spec; the source belongs to
+  the operation that combines registries. A wrapper expresses that boundary and avoids a
+  gratuitous compile-time break for downstream `okf-core` consumers. Mori reverse-dependency
+  inspection found multiple project dependents of `mori://shinzui/okf`, so compatibility is the
+  safer default even though no current `mori://shinzui/mori` source import of
+  `Okf.Profile.Registry` was found.
+  Date: 2026-08-18
+
+- Decision: Append local discovery to the winning registry list by default and make
+  `--no-local` the explicit suppression mechanism.
+  Rationale: Registry precedence and filesystem discovery answer different questions. A
+  repeatable `--registry` selects the registry layer; it should not silently disable local
+  descriptors. The explicit suppression flag gives scripts a stable registry-only mode.
+  Discovery uses a remote-disabled Dhall resolver, so enabling it by default never adds a
+  network fetch.
+  Date: 2026-08-18
+
+- Decision: Permit partial source failure for listings, but fail closed before resolving a
+  named export.
+  Rationale: A survey can honestly show the rows it loaded and the sources it could not.
+  A resolver cannot honestly call one match unique while an unavailable source may publish
+  the same export. Users can recover by rerunning with `--no-local` and exactly one intended
+  `--registry REFERENCE`; a descriptor path is a valid reference.
+  Date: 2026-08-18
+
+- Decision: Keep bare `okf validate BUNDLE` non-interactive and add `--pick-profile`.
+  Rationale: `--profile` is optional today and absence means permissive validation. Changing
+  absence to a picker would alter existing scripts. `profile document` already requires a
+  profile from some source, so its no-source case can open the picker without stealing an
+  existing successful meaning.
+  Date: 2026-08-18
+
+- Decision: Make EP-63 depend hard on EP-60, EP-61, and EP-62.
+  Rationale: EP-63 is the integration pass for every source kind and owns shared rendering,
+  JSON, diagnostics, documentation, and refresh guidance. Implementing it in parallel with
+  EP-62 would leave exhaustive source handling knowingly incomplete and force a second pass.
+  Date: 2026-08-18
+
+- Decision: Use a deterministic 100-character, two-line default table row and reserve
+  `--wide` for uncapped output.
+  Rationale: After the source column is added, current source/export/name values and rule
+  columns already approach 100 characters. Truncating only the description cannot meet the
+  width goal. Fixed caps preserve pure, terminal-independent rendering while the continuation
+  line keeps descriptions useful.
+  Date: 2026-08-18
+
+- Decision: Improve registry failures through additive typed APIs rather than changing the
+  existing `okf-core` signatures or parsing rendered Dhall text.
+  Rationale: Structured categories produce stable text and JSON without ANSI leakage.
+  Companion functions preserve the public compatibility boundary already chosen for
+  `RegistryEntry` and multi-source loading.
   Date: 2026-08-18
 
 
 ## Outcomes & Retrospective
 
 (To be filled during and after implementation.)
+
+
+## Revision Note (2026-08-18)
+
+Architecture validation updated the target release to the verified `okf-profiles` v0.10.0
+tag and hash, replaced the ambiguous colon-delimited registry environment format with a
+JSON-array variable plus the legacy singular variable, preserved the public registry-entry
+API through a sourced wrapper, made automatic discovery network-silent and orthogonal to
+registry precedence, split partial-listing behavior from fail-closed named resolution,
+preserved bare validation semantics with `--pick-profile`, changed the table to a bounded
+two-line layout, and serialized EP-63 after all three prerequisite plans. The four child
+ExecPlans and relevant ADRs were revised to carry the same decisions.

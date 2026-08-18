@@ -20,9 +20,10 @@ If durable project context changes, update or create ADRs in docs/adr/ in the sa
 By the time this plan runs, okf can read profiles from several *registries* — Dhall
 expressions evaluating to a record of profile values — and from descriptor files discovered
 on the local filesystem. Sources can be named by a repeatable `--registry` flag, by the
-`OKF_PROFILE_REGISTRY` environment variable, by a `profiles.registries` list in a
-configuration file, or by filesystem discovery, and one built-in default is pinned by URL
-and content hash to a specific `okf-profiles` release.
+`OKF_PROFILE_REGISTRIES` JSON-array environment variable, by the legacy singular
+`OKF_PROFILE_REGISTRY`, by a `profiles.registries` list in a configuration file, or by
+filesystem discovery. One built-in default is pinned by URL and content hash to a specific
+`okf-profiles` release.
 
 That is four mechanisms feeding one listing, and nothing tells a user which one won.
 The same problem was solved once already for agent settings, and the solution is worth
@@ -79,24 +80,24 @@ reference forms, but a user reads "Unbound variable" and stops.
 And the pinned default has no visible version. The pin is a URL plus a hash in okf's source;
 a user cannot tell from any command output which `okf-profiles` release they are seeing, and
 nothing tells them a newer one exists. This plan adds an explicitly opt-in check — never
-automatic, because [ADR 3](../adr/3-profile-registries.md) establishes that no okf command
-requires network access unless the user asks for it.
+automatic, because ordinary registry resolution already has a defined fetch/cache path and
+a separate upstream-tag query should not run unless the user asks for it.
 
-This plan depends on `docs/plans/61-read-profiles-from-more-than-one-registry.md`, which
-introduces the source model this command reports. It gains a section once
-`docs/plans/62-discover-and-select-local-profile-descriptors-in-the-repository.md` lands,
-and can be implemented before or after that plan.
+This plan is the integration closure and starts only after EP 60, EP 61, and EP 62 are
+complete. It consumes EP 60's refresh script and verified release pin, EP 61's carried
+source origin and multi-source failure policy, and EP 62's descriptor source and
+network-disabled discovery semantics.
 
 
 ## Progress
 
 - [ ] Confirm `docs/plans/61-read-profiles-from-more-than-one-registry.md` is complete and read its final source model
-- [ ] Note whether `docs/plans/62-discover-and-select-local-profile-descriptors-in-the-repository.md` has landed, and cover its source kind if so
-- [ ] Add provenance to source resolution in `okf-cli/src/Okf/Cli.hs`
+- [ ] Confirm EP 60 and EP 62 are complete and read their final interfaces and Outcomes
+- [ ] Consume EP 61's `ResolvedProfileSource` provenance without reconstructing it
 - [ ] Add the `okf profile sources` command, text and `--json` modes
 - [ ] Print the precedence rules on every run of it
 - [ ] Report the pinned catalogue's version, parsed from the reference
-- [ ] Truncate the `DESCRIPTION` column and add the full-width escape hatch
+- [ ] Render fixed-width two-line rows and add the `--wide` escape hatch
 - [ ] Update `sampleRegistryTable` in `okf-cli/test/Main.hs` for the new rendering
 - [ ] Replace the raw Dhall exception text in registry load failures
 - [ ] Strip or avoid ANSI escapes in error output
@@ -105,15 +106,17 @@ and can be implemented before or after that plan.
 - [ ] Paste real transcripts for the inspection command, the fixed table, and each error path
 - [ ] Update `okf-cli/help/profiles.md`, `docs/user/profiles.md`, `docs/user/cli.md`, `README.md`
 - [ ] Update `CHANGELOG.md`, `okf-cli/CHANGELOG.md`, and `okf-core/CHANGELOG.md` if core changed
-- [ ] Amend `docs/adr/3-profile-registries.md` with the freshness obligation
+- [ ] Verify the implementation against ADR 3's freshness amendment
 - [ ] Perform the MasterPlan's ADR distillation pass if this is the last child plan to land
 
 
 ## Surprises & Discoveries
 
-(None yet. Three defects this plan fixes were observed during MasterPlan research and are
-described in Purpose above with their transcripts; they are inputs to this plan rather than
-discoveries within it.)
+- Observation: After EP 61 adds `SOURCE`, the longest current source, export, and profile
+  names plus the rule columns already consume about 100 characters before a description is
+  rendered. Description-only truncation therefore cannot meet the stated width goal.
+  Evidence: measured the verified v0.10.0 catalogue's ten decoded entries during the Master
+  Plan 10 architecture audit on 2026-08-18.
 
 
 ## Decision Log
@@ -135,21 +138,28 @@ discoveries within it.)
   same hazard applies here and the same remedy is available.
   Date: 2026-08-18
 
-- Decision: Truncate the `DESCRIPTION` column to a fixed width by default, with a flag to
-  print it in full.
-  Rationale: A listing is a survey and must stay scannable; the full text is available from
-  `okf profile show`, which prints the profile's whole rule set. Truncating with an explicit
-  ellipsis is honest, whereas wrapping silently destroys the alignment the rest of the
-  function works to produce. Detecting terminal width was considered and rejected — it would
-  make the pure function impure and make output differ between a terminal and a pipe, which
-  `docs/adr/2-interactive-bundle-and-concept-selection.md` establishes okf avoids.
+- Decision: Default profile rows use a fixed-width identity/rules line followed by one
+  indented description line. `SOURCE`, `EXPORT`, and `NAME` are capped as well as the
+  description; `--wide` removes all caps while preserving the two-line structure.
+  Rationale: With source provenance, the non-description columns alone approach 100
+  characters, so truncating only `DESCRIPTION` cannot satisfy the width goal. A deterministic
+  two-line row fits 100 columns, remains pure in pipes and terminals, and keeps descriptions
+  visible rather than deleting them. Every truncation ends in an ellipsis and full values
+  remain available through `--wide`, `--json`, and `profile show`.
+  Date: 2026-08-18
+
+- Decision: EP 63 consumes source provenance from EP 61 and covers every source constructor
+  from EP 62; it does not define or infer provenance itself.
+  Rationale: The inspection command must report the values used by execution. Reconstructing
+  precedence or treating local discovery as optional would allow it to disagree with the
+  commands it explains.
   Date: 2026-08-18
 
 - Decision: The upstream freshness check is opt-in per invocation and never runs by default.
-  Rationale: `docs/adr/3-profile-registries.md` establishes that no okf command requires
-  network access unless the user names a remote registry. An automatic check would make a
-  read-only listing depend on GitHub availability and would surprise a user in CI. The pin
-  stays a deliberate release-time decision.
+  Rationale: The built-in default can already fetch through Dhall on first use, but an
+  automatic tag query would add a second, independent dependency on GitHub even when the
+  selected registry is cached or local. That would surprise a user in CI. The pin stays a
+  deliberate release-time decision.
   Date: 2026-08-18
 
 
@@ -164,9 +174,8 @@ of the OKF standard — a bundle that deviates from one is still fully OKF-confo
 A **registry** is any Dhall expression evaluating to a record whose fields, possibly nested,
 are profile values. There is no manifest and no registry-specific format.
 
-A **source** is one place profiles come from: a registry reference, or — once
-`docs/plans/62-discover-and-select-local-profile-descriptors-in-the-repository.md` lands — a
-descriptor file found on the filesystem.
+A **source** is one place profiles come from: a registry reference or a descriptor file
+found on the filesystem.
 
 **Provenance** here means which mechanism supplied a source: a command-line flag, an
 environment variable, a configuration file, filesystem discovery, or the built-in default.
@@ -237,11 +246,12 @@ positional and every part must change together — `headerRow`, `entryRow`, `pad
 padder is `\_ cell -> cell`, deliberately not padding `DESCRIPTION`. The function is pure and
 pinned by `okf-cli/test/Main.hs:491` against a literal `sampleRegistryTable` around line 674.
 
-`profileRegistryEnvVar` around line 923 is `"OKF_PROFILE_REGISTRY"`.
+EP 61 keeps `profileRegistryEnvVar = "OKF_PROFILE_REGISTRY"` for the legacy singular value
+and adds `profileRegistriesEnvVar = "OKF_PROFILE_REGISTRIES"` for the JSON array.
 
 `okf-core/src/Okf/Profile/Registry.hs` holds `defaultRegistryReference`, the pinned URL and
 hash. `docs/plans/60-refresh-the-default-profile-registry-pin-and-prove-the-current-catalogue-decodes.md`
-moves it to `okf-profiles` v0.9.3 and adds `scripts/refresh-default-registry.sh`, which the
+moves it to `okf-profiles` v0.10.0 and adds `scripts/refresh-default-registry.sh`, which the
 freshness check's guidance should name.
 
 ### Relevant ADRs
@@ -258,10 +268,10 @@ file".
 
 [docs/adr/3-profile-registries.md](../adr/3-profile-registries.md) constrains the freshness
 half: the built-in default is pinned by tag *and* hash and the two move as a pair;
-`defaultRegistryReference` is the single place both live; no okf command requires network
-access unless the user names a remote registry; and the test suites never touch the network,
-which means the freshness check cannot be covered by a test that actually fetches — test the
-parsing and comparison logic as pure functions instead.
+`defaultRegistryReference` is the single place both live; ordinary resolution of an
+effective remote registry may use Dhall's fetch/cache path; and the test suites never touch
+the network. The freshness check therefore cannot be covered by a test that actually
+fetches — test the parsing and comparison logic as pure functions instead.
 
 [docs/adr/2-interactive-bundle-and-concept-selection.md](../adr/2-interactive-bundle-and-concept-selection.md)
 constrains one thing here: profile commands "are read-only and behave identically with or
@@ -270,14 +280,13 @@ the inspection command must never prompt.
 
 [docs/adr/4-self-documenting-profiles.md](../adr/4-self-documenting-profiles.md) is why
 `ProfileSpec` has a `description` at all and why the `DESCRIPTION` column exists. Read its
-Decision section before deciding how aggressively to truncate — the point of the column was
-to make a listing self-explanatory, so truncating to a width that shows nothing useful would
-undo it.
+Decision section to preserve that self-documenting intent in the two-line layout; the fixed
+98-character description continuation is deliberately large enough to remain useful.
 
 [docs/adr/17-json-values-in-human-readable-diagnostics.md](../adr/17-json-values-in-human-readable-diagnostics.md)
-is worth reading before changing any error rendering; it covers how okf renders values inside
-human-readable diagnostics and may already establish a convention this plan should follow
-rather than reinvent.
+covers UTF-8 decoding when okf renders JSON values inside diagnostics. The typed Dhall errors
+in this plan contain no `Aeson.Value`, so ADR 17 needs no change; its general preference for
+total diagnostic rendering remains consistent with the plain-summary design.
 
 ### Build and test commands
 
@@ -292,46 +301,20 @@ cabal run okf -- profile sources
 
 ## Plan of Work
 
-Four milestones. The first three are independent of each other and can land in any order;
-the fourth is documentation and the ADR amendment. If the MasterPlan's other child plans are
-all complete when this one finishes, the fourth milestone also carries the initiative's ADR
-distillation pass.
+Four milestones. This plan begins only after EP 60–62 are complete. Its milestones may be
+implemented in focused commits, but the source renderer, JSON, errors, table fixtures, docs,
+and ADR distillation are accepted as one integration closure.
 
 ### Milestone 1: provenance and the `okf profile sources` command
 
 At the end of this milestone `okf profile sources` prints every effective source with its
 origin and the precedence rules, and a named test pins the precedence ordering.
 
-First, make resolution carry provenance. EP-61 leaves a resolver taking the flag list and
-returning `[ProfileSource]`. Wrap each source with where it came from:
-
-```haskell
-data ProfileSourceOrigin
-  = OriginFlag              -- a --registry flag
-  | OriginEnvironment       -- OKF_PROFILE_REGISTRY
-  | OriginConfig !FilePath  -- profiles.registries, and which file
-  | OriginDiscovery         -- found on the filesystem (only once EP-62 has landed)
-  | OriginBuiltinDefault
-  deriving stock (Generic, Eq, Show)
-
-data ResolvedProfileSource = ResolvedProfileSource
-  { resolvedSource :: !ProfileSource
-  , resolvedOrigin :: !ProfileSourceOrigin
-  }
-```
-
-`OriginConfig` carries the path because a user with a project file and a global file needs to
-know which one supplied the list, and `ConfigSource` in `okf-cli/src/Okf/Cli/Config.hs`
-already distinguishes `SourceEnv`, `SourceProject`, `SourceXdg`, `SourceDot`, and
-`SourceDefaults`, with `renderConfigSourceLabel` to display them — reuse that rather than
-inventing a parallel vocabulary. Whether `ProfileSourceOrigin` belongs in `okf-cli` or in
-`okf-core` depends on whether Mori would want it; `okf-cli` is the safe default, since flag
-and environment origins are CLI concepts. Put it beside the resolver.
-
-Change the resolver to return `[ResolvedProfileSource]` and update the three call sites that
-consume it — `runProfileList`, `runProfileShow`, `runProfileDocument` — plus
-`loadRegistryOrDie`. This is the change ADR 16 asks for: compute provenance on every
-resolution rather than reconstructing it in the inspection command.
+EP 61 already makes resolution return `[ResolvedProfileSource]` with distinct flag, plural
+environment, legacy environment, configuration-path, and built-in origins. EP 62 adds the
+local-discovery origin. Consume those values directly. Do not rerun environment/config
+precedence inside `profile sources`, and use exhaustive matches so any future origin or
+source constructor is a compiler-visible integration requirement.
 
 Then add the command. `okf-cli/src/Okf/Cli.hs` has a `ProfileCommand` sum around line 319
 with `ProfileList`, `ProfileShow`, and `ProfileDocument` constructors, and
@@ -343,12 +326,15 @@ Text output should follow `renderAgentResolution`'s shape closely enough that a 
 `okf config agent` recognizes it: an aligned block, one row per source, each row carrying the
 source's reference, its bracketed origin, and — where cheap to compute — how many profiles it
 published and whether it loaded at all. Then a literal precedence footer, printed on every
-run, stating the rules EP-61 established: the flag list replaces the environment variable's
-list, which replaces the configuration file's list, which falls back to the built-in default;
-within a list, order is preserved and exact duplicates are dropped; sources merge and every
-one is enumerated; a source that fails to load is reported without hiding the others.
+run, stating the rules EP 61 and EP 62 established: repeated flags replace the plural JSON
+environment list, which replaces the legacy singular environment value, which replaces the
+configuration list; configurations without a `profiles` block receive the built-in default;
+an explicit empty configuration list remains empty; local discovery is appended after the
+winning registry list unless `--no-local` is passed; within a list, order is preserved and
+exact duplicates are dropped. State that survey commands tolerate partial failure but named
+lookup fails closed.
 
-Deciding whether the command loads each source or merely lists them: load them. A source list
+The command loads each source rather than merely listing references. A source list
 that does not say which entries actually work is half an answer, and the command exists for
 the case where something is wrong. It follows that this command can be slow and can touch the
 network for a remote reference — which is fine, since the user asked. Say so in the help text.
@@ -363,42 +349,35 @@ reordered. Name it so its purpose is obvious — something like
 `testAgentLocalDefaultBeatsGlobalCommandKey` in `okf-cli/test/Main.hs` so the two are found
 together.
 
-Add `--json` output carrying the same information structurally.
+Add `--json` output carrying the same information structurally. Reuse the complete source
+objects from EP 61's listing JSON and extend each with `status` (`loaded` or `failed`),
+`profileCount`, and an `error` only for failure. Do not replace the full reference with its
+display label. EP 62's descriptor source kind and discovery origin must appear in this schema.
 
 ### Milestone 2: make the listing readable again
 
-At the end of this milestone `okf profile list` produces an aligned table at ordinary terminal
-widths with the current catalogue, and a flag prints descriptions in full.
+At the end of this milestone every default-rendered line is at most 100 `Text` characters,
+the current catalogue remains scannable, and `--wide` exposes every value in full.
 
-Change `renderRegistryTable` in `okf-cli/src/Okf/Cli.hs` to truncate `DESCRIPTION` to a fixed
-maximum width, appending a single-character ellipsis (`…`) when truncated. Pick the width by
-looking at real output rather than guessing — the goal is that the whole row fits in 100
-columns or so with the current catalogue's other columns, which are narrow. Truncate on a
-character boundary using `Text.take`; do not attempt word-aware truncation, and note that
-`Text.length` is in characters rather than display columns, so a description containing
-wide or combining characters will still misalign slightly. That is acceptable and worth a
-comment — `docs/plans/57-render-non-ascii-frontmatter-values-correctly-in-profile-diagnostics.md`
-is checked in and covers related ground; read it before writing the comment, as it may have
-already established the repository's position on character-versus-column width.
+Render each profile as two physical lines. The first is an aligned identity/rules row with
+fixed caps: `SOURCE` 14, `EXPORT` 28, `NAME` 28, `OKF` 3, `TYPES` 5, and `ID FIELD` 12,
+separated by two spaces. These sum to 100 characters. The second is the description,
+indented two spaces and capped at 98 characters. Collapse all description whitespace with
+`Text.words` before joining and truncating so embedded newlines cannot break the layout.
+When a capped value is too long, reserve its final character for a single `…`.
 
-Also collapse newlines in a description to a single space before truncating, since a
-multi-line description would break the table even at a short width.
+Use `Text.length`/`Text.take` consistently and document that the budget is Unicode code
+points rather than terminal display cells; wide and combining characters may still render
+imperfectly. This preserves the renderer's purity and terminal-independent output, matching
+the related decision in
+`docs/plans/57-render-non-ascii-frontmatter-values-correctly-in-profile-diagnostics.md`.
 
-Add a flag to print descriptions untruncated, for the case where a user is piping to
-something else. `--wide` or `--full-descriptions`; either is fine, so choose and document it.
-It threads into `renderRegistryTable` as a parameter, which changes the function's arity and
-therefore the test at `okf-cli/test/Main.hs:491`. Update `sampleRegistryTable` around line 674
-in the same change and add a second expected fixture for the untruncated form, so both paths
-are pinned. The existing fixture's comment explains it exists so "the padding in
-`renderRegistryTable` is actually exercised, and the `(root)` label appears" — extend that
-comment to say the new fixture exercises truncation, and make sure at least one sample
-description is long enough to actually be truncated, or the test proves nothing.
-
-Rewrite the Haddock above `renderRegistryTable`. It currently explains that `DESCRIPTION`
-comes last "so the existing columns keep their positions and a long description cannot push
-anything off the right edge", which is the reasoning this milestone corrects. Replace it with
-the reasoning that actually holds: the column is last *and* bounded, because ordering alone
-was insufficient once catalogue descriptions grew to hundreds of characters.
+Add exactly `--wide`. It preserves the two-line row structure but derives first-line widths
+from the full identity values and prints the full normalized description on its continuation
+line. It may exceed 100 characters by explicit request. Thread a render mode into
+`renderRegistryTable`, update `sampleRegistryTable`, and add a wide fixture. Include samples
+that actually truncate source, export, name, and description; shorten each in turn and prove
+the corresponding expectation changes. Rewrite the renderer Haddock with this contract.
 
 ### Milestone 3: honest failures and an opt-in freshness check
 
@@ -406,53 +385,56 @@ At the end of this milestone a bad registry reference produces a message a user 
 with no Dhall internals or escape codes, and `okf profile sources` can be asked to compare
 the pinned catalogue against upstream.
 
-For the error rendering, the fix is at the source. `loadRegistry` in
-`okf-core/src/Okf/Profile/Registry.hs` catches `SomeException` and stores `show e`. Three
-options, in order of preference:
+Add typed, additive error entry points in `okf-core` while preserving the existing public
+signatures. Add
+`loadRegistryDetailed :: RegistryRef -> IO (Either RegistryLoadError [RegistryEntry])`.
+Before evaluating a `RegistryExpression`, it distinguishes an existing directory without
+`package.dhall` and a path-shaped reference that does not exist. The directory error says
+that loose descriptors are found with `okf profiles`/`OKF_PROFILE_ROOTS`; a missing path
+error names the path and suggests checking the spelling.
 
-Catch Dhall's own error types rather than `SomeException`, and render the parts worth showing.
-Investigate what `Dhall.inputExpr` and `Dhall.inputExprWithSettings` actually throw in this
-version — likely some combination of `Dhall.Parser.ParseError`, `Dhall.Import.MissingImports`,
-and `Dhall.TypeCheck.TypeError` — and match on them. Use `mori` to locate the `dhall` package
-source on disk and read the exception types rather than guessing; do not rely on memory for
-this API. This gives the best messages and is the most work.
+Make `looksLikeRegistryPath` pure and tested: after trimming, it is true for `./`, `../`,
+absolute, home-relative, path-separator-containing, or `.dhall`-suffixed text, except text
+beginning with a Dhall remote scheme such as `http://` or `https://`. Test each category and
+a record literal. This keeps a missing `profiles/package.dhall` actionable without
+misclassifying the built-in pinned URL.
 
-Failing that, keep catching `SomeException` but classify by inspecting the rendered text for
-recognizable shapes — an unresolved import, an integrity-check mismatch, a type error — and
-lead with a plain-English sentence, keeping the raw text as an indented detail block below.
-This is less precise but bounded in effort.
+Classify Dhall 1.42.3 exceptions with `fromException`, including their exported
+`Dhall.Import.Imported` wrappers, at minimum separating `Dhall.Import.HashMismatch`, import
+failure, parse/type/decode failure, and an unexpected evaluation failure. This API was
+verified in the dependency source located with `mori`;
+do not classify by substring matching. Each constructor renders a stable plain-English
+summary and structured JSON fields. Never expose `show SomeException` in the normal CLI
+message. If developer detail is retained, render Dhall's `Pretty` instances with annotations
+removed; do not regex-strip an ANSI byte stream. Implement the old `loadRegistry` by mapping
+the rich error through a plain renderer so its type stays unchanged. CLI commands use the
+detailed variant.
 
-Either way, strip ANSI escape sequences. Prefer configuring Dhall not to colour its output if
-this version exposes that (check for a `Dhall.Pretty` or `Dhall.Util` setting) over
-post-processing with a regular expression, since stripping is a lossy guess about someone
-else's format.
+Add `ProfileSourceLoadError` with registry and descriptor branches and a
+`loadProfileSourcesDetailed` companion returning typed source failures. Implement EP 61's
+existing text-error loader by rendering this result. This lets `profile sources --json`
+publish a stable error category without changing EP 61's public compatibility surface, and
+it handles the race where a descriptor changes after discovery.
 
-The specific case worth special handling is the one from Purpose: a reference naming an
-existing *directory* that holds no `package.dhall`. `resolveRegistryRef` already checks for
-exactly that and falls through to `RegistryExpression`, so the information needed for a good
-message is available at that point — a directory that exists but has no `package.dhall` should
-say so, and, if
-`docs/plans/62-discover-and-select-local-profile-descriptors-in-the-repository.md` has landed,
-should suggest `okf profiles` and `OKF_PROFILE_ROOTS`. Consider having `resolveRegistryRef`
-return a richer result rather than silently treating a directory as an expression; that is a
-change to an `okf-core` function Mori may use, so keep the existing function and add a
-variant if the type would otherwise change.
-
-For the freshness check, add a flag to `okf profile sources` — `--check-latest`, or similar.
+For the freshness check, add exactly `--check-latest` to `okf profile sources`.
 It must be explicitly passed; nothing about it may run otherwise. What it does: parse the tag
 out of the pinned reference in `defaultRegistryReference`, ask upstream for its tags, compare,
 and print either a confirmation or the newer tag together with how to adopt it — naming
 `scripts/refresh-default-registry.sh` from
 `docs/plans/60-refresh-the-default-profile-registry-pin-and-prove-the-current-catalogue-decodes.md`.
 
-Two design points to settle deliberately. Getting the upstream tag list without a git
-dependency: `git ls-remote --tags <url>` works and `git` is already assumed present by
-`okf kit`, which clones a repository — check `okf-cli/src/Okf/Cli/Kit.hs` for how it invokes
-git and reuse that approach rather than adding an HTTP client. If it uses a library rather
-than the executable, follow suit. Second, comparing versions: tags are of the form `vMAJOR.MINOR.PATCH`,
-so parse into a numeric triple and compare numerically — string comparison puts v0.10.0 before
-v0.9.3, which is exactly the failure this check exists to prevent, so write a test for that
-specific pair.
+Reuse the repository's existing process helper to run the equivalent of:
+
+```bash
+git ls-remote --refs --sort=-version:refname --tags \
+  https://github.com/shinzui/okf-profiles.git 'v*'
+```
+
+Parse the first well-formed `vMAJOR.MINOR.PATCH` ref into a numeric triple and compare
+numerically. Pin `v0.10.0 > v0.9.3` in a unit test, together with malformed and empty output;
+do not use lexicographic comparison or `sort -V` inside the application. Pass the explicitly
+reported newer tag to `scripts/refresh-default-registry.sh TAG`; the script never selects a
+tag on its own.
 
 The check must degrade gracefully. No network, or an unparseable tag list, must produce a
 message saying the check could not run, and must not change the command's exit code — the
@@ -462,10 +444,10 @@ forbids tests that touch the network.
 
 Also report the pinned version *without* the flag. Parsing the tag out of the reference needs
 no network at all, so `okf profile sources` should always show that the built-in default is
-`okf-profiles v0.9.3` rather than only showing a 130-character URL. That is most of the
+`okf-profiles v0.10.0` rather than only showing a 130-character URL. That is most of the
 visibility win, at no cost.
 
-### Milestone 4: documentation, the ADR amendment, and possibly distillation
+### Milestone 4: documentation and final ADR distillation
 
 Update `okf-cli/help/profiles.md`, which is embedded into the binary at compile time by
 `okf-cli/src/Okf/Cli/Help.hs` via `file-embed`, so `okf help profiles` works with no files on
@@ -478,27 +460,18 @@ Update `docs/user/profiles.md` (registry section from line 829, reference-forms 
 to 869, precedence list at 876 to 878, JSON shape at 1143), `docs/user/cli.md` for the new
 subcommand and flags, and `README.md`.
 
-Amend `docs/adr/3-profile-registries.md` with the freshness obligation: that the pin is
-deliberately manual, that no command checks it without being asked, that `--check-latest` is
-the opt-in and `scripts/refresh-default-registry.sh` performs the update, and that the pinned
-version is reported without network access. Do not rewrite the Decision section — that file
-already models amendment-in-place, keeping a superseded paragraph as written with a dated
-note. Follow the form of the `## Amendment:` section closing
-`docs/adr/2-interactive-bundle-and-concept-selection.md`.
-
-Consider whether ADR 17 on JSON values in human-readable diagnostics needs amending, given
-the error-rendering changes in Milestone 3. If the classification approach establishes a
-durable convention for rendering third-party library errors in okf diagnostics, that is
-exactly the kind of thing ADR 17 exists to hold.
+ADR 3's 2026-08-18 amendment already records the manual freshness obligation, opt-in check,
+and refresh script. Verify the implementation against it and amend only if implementation
+evidence changes a durable rule. ADR 17 needs no amendment: this plan introduces typed
+third-party failures and plain summaries, but does not change ADR 17's rule for rendering
+JSON values in diagnostics.
 
 Finally, check the parent MasterPlan at
-`docs/masterplans/10-make-profile-discovery-multi-source-and-current.md`. If this is the last
-child plan to complete, perform the initiative's ADR distillation pass as its Outcomes
-section requires: review every child plan's Decision Log, Surprises & Discoveries, and
-Outcomes, then promote the durable decisions into `docs/adr/` — the multi-source resolution
-rules, local descriptor discovery, pin freshness as a release obligation, and the deliberate
-exclusions (no registry manifest, no descriptor vendoring command, no unconditional network
-access, no profile schema change, no two-scope layering for `profiles`).
+`docs/masterplans/10-make-profile-discovery-multi-source-and-current.md`. This is necessarily
+the last child plan, so perform the initiative's ADR distillation pass: review every child
+plan's Decision Log, Surprises & Discoveries, and Outcomes, confirm ADR 3 and ADR 18 contain
+the durable decisions, add or amend another ADR if implementation created a new durable
+rule, and record the completed distillation in the master plan.
 
 
 ## Concrete Steps
@@ -521,24 +494,32 @@ cabal run okf -- profile sources
 Expected shape — paste the real output here when you have it:
 
 ```text
-SOURCE                                  ORIGIN                PROFILES
-okf-profiles v0.9.3 (pinned)            [built-in default]           9
+SOURCE                                  ORIGIN                STATUS  PROFILES
+okf-profiles v0.10.0 (pinned)           [built-in default]    loaded        10
 
 Precedence, highest first:
   1. --registry flag (repeatable); the flag list replaces every other layer
-  2. OKF_PROFILE_REGISTRY
-  3. profiles.registries in the effective config file
-  4. built-in default
+  2. OKF_PROFILE_REGISTRIES (JSON array)
+  3. OKF_PROFILE_REGISTRY (legacy single reference)
+  4. profiles.registries in the effective config file
+  5. built-in default when the decoded configuration has no profiles block
 Within a list, order is preserved and exact duplicates are dropped. Every source is
-enumerated; sources merge rather than replace. A source that fails to load is reported
-without hiding the others.
+enumerated; sources merge rather than replace. Local descriptors follow the winning
+registry list unless --no-local is passed. Survey commands report partial failure; named
+lookup fails closed.
 ```
+
+Use `--no-local` for that one-row transcript. A run without it must additionally show every
+discovered descriptor source with its discovery origin.
 
 Exercise each layer so the `ORIGIN` column is seen to change:
 
 ```bash
-cabal run okf -- profile sources --registry docs/profiles/okf-v0-2.dhall
-OKF_PROFILE_REGISTRY=docs/profiles/postgresql.dhall cabal run okf -- profile sources
+cabal run okf -- profile sources --no-local --registry docs/profiles/okf-v0-2.dhall
+OKF_PROFILE_REGISTRIES='["docs/profiles/okf-v0-2.dhall","docs/profiles/postgresql.dhall"]' \
+  cabal run okf -- profile sources --no-local
+OKF_PROFILE_REGISTRY=docs/profiles/postgresql.dhall \
+  cabal run okf -- profile sources --no-local
 ```
 
 For the configuration layer, generate a valid file rather than hand-writing one:
@@ -557,7 +538,7 @@ After Milestone 2:
 cabal run okf -- profile list | expand | awk '{ print length }' | sort -n | tail -1
 ```
 
-The longest line must be under the width you chose. Then:
+The longest line must be at most 100. Then:
 
 ```bash
 cabal run okf -- profile list --wide | head -3
@@ -566,9 +547,9 @@ cabal run okf -- profile list --wide | head -3
 After Milestone 3:
 
 ```bash
-cabal run okf -- profile list --registry docs/profiles
-cabal run okf -- profile list --registry /tmp/definitely-not-here
-cabal run okf -- profile list --registry 'https://raw.githubusercontent.com/shinzui/okf-profiles/v0.9.3/package.dhall sha256:0000000000000000000000000000000000000000000000000000000000000000'
+cabal run okf -- profile list --no-local --registry docs/profiles
+cabal run okf -- profile list --no-local --registry /tmp/definitely-not-here
+cabal run okf -- profile list --no-local --registry 'https://raw.githubusercontent.com/shinzui/okf-profiles/v0.10.0/package.dhall sha256:0000000000000000000000000000000000000000000000000000000000000000'
 ```
 
 The three cases are a directory with no `package.dhall`, a path that does not exist, and an
@@ -576,7 +557,7 @@ integrity-hash mismatch. Each must produce a distinct plain-English first line, 
 escapes, and exit 1. Check for escapes explicitly, since they are invisible in a terminal:
 
 ```bash
-cabal run okf -- profile list --registry docs/profiles 2>&1 | cat -v | grep -c '\^\['
+cabal run okf -- profile list --no-local --registry docs/profiles 2>&1 | cat -v | rg -c '\^\['
 ```
 
 which must print `0`. Then:
@@ -599,12 +580,11 @@ cabal test all
 Accepted when all of the following are observed from a built binary.
 
 **Provenance is visible and correct.** `okf profile sources` names every effective source
-with its origin. Passing `--registry` shows `[flag]` and shows only that source, since the
-flag layer replaces the others. Setting `OKF_PROFILE_REGISTRY` shows the environment origin.
-A configuration file naming two sources shows both, with the origin naming that file's path.
-With nothing set, one row shows the built-in default. Each of these is checked by hand, not
-only asserted in a test, because the resolution chain is exactly the thing a unit test can
-agree with while the wiring is wrong.
+with its origin. Passing `--registry` shows `[flag]`; with `--no-local` it shows only the flag
+list because that layer replaces lower registry layers. The plural and legacy environment
+variables have distinct origins. A configuration file naming two sources shows both, with
+the origin naming that file's path. With nothing set, the built-in registry is followed by
+discovered local descriptors; `--no-local` suppresses only the latter. Check each by hand.
 
 **The precedence footer is printed on every run** and its wording matches
 `okf-cli/help/profiles.md` and `docs/user/profiles.md` word for word. Diff them if unsure;
@@ -618,28 +598,24 @@ cannot fail is not a test.
 **The pinned version is reported without network access.** With networking disabled,
 `okf profile sources` still names the pinned `okf-profiles` release rather than only its URL.
 
-**The listing is a table again.** `okf profile list` against the current catalogue produces
-rows whose longest line fits the chosen width, with truncated descriptions ending in an
-ellipsis. Column alignment is preserved across every row. `--wide` prints descriptions in
-full. Both forms are pinned by fixtures in `okf-cli/test/Main.hs`, and the truncating
-fixture's sample description is long enough that truncation actually occurs — verify by
-shortening it and watching the test still pass, which would prove the fixture was not
-exercising the path.
+**The listing is a table again.** `okf profile list` produces two-line rows whose default
+lines are at most 100 characters. Identity/rule columns align on the first line; descriptions
+occupy the indented continuation. Every capped field ends in an ellipsis when truncated.
+`--wide` prints all values in full. Both forms are pinned by fixtures that exercise every
+capped field.
 
 **A multi-line description does not break the table.** Construct a fixture profile whose
 description contains a newline and confirm the row stays on one line.
 
 **Failures are actionable.** Each of the three error cases in Concrete Steps produces a
 first line a user can act on, no ANSI escape sequences anywhere in the output (`cat -v |
-grep -c '\^\['` prints `0`), and exit code 1. The directory case explicitly says the
-directory holds no `package.dhall`, and — if
-`docs/plans/62-discover-and-select-local-profile-descriptors-in-the-repository.md` has
-landed — points at `okf profiles`. The existing guidance about the three legal reference forms
+rg -c '\^\['` prints `0`), and exit code 1. The directory case explicitly says the
+directory holds no `package.dhall` and points at `okf profiles`. The existing guidance about the three legal reference forms
 and about `--registry` with a local checkout for offline use is still present.
 
-**The freshness check is opt-in and degrades gracefully.** No network traffic occurs for any
-profile command without `--check-latest` — verify by running with networking disabled and
-confirming every command that previously worked still works. With the flag and a network, it
+**The freshness check is opt-in and degrades gracefully.** No upstream tag query occurs
+without `--check-latest`; ordinary explicitly named remote registries retain their existing
+fetch behavior. With the flag and a network, the command
 reports whether the pin is current and, if not, names the newer tag and
 `scripts/refresh-default-registry.sh`. With the flag and no network, it says the check could
 not run and exits 0. The version comparison orders v0.10.0 after v0.9.3, pinned by a test
@@ -665,68 +641,59 @@ per reference. `--check-latest` performs a read-only query against the upstream 
 Repeating any step is safe. Nothing is written to the working tree except by `okf profile
 document`, which this plan does not change and which requires both `--out DIR` and `--write`.
 
-The only change that could affect existing callers is the `DESCRIPTION` truncation, since a
-script parsing the text table would see shortened values. Truncated text output is not a
-stable interface — `--json` is — but note the change prominently in the changelog anyway, and
-mention `--wide` as the escape hatch for anyone relying on it. Recovery is inverting the
-flag's default.
-
-If the Dhall exception classification in Milestone 3 proves too fragile, the fallback is the
-second approach described there: keep catching `SomeException`, lead with a plain-English
-line, and keep the raw text as an indented detail block. That is strictly better than today
-and can ship on its own. Record the decision and the reason in the Decision Log if you fall
-back.
+The fixed-width two-line table changes human-readable output and may shorten source, export,
+name, and description values. Text tables are not a stable machine interface — `--json` is —
+but note the change prominently in the changelog and name `--wide` as the full-text escape
+hatch. Recovery for a rendering regression is `--wide`; do not invert the default without a
+new design decision.
 
 
 ## Interfaces and Dependencies
 
-No new library dependency should be needed. Before adding an HTTP client for the freshness
-check, look at how `okf-cli/src/Okf/Cli/Kit.hs` reaches a git repository — `okf kit` clones
-one, so a mechanism already exists — and reuse it. If it shells out to `git`, shell out to
-`git ls-remote --tags`, using the same process-invocation helper rather than a second one.
-`okf-cli/src/Okf/Cli.hs` already imports process machinery around line 1526 for its fzf
-handling; check what is available.
+No new library dependency is needed. Reuse the existing process helper to invoke
+`git ls-remote --refs --sort=-version:refname --tags`; do not add an HTTP client.
 
-At the end of Milestone 1, `okf-cli/src/Okf/Cli.hs` (or a module beside it) exports:
+EP 61 and EP 62 already export the exhaustive `ProfileSourceOrigin` and
+`ResolvedProfileSource` types. At the end of Milestone 1, `okf-cli/src/Okf/Cli.hs` (or a
+module beside it) additionally exports:
 
 ```haskell
-data ProfileSourceOrigin
-  = OriginFlag | OriginEnvironment | OriginConfig !FilePath | OriginDiscovery | OriginBuiltinDefault
-
-data ResolvedProfileSource = ResolvedProfileSource
-  { resolvedSource :: !ProfileSource
-  , resolvedOrigin :: !ProfileSourceOrigin
-  }
-
+data ProfileSourceStatus = ProfileSourceLoaded !Int | ProfileSourceFailed !ProfileSourceLoadError
 renderProfileSourceResolution :: … -> Text   -- pure, testable without evaluating Dhall
 ```
 
 and a `ProfileSources` constructor on the `ProfileCommand` sum with its options record. Both
 the constructor and the record are imported by `okf-cli/test/Main.hs` for parser tests, so
-they must be in the module's export list — see lines 11 to 33 for how the existing option
-records are exported.
+they must be in the module's export list. Its options include `--json`, `--check-latest`, the
+repeatable registry flags, and `--no-local`.
 
-At the end of Milestone 2, `renderRegistryTable` takes an additional parameter controlling
-description width and remains pure. `okf-cli/test/Main.hs` holds two expected-table fixtures.
+At the end of Milestone 2, `renderRegistryTable` takes a `CompactTable`/`WideTable` mode and
+remains pure. `okf-cli/test/Main.hs` holds two expected-table fixtures.
 
-At the end of Milestone 3, `okf-core/src/Okf/Profile/Registry.hs` may gain a richer error
-type or a variant of `resolveRegistryRef`. Do not change the existing exported signatures of
-`resolveRegistryRef`, `loadRegistry`, or `loadProfileSources` — Mori consumes `okf-core`
-directly for advisory profile validation, per `docs/adr/3-profile-registries.md`, and this
-plan has no reason to break it. Add alongside; deprecate later if warranted. If `okf-core`
-does change, update `okf-core/CHANGELOG.md` as well as the CLI changelog, and use `mori://`
-URIs rather than bare paths for any cross-repository reference in the entry.
+At the end of Milestone 3, `okf-core/src/Okf/Profile/Registry.hs` exports
+`RegistryLoadError`, `ProfileSourceLoadError`, `loadRegistryDetailed`, and
+`loadProfileSourcesDetailed`. Keep the existing signatures of `resolveRegistryRef`,
+`loadRegistry`, and `loadProfileSources` unchanged by rendering the typed errors at those
+boundaries. Update `okf-core/CHANGELOG.md` as well as the CLI changelog.
 
 Read before starting, in this order: `okf-cli/src/Okf/Cli/Agent/Config.hs` in full for the
 provenance pattern (`AgentConfigSource`, `ResolvedField`, `firstCandidate`,
 `renderAgentResolution`); `renderRegistryTable` and `renderRegistryLoadError` in
 `okf-cli/src/Okf/Cli.hs`; `loadRegistry` and `resolveRegistryRef` in
 `okf-core/src/Okf/Profile/Registry.hs`; and
-`docs/plans/61-read-profiles-from-more-than-one-registry.md` as it actually exists on disk,
-including its Decision Log and Surprises sections, since its final type names may differ
-from what this plan anticipates.
+EP 60, EP 61, and EP 62 as they actually exist on disk, including their Decision Logs,
+Surprises, Interfaces, and Outcomes.
 
 
 ## Outcomes & Retrospective
 
 (To be filled during and after implementation.)
+
+
+## Revision Note
+
+Revised 2026-08-18 during the architecture validation of Master Plan 10. The revision makes
+EP 63 the hard integration successor of EP 60–62, consumes rather than reconstructs
+provenance, specifies complete source/status JSON, replaces description-only truncation with
+a deterministic 100-column two-line format, fixes numeric tag comparison, and requires typed
+additive registry errors.

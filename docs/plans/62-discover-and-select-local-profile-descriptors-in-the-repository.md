@@ -56,9 +56,10 @@ docs/profiles/profile-documentation.dhall
 
 They also appear in `okf profile list` as a source alongside registries, so one command
 answers "what profiles can I use here?" regardless of where they live. And omitting
-`--profile` on `okf validate` or `okf profile document` opens a fuzzy-finder picker over the
-discovered descriptors, exactly as omitting `BUNDLE` opens one over discovered bundles —
-while an explicit `--profile PATH` never spawns anything, so no script can be affected.
+all profile inputs on `okf profile document` opens a fuzzy-finder picker over the discovered
+descriptors. Validation remains non-interactive by default and gains an explicit
+`--pick-profile` flag. An explicit `--profile PATH` never spawns anything, so no script can
+be affected.
 
 This plan depends on
 `docs/plans/61-read-profiles-from-more-than-one-registry.md`, which must be complete first.
@@ -81,7 +82,7 @@ problems; those belong to
 - [ ] Add the `okf profiles` command, text and `--json` modes
 - [ ] Include discovered descriptors as a source in `okf profile list`
 - [ ] Add `selectProfileDescriptor` to `okf-cli/src/Okf/Cli/Fzf/Selector.hs`
-- [ ] Make `--profile` optional on `okf validate` and resolve it through the picker
+- [ ] Add explicit `--pick-profile` to `okf validate`; keep bare validation unchanged
 - [ ] Make `--profile` optional on `okf profile document` and resolve it the same way
 - [ ] Honour the 1 / 2 / 130 exit contract and test each code
 - [ ] Add shell-completion support if `Okf.Cli.Completions` covers comparable commands
@@ -89,12 +90,18 @@ problems; those belong to
 - [ ] Paste real transcripts for listing, picking, and each exit code into this plan
 - [ ] Update `okf-cli/help/profiles.md`, `okf-cli/help/interactive.md`, `docs/user/profiles.md`, `docs/user/cli.md`, `README.md`
 - [ ] Update `CHANGELOG.md`, `okf-core/CHANGELOG.md`, `okf-cli/CHANGELOG.md`
-- [ ] Write the new ADR on local descriptor discovery
+- [ ] Implement and verify the rules recorded in ADR 18 on local descriptor discovery
 
 
 ## Surprises & Discoveries
 
-(None yet.)
+- Observation: `dhall` 1.42.3 does not expose a no-network flag through high-level
+  `InputSettings`, but `Dhall.Import.loadWithStatus` accepts a custom `Status`, whose text
+  and bytes remote resolvers can both be replaced with rejecting callbacks. Semantic-cache
+  lookup happens before a fresh fetch.
+  Evidence: inspected the registered `dhall-haskell` source located through `mori`, then
+  verified 1.42.3 as the current Hackage release within this project's `>=1.41 && <1.43`
+  bound on 2026-08-18.
 
 
 ## Decision Log
@@ -115,8 +122,8 @@ problems; those belong to
   requires evaluating it. `docs/adr/2-interactive-bundle-and-concept-selection.md` establishes
   that discovery is a convenience rather than a validation step and "must never turn a
   working command into a broken one", so an unparseable file costs itself a menu entry and
-  nothing more. The cost is that discovery is slower than a filename scan and can touch the
-  network if a candidate file imports a remote reference; see the mitigations in Milestone 1.
+  nothing more. The cost is that discovery is slower than a filename scan. Automatic
+  discovery installs a rejecting remote-import resolver, so it cannot fetch from the network.
   Date: 2026-08-18
 
 - Decision: Do not synthesize a Dhall registry record from discovered files.
@@ -134,6 +141,47 @@ problems; those belong to
   on this filesystem?". Keeping the parallel means a user who knows `okf bundles` guesses
   `okf profiles` correctly. The near-collision with `okf profile list` is a real cost and is
   mitigated by both commands' help text naming the other.
+  Date: 2026-08-18
+
+- Decision: Automatic discovery may resolve local imports and already cached,
+  integrity-protected remote imports, but it must never make a remote request. An uncached
+  remote dependency makes only that candidate fail qualification and be skipped.
+  Rationale: A repository scan is implicit input. It must not let an arbitrary discovered
+  file initiate network I/O. Dhall 1.42.3 exposes `Dhall.Import.loadWithStatus` and the
+  public `Status` fields `_remote` and `_remoteBytes`, which allow rejecting both remote
+  fetch paths while retaining normal import and cache semantics.
+  Date: 2026-08-18
+
+- Decision: Discovered descriptor sources are appended after the winning registry list by
+  default, even when that list came from explicit `--registry` flags. A shared `--no-local`
+  switch suppresses them.
+  Rationale: Layer precedence chooses registry sources; local discovery is an orthogonal
+  source class. Making explicit registry flags silently disable local sources would give the
+  same flag two meanings and make `profile list` answer differently for an incidental reason.
+  Date: 2026-08-18
+
+- Decision: Every discovered source carries `ProfileDiscoveryOrigin` with the complete
+  effective search-root list; the descriptor's own full path remains its identity.
+  Rationale: Overlapping roots can discover the same normalized path, so assigning a single
+  root would be arbitrary after deduplication. The root list truthfully explains the scan,
+  while the source reference says exactly which file supplied the profile.
+  Date: 2026-08-18
+
+- Decision: A discovered descriptor's export is its filename without `.dhall`.
+  Rationale: `(root)` for every local descriptor is unusable in listings and named lookup;
+  the basename is stable, readable, and collision handling already refuses to guess.
+  Date: 2026-08-18
+
+- Decision: Repository test fixtures are not globally excluded from discovery.
+  Rationale: They are valid descriptors, and broad basename exclusions such as `test` or
+  `fixtures` would hide legitimate user profiles. Users who want a narrow catalogue set
+  `OKF_PROFILE_ROOTS`, for example to `docs/profiles`.
+  Date: 2026-08-18
+
+- Decision: `okf validate BUNDLE` remains profile-free unless the user passes either
+  `--profile PATH` or `--pick-profile`. Passing both is an error.
+  Rationale: Omission already means "validate without house rules" and is used by scripts;
+  changing it to an interactive request would be a breaking behavioral change.
   Date: 2026-08-18
 
 
@@ -258,13 +306,13 @@ successful answer rather than the picker's no-candidate failure."
 
 ```haskell
 data ProfileSource = RegistrySource !Text !RegistryRef
-data SourceFailure = SourceFailure { source :: !ProfileSource, reason :: !Text }
-data RegistryEntry = RegistryEntry { source :: !ProfileSource, export :: !Text, spec :: !ProfileSpec }
+data SourceFailure = SourceFailure { failedSource :: !ProfileSource, failureReason :: !Text }
+data SourcedProfile = SourcedProfile { source :: !ProfileSource, entry :: !RegistryEntry }
 
 renderProfileSourceLabel :: ProfileSource -> Text
 renderProfileSourceReference :: ProfileSource -> Text
-loadProfileSource :: ProfileSource -> IO (Either Text [RegistryEntry])
-loadProfileSources :: [ProfileSource] -> IO ([SourceFailure], [RegistryEntry])
+loadProfileSource :: ProfileSource -> IO (Either Text [SourcedProfile])
+loadProfileSources :: [ProfileSource] -> IO ([SourceFailure], [SourcedProfile])
 normalizeProfileSources :: [ProfileSource] -> [ProfileSource]
 ```
 
@@ -295,18 +343,19 @@ a pipeline such as `okf show | less`. Spawning fzf when neither is present does 
 it blocks forever. There is no timeout; the gate is the mechanism. Do not weaken it.
 
 [docs/adr/3-profile-registries.md](../adr/3-profile-registries.md) establishes that
-discovery is structural and tests "decodes successfully", that enumeration lives in
-`okf-core` rather than the CLI because Mori consumes the library directly, that no okf
-command requires network access unless the user names a remote registry, and that test
-suites never touch the network. The third of those needs care here: evaluating a discovered
-descriptor *can* reach the network if that descriptor imports a remote reference. See
-Milestone 1 for how to keep the property honest.
+registry discovery is structural and tests "decodes successfully", that reusable
+enumeration lives in `okf-core`, and that test suites never touch the network. Its
+clarification distinguishes ordinary resolution of an effective remote registry from this
+plan's automatic filesystem scan. ADR 18 requires that scan to use the network-disabled
+loader described below.
 
 [docs/adr/1-profile-declared-document-ids.md](../adr/1-profile-declared-document-ids.md) is
 worth a skim for context on why profiles are the sanctioned way to layer house conventions
 on OKF's permissive core, but constrains nothing here.
 
-No ADR yet covers local descriptor discovery. Writing it is part of this plan.
+[docs/adr/18-local-profile-descriptor-discovery.md](../adr/18-local-profile-descriptor-discovery.md)
+records the local-discovery architecture this plan implements: qualification, bounded walk,
+no-network evaluation, additive composition, export naming, and picker behavior.
 
 ### Build and test commands
 
@@ -345,6 +394,10 @@ discoverProfileDescriptors :: ProfileDiscoveryOptions -> FilePath -> IO [FilePat
 fileQualifiesAsProfileDescriptor :: FilePath -> IO Bool
 ```
 
+The qualification path parses once and resolves imports with a `Dhall.Import.Status` whose
+text and bytes remote callbacks reject before network I/O. It then calls
+`decodeProfileExpr`. Keep that restricted loader testable even if it remains module-private.
+
 Reuse `defaultDiscoveryOptions`' values — depth four, the same six skipped build directories
 — and say in the Haddock that they are deliberately the same as bundle discovery's so a user
 setting expectations from one is right about the other. Reuse the same safety discipline:
@@ -355,10 +408,10 @@ them here, or duplicate them with a comment naming the original — prefer expor
 two copies will drift.
 
 The qualification rule: a file with extension `.dhall` whose contents decode as a profile.
-Implement `fileQualifiesAsProfileDescriptor` by calling `Okf.Profile.loadProfileFile`, which
-already tries the current `ProfileSpec` decoder and then a chain of eight frozen historical
-decoders, and returns `Either Text ProfileSpec` without throwing. Treat `Left` as "does not
-qualify".
+Factor a loader that parses once, resolves imports under an explicit `Dhall.Import.Status`,
+and feeds the resulting import-free expression to the existing `decodeProfileExpr` fallback
+chain. Ordinary explicit `--profile` and `--registry` paths retain `loadProfileFile` and its
+normal Dhall network behavior; automatic discovery calls the restricted loader below.
 
 Two properties of the walk differ from bundle discovery and both need deliberate decisions
 recorded in the Haddock.
@@ -368,21 +421,27 @@ descended into, because subdirectories of a bundle are not bundles. Descriptor d
 no such notion — a descriptor is a file, and a directory holding one may hold others in
 subdirectories. So do not prune; walk to `maxDepth` and collect every qualifying file.
 
-Bundle discovery's qualification test is cheap: list a directory, look for `index.md`, or
-parse the frontmatter of at most a few Markdown files. Descriptor discovery's test is
-**expensive**: it evaluates a Dhall expression, resolving imports, per candidate file. On a
-tree with many `.dhall` files this is slow, and on a file importing a remote reference it can
-reach the network — which would violate ADR 3's property that no command reaches the network
-unless the user names a remote registry. Mitigate all three ways, and record which you did:
-skip files above a small size ceiling before evaluating, since a profile descriptor is a few
-kilobytes; consider a cheap pre-filter reading the first bytes for a plausible profile shape
-before paying for evaluation, accepting that a pre-filter must not be stricter than the real
-test or it becomes a second disagreeing rule; and for the network, either evaluate with
-imports restricted to the local filesystem if Dhall's API permits it in this version, or
-document plainly that discovery evaluates the files it finds and a descriptor importing a
-remote reference will cause a fetch. Investigate the Dhall API before choosing — `mori` can
-locate the `dhall` package source on disk — and record the finding in Surprises &
-Discoveries, because it is exactly the kind of thing the next person will want to know.
+Bundle discovery's qualification test is cheap; descriptor discovery evaluates Dhall for
+every `.dhall` candidate. Bound the work with the existing depth and skipped-directory
+rules, then measure it. Do **not** add a file-size ceiling or textual pre-filter: a valid
+descriptor may be generated, heavily commented, or import all of its fields, and any such
+heuristic would silently create a second qualification rule stricter than "decodes as a
+profile".
+
+The project accepts `dhall >=1.41 && <1.43`; Hackage and the inspected upstream tags identify
+1.42.3 as current. In that API, high-level `InputSettings` has no no-network switch, but
+`Dhall.Import.loadWithStatus` accepts a caller-supplied `Status`. Start from
+`Dhall.Import.emptyStatus (takeDirectory path)` and replace both `_remote` and
+`_remoteBytes` with callbacks that throw a dedicated "remote imports disabled during profile
+discovery" exception. Keep `UseSemanticCache`: an integrity-protected remote import already
+in Dhall's semantic cache may resolve without either callback, while an uncached remote text
+or bytes import invokes the rejecting callback and causes only that candidate to be skipped.
+
+Use injected rejecting callbacks that increment an `IORef` and throw before performing I/O;
+assert that an uncached remote candidate reaches the rejector and is skipped without an HTTP
+client call. Cover local relative imports
+qualifying, and—when a hermetic temporary semantic cache can be supplied—a cached hashed
+remote import qualifying. The tests themselves must never access the network.
 
 Add fixtures under `okf-core/test/fixtures/` for the discovery cases. A directory holding: a
 valid descriptor; a second valid descriptor in a subdirectory, to prove the walk descends; a
@@ -413,19 +472,12 @@ data ProfileSource
 ```
 
 Then extend every function matching on it. `loadProfileSource` gains a case: for a
-`DescriptorSource`, call `Okf.Profile.loadProfileFile` and return a single `RegistryEntry`
-whose `export` is the empty string — the same convention `registryEntries` uses when the
-reference itself is a profile, displayed as `(root)` by `rootExportLabel`.
-
-Consider whether the empty export is right here, and decide rather than defaulting. An empty
-export means the listing shows `(root)` for every discovered descriptor, so three discovered
-files produce three rows all reading `(root)`, distinguishable only by the `SOURCE` column.
-That is confusing. Prefer using the file's basename without extension as the export path —
-`postgresql`, `okf-v0-2`, `profile-documentation` — which makes the rows self-describing and
-makes `okf profile show postgresql` work against a discovered descriptor. Record the choice
-and its reason in the Decision Log, and make sure `renderProfileSourceLabel` and
-`renderProfileSourceReference` render a `DescriptorSource` sensibly: the label as something
-short like `local`, or the containing directory's name, and the reference as the file path.
+`DescriptorSource`, call the same restricted loader used during qualification and return a
+single `SourcedProfile`. Set its `RegistryEntry.export` to the file's basename without the
+`.dhall` extension — `postgresql`, `okf-v0-2`, or `profile-documentation` — rather than
+`(root)`. Render its short label as `local` and its full reference as the normalized file
+path. The export makes named lookup usable; the full path remains the source identity, and
+normal collision rules handle equal basenames.
 
 Watch for non-exhaustive pattern matches. EP-61's Interfaces section asks that rendering code
 avoid catch-all patterns precisely so adding this constructor produces compiler warnings at
@@ -488,18 +540,35 @@ Then include discovered descriptors in `okf profile list`. The question to settl
 included *by default*, or only when asked for? Include them by default. The user's question
 is "what profiles can I use here?", and a repository that ships descriptors is answering yes
 to that question whether or not the user knows the flag. Add a flag to suppress them —
-`--no-local`, or an inverse — for the scripted case where only configured registries should
-be consulted, and document it. Confirm the interaction with EP-61's layer precedence and
-record it: a user passing explicit `--registry` flags is naming their sources exactly, so
-discovered descriptors should probably *not* be added on top of an explicit `--registry`
-list. Decide this deliberately, write it in the Decision Log, and state it identically in
-all four documentation files.
+`--no-local` — for the scripted case where only selected registries should be consulted, and
+document it. Local descriptors are appended after the registry list selected by EP 61's
+layer precedence, regardless of whether that list came from flags, environment,
+configuration, or the built-in default. `profiles.registries = [] : List Text` therefore
+means local-only by default, and `--no-local` with that configuration means no sources.
+Apply the same source-composition rule to registry-backed `profile show` and
+`profile document`, not only to listing, so an export shown by `profile list` resolves the
+same way when named.
+
+Update EP 61's collision diagnostic to prescribe
+`--no-local --registry REFERENCE`. A one-registry rerun without `--no-local` would still
+append discovered descriptors and might remain ambiguous; the remedy must actually narrow
+the effective set to one source. For a `DescriptorSource`, print an exact command that omits
+the local basename export—`okf profile show --no-local --registry PATH` or the corresponding
+`profile document` form—because loading the file explicitly exposes it as the sole `(root)`
+entry.
+
+Wrap each `DescriptorSource path` in EP 61's `ResolvedProfileSource` with
+`ProfileDiscoveryOrigin searchRoots`. Extend listing JSON with source kind `descriptor`, the
+short label, full normalized path reference, and discovery origin. Whenever any descriptor
+source is present, omit the legacy top-level `registry` compatibility key; it is valid only
+for exactly one registry source and no local sources.
 
 ### Milestone 4: the picker
 
-At the end of this milestone omitting `--profile` on `okf validate` and
-`okf profile document` opens a menu over discovered descriptors, an explicit `--profile`
-never spawns anything, and each of the three exit codes is observable.
+At the end of this milestone `okf validate --pick-profile BUNDLE` and an input-free
+`okf profile document` open a menu over discovered descriptors, an explicit `--profile`
+never spawns anything, bare validation remains non-interactive, and each of the three exit
+codes is observable.
 
 Add to `okf-cli/src/Okf/Cli/Fzf/Selector.hs`, beside `selectBundle`:
 
@@ -522,7 +591,8 @@ padding trick there is safe because fzf strips leading and trailing whitespace f
 before substituting it into a preview command; the comment above `conceptCandidates` says so.
 
 A preview is worth adding, and there is already a command that produces exactly the right
-content: `okf profile show --registry <path>` prints a profile's full rule set. Follow
+content: `okf profile show --no-local --registry <path>` prints exactly that descriptor's
+full rule set without re-appending every discovered source. Follow
 `conceptPreviewCommand`'s approach — `getExecutablePath` to find the running binary,
 `shellQuote` around interpolated values, and a `{N}` field reference for the highlighted
 row's path. Verify the field index against the column order you chose; `conceptPreviewCommand`
@@ -549,24 +619,24 @@ error use `dieTextWith (ExitFailure 2)` with messages modelled on `dieNoBundlePi
 non-interactive environment be told how to proceed.
 
 `okf validate` currently takes `--profile PATH` as an optional flag whose absence means "do
-not check any profile" — that is different from "prompt me", and conflating them would change
-behavior for every existing caller. **This is the trap in this milestone.** Do not make a
-bare `okf validate BUNDLE` start prompting. Add an explicit opt-in instead: a `--profile`
-with no argument is not expressible in `optparse-applicative` without ambiguity, so use a
-separate flag such as `--pick-profile`, or a sentinel value. Whichever you choose, a bare
-`okf validate BUNDLE` must behave exactly as it does today. Write a parser test asserting
-that, and put the reasoning in the Decision Log.
+not check any profile" — that is different from "prompt me". Add `--pick-profile` as an
+explicit boolean switch. Reject combining it with `--profile PATH`. A bare
+`okf validate BUNDLE` behaves exactly as it does today. Pin all three parser cases and test
+that the explicit-path branch returns before `detectFzfConfig`.
 
-`okf profile document` is different: it already requires a profile from somewhere, either
-`--profile PATH` or a registry `EXPORT`, and `runProfileDocument` around line 1092 rejects
-passing both. Here an omitted profile *can* reasonably prompt. Check the precedence against
-the existing guard — if a registry is configured and an `EXPORT` is given, no prompt should
-appear — and preserve the "Pass either --profile PATH or an EXPORT argument, not both"
-diagnostic.
+`okf profile document` is different: it already requires a profile from somewhere. Reject
+`--profile PATH` combined with either a registry `EXPORT` or any `--registry` flag. Use the
+accurate diagnostic: "Pass --profile PATH by itself, or select a registry profile with
+[--registry REGISTRY] [EXPORT]." An explicit path returns immediately. An `EXPORT`, or
+explicit `--registry` flags, uses EP 61's registry/local source resolver without prompting.
+Only when none of those explicit inputs is present does
+the command open the descriptor picker; merely having a default or configured registry does
+not suppress that input-free picker.
 
-Check `okf-cli/src/Okf/Cli/Completions.hs` for whether it enumerates commands or flags that
-must learn about `profiles` and the new flags. It had no profile-related entries when this
-plan was written, so it may need nothing; confirm rather than assume.
+No hand-maintained completion table changes are required:
+`okf-cli/src/Okf/Cli/Completions.hs` delegates to optparse-applicative's runtime completion
+protocol and walks the live parser. Add a parser/completion assertion that the new command
+and flags are visible rather than editing the static shell scripts.
 
 ### Milestone 5: documentation and the ADR
 
@@ -575,27 +645,18 @@ the binary at compile time by `okf-cli/src/Okf/Cli/Help.hs` via `file-embed`, so
 `okf help profiles` works with no files on disk. They are terminal-oriented **plain text** —
 ALL-CAPS section headers, two-space indented bodies, printed verbatim with no Markdown
 rendering — so match that style rather than writing Markdown. `okf-cli/help/interactive.md`
-is where the picker and the exit codes belong; check whether a new `HelpTopic` entry is
-warranted in `helpTopics` or whether the existing topics cover it.
+is where the picker and the exit codes belong. Update the existing `interactive` help topic;
+do not add a second topic for profile selection.
 
 Update `docs/user/profiles.md` (registry material from line 829), `docs/user/cli.md`
 (commands and environment variables), and `README.md` (profile examples around lines 168 to
 206, where `--profile docs/profiles/postgresql.dhall` appears twice and could now show the
 discovery path instead).
 
-Then write a new ADR under `docs/adr/`, numbered after the highest existing one — 17 was the
-highest when this plan was written, so 18 unless another plan has landed first; check with
-`ls docs/adr/`. Read two or three existing ADRs first to match the form: Status, Date,
-Context, Decision, Consequences, with the Decision section stating each rule in bold and the
-Consequences section honest about the failure modes. Content: what qualifies as a
-discoverable descriptor and why the rule is "decodes successfully" rather than a filename
-convention; why a directory of loose descriptors is not a registry; why discovery synthesizes
-per-file sources rather than a registry record; the depth and skip heuristics and their
-visible failure modes, in the style of ADR 2's frank Consequences section; the cost that
-discovery evaluates Dhall and what that means for speed and for the no-network property; and
-the exit-code contract inherited from ADR 2. Cross-reference
-[ADR 2](../adr/2-interactive-bundle-and-concept-selection.md) and
-[ADR 3](../adr/3-profile-registries.md) by repository-relative path.
+ADR 18 already records what qualifies as a descriptor, per-file sources, bounded traversal,
+the network-disabled Dhall status, additive composition, and the picker contract. Verify the
+implementation against it. If implementation evidence changes a durable rule, amend ADR 18
+in the same change rather than letting code and the decision record diverge.
 
 Update the three changelogs, matching each file's most recent entry.
 
@@ -625,7 +686,7 @@ After Milestone 3:
 cabal run okf -- profiles
 ```
 
-Expected — this repository's three shipped descriptors:
+The output includes at least the three user-facing descriptors:
 
 ```text
 docs/profiles/okf-v0-2.dhall
@@ -633,11 +694,9 @@ docs/profiles/postgresql.dhall
 docs/profiles/profile-documentation.dhall
 ```
 
-Note that `okf-core/test/fixtures/profiles/` holds around thirty descriptor fixtures, so a
-scan from the repository root will find those too. Check what `okf profiles` actually reports
-and decide whether that is correct — it arguably is, since they are real descriptors — or
-whether `okf-core/test/fixtures` belongs on the skip list. Record the decision. Depth four
-from the root reaches `okf-core/test/fixtures/profiles/`, so this will come up immediately.
+`okf-core/test/fixtures/profiles/` also holds valid descriptor fixtures within the default
+depth, so a repository-root scan lists those too. This is intentional; do not add broad
+`test` or `fixtures` exclusions. The scoped command below is the exact-three assertion.
 
 ```bash
 cabal run okf -- profiles --json | jq
@@ -653,6 +712,8 @@ at the menu:
 ```bash
 cabal run okf -- profile document
 echo "exit=$?"   # expect 130
+cabal run okf -- validate examples/postgresql-sample --pick-profile
+echo "exit=$?"   # press Esc; expect 130
 ```
 
 Unavailability, forced by removing fzf from the path:
@@ -703,8 +764,8 @@ and exits 0. A non-existent root behaves the same way and is not an error.
 
 **Discovered descriptors appear in the merged listing.** `okf profile list` shows rows whose
 `SOURCE` column identifies them as local descriptors, alongside the configured registries'
-rows. The suppression flag removes exactly those rows. The interaction with explicit
-`--registry` flags matches what the Decision Log recorded and what the documentation states.
+rows. They remain present with explicit `--registry` flags; the registry list is followed by
+local sources. `--no-local` removes exactly the local rows.
 
 **`okf profile show` works against a discovered descriptor**, using whatever export path
 Milestone 2 settled on.
@@ -722,7 +783,8 @@ the same command spawns nothing — confirm by observing no menu, and ideally by
 
 **A bare `okf validate BUNDLE` has not changed behavior.** It still validates without a
 profile rather than prompting. This is the regression most likely to slip through, so assert
-it with a parser test as well as by hand.
+it with a parser test as well as by hand. `--pick-profile` opens the picker, and combining it
+with `--profile PATH` is rejected.
 
 **Exit codes.** 1 with no candidates, naming the roots searched and `OKF_PROFILE_ROOTS` as
 the remedy; 2 when fzf is missing or there is no terminal, naming the argument to pass
@@ -740,10 +802,16 @@ confirm `okf profiles` still lists the valid descriptors and exits 0. This is AD
 central discovery property and is worth verifying directly rather than trusting the
 exception handling by inspection.
 
+**Discovery performs no remote fetch.** A candidate with an uncached HTTPS import is skipped
+and the injected rejecting resolver records the attempt without an HTTP request. A local
+relative import still qualifies. Explicit `--profile` and `--registry` inputs retain normal
+Dhall behavior.
+
 **Performance is acceptable.** Time `okf profiles` from the repository root. Discovery
 evaluates every candidate `.dhall` file, and this repository has roughly thirty descriptor
 fixtures plus a `dhall/` directory, so the cost is real. If it exceeds a second or two,
-revisit the mitigations from Milestone 1 and record what you found.
+profile where the time is spent and optimize traversal or repeated parsing without adding a
+size ceiling or textual pre-filter. Record the measurement and any optimization.
 
 
 ## Idempotence and Recovery
@@ -752,18 +820,17 @@ Every command in this plan is read-only. Discovery lists files and evaluates the
 writes. `okf profile document` writes only with both `--out DIR` and `--write`, per
 [ADR 6](../adr/6-generated-profile-documentation.md), and this plan does not change that.
 
-Repeating any step is safe. Dhall's cache under `~/.cache/dhall` may gain entries when
-discovery evaluates a descriptor that imports a remote reference; it is content-addressed and
-additive, and deleting it costs one refetch per reference.
+Repeating any step is safe. Automatic discovery reads Dhall's content-addressed semantic
+cache but never populates it through a remote fetch. Explicit profile and registry loading
+retain the existing cache behavior.
 
-The risky change is making `--profile` optional on `okf validate`, because a mistake there
-changes behavior for existing callers rather than merely adding a feature. Recovery is
-reverting that parser change alone — keep it in its own commit, separate from the discovery
-work, so it can be reverted without losing the rest.
+The compatibility-sensitive change is adding `--pick-profile` without changing the existing
+meaning of an absent `--profile`. Recovery is reverting the new switch and resolver branch;
+the discovery and listing work remains independently useful.
 
-If discovery turns out to be too slow to enable by default in `okf profile list`, the
-recovery is inverting the flag's default rather than removing the feature. Note that as the
-fallback in Surprises & Discoveries if it comes up.
+If measured discovery is too slow to enable by default, stop and amend ADR 18 and the master
+plan before changing the default. Do not silently invert `--no-local`, because that would
+change the architecture and the meaning documented for source composition.
 
 
 ## Interfaces and Dependencies
@@ -786,7 +853,8 @@ fileQualifiesAsProfileDescriptor :: FilePath -> IO Bool
 
 At the end of Milestone 2, `okf-core/src/Okf/Profile/Registry.hs` exports `ProfileSource`
 with both a `RegistrySource` and a `DescriptorSource` constructor, and every function
-matching on it handles both.
+matching on it handles both. `loadProfileSource` returns `SourcedProfile` wrappers; the
+existing source-agnostic `RegistryEntry` type is unchanged.
 
 At the end of Milestone 3, `okf-cli/src/Okf/Cli/ProfileDiscovery.hs` exists, is listed in
 `other-modules` or `exposed-modules` in `okf-cli/okf-cli.cabal` as its sibling
@@ -796,10 +864,17 @@ At the end of Milestone 3, `okf-cli/src/Okf/Cli/ProfileDiscovery.hs` exists, is 
 constructor and its options record, both of which `okf-cli/test/Main.hs` will import for
 parser tests.
 
+EP 61's CLI-side `ProfileSourceOrigin` has an additional
+`ProfileDiscoveryOrigin ![FilePath]` constructor, and discovered
+`ResolvedProfileSource` values use it. All source/origin JSON renderers match it
+exhaustively.
+
 At the end of Milestone 4, `okf-cli/src/Okf/Cli/Fzf/Selector.hs` exports `ProfileSelection (..)`
 and `selectProfileDescriptor :: FzfConfig -> IO ProfileSelection`, and
 `okf-cli/src/Okf/Cli.hs` has a profile-path resolver whose explicit-path case returns before
-`detectFzfConfig` is called.
+`detectFzfConfig` is called. Validation exposes `--pick-profile`, rejects its combination
+with `--profile`, and does not call that resolver for bare validation. Shared registry
+source options expose `--no-local`.
 
 Modules to read before starting, in this order: `okf-core/src/Okf/Discovery.hs` for the walk
 discipline, `okf-cli/src/Okf/Cli/BundleDiscovery.hs` for the CLI-level shape,
@@ -812,3 +887,11 @@ deviating from them needs a reason recorded in the Decision Log.
 ## Outcomes & Retrospective
 
 (To be filled during and after implementation.)
+
+
+## Revision Note
+
+Revised 2026-08-18 during the architecture validation of Master Plan 10. The revision makes
+automatic discovery provably network-disabled with Dhall's custom import status, removes
+lossy size and text heuristics, fixes basename exports and additive local-source composition,
+preserves bare validation through explicit `--pick-profile`, and aligns the plan with ADR 18.

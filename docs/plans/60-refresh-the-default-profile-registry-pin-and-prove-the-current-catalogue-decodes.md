@@ -30,15 +30,15 @@ postgresql                           shinzui-postgresql                    0.1  
 tanPostgresql                        tan-postgresql                         0.1      4  -          -
 ```
 
-The catalogue those profiles come from — the separate `okf-profiles` repository — has
-published nine profiles for some time, all of them declaring OKF 0.2, all of them carrying
-real descriptions. The reason okf reports the old set is that okf's built-in default
+The catalogue those profiles come from — the separate
+[`okf-profiles`](mori://shinzui/okf-profiles) repository — has published ten profiles, all
+of them declaring OKF 0.2 and carrying real descriptions. The reason okf reports the old set is that okf's built-in default
 registry is pinned, by both git tag and content hash, to `okf-profiles` v0.4.2. Upstream is
-at v0.9.3. Nothing is broken; the pin is doing exactly what it was designed to do. But the
+at the published v0.10.0 tag. Nothing is broken; the pin is doing exactly what it was designed to do. But the
 pin is a string constant in okf's source code, and no test, command, or build step notices
 when it falls behind.
 
-After this change, the same command with no configuration shows nine profiles at OKF 0.2
+After this change, the same command with no configuration shows ten profiles at OKF 0.2
 with descriptions, a test proves that every profile in the pinned catalogue still decodes
 under okf's current decoder, and moving the pin to a future release is one scripted command
 instead of a manual hash computation that is easy to get wrong.
@@ -61,15 +61,31 @@ one constant, adds evidence that the change is safe, and makes the next such cha
 - [ ] Observe the new listing from a built binary and paste the transcript into this plan
 - [ ] Update `CHANGELOG.md`, `okf-core/CHANGELOG.md`, `okf-cli/CHANGELOG.md`
 - [ ] Update `docs/user/profiles.md`, `okf-cli/help/profiles.md`, and `README.md` where they name the pinned version or the refresh procedure
-- [ ] Amend `docs/adr/3-profile-registries.md` with the pin-refresh obligation
+- [ ] Implement and verify ADR 3's 2026-08-18 pin-refresh obligation
 - [ ] Record the `DESCRIPTION` column regression in Surprises & Discoveries
 
 
 ## Surprises & Discoveries
 
-(None yet. One is anticipated and described in the Validation and Acceptance section: the
-`DESCRIPTION` column will become unreadable once the new catalogue's long descriptions
-appear. Record the observed output here when you see it.)
+- Observation: The authoritative latest release tag is v0.10.0, while the local
+  `okf-profiles` checkout already contains unreleased metadata through v0.11.0. Release pin
+  work must use upstream tags, not repository-head metadata.
+  Evidence: `git ls-remote --refs --sort='-version:refname' --tags` reported v0.10.0 first on
+  2026-08-18; the normalized package hash is
+  `sha256:c6882a5cb6ece28027f5f9d219d323cff64f131b97ecbf536ed54d77263f5edf`.
+
+- Observation: The v0.10.0 package decodes to ten OKF 0.2 profiles, including
+  `coordination.bugReports`; the added descriptions make the current single-line table too
+  wide. EP 63 owns that rendering correction.
+  Evidence: exercised the real resolver with the pinned reference and a built `okf` binary
+  during Master Plan 10's architecture audit.
+
+- Observation: Resolving the entire tagged package produces 2,218,575 bytes, while the
+  tagged `package.dhall`/`Profile`/`profiles` tree is about 88 KB and resolving only its
+  single remote schema import adds about 543 KB.
+  Evidence: measured both forms with `dhall resolve | wc -c` and `git ls-tree -rl` on
+  v0.10.0. The fixture therefore preserves relative imports and inlines only
+  `Profile/okf.dhall`.
 
 
 ## Decision Log
@@ -85,10 +101,11 @@ appear. Record the observed output here when you see it.)
   Date: 2026-08-18
 
 - Decision: Keep the pin manual. Do not add any automatic check for a newer upstream tag.
-  Rationale: `docs/adr/3-profile-registries.md` establishes that no okf command requires
-  network access unless the user names a remote registry. An automatic check would break
-  that for a read-only command. Making the refresh cheap and documented is the fix; making
-  it automatic is a different and worse thing. An explicitly opt-in check is planned in
+  Rationale: Resolving the effective registry already has defined Dhall fetch/cache
+  semantics, and the built-in default may fetch on first use. An automatic tag query would
+  add a separate GitHub dependency to every read-only listing even when registry content is
+  cached or local. Making the refresh cheap and documented is the fix; making it automatic
+  is a different behavior. An explicitly opt-in check is planned in
   `docs/plans/63-show-where-every-profile-came-from-and-how-to-refresh-it.md`.
   Date: 2026-08-18
 
@@ -159,15 +176,14 @@ current `ProfileSpec` decoder and then a chain of frozen historical decoders
 (`upgradePreBundleVersionProfile`, `upgradePrePathProfile`, and six more), so a descriptor
 written against an older schema still loads. `decodeProfileExpr` is the pure equivalent
 used by the registry walk. A descriptor written against a *newer* schema than okf-core
-knows has no such fallback and would simply fail to decode, and `okf-profiles` v0.9.3
+knows has no such fallback and would simply fail to decode, and `okf-profiles` v0.10.0
 publishes a great deal of vocabulary that v0.4.2 did not: `FieldRule`, `NestedRules`,
 `NestedFieldRule`, `HandleReferenceRule`, `PathReferenceRule`, `FieldCondition`,
 `Cardinality`, `FieldFormat`, `mk`, `reviewRule`, and `v02`.
 
-This was checked before writing this plan and every profile decodes. Dhall record
-extraction ignores fields the decoder does not ask for, so extra vocabulary in the package
-does not break the profiles themselves, and the profiles' own shape is one okf-core
-already understands. The transcript is in the parent MasterPlan's Surprises & Discoveries
+This was checked before writing this plan and every profile decodes. The additional package
+vocabulary is published beside the profile values; the profiles themselves use a shape
+okf-core already understands. The transcript is in the parent MasterPlan's Surprises & Discoveries
 section and is reproduced in Validation and Acceptance below. Do not treat this as an
 assumption to re-derive from scratch, but do re-run the check, because the plan is being
 implemented later than it was written and upstream may have moved again.
@@ -179,10 +195,11 @@ directly. Its Decision section states that the built-in default registry is pinn
 *and* sha256 hash and that the two move as a pair, that `defaultRegistryReference` is the
 single place both live, and — the sentence this plan acts on — "the cost is that adopting a
 newer tag means editing the URL and recomputing the hash together; a stale hash fails the
-integrity check on every run". It also states that no okf command requires network access
-unless the user names a remote registry, and that the test suites never touch the network.
-Both constraints bind this plan: the conformance test must be offline, and no automatic
-freshness check may be added.
+integrity check on every run". Its 2026-08-18 clarification recognizes that the built-in
+default is itself remote and can fetch on first use, while preserving the offline test-suite
+contract and requiring the independent freshness query to be opt-in. Both constraints bind
+this plan: the conformance test must be offline, and no automatic freshness check may be
+added.
 
 [docs/adr/4-self-documenting-profiles.md](../adr/4-self-documenting-profiles.md) explains
 why `ProfileSpec` has a `description` field and why the fallback decoder chain exists. It
@@ -231,35 +248,35 @@ and running it against the *current* v0.4.2 tag reproduces the hash already in t
 That last check is what proves the script is correct rather than merely plausible: if it
 cannot reproduce a known-good pin, it must not be trusted to produce a new one.
 
-Create `scripts/refresh-default-registry.sh`. Check whether `scripts/` already exists; if
-not, create it. The script takes a tag as its single argument, defaulting to the latest tag
-reachable from the upstream repository, computes the Dhall hash of that tag's
-`package.dhall`, and prints the two-line Haskell string literal.
+Create the new `scripts/` directory and `scripts/refresh-default-registry.sh`. The script
+requires a tag as its single argument, computes the Dhall hash of
+that tag's `package.dhall`, updates the offline fixture, and prints the two-line Haskell
+string literal. It must not silently choose the latest tag: adopting a release is a
+deliberate compatibility decision, while tag discovery belongs to the read-only freshness
+check in EP-63. With no argument it prints usage and exits 2.
 
 The hash must be computed with Dhall itself, not with `sha256sum` on the raw file. Dhall's
 integrity hash is the hash of the *normalized expression*, not of the file bytes. Use
 `dhall hash`, which is available in the development shell:
 
 ```bash
-cd "$(mktemp -d)"
-echo 'https://raw.githubusercontent.com/shinzui/okf-profiles/v0.9.3/package.dhall' > u.dhall
-dhall hash --file u.dhall
+printf '%s\n' 'https://raw.githubusercontent.com/shinzui/okf-profiles/v0.10.0/package.dhall' \
+  | dhall hash
 ```
 
 which prints:
 
 ```text
-sha256:a207be12df2a7f13d411981c2c0141c872b7560c39091735f0426a0106a92382
+sha256:c6882a5cb6ece28027f5f9d219d323cff64f131b97ecbf536ed54d77263f5edf
 ```
 
-Discovering the latest tag needs no clone:
+Verifying the latest published tag needs no clone. `--refs` excludes the peeled `^{}` rows
+of annotated tags, and Git's version-aware sort orders `v0.10.0` after `v0.9.3`:
 
 ```bash
-git ls-remote --tags https://github.com/shinzui/okf-profiles \
-  | grep -o 'refs/tags/v[0-9.]*$' \
-  | sed 's|refs/tags/||' \
-  | sort -V \
-  | tail -1
+git ls-remote --refs --sort='-version:refname' --tags \
+  https://github.com/shinzui/okf-profiles.git 'v*' \
+  | sed -n '1s|.*refs/tags/||p'
 ```
 
 Write the script so it fails loudly rather than printing a partial result: set
@@ -285,12 +302,13 @@ At the end of this milestone `okf profile list` with no configuration reports th
 catalogue, and `cabal test all` includes a case that fails if a future descriptor in the
 pinned catalogue stops decoding.
 
-First, determine the current upstream tag with the script from Milestone 1 and record both
-the tag and the hash in this plan's Concrete Steps section. As of 2026-08-18 the answer is
-v0.9.3 with hash
-`sha256:a207be12df2a7f13d411981c2c0141c872b7560c39091735f0426a0106a92382`, but re-derive it
-rather than trusting this paragraph — if upstream has published v0.10.0 by the time you
-read this, take that instead, and note the difference in Surprises & Discoveries.
+First, determine the current upstream tag with the read-only `git ls-remote` command from
+Milestone 1, pass that tag explicitly to the script, and record both the tag and the hash in
+this plan's Concrete Steps section. As of 2026-08-18 the answer is v0.10.0 with hash
+`sha256:c6882a5cb6ece28027f5f9d219d323cff64f131b97ecbf536ed54d77263f5edf`, but re-derive it
+rather than trusting this paragraph. If upstream has published a tag after v0.10.0 by the
+time you implement the plan, inspect and adopt it deliberately, and note the difference in
+Surprises & Discoveries. The refresh script itself must never silently select the latest tag.
 
 Then edit `defaultRegistryReference` in `okf-core/src/Okf/Profile/Registry.hs`. Change only
 the URL and the hash. Leave the Haddock comment above it in place — it explains why the pin
@@ -302,26 +320,25 @@ not be lost.
 
 Next, vendor the catalogue as an offline fixture. Create
 `okf-core/test/fixtures/catalogue/` and copy the pinned tag's package into it, including
-the files it imports, so it evaluates with no network access. The simplest reliable way is
-to let Dhall resolve everything and freeze the result into a single self-contained
-expression:
+the files it imports, so it evaluates with no network access. Do not inline the whole
+package: measurement during architecture validation produced a 2,218,575-byte expression.
+Instead, have the refresh script shallow-clone the explicit tag into a temporary directory
+and copy `package.dhall`, `Profile/`, and `profiles/` into the fixture, preserving relative
+imports. At v0.10.0 those tagged files total about 88 KB.
 
-```bash
-cd "$(mktemp -d)"
-echo 'https://raw.githubusercontent.com/shinzui/okf-profiles/v0.9.3/package.dhall' > u.dhall
-dhall resolve --file u.dhall > resolved.dhall
-```
+The one non-local code import in that tree is `Profile/okf.dhall`, which pins okf's published
+schema. Run `dhall resolve --file Profile/okf.dhall` inside the temporary clone and replace
+the fixture copy of that one file with its import-free result. It is about 543 KB, keeping
+the complete fixture near 630 KB while making every remaining code import relative and
+local. Do not rewrite descriptor files or import them from this checkout's current schema;
+the fixture must represent the tagged catalogue against the exact schema it pinned.
 
-`dhall resolve` inlines every import, so `resolved.dhall` needs nothing from the network or
-from sibling files. Copy it to `okf-core/test/fixtures/catalogue/package.dhall` and add a
-comment at the top, in the style of the existing
-`okf-core/test/fixtures/registry/package.dhall` header, saying which upstream tag it was
-taken from, that it is a generated snapshot, and that
-`scripts/refresh-default-registry.sh` regenerates it. Check the file's size before
-committing it; if `dhall resolve` produces something unwieldy (more than a few hundred
-kilobytes), prefer vendoring the upstream tree's `Profile/` and `profiles/` directories
-with their relative imports intact instead, which is closer to how
-`okf-core/test/fixtures/registry/package.dhall` already works.
+Add a header comment to the fixture's `package.dhall`, in the style of the existing
+`okf-core/test/fixtures/registry/package.dhall`, naming the upstream tag, explaining that
+`Profile/okf.dhall` is the resolved pinned schema, and naming
+`scripts/refresh-default-registry.sh` as the generator. The script builds the complete
+fixture under a temporary path and replaces the destination only after hashing and
+resolution succeed, so a failed refresh cannot leave a partial snapshot.
 
 Extend `scripts/refresh-default-registry.sh` to regenerate that fixture as well as printing
 the literal, so the two can never be updated independently. This is the point of the script:
@@ -347,8 +364,9 @@ a future descriptor okf-core cannot decode.
 
 The exact set of export paths, compared as a sorted list against a literal written out in
 the test. Not merely the count: a count-only assertion passes when one profile is renamed
-and another appears, which is exactly the drift the test exists to catch. As of v0.9.3 the
-set is `coordination.capabilities`, `coordination.improvementRequests`,
+and another appears, which is exactly the drift the test exists to catch. As of v0.10.0 the
+set is `coordination.bugReports`, `coordination.capabilities`,
+`coordination.improvementRequests`,
 `coordination.useCases`, `documentation.architectureDecisions`,
 `documentation.patternCatalog`, `documentation.researchDocuments`, `okfV02`, `postgresql`,
 `tanPostgresql`.
@@ -374,7 +392,7 @@ procedure without reading this plan.
 Update the three changelogs — `CHANGELOG.md`, `okf-core/CHANGELOG.md`,
 `okf-cli/CHANGELOG.md` — following the format already in each. Read the most recent entry
 in each file and match its structure rather than inventing one. The user-visible fact is
-that the built-in default registry now reports the current catalogue: nine profiles at OKF
+that the built-in default registry now reports the current catalogue: ten profiles at OKF
 0.2 with descriptions, up from five at OKF 0.1 without.
 
 Update the user documentation wherever it names the pinned version, describes what the
@@ -382,8 +400,8 @@ default listing contains, or explains the refresh procedure. Search for the plac
 rather than guessing:
 
 ```bash
-grep -rn "v0\.4\.2\|39e79b65" --include="*.md" . | grep -v docs/plans
-grep -rn -i "pinned\|okf-profiles" docs/user/profiles.md okf-cli/help/profiles.md README.md
+rg -n "v0\.4\.2|39e79b65" -g '*.md' -g '!docs/plans/**' .
+rg -n -i "pinned|okf-profiles" docs/user/profiles.md okf-cli/help/profiles.md README.md
 ```
 
 `okf-cli/help/profiles.md` is embedded into the binary at compile time by
@@ -435,7 +453,7 @@ order is flag, environment variable, configuration file, built-in default, so an
 overrides the constant this plan changes. Check with:
 
 ```bash
-env | grep OKF_
+env | rg '^OKF_'
 ls okf-config.dhall ~/.config/okf/config.dhall ~/.okf/config.dhall 2>/dev/null
 cabal run okf -- config show
 ```
@@ -443,38 +461,39 @@ cabal run okf -- config show
 Determine the current upstream tag and hash:
 
 ```bash
-git ls-remote --tags https://github.com/shinzui/okf-profiles \
-  | grep -o 'refs/tags/v[0-9.]*$' | sed 's|refs/tags/||' | sort -V | tail -1
+git ls-remote --refs --sort='-version:refname' --tags \
+  https://github.com/shinzui/okf-profiles.git 'v*' \
+  | sed -n '1s|.*refs/tags/||p'
 ```
 
 Expected as of 2026-08-18:
 
 ```text
-v0.9.3
+v0.10.0
 ```
 
 Then, after writing the script in Milestone 1:
 
 ```bash
 ./scripts/refresh-default-registry.sh v0.4.2   # must reproduce the existing hash
-./scripts/refresh-default-registry.sh          # the tag to adopt
+./scripts/refresh-default-registry.sh v0.10.0  # the explicitly reviewed tag to adopt
 ```
 
 Record the adopted tag and hash here when you run it:
 
-- Adopted tag: `v0.9.3` (confirm; update if upstream has moved)
-- Adopted hash: `sha256:a207be12df2a7f13d411981c2c0141c872b7560c39091735f0426a0106a92382`
+- Adopted tag: `v0.10.0` (confirm; update if upstream has moved)
+- Adopted hash: `sha256:c6882a5cb6ece28027f5f9d219d323cff64f131b97ecbf536ed54d77263f5edf`
 
 Confirm the new pin works before editing any Haskell, by feeding it through the environment
 variable the resolver already honours:
 
 ```bash
-OKF_PROFILE_REGISTRY='https://raw.githubusercontent.com/shinzui/okf-profiles/v0.9.3/package.dhall sha256:a207be12df2a7f13d411981c2c0141c872b7560c39091735f0426a0106a92382' \
+OKF_PROFILE_REGISTRY='https://raw.githubusercontent.com/shinzui/okf-profiles/v0.10.0/package.dhall sha256:c6882a5cb6ece28027f5f9d219d323cff64f131b97ecbf536ed54d77263f5edf' \
   cabal run okf -- profile list
 ```
 
 This is the cheapest possible check that the pin is valid and the catalogue decodes: it
-exercises the real resolution path with no rebuild. Expect nine rows, OKF 0.2 throughout,
+exercises the real resolution path with no rebuild. Expect ten rows, OKF 0.2 throughout,
 with descriptions. If the hash is wrong, Dhall reports an integrity-check failure naming
 both the expected and actual hash, and the command exits 1.
 
@@ -498,8 +517,8 @@ the base frontmatter block rather than per-type.
 The change is accepted when all of the following hold.
 
 **The default listing reports the current catalogue.** With no okf configuration file and
-no `OKF_PROFILE_REGISTRY` set, `cabal run okf -- profile list` prints nine rows whose
-`EXPORT` values are exactly `coordination.capabilities`,
+no `OKF_PROFILE_REGISTRY` set, `cabal run okf -- profile list` prints ten rows whose
+`EXPORT` values are exactly `coordination.bugReports`, `coordination.capabilities`,
 `coordination.improvementRequests`, `coordination.useCases`,
 `documentation.architectureDecisions`, `documentation.patternCatalog`,
 `documentation.researchDocuments`, `okfV02`, `postgresql`, `tanPostgresql`. Every row's
@@ -508,6 +527,7 @@ it was confirmed against a built binary before the plan was written:
 
 ```text
 EXPORT                               NAME                                   OKF  TYPES  ID FIELD
+coordination.bugReports              bug-reports                            0.2      1  bugId
 coordination.capabilities            capabilities                           0.2      1  capabilityId
 coordination.improvementRequests     cross-repository-improvement-requests  0.2      1  requestId
 coordination.useCases                jtbd-use-cases                         0.2      2  useCaseId
@@ -527,13 +547,18 @@ may fetch; the second must not. Prove it by disabling network access, or by obse
 the hash's cache entry exists:
 
 ```bash
-ls ~/.cache/dhall/1220a207be12df2a7f13d411981c2c0141c872b7560c39091735f0426a0106a92382
+ls ~/.cache/dhall/1220c6882a5cb6ece28027f5f9d219d323cff64f131b97ecbf536ed54d77263f5edf
 ```
 
 Dhall's cache filename is the hash prefixed with `1220`, which is the multihash prefix for
 sha256. A present file means the normalized expression is cached and no further fetch will
 happen. If you already ran the `OKF_PROFILE_REGISTRY` check above, this entry will already
 exist.
+
+**The conformance fixture is independently offline.** Run the catalogue test with a fresh
+temporary `XDG_CACHE_HOME` and `HTTP_PROXY`/`HTTPS_PROXY` pointing at an unused local port.
+It must still pass. This proves the fixture's success does not depend on the developer's
+existing semantic cache; inspecting only the fixture text is insufficient.
 
 **The conformance test fails when it should.** Do not accept a test you have not seen fail.
 Temporarily add a field to one profile record inside
@@ -613,8 +638,8 @@ self-contained expression. Note that `dhall-to-json` is *not* usable on the cata
 package exports Dhall types as well as values, and type-level exports have no JSON
 encoding, so `dhall-to-json` fails on it.
 
-At the end of Milestone 1, `scripts/refresh-default-registry.sh` exists, accepts an optional
-tag argument, and prints a two-line Haskell string literal suitable for pasting into
+At the end of Milestone 1, `scripts/refresh-default-registry.sh` exists, requires an
+explicit tag argument, and prints a two-line Haskell string literal suitable for pasting into
 `okf-core/src/Okf/Profile/Registry.hs`.
 
 At the end of Milestone 2, these must hold:
@@ -624,12 +649,13 @@ unchanged in type, with its value naming the adopted tag and hash. The module's 
 exports — `RegistryRef (..)`, `resolveRegistryRef`, `renderRegistryRef`,
 `RegistryEntry (..)`, `loadRegistry`, `registryEntries`, `findRegistryEntry`,
 `rootExportLabel` — are untouched. **Do not change any type in this module.** The plan at
-`docs/plans/61-read-profiles-from-more-than-one-registry.md` changes the entry type to
-carry provenance, and doing part of that work here would create a conflict with no benefit.
+`docs/plans/61-read-profiles-from-more-than-one-registry.md` adds a source-tagged wrapper
+around `RegistryEntry`; doing part of that work here would create a conflict with no benefit.
 
 `okf-core/test/fixtures/catalogue/package.dhall` exists, evaluates with no network access,
 and carries a header comment naming the upstream tag it snapshots and the script that
-regenerates it.
+regenerates it. Its `Profile/okf.dhall` is the import-free resolution of the schema pin from
+that tag; the rest of the copied package preserves tagged relative imports.
 
 `okf-core/test/Main.hs` registers one new `testIO` case whose name mentions the pinned
 catalogue, implemented alongside the existing `testRegistryEnumeratesProfiles` and using
@@ -637,11 +663,17 @@ the same `fixtureFilePath` and `loadRegistry (RegistryFile path)` shape.
 
 Consumers to be aware of but not to change: `okf-cli/src/Okf/Cli/Config.hs` reads
 `defaultRegistryReference` in `defaultProfileSettings`, and `okf-cli/test/Main.hs` imports
-it at line 27. Mori consumes `okf-core` directly for advisory profile validation, per
-`docs/adr/3-profile-registries.md`, which is another reason to leave the module's types
-alone in this plan.
+it. Preserve the public registry API because it is already part of `okf-core`; EP 61 adds
+source provenance with a wrapper rather than changing `RegistryEntry`.
 
 
 ## Outcomes & Retrospective
 
 (To be filled during and after implementation.)
+
+
+## Revision Note
+
+Revised 2026-08-18 during the architecture validation of Master Plan 10. The revision pins
+the verified v0.10.0 catalogue and its ten exports, makes tag selection explicitly
+operator-controlled, and preserves the existing public `RegistryEntry` API for EP 61.

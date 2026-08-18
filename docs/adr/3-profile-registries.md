@@ -11,7 +11,7 @@ Profiles are the sanctioned way to layer house conventions on OKF's permissive
 core, per [ADR 1](./1-profile-declared-document-ids.md). But `okf validate
 --profile PATH` was the only way a profile could enter the tool, and it requires
 knowing the exact file up front. A catalogue of ready-made profiles existed —
-the separate [okf-profiles](https://github.com/shinzui/okf-profiles) repository —
+the separate [okf-profiles](mori://shinzui/okf-profiles) repository —
 and okf could not show a user what was in it. Learning that
 `coordination.improvementRequests` exists, let alone what it requires, meant
 opening a browser or cloning the repository and reading Dhall by hand.
@@ -53,9 +53,14 @@ explicitly: they are rejected today anyway because no profile `default` supplies
 a phantom profile.
 
 **Enumeration lives in `okf-core`, not the CLI.** okf-core already owns profile
-loading and decoding, and Mori consumes okf-core directly for advisory profile
+loading and decoding, and [Mori](mori://shinzui/mori) consumes okf-core directly for advisory profile
 validation. A future consumer that wants to attach a registry profile to a
 registered bundle reuses the library rather than shelling out to `okf`.
+
+*(Amended 2026-08-18: the library-boundary decision stands, but the specific
+downstream-consumption assertion is no longer treated as current compatibility
+evidence. Registry dependents change independently; the public API is preserved
+on its own merits.)*
 
 **The okf → okf-profiles dependency stays one-way, and no okf command requires
 network access unless the user names a remote registry.** okf publishes the
@@ -63,6 +68,13 @@ profile schema and imports nothing; `okf-profiles` imports okf's schema by pinne
 URL. This change only gives okf the ability to *read* a registry a user names. A
 local path passed to `--registry` is fully offline, and the test suites never
 touch the network — the registry fixture imports only sibling fixtures.
+
+*(Clarified 2026-08-18: the built-in default is itself a remote registry, so a
+default registry command may fetch it on first use before Dhall's
+content-addressed cache can satisfy the import. The durable rule is that registry
+evaluation performs only the resolution implied by the effective reference,
+tests remain offline, automatic local discovery performs no remote fetch, and an
+independent upstream freshness query runs only when explicitly requested.)*
 
 **The built-in default registry is pinned by tag *and* sha256 hash, and the two
 move as a pair.** Pinning gives integrity plus Dhall's content-addressed cache,
@@ -144,3 +156,62 @@ fallback chain.
 for a descriptor that annotates itself against the current schema, but okf-core
 can accept the previous shape as well, so the break no longer has to propagate to
 every descriptor in every registry at once.)*
+
+
+## Amendment: Multi-source resolution and release freshness (2026-08-18)
+
+The original decision modeled one selected registry. Profile discovery now has
+several registry references and local descriptor files, so the following rules
+extend it without introducing a registry manifest or changing what a registry is.
+
+**Registry sources merge within one winning precedence layer.** A repeatable
+`--registry` list replaces `OKF_PROFILE_REGISTRIES`, whose JSON array replaces
+the legacy single `OKF_PROFILE_REGISTRY`, which replaces
+`profiles.registries` in the effective configuration. A configuration shape
+without a `profiles` block receives the built-in default; an explicit empty
+`profiles.registries` list remains empty. Exact duplicate references are
+dropped in first-occurrence order. The `profiles` block remains first-found and
+is not layered across configuration scopes, per
+[ADR 16](./16-per-command-agent-configuration-and-config-scopes.md).
+
+The plural environment value is JSON rather than a colon-separated list because
+valid references contain colons in `https://` and `sha256:`. Blank environment
+values are unset, malformed plural JSON is an error naming the variable, and the
+plural variable wins when both environment spellings are present.
+
+**Source provenance wraps, rather than changes, a registry entry.**
+`RegistryEntry` remains the source-agnostic result of the pure structural walk.
+Multi-source enumeration returns a `SourcedProfile` pairing it with a
+`ProfileSource`. CLI resolution carries the winning flag, environment,
+configuration path, built-in, or discovery origin on the resolved source;
+inspection commands render that value and never reconstruct precedence.
+Preserving the existing public type is a compatibility decision in its own
+right. The earlier reference to a particular downstream consumer is not relied
+upon as evidence for this rule; registered dependents can change independently.
+
+**Collisions are visible and named lookup never guesses.** Listings show every
+source/export pair, including duplicate export paths. A named export with more
+than one match fails and names the full source references. The actionable
+recovery is to rerun with `--no-local` and exactly one intended
+`--registry REFERENCE`; source labels are display text and are not unique
+identifiers. A descriptor path is itself a valid one-profile registry reference.
+
+**Survey commands and named resolution have different partial-failure rules.**
+`profile list` and `profile sources` report failed sources, retain successful
+rows, and succeed when at least one source publishes profiles. `profile show`
+and registry-backed `profile document` fail closed if any selected source fails,
+because the failed source might publish the requested export or a collision.
+
+**Keeping the built-in pin current is a release obligation, not automatic
+runtime behavior.** `scripts/refresh-default-registry.sh TAG` requires an
+explicit reviewed release tag, computes the normalized Dhall hash, and updates
+the offline conformance fixture in the same operation. The fixture test proves
+that every profile in the adopted catalogue decodes without using the network.
+`okf profile sources` reports the pinned tag without network access and queries
+upstream tags only when explicitly passed `--check-latest`; a failed optional
+check does not change the source command's exit status. Tag discovery never
+silently changes the pin.
+
+Local descriptor sources, their bounded filesystem walk, and the stronger rule
+that automatic discovery cannot perform a remote fetch are recorded separately
+in [ADR 18](./18-local-profile-descriptor-discovery.md).

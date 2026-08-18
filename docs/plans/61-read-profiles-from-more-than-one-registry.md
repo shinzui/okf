@@ -35,7 +35,7 @@ After this change a user writes their sources down once and sees all of them:
 ```dhall
 -- okf-config.dhall
 { profiles.registries =
-    [ "https://raw.githubusercontent.com/shinzui/okf-profiles/v0.9.3/package.dhall sha256:a207be…"
+    [ "https://raw.githubusercontent.com/shinzui/okf-profiles/v0.10.0/package.dhall sha256:c6882a5cb6ece28027f5f9d219d323cff64f131b97ecbf536ed54d77263f5edf"
     , "./house-profiles"
     ]
 , …
@@ -52,8 +52,9 @@ house-profiles   incidents                         acme-incident-reports   0.2  
 house-profiles   runbooks                          acme-runbooks           0.2      1  runbookId
 ```
 
-`--registry` becomes repeatable, `OKF_PROFILE_REGISTRY` accepts a colon-separated list in
-the style of `PATH`, `okf profile show incidents` finds `incidents` in whichever source
+`--registry` becomes repeatable, `OKF_PROFILE_REGISTRIES` accepts a JSON array of strings,
+the legacy `OKF_PROFILE_REGISTRY` remains a single-reference override, and
+`okf profile show incidents` finds `incidents` in whichever source
 publishes it, and a name published by two sources is reported as an ambiguity with
 instructions rather than silently resolved to the first one found.
 
@@ -69,16 +70,18 @@ command that explains resolution, nor fix the listing's width problems; those ar
 
 ## Progress
 
-- [ ] Define the profile-source and source-tagged-entry types in `okf-core/src/Okf/Profile/Registry.hs`
+- [ ] Define `ProfileSource` and a `SourcedProfile` wrapper without changing `RegistryEntry`
 - [ ] Add multi-source enumeration with a documented collision rule, and cover it with fixtures
 - [ ] Extend `okf-core/test/Main.hs` with the merge, ordering, and collision cases
 - [ ] Change `ProfileSettings` to a list-valued field in `okf-cli/src/Okf/Cli/Config.hs`
 - [ ] Add the legacy single-`registry` shape to the fallback chain in `decodeConfigFile`
 - [ ] Confirm a config file using the old spelling still loads, with a test
-- [ ] Make `--registry` repeatable and `OKF_PROFILE_REGISTRY` list-valued in `okf-cli/src/Okf/Cli.hs`
+- [ ] Make `--registry` repeatable and add JSON-array `OKF_PROFILE_REGISTRIES`
+- [ ] Preserve singular `OKF_PROFILE_REGISTRY` as a one-reference compatibility override
+- [ ] Carry source-selection origin through resolution for EP 63 to render
 - [ ] Add the `SOURCE` column to `renderRegistryTable` and update `sampleRegistryTable`
 - [ ] Extend `registryListJson` so each profile carries its source
-- [ ] Resolve a named export across all sources in `profile show` and `profile document`
+- [ ] Resolve a named export across all sources and fail closed if any source failed
 - [ ] Report an ambiguous export name with the sources that publish it
 - [ ] Run `cabal build all` and `cabal test all` clean
 - [ ] Paste a real multi-source transcript into this plan
@@ -129,6 +132,35 @@ command that explains resolution, nor fix the listing's width problems; those ar
   silently picking one produces validation results the user cannot explain. This mirrors how
   `selectEntry` already refuses to guess when a single-registry listing has several profiles
   and no `EXPORT` was named.
+  Date: 2026-08-18
+
+- Decision: The plural environment variable is `OKF_PROFILE_REGISTRIES`, encoded as a JSON
+  array of strings. The existing `OKF_PROFILE_REGISTRY` remains a single reference. A
+  non-blank plural value wins when both are set, blank values are unset, and malformed JSON
+  is a named configuration error rather than a fallback.
+  Rationale: Registry references legitimately contain `https://` and `sha256:`. A
+  colon-separated encoding cannot distinguish those colons from separators, while a JSON
+  array is unambiguous and easy to generate in shells and automation.
+  Date: 2026-08-18
+
+- Decision: `RegistryEntry` remains source-agnostic. Multi-source APIs return a
+  `SourcedProfile` containing a `ProfileSource` and the existing entry.
+  Rationale: Provenance belongs to enumeration context, not to the profile discovered by
+  the existing pure structural walk. A wrapper preserves the public single-registry API and
+  lets local descriptors become another source kind in EP 62.
+  Date: 2026-08-18
+
+- Decision: Survey commands tolerate partial source failure, but named resolution fails
+  closed if any selected source failed.
+  Rationale: A listing can truthfully show the profiles that were available. A failed
+  source may contain the requested export or a collision, so selecting from only the
+  surviving subset would silently change the meaning of `profile show` or `profile document`.
+  Date: 2026-08-18
+
+- Decision: Resolution carries the winning layer and configuration path alongside each
+  selected source. EP 63 renders that provenance and does not reconstruct it.
+  Rationale: Reconstruction would be a second precedence implementation that could diverge
+  from command execution, contrary to ADR 16.
   Date: 2026-08-18
 
 
@@ -276,12 +308,11 @@ decision and everything in it constrains this plan. A registry is any Dhall reco
 profile values, with no manifest — so a "source" here is a reference to such an expression,
 not a new file format. Discovery is structural and tests "decodes successfully" rather than
 type equality, which is what lets a registry publishing locally extended profiles
-enumerate. Enumeration lives in `okf-core` rather than the CLI, because Mori consumes
-okf-core directly for advisory profile validation and a future consumer should reuse the
-library rather than shell out — so the multi-source enumeration this plan adds belongs in
-`okf-core` too. No okf command may require network access unless the user names a remote
-registry, and the test suites never touch the network. And the configuration-compatibility
-obligation quoted above.
+enumerate. The reusable source and enumeration model belongs in `okf-core`; selection-layer
+provenance and process exit policy belong in `okf-cli`. Resolving a selected remote
+registry, including the built-in default, retains Dhall's fetch/cache behavior, while the
+test suites never touch the network. The 2026-08-18 amendment records the multi-source
+rules this plan implements.
 
 [docs/adr/16-per-command-agent-configuration-and-config-scopes.md](../adr/16-per-command-agent-configuration-and-config-scopes.md)
 records that two-scope config layering applies to the `agent` block and nothing else, that
@@ -295,13 +326,9 @@ second implementation that can disagree with the first". That principle is why t
 threads the source through enumeration rather than leaving it for
 `docs/plans/63-show-where-every-profile-came-from-and-how-to-refresh-it.md` to infer.
 
-[docs/adr/2-interactive-bundle-and-concept-selection.md](../adr/2-interactive-bundle-and-concept-selection.md)
-matters for one convention this plan borrows: `OKF_BUNDLE_ROOTS` is a colon-separated list
-in the style of `PATH`, parsed by `parseBundleSearchRoots` in
-`okf-cli/src/Okf/Cli/BundleDiscovery.hs`, which drops empty and whitespace-only entries.
-`OKF_PROFILE_REGISTRY` becomes list-valued here and must agree with that convention.
-
-No ADR yet covers multi-source resolution. Producing that amendment is part of this plan.
+Unlike path-list variables such as `OKF_BUNDLE_ROOTS`, registry references cannot use a
+colon separator: pinned remote references contain colons in both their URL and integrity
+hash. The plural environment variable therefore uses a JSON array.
 
 ### Sibling plan this one enables
 
@@ -335,7 +362,7 @@ fourth wires the CLI. The fifth documents the resolution rules, which is where m
 lasting value is, because these rules are the kind that "the opposite reading is equally
 defensible" and must be written down once and stated consistently everywhere.
 
-### Milestone 1: a source-tagged entry type in okf-core
+### Milestone 1: a source-tagged wrapper in okf-core
 
 At the end of this milestone `okf-core` can say, for each enumerated profile, which place it
 came from, and `cabal test all` proves it for a single source. No behavior changes for a
@@ -377,34 +404,32 @@ its inspection command. Where a label would be ambiguous *and* it matters, as in
 ambiguous-export error message in Milestone 4, print the full reference rather than the
 label.
 
-Then give entries a source. Add a field to `RegistryEntry`:
+Wrap entries with their source instead of changing `RegistryEntry`:
 
 ```haskell
-data RegistryEntry = RegistryEntry
+data SourcedProfile = SourcedProfile
   { source :: !ProfileSource
-  , export :: !Text
-  , spec :: !ProfileSpec
+  , entry :: !RegistryEntry
   }
 ```
 
-This is a breaking change to a type Mori consumes, which is acceptable and expected — ADR 3
-anticipates okf-core's surface evolving — but it means every construction site must be
-updated. `registryEntries` is pure and has no source to attach, so keep it as it is and
-attach the source in `loadRegistry`, which knows the reference it was given. The
-straightforward shape:
+Keep `RegistryEntry`, `registryEntries`, and `loadRegistry` unchanged in type and behavior.
+`registryEntries` is a pure structural walk and has no source to attach; preserving that
+boundary also avoids a gratuitous public API break. Add source-aware entry points alongside
+the existing functions:
 
 ```haskell
-loadRegistry :: RegistryRef -> IO (Either Text [RegistryEntry])
+loadProfileSource :: ProfileSource -> IO (Either Text [SourcedProfile])
 ```
 
-keeps working if `loadRegistry` synthesizes a `RegistrySource` from its argument. Prefer
-introducing a `loadProfileSource :: ProfileSource -> IO (Either Text [RegistryEntry])` as
-the primary entry point and keeping `loadRegistry` as a thin wrapper, so that EP-62 has a
-function to call with a non-registry source. Keep both exported.
+For `RegistrySource`, call `loadRegistry` and map successful entries into
+`SourcedProfile`. EP 62 adds the descriptor-file constructor and its corresponding branch.
+Use exhaustive patterns rather than a catch-all so a new source kind forces renderers and
+loaders to be updated.
 
-Update `okf-core/test/Main.hs` where its four registry cases construct or match
-`RegistryEntry`, around lines 3009 to 3060, and `okf-cli/test/Main.hs` where
-`sampleRegistryEntries` is defined around line 667.
+Add focused `okf-core/test/Main.hs` cases for the wrapper without rewriting the existing
+four single-registry cases. Update `okf-cli/test/Main.hs` to construct sourced sample rows
+only where the multi-source renderer requires them.
 
 ### Milestone 2: enumerate several sources at once
 
@@ -416,12 +441,12 @@ Add to `okf-core/src/Okf/Profile/Registry.hs`:
 
 ```haskell
 -- | Enumerate several sources, in the order given.
-loadProfileSources :: [ProfileSource] -> IO ([SourceFailure], [RegistryEntry])
+loadProfileSources :: [ProfileSource] -> IO ([SourceFailure], [SourcedProfile])
 
 -- | One source that could not be enumerated, and why.
 data SourceFailure = SourceFailure
-  { source :: !ProfileSource
-  , reason :: !Text
+  { failedSource :: !ProfileSource
+  , failureReason :: !Text
   }
 ```
 
@@ -429,9 +454,9 @@ Returning failures alongside entries, rather than a `Left` on the first failure,
 important design choice here and needs stating in the module's Haddock: **one unreachable
 source must not hide the profiles the others publish.** A user with a house registry on a
 local path and the pinned public catalogue should still see their house profiles on a
-machine with no network. The CLI decides what to do with the failures — Milestone 4 makes
-it report them and still exit 0 when at least one source produced profiles, exiting 1 only
-when no source did.
+machine with no network. The CLI decides what to do with the failures — Milestone 4 lets
+survey commands report them and exit 0 when at least one source produced profiles, while
+named resolution fails closed on any source failure.
 
 Ordering: sort entries by source position first, then by export path within a source. Do
 **not** sort globally by export path across sources, because a listing where a house
@@ -509,18 +534,19 @@ Then extend the chain. The shapes that must decode, newest first:
 4. `ConfigShapeV020` — no `profiles` block at all; already fills in
    `defaultProfileSettings`, so it needs no change beyond compiling against the new type.
 
-Whether shape 2 needs its own record type or can be expressed by reusing shape 3's
-machinery depends on how the records are factored; work it out when you have the file open,
-and keep the existing convention that each shape has a `fromShape…` function mapping it
-onto `OkfConfig`. Preserve the existing behavior of reporting the *first* error, since it
-names the schema the user should be writing against.
+Give shape 2 its own `ConfigShapeWithLegacyProfiles` record containing the current `agent`
+shape and `LegacyProfileSettings`. Keep shape 3 as the pre-agent record with the legacy
+profile type. Each shape has a `fromShape…` function mapping it onto `OkfConfig`. Preserve
+the existing behavior of reporting the *first* error, since it names the schema the user
+should be writing against.
 
 Blank and whitespace-only entries in the list should be dropped rather than treated as
 references, matching how `nonBlankEnv` in `okf-cli/src/Okf/Cli.hs` treats a blank
-environment variable as unset. An empty list after that filtering means "no sources
-configured"; resolve it to the built-in default rather than to nothing, so that
-`profiles.registries = [] : List Text` does not silently produce an empty listing. State
-that in the field's comment.
+environment variable as unset. An explicitly present
+`profiles.registries = [] : List Text` means **no configured registry sources**; do not
+replace it with the built-in default. Only a configuration shape with no `profiles` block
+receives `defaultProfileSettings`. This distinction lets EP 62 support a deliberate
+local-only setup.
 
 Also update `renderConfig` in `okf-cli/src/Okf/Cli/Config.hs` around line 420, which prints
 `"profiles.registry = " <> registry` for `okf config show`. It must print a list now. One
@@ -539,8 +565,9 @@ a one-element `registries` list.
 ### Milestone 4: the CLI surface
 
 At the end of this milestone `okf profile list` shows a merged listing with a `SOURCE`
-column, `--registry` is repeatable, `OKF_PROFILE_REGISTRY` accepts a colon-separated list,
-and naming an export resolves across sources.
+column, `--registry` is repeatable, `OKF_PROFILE_REGISTRIES` accepts a JSON array, the
+legacy singular environment variable still accepts one reference, and naming an export
+resolves across sources.
 
 Make `registryOption` in `okf-cli/src/Okf/Cli.hs` around line 694 repeatable. It is
 currently a single `strOption` wrapped in `optional` at each use site:
@@ -551,8 +578,8 @@ registryOption = Text.pack <$> strOption (long "registry" <> metavar "REGISTRY" 
 ```
 
 `optparse-applicative`'s `many` turns it into a list, so the three `ProfileListOptions`,
-`ProfileShowOptions`, and `ProfileDocumentOptions` records change their `registryRef ::
-Maybe Text` field to a list. An empty list means "not given", which subsumes what `Nothing`
+`ProfileShowOptions`, and `ProfileDocumentOptions` records replace `registryRef :: Maybe Text`
+with `registryRefs :: [Text]`. An empty list means "not given", which subsumes what `Nothing`
 meant. Update the parser tests in `okf-cli/test/Main.hs` around lines 339 to 421, which
 construct those option records literally and will not compile otherwise; note that
 `parseProfileMatches ["profile"] (ProfileList (ProfileListOptions Nothing False))` at line
@@ -566,29 +593,36 @@ built-in default — but each layer now yields a list, and only the winning laye
 used:
 
 ```haskell
-resolveProfileSources :: [Text] -> IO [ProfileSource]
+resolveProfileSources :: [Text] -> IO [ResolvedProfileSource]
 ```
 
-Parse `OKF_PROFILE_REGISTRY` colon-separated. Reuse the parsing shape of
-`parseBundleSearchRoots` in `okf-cli/src/Okf/Cli/BundleDiscovery.hs` — split on `:`, strip
-each piece, drop empties — rather than writing a second parser with different edge-case
-behavior. There is one wrinkle worth calling out: a hash-pinned URL contains no colon after
-the scheme's `://`… except that `https://` itself contains one. Splitting
-`https://example/package.dhall sha256:abc` on `:` naively yields three fragments, not one.
-**This is a real hazard and must be handled.** Options, in order of preference: split on a
-separator that cannot appear in a reference, or split on `:` but rejoin fragments that
-resume a scheme or a `sha256` hash, or — simplest and most predictable — keep colon
-splitting but document that a reference containing a colon must be configured in the
-configuration file rather than the environment variable. Decide, implement, test with a
-real pinned URL, and record the decision in the Decision Log. Do not leave this to be
-discovered by a user whose environment variable silently became three broken references.
+Resolve layers in this exact order:
 
-Keep `loadRegistryOrDie`'s contract of exiting 1 with a readable message, extended for
-several sources: report each failed source with its reason and the reference as the user
-wrote it, and exit 1 only when *no* source produced profiles. When some sources failed and
-others succeeded, print the failures to standard error, print the listing to standard
-output, and exit 0 — a user on a train should get their local profiles plus a note about
-the unreachable one. State that contract in the function's Haddock, and keep
+1. one or more `--registry` flags;
+2. a non-blank `OKF_PROFILE_REGISTRIES` JSON array;
+3. a non-blank legacy `OKF_PROFILE_REGISTRY`, wrapped as a one-element list;
+4. the effective `profiles.registries` value from configuration;
+5. the built-in default supplied when the decoded configuration shape has no `profiles`
+   block.
+
+Decode the plural variable with Aeson, already a CLI dependency. Strip and discard blank
+array elements. A blank variable is unset; `[]` is a selected empty registry list; malformed
+JSON or a non-string member is an error naming `OKF_PROFILE_REGISTRIES`. If both variables
+are non-blank, the plural variable wins. Test a real hash-pinned HTTPS reference so the
+encoding contract cannot regress into delimiter splitting.
+
+Resolution must also return provenance rather than only `[ProfileSource]`. Define CLI-side
+`ProfileSourceOrigin` and `ResolvedProfileSource` types that retain whether the source came
+from flags, plural environment, legacy environment, a named configuration file, or the
+built-in default. Loading consumes those resolved values; EP 63 renders the same origin
+objects and does not rerun precedence logic.
+
+Split `loadRegistryOrDie` into loading plus command policy. Survey commands such as
+`profile list` report each failed source with its reason and the reference as the user wrote
+it, print surviving entries, and exit 0 when at least one source produced profiles. Named
+resolution in `profile show` and registry-backed `profile document` must fail if **any**
+selected source failed, even when another source contains a matching export: a failed source
+might publish the same export and change the answer. State both contracts in Haddock. Keep
 `renderRegistryLoadError`'s existing guidance about the three legal reference forms and
 about passing `--registry` with a local checkout to work offline.
 
@@ -600,13 +634,13 @@ the `[0 .. 5]` bound becomes `[0 .. 6]`. Update `sampleRegistryTable` in
 `okf-cli/test/Main.hs` around line 674 in the same change; the test at line 491 compares it
 literally.
 
-Extend `registryListJson` so each profile entry carries its source. Keep the existing
-`registry` top-level key working if it can be given a sensible meaning for one source and
-absent for several, or replace it with a `sources` array; either is defensible, so choose
-and document it in `docs/user/profiles.md`, which describes the JSON shape around line 1143.
-Prefer adding a `sources` array plus a per-profile `source` field and retaining `registry`
-only when exactly one source was resolved, so that existing scripts reading `registry`
-break loudly rather than silently reading one of several.
+Extend `registryListJson` with a top-level `sources` array and a complete `source` object on
+every profile. A source object contains its `kind`, display `label`, full `reference`, and
+resolution `origin`; a label alone is not identity. Retain the legacy top-level `registry`
+string only when exactly one registry source is selected. EP 62 removes that compatibility
+key whenever local descriptor sources are also present. Document the exact shape in
+`docs/user/profiles.md` and pin it with JSON assertions rather than a golden string whose
+object-key order would be irrelevant.
 
 Finally, `selectEntry` around line 1044 must resolve across sources. Three cases:
 
@@ -615,11 +649,12 @@ exactly one profile exists across all sources — use it, as today. When no `EXP
 and several exist — the existing message listing available exports, now including the source
 of each so a user reading it can tell two same-named profiles apart. When the requested
 export matches entries in more than one source — a new error naming every source that
-publishes it, with the full reference for each rather than the short label, and saying how
-to disambiguate. Provide a way to disambiguate: accept a `SOURCE_LABEL:EXPORT` spelling on
-the `EXPORT` argument, or add a `--from REGISTRY` option. Choose one, implement it, and
-document it; an error that says "ambiguous" without offering a resolution is an error the
-user cannot act on.
+publishes it, with the full reference for each rather than the short label. The actionable
+recovery in this plan is to rerun with exactly one intended `--registry REFERENCE`. EP 62
+adds local sources by default and must extend that remedy to
+`--no-local --registry REFERENCE`; a discovered descriptor path is itself a valid
+one-profile registry reference. Do not overload export syntax with `SOURCE_LABEL:EXPORT`:
+labels are deliberately not unique, and pinned references already contain colons.
 
 ### Milestone 5: document the resolution rules once, consistently
 
@@ -627,11 +662,13 @@ At the end of this milestone the rules are stated in the embedded help, the user
 CLI reference, the README, and an ADR amendment, and they agree with each other.
 
 The rules to state, in the same words everywhere: sources merge and every one is
-enumerated; the flag's list replaces the environment variable's list, which replaces the
-configuration file's list; within a list, order is preserved and duplicates are dropped; a
-source that cannot be loaded is reported without hiding the others; the same export name in
-two sources is listed twice and must be disambiguated when named; a configuration file using
-the older single `registry` key still works and means a one-element list.
+enumerated; flags replace the plural environment list, which replaces the legacy singular
+environment value, which replaces the configuration list; within a list, order is preserved
+and duplicates are dropped; survey commands report a failed source without hiding
+successful ones, while named resolution fails closed; the same export name in two sources
+is listed twice and must be narrowed by rerunning with only the intended source; a
+configuration file using the older single `registry` key still works and means a one-element
+list.
 
 `okf-cli/help/profiles.md` is embedded into the binary at compile time by
 `okf-cli/src/Okf/Cli/Help.hs` via `file-embed`, so `okf help profiles` works with no files
@@ -644,14 +681,11 @@ reference-forms table at 863 to 869, the precedence list at 876 to 878, and the 
 at 1143. `docs/user/cli.md` documents configuration keys. `README.md` mentions profiles
 around lines 168 to 206.
 
-Then amend `docs/adr/3-profile-registries.md`. Do not rewrite its Decision section — an ADR
-records what was decided and when, and that file already models amendment-in-place, keeping
-a superseded paragraph as written with a dated note. Add an `## Amendment: …` section in the
-style of the one closing
-`docs/adr/2-interactive-bundle-and-concept-selection.md`, recording the merge-not-replace
-rule, the layer-precedence rule, the collision rule and why resolution refuses to guess, the
-decision to keep `profiles` unlayered per ADR 16, the partial-failure contract, and the
-deliberate exclusion that no registry gains a manifest or metadata format.
+The 2026-08-18 multi-source amendment in `docs/adr/3-profile-registries.md` already records
+the merge-not-replace rule, layer precedence, collision handling, unlayered `profiles`
+configuration, and the distinct survey/named failure policies. Verify the implementation
+against it and amend the ADR in the same change if implementation evidence forces a durable
+design change; do not silently diverge from it.
 
 Update the three changelogs, matching the structure of each file's most recent entry.
 
@@ -694,11 +728,12 @@ house-profiles   incidents   shinzui-postgresql 0.2      3  -         Convention
 
 Paste the real output here when you have it, rather than trusting this sketch.
 
-Test the environment variable form, using whichever separator Milestone 4 settled on:
+Test the plural environment form with a JSON array and the singular compatibility form:
 
 ```bash
-OKF_PROFILE_REGISTRY='docs/profiles/okf-v0-2.dhall:/tmp/house-profiles' \
+OKF_PROFILE_REGISTRIES='["docs/profiles/okf-v0-2.dhall","/tmp/house-profiles"]' \
   cabal run okf -- profile list
+OKF_PROFILE_REGISTRY='docs/profiles/okf-v0-2.dhall' cabal run okf -- profile list
 ```
 
 Test configuration compatibility in both spellings:
@@ -775,14 +810,16 @@ other's unchanged.
 `okf profile show` and `okf profile document`, since all three share `registryOption`.
 `okf profile document --registry A --registry B EXPORT` resolves `EXPORT` across both.
 
-**A colon-separated environment variable.** `OKF_PROFILE_REGISTRY='A:B' okf profile list`
-matches the flag form's output. A hash-pinned URL configured through whichever mechanism
-Milestone 4 designated works and is documented; if the environment variable cannot carry
-one, the documentation says so explicitly and names the alternative.
+**An unambiguous environment encoding.**
+`OKF_PROFILE_REGISTRIES='["A","B"]' okf profile list` matches the repeated-flag form's
+output, including when either string is a hash-pinned HTTPS reference. The legacy singular
+variable still selects one reference. Blank variables are unset, a malformed plural value
+fails with a message naming it, and the plural variable wins when both are set.
 
 **Layer precedence is replacement.** With `profiles.registries` naming two sources in a
 configuration file, `okf profile list --registry C` shows only C's profiles. With
-`OKF_PROFILE_REGISTRY=D` set and that same configuration file, the listing shows only D's.
+`OKF_PROFILE_REGISTRIES='["D"]'` set and that same configuration file, the listing shows
+only D's.
 
 **Old configuration files still work.** A file whose `profiles` block is
 `{ registry = "…" }` loads with no error, `okf config show` reports it, and
@@ -790,9 +827,10 @@ configuration file, `okf profile list --registry C` shows only C's profiles. Wit
 only asserted in a test, because the failure mode is a strict-decoding error that a unit
 test built from the same record type cannot catch.
 
-**An empty list falls back to the default.** A configuration file with
-`profiles.registries = [] : List Text` produces the built-in default catalogue's listing,
-not an empty one and not an error.
+**An empty configured list is explicit.** A configuration file with
+`profiles.registries = [] : List Text` selects no registry sources. Before EP 62, a survey
+has no profiles and reports that fact; after EP 62, this is the supported local-only mode.
+A legacy configuration shape with no `profiles` block still receives the built-in default.
 
 **Partial failure does not hide what worked.** `okf profile list --registry <good>
 --registry <missing>` prints the good source's profiles on standard output, names the
@@ -803,8 +841,13 @@ and how to work offline.
 **Collisions are visible and refuse to guess.** Two sources publishing the same export path
 produce two rows in the listing, distinguishable by their `SOURCE` column.
 `okf profile show` on that name exits non-zero with a message naming both sources by full
-reference and showing the disambiguation spelling. Following that spelling succeeds and
-shows the profile from the named source.
+reference and telling the user to rerun with exactly one intended `--registry`. After EP 62,
+the final wording includes `--no-local`. That rerun succeeds and shows the profile from the
+named source.
+
+**Named lookup fails closed.** With one reachable source and one failed source,
+`profile list` reports the failure and can exit 0, but `profile show EXPORT` and
+registry-backed `profile document EXPORT` exit non-zero without selecting a profile.
 
 **JSON carries provenance.** `okf profile list --json | jq` shows each profile's source. The
 shape matches what `docs/user/profiles.md` documents. If the top-level `registry` key was
@@ -851,24 +894,21 @@ At the end of Milestone 2, `okf-core/src/Okf/Profile/Registry.hs` exports at lea
 
 ```haskell
 data ProfileSource = RegistrySource !Text !RegistryRef
-data SourceFailure = SourceFailure { source :: !ProfileSource, reason :: !Text }
-data RegistryEntry = RegistryEntry { source :: !ProfileSource, export :: !Text, spec :: !ProfileSpec }
+data SourceFailure = SourceFailure { failedSource :: !ProfileSource, failureReason :: !Text }
+data SourcedProfile = SourcedProfile { source :: !ProfileSource, entry :: !RegistryEntry }
 
 renderProfileSourceLabel :: ProfileSource -> Text
 renderProfileSourceReference :: ProfileSource -> Text
-loadProfileSource :: ProfileSource -> IO (Either Text [RegistryEntry])
-loadProfileSources :: [ProfileSource] -> IO ([SourceFailure], [RegistryEntry])
+loadProfileSource :: ProfileSource -> IO (Either Text [SourcedProfile])
+loadProfileSources :: [ProfileSource] -> IO ([SourceFailure], [SourcedProfile])
 normalizeProfileSources :: [ProfileSource] -> [ProfileSource]
 ```
 
 with the existing `RegistryRef (..)`, `defaultRegistryReference`, `resolveRegistryRef`,
 `renderRegistryRef`, `loadRegistry`, `registryEntries`, `findRegistryEntry`, and
-`rootExportLabel` still exported. `findRegistryEntry` must gain a source-aware companion or
-change its return type, since a single `Maybe` cannot express "found in two places" —
-resolve this when implementing Milestone 4's `selectEntry`, and prefer adding
-`findRegistryEntries :: Text -> [RegistryEntry] -> [RegistryEntry]` alongside the existing
-function rather than changing its type, so Mori's use of the library is not broken
-gratuitously.
+`rootExportLabel` still exported unchanged. Add
+`findSourcedProfiles :: Text -> [SourcedProfile] -> [SourcedProfile]` rather than changing
+`findRegistryEntry`; a list result represents zero, one, or ambiguous matches.
 
 `ProfileSource` must be a sum type with room for another constructor.
 `docs/plans/62-discover-and-select-local-profile-descriptors-in-the-repository.md` adds one
@@ -885,19 +925,39 @@ At the end of Milestone 3, `okf-cli/src/Okf/Cli/Config.hs` exports `ProfileSetti
 it. `renderConfig` prints the list.
 
 At the end of Milestone 4, `okf-cli/src/Okf/Cli.hs` exports `ProfileListOptions`,
-`ProfileShowOptions`, and `ProfileDocumentOptions` with list-valued `registryRef` fields —
+`ProfileShowOptions`, and `ProfileDocumentOptions` with `registryRefs :: [Text]` fields —
 these are in the module's export list at lines 18 to 33 and are imported by
-`okf-cli/test/Main.hs`, so the test file changes with them. `profileRegistryEnvVar` stays
-`"OKF_PROFILE_REGISTRY"`.
+`okf-cli/test/Main.hs`, so the test file changes with them. Keep
+`profileRegistryEnvVar = "OKF_PROFILE_REGISTRY"` for compatibility and add
+`profileRegistriesEnvVar = "OKF_PROFILE_REGISTRIES"`. `resolveProfileSources` returns
+`[ResolvedProfileSource]`, including a `ProfileSourceOrigin`, and the loader preserves that
+origin for EP 63. The concrete records should carry at least this information (constructor
+names may follow local style, but the states may not be collapsed):
 
-Consumers outside this repository: Mori consumes `okf-core` directly for advisory profile
-validation, per `docs/adr/3-profile-registries.md`. The `RegistryEntry` change is breaking
-for it. That is acceptable — the ADR anticipates the library surface evolving — but note it
-in the `okf-core/CHANGELOG.md` entry explicitly so the downstream bump is not a surprise,
-and use `mori://` URIs rather than bare paths if the changelog entry needs to point at
-anything in that repository.
+```haskell
+data ProfileSourceOrigin
+  = RegistryFlagOrigin
+  | RegistriesEnvironmentOrigin
+  | LegacyRegistryEnvironmentOrigin
+  | ProfileConfigOrigin !FilePath
+  | BuiltInRegistryOrigin
+
+data ResolvedProfileSource = ResolvedProfileSource
+  { resolvedSource :: !ProfileSource
+  , sourceOrigin :: !ProfileSourceOrigin
+  }
+```
 
 
 ## Outcomes & Retrospective
 
 (To be filled during and after implementation.)
+
+
+## Revision Note
+
+Revised 2026-08-18 during the architecture validation of Master Plan 10. The revision
+replaces the impossible colon-delimited environment design with a JSON array, preserves
+`RegistryEntry` through a source wrapper, makes source-selection provenance an EP 61
+output, distinguishes survey from fail-closed named lookup, and fixes explicit-empty
+configuration semantics for EP 62's local-only mode.
