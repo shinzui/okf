@@ -1,5 +1,10 @@
 # Bundle Update Log
 
+## 2026-08-19
+
+* **Addition and acceptance**: IR-8: add nested reference policies and
+  per-record uniqueness constraints to profiles.
+
 ## 2026-07-30
 
 * **Addition**: IR-7: distinguish optional profile fields from authoring recommendations.
