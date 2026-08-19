@@ -56,6 +56,7 @@ module Okf.Profile
     fieldRuleCardinality,
     fieldRuleFormat,
     fieldRuleReference,
+    fieldRuleUniqueBy,
     fieldRulePath,
     fieldRuleElementFields,
     fieldRuleObjectFields,
@@ -92,7 +93,6 @@ import Data.List qualified as List
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (catMaybes, mapMaybe)
-import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Text qualified as Text
 import Data.Text.Read qualified as Text.Read
@@ -144,6 +144,8 @@ import Okf.Path (PathReference (..), classifyPathReference)
 import Okf.Prelude hiding (List, Object, (.=))
 import Okf.Validation (ValidationProfile (..))
 import System.FilePath qualified as FilePath
+import Text.Regex.TDFA (Regex, defaultCompOpt, defaultExecOpt)
+import Text.Regex.TDFA.Text qualified as Regex.Text
 import "generic-lens" Data.Generics.Labels ()
 
 -- | A complete house profile. @description@ is prose documenting the profile as
@@ -2267,6 +2269,13 @@ data ProfileDefinitionError
   | -- | one rule declares both a document-handle policy and a path policy;
     -- a value cannot be resolved as both a handle and a path
     PathReferenceWithHandleReference (Maybe Text) FieldPath
+  | InvalidExternalUriPattern (Maybe Text) FieldPath Text Text
+  | ConflictingExternalUriPatterns Text FieldPath Text Text
+  | UniqueByRequiresElementFields (Maybe Text) FieldPath Text
+  | UniqueByFieldNotDeclared (Maybe Text) FieldPath
+  | UniqueByFieldNotUnconditionallyRequired (Maybe Text) FieldPath
+  | UniqueByFieldNotScalar (Maybe Text) FieldPath Cardinality
+  | ConflictingUniqueBy Text FieldPath Text Text
   | -- | @okfVersion@ is not @\<major\>.\<minor\>@
     InvalidProfileOkfVersion Text
   | -- | @okfVersion@ names a major version okf does not implement, so okf cannot
@@ -2312,9 +2321,40 @@ data EffectiveFieldRule = EffectiveFieldRule
     elementFields :: !(Maybe (Map Text EffectiveFieldRule)),
     objectFields :: !(Maybe (Map Text EffectiveFieldRule)),
     reference :: !(Maybe HandleReferenceRule),
-    path :: !(Maybe PathReferenceRule)
+    path :: !(Maybe PathReferenceRule),
+    uniqueBy :: !(Maybe Text),
+    compiledExternalUriPattern :: !(Maybe Regex)
   }
-  deriving stock (Generic, Eq, Show)
+  deriving stock (Generic)
+
+instance Eq EffectiveFieldRule where
+  left == right =
+    left ^. #presenceClauses == right ^. #presenceClauses
+      && left ^. #description == right ^. #description
+      && left ^. #allowedValues == right ^. #allowedValues
+      && left ^. #cardinality == right ^. #cardinality
+      && left ^. #format == right ^. #format
+      && left ^. #elementFields == right ^. #elementFields
+      && left ^. #objectFields == right ^. #objectFields
+      && left ^. #reference == right ^. #reference
+      && left ^. #path == right ^. #path
+      && left ^. #uniqueBy == right ^. #uniqueBy
+
+instance Show EffectiveFieldRule where
+  show rule =
+    "EffectiveFieldRule "
+      <> show
+        ( rule ^. #presenceClauses,
+          rule ^. #description,
+          rule ^. #allowedValues,
+          rule ^. #cardinality,
+          rule ^. #format,
+          rule ^. #elementFields,
+          rule ^. #objectFields,
+          rule ^. #reference,
+          rule ^. #path,
+          rule ^. #uniqueBy
+        )
 
 -- | The stable lowercase display name for a cardinality: @any@, @scalar@,
 -- @list@, or @object@. These are the names the CLI prints and the names
@@ -2378,6 +2418,11 @@ fieldRuleFormat rule = rule ^. #format
 -- | The document-reference policy for this key, if any.
 fieldRuleReference :: EffectiveFieldRule -> Maybe HandleReferenceRule
 fieldRuleReference rule = rule ^. #reference
+
+-- | The required scalar member whose values must be unique within this one
+-- list of records, or 'Nothing' when no list-local key is declared.
+fieldRuleUniqueBy :: EffectiveFieldRule -> Maybe Text
+fieldRuleUniqueBy rule = rule ^. #uniqueBy
 
 -- | The path-valued policy for this key, if any. Distinct from
 -- 'fieldRuleReference': a handle resolves against the bundle's document-ID
@@ -2497,6 +2542,7 @@ compileProfile rawSpec =
           <> conflictingFormatErrors
           <> conditionDefinitionErrors
           <> referenceDefinitionErrors
+          <> uniquenessDefinitionErrors
           <> versionErrors
           <> requiredBundleVersionErrors
 
@@ -2545,6 +2591,16 @@ compileProfile rawSpec =
         let (scopeRank, typeName) = scopeKey scope
          in (scopeRank, typeName, 20, renderFieldPathKey fieldPath, fromEnum (cardinality == Scalar))
       PathReferenceWithHandleReference scope target -> referenceErrorKey scope target 21 ""
+      InvalidExternalUriPattern scope target patternText detail ->
+        referenceErrorKey scope target 22 (patternText <> ":" <> detail)
+      ConflictingExternalUriPatterns ctype target profilePattern typePattern ->
+        (1, ctype, 23, renderFieldPathKey target <> ":" <> profilePattern, Text.length typePattern)
+      UniqueByRequiresElementFields scope target key -> uniqueErrorKey scope target 24 key
+      UniqueByFieldNotDeclared scope target -> uniqueErrorKey scope target 25 ""
+      UniqueByFieldNotUnconditionallyRequired scope target -> uniqueErrorKey scope target 26 ""
+      UniqueByFieldNotScalar scope target cardinality -> uniqueErrorKey scope target 27 (Text.pack (show cardinality))
+      ConflictingUniqueBy ctype target profileKey typeKey ->
+        (1, ctype, 28, renderFieldPathKey target <> ":" <> profileKey, Text.length typeKey)
       -- The two version-parse errors are profile-wide rather than scoped, and
       -- rank below every scope rank: if the declared version is unreadable, every
       -- version-derived error below is downstream noise and the reader should see
@@ -2555,10 +2611,10 @@ compileProfile rawSpec =
       InvalidRequiredBundleVersion rawVersion -> (-1, rawVersion, 2, "", 0)
       FieldSupersededInOkfVersion scope path _declared supersededIn ->
         let (scopeRank, typeName) = scopeKey scope
-         in (scopeRank, typeName, 23, renderFieldPathKey path <> ":" <> supersededIn, 0)
+         in (scopeRank, typeName, 30, renderFieldPathKey path <> ":" <> supersededIn, 0)
       FormatRequiresOkfVersion scope path fieldFormat _declared introducedIn ->
         let (scopeRank, typeName) = scopeKey scope
-         in (scopeRank, typeName, 24, renderFieldPathKey path <> ":" <> introducedIn, Text.length (Text.pack (show fieldFormat)))
+         in (scopeRank, typeName, 31, renderFieldPathKey path <> ":" <> introducedIn, Text.length (Text.pack (show fieldFormat)))
 
     scopeKey Nothing = (0, "")
     scopeKey (Just ctype) = (1, ctype)
@@ -2570,6 +2626,7 @@ compileProfile rawSpec =
     referenceErrorKey scope target rank detail =
       let (scopeRank, typeName) = scopeKey scope
        in (scopeRank, typeName, rank, renderFieldPathKey target <> ":" <> detail, 0)
+    uniqueErrorKey = referenceErrorKey
 
     scopeErrors scope FrontmatterRules {required, recommended, optional} =
       [DuplicateFieldRule scope "required" key | key <- duplicates (map (^. #field) required)]
@@ -2809,49 +2866,36 @@ compileProfile rawSpec =
             : [(Just (rule ^. #type_), rule ^. #frontmatter) | rule <- rawSpec ^. #types]
 
         rawReferenceErrors (scope, rules) =
-          concatMap (fieldReferenceErrors scope) topLevelRules
-            <> concatMap (fieldPathErrors scope) topLevelRules
-            -- Path rules are declarable at nested and object scope too, which
-            -- is where @sources[].resource@ lives, so the walk descends. It
-            -- hangs on 'declaredNestedRuleSets' rather than iterating
-            -- @elementFields@ and @objectFields@ separately, because
-            -- @mk.recordOrList@ declares one rule set under both names and a
-            -- @FieldPath@ such as @sources.resource@ cannot tell them apart.
+          concatMap topLevelPolicyErrors topLevelRules
             <> [ nestedError
                | rule <- topLevelRules,
                  nestedRules <- declaredNestedRuleSets rule,
                  nestedRule <- nestedRules ^. #required <> nestedRules ^. #recommended <> nestedRules ^. #optional,
-                 nestedError <-
-                   pathPolicyErrors
-                     scope
-                     (nestedDefinitionPath (rule ^. #field) (nestedRule ^. #field))
-                     (nestedRule ^. #format)
-                     Nothing
-                     (nestedRule ^. #path)
+                 nestedError <- policyErrors scope (nestedDefinitionPath (rule ^. #field) (nestedRule ^. #field)) (nestedRule ^. #format) (nestedRule ^. #reference) (nestedRule ^. #path)
                ]
           where
             topLevelRules = rules ^. #required <> rules ^. #recommended <> rules ^. #optional
+            topLevelPolicyErrors rule =
+              policyErrors scope (topLevelFieldPath (rule ^. #field)) (rule ^. #format) (rule ^. #reference) (rule ^. #path)
 
-        fieldReferenceErrors scope rule =
-          case rule ^. #reference of
-            Nothing -> []
-            Just policy ->
-              let path = topLevelFieldPath (rule ^. #field)
-                  prefix = policy ^. #localPrefix
-                  schemes = deduplicateSchemes (policy ^. #externalUriSchemes)
-               in [InvalidReferencePrefix scope path prefix | not (validDocumentHandlePrefix prefix)]
-                    <> [ReferencePrefixNotDeclared scope path prefix | prefix `notElem` declaredPrefixes]
-                    <> [ReferenceRequiresIdField scope path | isNothing (rawSpec ^. #idField)]
-                    <> [InvalidExternalReferenceScheme scope path scheme | scheme <- schemes, not (validUriScheme scheme)]
-                    <> [ReferenceWithFormat scope path fieldFormat | Just fieldFormat <- [rule ^. #format]]
+        policyErrors scope path declaredFormat handlePolicy pathPolicy =
+          referencePolicyErrors scope path declaredFormat handlePolicy
+            <> pathPolicyErrors scope path declaredFormat handlePolicy pathPolicy
 
-        fieldPathErrors scope rule =
-          pathPolicyErrors
-            scope
-            (topLevelFieldPath (rule ^. #field))
-            (rule ^. #format)
-            (rule ^. #reference)
-            (rule ^. #path)
+        referencePolicyErrors scope path declaredFormat = \case
+          Nothing -> []
+          Just policy ->
+            let prefix = policy ^. #localPrefix
+                schemes = deduplicateSchemes (policy ^. #externalUriSchemes)
+             in [InvalidReferencePrefix scope path prefix | not (validDocumentHandlePrefix prefix)]
+                  <> [ReferencePrefixNotDeclared scope path prefix | prefix `notElem` declaredPrefixes]
+                  <> [ReferenceRequiresIdField scope path | isNothing (rawSpec ^. #idField)]
+                  <> [InvalidExternalReferenceScheme scope path scheme | scheme <- schemes, not (validUriScheme scheme)]
+                  <> [ReferenceWithFormat scope path fieldFormat | Just fieldFormat <- [declaredFormat]]
+                  <> [ InvalidExternalUriPattern scope path patternText detail
+                     | Just patternText <- [policy ^. #externalUriPattern],
+                       Left detail <- [compileExternalUriPattern patternText]
+                     ]
 
         -- The three ways a path policy can be incoherent on its own. Two reuse
         -- the handle-reference constructors because the claim is identical: a
@@ -2871,20 +2915,83 @@ compileProfile rawSpec =
               <> [PathReferenceWithHandleReference scope path | isJust handlePolicy]
 
         mergedReferenceErrors typeRule =
-          [ ConflictingReferencePrefix (typeRule ^. #type_) (topLevelFieldPath key) (profilePolicy ^. #localPrefix) (typePolicy ^. #localPrefix)
-          | let typeFields = compileRules (typeRule ^. #frontmatter),
-            (key, (profileRule, typeFieldRule)) <- Map.toAscList (Map.intersectionWith (,) baseRules typeFields),
+          [ ConflictingReferencePrefix (typeRule ^. #type_) path (profilePolicy ^. #localPrefix) (typePolicy ^. #localPrefix)
+          | (path, profileRule, typeFieldRule) <- pairedRules typeRule,
             Just profilePolicy <- [profileRule ^. #reference],
             Just typePolicy <- [typeFieldRule ^. #reference],
             profilePolicy ^. #localPrefix /= typePolicy ^. #localPrefix
           ]
-            <> [ ReferenceWithFormat (Just (typeRule ^. #type_)) (topLevelFieldPath key) fieldFormat
-               | let typeFields = compileRules (typeRule ^. #frontmatter),
-                 (key, (profileRule, typeFieldRule)) <- Map.toAscList (Map.intersectionWith (,) baseRules typeFields),
+            <> [ ConflictingExternalUriPatterns (typeRule ^. #type_) path profilePattern typePattern
+               | (path, profileRule, typeFieldRule) <- pairedRules typeRule,
+                 Just profilePattern <- [profileRule ^. #reference >>= (^. #externalUriPattern)],
+                 Just typePattern <- [typeFieldRule ^. #reference >>= (^. #externalUriPattern)],
+                 profilePattern /= typePattern
+               ]
+            <> [ ReferenceWithFormat (Just (typeRule ^. #type_)) path fieldFormat
+               | (path, profileRule, typeFieldRule) <- pairedRules typeRule,
                  (referenceRule, formatRule) <- [(profileRule, typeFieldRule), (typeFieldRule, profileRule)],
                  isJust (referenceRule ^. #reference),
                  Just fieldFormat <- [formatRule ^. #format]
                ]
+            <> [ PathReferenceWithHandleReference (Just (typeRule ^. #type_)) path
+               | (path, profileRule, typeFieldRule) <- pairedRules typeRule,
+                 (referenceRule, pathRule) <- [(profileRule, typeFieldRule), (typeFieldRule, profileRule)],
+                 isJust (referenceRule ^. #reference),
+                 isJust (pathRule ^. #path)
+               ]
+
+        pairedRules typeRule =
+          [ (topLevelFieldPath key, profileRule, typeFieldRule)
+          | let typeFields = compileRules (typeRule ^. #frontmatter),
+            (key, (profileRule, typeFieldRule)) <- Map.toAscList (Map.intersectionWith (,) baseRules typeFields)
+          ]
+            <> [ (nestedDefinitionPath parentKey nestedKey, profileNestedRule, typeNestedRule)
+               | let typeFields = compileRules (typeRule ^. #frontmatter),
+                 (parentKey, (profileRule, typeFieldRule)) <- Map.toAscList (Map.intersectionWith (,) baseRules typeFields),
+                 (profileNested, typeNested) <- pairedNestedRuleMaps profileRule typeFieldRule,
+                 (nestedKey, (profileNestedRule, typeNestedRule)) <- Map.toAscList (Map.intersectionWith (,) profileNested typeNested)
+               ]
+
+    uniquenessDefinitionErrors =
+      concatMap (validateDeclarations Nothing baseRules) [rawSpec ^. #frontmatter]
+        <> concat
+          [ let typeRules = compileRules (typeRule ^. #frontmatter)
+             in validateDeclarations (Just (typeRule ^. #type_)) (mergeRules baseRules typeRules) (typeRule ^. #frontmatter)
+          | typeRule <- rawSpec ^. #types
+          ]
+        <> [ ConflictingUniqueBy (typeRule ^. #type_) (topLevelFieldPath key) profileKey typeKey
+           | typeRule <- rawSpec ^. #types,
+             let typeRules = compileRules (typeRule ^. #frontmatter),
+             (key, (profileRule, typeFieldRule)) <- Map.toAscList (Map.intersectionWith (,) baseRules typeRules),
+             Just profileKey <- [profileRule ^. #uniqueBy],
+             Just typeKey <- [typeFieldRule ^. #uniqueBy],
+             profileKey /= typeKey
+           ]
+      where
+        validateDeclarations scope effectiveRules rules =
+          concatMap (validateDeclaration scope effectiveRules) (rules ^. #required <> rules ^. #recommended <> rules ^. #optional)
+
+        validateDeclaration scope effectiveRules rawRule =
+          case rawRule ^. #uniqueBy of
+            Nothing -> []
+            Just requestedKey ->
+              let parentPath = topLevelFieldPath (rawRule ^. #field)
+                  memberPath = nestedDefinitionPath (rawRule ^. #field) requestedKey
+               in case Map.lookup (rawRule ^. #field) effectiveRules >>= (^. #elementFields) of
+                    Nothing -> [UniqueByRequiresElementFields scope parentPath requestedKey]
+                    Just memberRules ->
+                      case Map.lookup requestedKey memberRules of
+                        Nothing -> [UniqueByFieldNotDeclared scope memberPath]
+                        Just memberRule ->
+                          [ UniqueByFieldNotUnconditionallyRequired scope memberPath
+                          | not (any unconditionalRequired (memberRule ^. #presenceClauses))
+                          ]
+                            <> [ UniqueByFieldNotScalar scope memberPath (memberRule ^. #cardinality)
+                               | memberRule ^. #cardinality /= Scalar
+                               ]
+
+        unconditionalRequired clause =
+          clause ^. #requirement == RequiredField && isNothing (clause ^. #condition)
 
     -- Only a value okf cannot parse is rejected. An unknown /major/ is
     -- deliberately accepted, unlike in @okfVersion@: there the profile is asking
@@ -3034,9 +3141,13 @@ compileOptionalFieldRule rule =
       format = rule ^. #format,
       elementFields = compileNestedRules <$> rule ^. #elementFields,
       objectFields = compileNestedRules <$> rule ^. #objectFields,
-      reference = compileReferenceRule <$> rule ^. #reference,
-      path = compilePathRule <$> rule ^. #path
+      reference = compiledReference,
+      path = compilePathRule <$> rule ^. #path,
+      uniqueBy = rule ^. #uniqueBy,
+      compiledExternalUriPattern = compileReferenceMatcher compiledReference
     }
+  where
+    compiledReference = compileReferenceRule <$> rule ^. #reference
 
 -- | The cardinality a rule with no declared one takes from its format.
 --
@@ -3094,12 +3205,15 @@ compileOptionalNestedFieldRule rule =
       -- Nested rules stay depth-bounded: 'NestedFieldRule' has no object member,
       -- so a profile cannot constrain @sources[0].usage_window.from@.
       objectFields = Nothing,
-      -- Still 'Nothing': 'NestedFieldRule' carries no document-handle policy.
-      reference = Nothing,
+      reference = compiledReference,
       -- But it does carry a path policy, which is the point of the member —
       -- @sources[].resource@ is only reachable here.
-      path = compilePathRule <$> rule ^. #path
+      path = compilePathRule <$> rule ^. #path,
+      uniqueBy = Nothing,
+      compiledExternalUriPattern = compileReferenceMatcher compiledReference
     }
+  where
+    compiledReference = compileReferenceRule <$> rule ^. #reference
 
 compileNestedFieldRule :: FieldRequirement -> NestedFieldRule -> EffectiveFieldRule
 compileNestedFieldRule requirement rule =
@@ -3120,9 +3234,13 @@ mergeEffectiveFieldRule profileRule typeRule =
       format = fromMaybe (profileRule ^. #format) (mergeFieldFormat (profileRule ^. #format) (typeRule ^. #format)),
       elementFields = mergeNestedRuleMaps (profileRule ^. #elementFields) (typeRule ^. #elementFields),
       objectFields = mergeNestedRuleMaps (profileRule ^. #objectFields) (typeRule ^. #objectFields),
-      reference = fromMaybe (profileRule ^. #reference) (mergeReferenceRule (profileRule ^. #reference) (typeRule ^. #reference)),
-      path = mergePathRule (profileRule ^. #path) (typeRule ^. #path)
+      reference = mergedReference,
+      path = mergePathRule (profileRule ^. #path) (typeRule ^. #path),
+      uniqueBy = fromMaybe (profileRule ^. #uniqueBy) (mergeUniqueBy (profileRule ^. #uniqueBy) (typeRule ^. #uniqueBy)),
+      compiledExternalUriPattern = compileReferenceMatcher mergedReference
     }
+  where
+    mergedReference = fromMaybe (profileRule ^. #reference) (mergeReferenceRule (profileRule ^. #reference) (typeRule ^. #reference))
 
 -- | Normalize a declared condition for storage in a 'PresenceClause': the shape
 -- is unchanged, but the accepted-value list is deduplicated so that a clause
@@ -3144,6 +3262,21 @@ compileReferenceRule policy =
       allowLocal = policy ^. #allowLocal,
       externalUriPattern = policy ^. #externalUriPattern
     }
+
+compileExternalUriPattern :: Text -> Either Text Regex
+compileExternalUriPattern patternText =
+  first Text.pack (Regex.Text.compile defaultCompOpt defaultExecOpt patternText)
+
+compileReferenceMatcher :: Maybe HandleReferenceRule -> Maybe Regex
+compileReferenceMatcher policy = do
+  patternText <- policy >>= (^. #externalUriPattern)
+  either (const Nothing) Just (compileExternalUriPattern patternText)
+
+matchesWholeExternalUriPattern :: Regex -> Text -> Bool
+matchesWholeExternalUriPattern regex value =
+  case Regex.Text.regexec regex value of
+    Right (Just (before, _matched, after, _groups)) -> Text.null before && Text.null after
+    _ -> False
 
 compilePathRule :: PathReferenceRule -> PathReferenceRule
 compilePathRule policy =
@@ -3185,7 +3318,8 @@ mergeReferenceRule :: Maybe HandleReferenceRule -> Maybe HandleReferenceRule -> 
 mergeReferenceRule Nothing typePolicy = Just typePolicy
 mergeReferenceRule profilePolicy Nothing = Just profilePolicy
 mergeReferenceRule (Just profilePolicy) (Just typePolicy)
-  | profilePolicy ^. #localPrefix == typePolicy ^. #localPrefix =
+  | profilePolicy ^. #localPrefix == typePolicy ^. #localPrefix,
+    Just mergedPattern <- mergeOptionalText (profilePolicy ^. #externalUriPattern) (typePolicy ^. #externalUriPattern) =
       Just . Just $
         HandleReferenceRule
           { localPrefix = profilePolicy ^. #localPrefix,
@@ -3195,8 +3329,18 @@ mergeReferenceRule (Just profilePolicy) (Just typePolicy)
                 (profilePolicy ^. #externalUriSchemes),
             allowSelf = profilePolicy ^. #allowSelf && typePolicy ^. #allowSelf,
             allowLocal = profilePolicy ^. #allowLocal && typePolicy ^. #allowLocal,
-            externalUriPattern = typePolicy ^. #externalUriPattern <|> profilePolicy ^. #externalUriPattern
+            externalUriPattern = mergedPattern
           }
+  | otherwise = Nothing
+
+mergeUniqueBy :: Maybe Text -> Maybe Text -> Maybe (Maybe Text)
+mergeUniqueBy = mergeOptionalText
+
+mergeOptionalText :: Maybe Text -> Maybe Text -> Maybe (Maybe Text)
+mergeOptionalText Nothing typeValue = Just typeValue
+mergeOptionalText profileValue Nothing = Just profileValue
+mergeOptionalText profileValue typeValue
+  | profileValue == typeValue = Just profileValue
   | otherwise = Nothing
 
 mergeFieldFormat :: Maybe FieldFormat -> Maybe FieldFormat -> Maybe (Maybe FieldFormat)
@@ -3418,6 +3562,10 @@ data ProfileViolation
     MalformedDocumentReference ConceptId FieldPath Value
   | -- | an absolute external URI uses a scheme the profile did not permit
     ExternalReferenceSchemeNotAllowed ConceptId FieldPath Text [Text]
+  | -- | a syntactically valid local handle is prohibited at this field
+    LocalDocumentReferenceNotAllowed ConceptId FieldPath Text
+  | -- | an allowed external URI does not match the declared whole-value pattern
+    ExternalReferencePatternMismatch ConceptId FieldPath Text Text
   | -- | a local handle, or a bundle path, resolves to the concept carrying it
     SelfDocumentReference ConceptId FieldPath Text
   | -- | a path-valued field's value is not one of the three shapes of §6.2
@@ -3430,6 +3578,8 @@ data ProfileViolation
     FieldNotInProfile ConceptId Text
   | -- | a declared list element is not an object record
     NestedElementNotRecord ConceptId FieldPath Value
+  | -- | one valid scalar member value occurs in more than one list element
+    DuplicateNestedFieldValue ConceptId FieldPath Value (NonEmpty Int)
   | -- | concept's file path does not match the type rule's pattern (concept, type, pattern)
     PathPatternMismatch ConceptId Text Text
   | -- | type rule requires a resource scheme but resource is absent (concept, type, scheme)
@@ -3581,12 +3731,12 @@ validateProfileWithPresence presenceRule inventoryOf validationProfile compiled 
               presenceViolations key rule
                 <> maybe [] (vocabularyViolations key rule) actual
                 <> maybe [] (formatViolations key rule) actual
-                <> maybe [] (referenceViolations key rule) actual
+                <> maybe [] (referenceViolations (topLevelFieldPath key) rule) actual
                 <> maybe [] (pathViolations (topLevelFieldPath key) rule) actual
             FieldPresent actual ->
               vocabularyViolations key rule actual
                 <> formatViolations key rule actual
-                <> referenceViolations key rule actual
+                <> referenceViolations (topLevelFieldPath key) rule actual
                 <> pathViolations (topLevelFieldPath key) rule actual
                 <> nestedViolations key rule actual
                 <> objectViolations key rule actual
@@ -3610,10 +3760,10 @@ validateProfileWithPresence presenceRule inventoryOf validationProfile compiled 
           | Just fieldFormat <- [rule ^. #format],
             not (valueMatchesFormat fieldFormat actual)
           ]
-        referenceViolations key rule actual =
+        referenceViolations fieldPath rule actual =
           case rule ^. #reference of
             Nothing -> []
-            Just policy -> validateReferenceValue validDocumentIdIndex cid (topLevelFieldPath key) policy actual
+            Just policy -> validateReferenceValue validDocumentIdIndex cid fieldPath policy (rule ^. #compiledExternalUriPattern) actual
 
         -- Takes a 'FieldPath' rather than a key because it is shared by all
         -- three scopes: a top-level key, a member of a list element, and a
@@ -3626,15 +3776,17 @@ validateProfileWithPresence presenceRule inventoryOf validationProfile compiled 
         nestedViolations parentKey parentRule = \case
           Array elementValues
             | Just nestedRules <- parentRule ^. #elementFields ->
-                concat
-                  [ case elementValue of
-                      Aeson.Object members ->
-                        concatMap
-                          (checkRecordMember (nestedValuePath parentKey elementIndex) members)
-                          (Map.toAscList nestedRules)
-                      _ -> [NestedElementNotRecord cid (nestedElementPath parentKey elementIndex) elementValue]
-                  | (elementIndex, elementValue) <- zip [0 ..] (Vector.toList elementValues)
-                  ]
+                let indexedElements = zip [0 ..] (Vector.toList elementValues)
+                 in concat
+                      [ case elementValue of
+                          Aeson.Object members ->
+                            concatMap
+                              (checkRecordMember (nestedValuePath parentKey elementIndex) members)
+                              (Map.toAscList nestedRules)
+                          _ -> [NestedElementNotRecord cid (nestedElementPath parentKey elementIndex) elementValue]
+                      | (elementIndex, elementValue) <- indexedElements
+                      ]
+                      <> uniquenessViolations parentKey parentRule nestedRules indexedElements
           _ -> []
 
         -- The mapping spelling of the same idea. The value /is/ the record, so
@@ -3660,10 +3812,12 @@ validateProfileWithPresence presenceRule inventoryOf validationProfile compiled 
                   nestedPresenceViolations members path rule
                     <> maybe [] (nestedVocabularyViolations path rule) actual
                     <> maybe [] (nestedFormatViolations path rule) actual
+                    <> maybe [] (referenceViolations path rule) actual
                     <> maybe [] (pathViolations path rule) actual
                 FieldPresent actual ->
                   nestedVocabularyViolations path rule actual
                     <> nestedFormatViolations path rule actual
+                    <> referenceViolations path rule actual
                     <> pathViolations path rule actual
                 FieldWrongShape actual -> [CardinalityMismatch cid path (rule ^. #cardinality) actual]
 
@@ -3687,6 +3841,32 @@ validateProfileWithPresence presenceRule inventoryOf validationProfile compiled 
           | Just fieldFormat <- [rule ^. #format],
             not (valueMatchesFormat fieldFormat actual)
           ]
+
+        uniquenessViolations parentKey parentRule nestedRules indexedElements =
+          case parentRule ^. #uniqueBy of
+            Nothing -> []
+            Just key ->
+              case Map.lookup key nestedRules of
+                Nothing -> []
+                Just keyRule ->
+                  [ DuplicateNestedFieldValue cid (nestedDefinitionPath parentKey key) duplicateValue (firstIndex :| remainingIndices)
+                  | (duplicateValue, firstIndex : remainingIndices) <- groupedValues key keyRule indexedElements,
+                    not (null remainingIndices)
+                  ]
+
+        groupedValues key keyRule =
+          List.foldl' insertValue [] . mapMaybe participant
+          where
+            participant (elementIndex, Aeson.Object members) =
+              case evaluateFieldValue keyRule (Aeson.KeyMap.lookup (Aeson.Key.fromText key) members) of
+                FieldPresent scalarValue -> Just (scalarValue, elementIndex)
+                _ -> Nothing
+            participant _ = Nothing
+
+            insertValue [] (value, elementIndex) = [(value, [elementIndex])]
+            insertValue ((groupValue, indices) : remaining) (value, elementIndex)
+              | groupValue == value = (groupValue, indices <> [elementIndex]) : remaining
+              | otherwise = (groupValue, indices) : insertValue remaining (value, elementIndex)
 
     checkUnknownFields cid ctype concept
       | spec ^. #allowUnknownFields = []
@@ -3722,22 +3902,24 @@ buildValidDocumentIdIndex spec rulesByType concepts =
           documentId ^. #prefix == expectedPrefix
         ]
 
-validateReferenceValue :: Map DocumentId [ConceptId] -> ConceptId -> FieldPath -> HandleReferenceRule -> Value -> [ProfileViolation]
-validateReferenceValue validOwners sourceConcept path policy = \case
-  String rawReference -> validateReferenceText validOwners sourceConcept path policy rawReference
+validateReferenceValue :: Map DocumentId [ConceptId] -> ConceptId -> FieldPath -> HandleReferenceRule -> Maybe Regex -> Value -> [ProfileViolation]
+validateReferenceValue validOwners sourceConcept path policy matcher = \case
+  String rawReference -> validateReferenceText validOwners sourceConcept path policy matcher rawReference
   Array values ->
     concat
       [ case value of
-          String rawReference -> validateReferenceText validOwners sourceConcept (appendArrayIndex path elementIndex) policy rawReference
+          String rawReference -> validateReferenceText validOwners sourceConcept (appendArrayIndex path elementIndex) policy matcher rawReference
           _ -> [MalformedDocumentReference sourceConcept (appendArrayIndex path elementIndex) value]
       | (elementIndex, value) <- zip [0 ..] (Vector.toList values)
       ]
   actual -> [MalformedDocumentReference sourceConcept path actual]
 
-validateReferenceText :: Map DocumentId [ConceptId] -> ConceptId -> FieldPath -> HandleReferenceRule -> Text -> [ProfileViolation]
-validateReferenceText validOwners sourceConcept path policy rawReference =
+validateReferenceText :: Map DocumentId [ConceptId] -> ConceptId -> FieldPath -> HandleReferenceRule -> Maybe Regex -> Text -> [ProfileViolation]
+validateReferenceText validOwners sourceConcept path policy matcher rawReference =
   case parseDocumentId rawReference of
     Just documentId
+      | not (policy ^. #allowLocal) ->
+          [LocalDocumentReferenceNotAllowed sourceConcept path rawReference]
       | documentId ^. #prefix /= policy ^. #localPrefix ->
           [ReferenceHandlePrefixMismatch sourceConcept path rawReference (policy ^. #localPrefix)]
       | otherwise ->
@@ -3751,7 +3933,14 @@ validateReferenceText validOwners sourceConcept path policy rawReference =
     Nothing ->
       case parseURI (Text.unpack rawReference) of
         Just parsed
-          | not (Text.null normalizedScheme), normalizedScheme `elem` policy ^. #externalUriSchemes -> []
+          | not (Text.null normalizedScheme),
+            normalizedScheme `elem` policy ^. #externalUriSchemes ->
+              case (policy ^. #externalUriPattern, matcher) of
+                (Nothing, _) -> []
+                (Just patternText, Just compiledPattern)
+                  | matchesWholeExternalUriPattern compiledPattern rawReference -> []
+                  | otherwise -> [ExternalReferencePatternMismatch sourceConcept path rawReference patternText]
+                (Just patternText, Nothing) -> [ExternalReferencePatternMismatch sourceConcept path rawReference patternText]
           | not (Text.null normalizedScheme) ->
               [ ExternalReferenceSchemeNotAllowed
                   sourceConcept

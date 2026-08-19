@@ -580,6 +580,7 @@ main = do
           profileDocStrictWithTimestamp,
           conceptMenuOrdering,
           nonAsciiDiagnostics,
+          testNestedReferenceDiagnosticRendering,
           configDefaults,
           configProjectPrecedence,
           configEnvPrecedence,
@@ -737,6 +738,29 @@ nonAsciiDiagnosticLines compiled cid =
 expectedVocabularyLine :: Text.Text
 expectedVocabularyLine =
   "places/tokyo: frontmatter value at prefecture must be one of [東京都, 京都府], found: \"東京\""
+
+testNestedReferenceDiagnosticRendering :: Bool
+testNestedReferenceDiagnosticRendering =
+  case (compileProfile samplePostgresqlProfile, parseConceptId "requests/duplicate") of
+    (Right compiled, Right cid) ->
+      let referencePath = FieldPath (FieldName "dependencies" :| [ArrayIndex 0, FieldName "ref"])
+          uniquePath = FieldPath (FieldName "acceptanceCriteria" :| [FieldName "id"])
+          render = renderProfileViolation compiled []
+       in [ render (LocalDocumentReferenceNotAllowed cid referencePath "IR-1"),
+            render
+              ( ExternalReferencePatternMismatch
+                  cid
+                  referencePath
+                  "mori://namespace/project/okf/decisions/concepts/IR-1"
+                  "mori://[^/]+/[^/]+/okf/improvement-requests/concepts/IR-[1-9][0-9]*"
+              ),
+            render (DuplicateNestedFieldValue cid uniquePath (String "AC-1") (0 :| [2]))
+          ]
+            == [ "requests/duplicate: local document reference at dependencies[0].ref is not allowed: IR-1",
+                 "requests/duplicate: external reference at dependencies[0].ref does not match whole-value pattern mori://[^/]+/[^/]+/okf/improvement-requests/concepts/IR-[1-9][0-9]*: mori://namespace/project/okf/decisions/concepts/IR-1",
+                 "requests/duplicate: duplicate value \"AC-1\" for acceptanceCriteria.id at element indices [0, 2]"
+               ]
+    _ -> False
 
 -- | One root-level entry and one nested entry from differently sized source
 -- labels, so every positional padder in 'renderRegistryTable' is exercised.

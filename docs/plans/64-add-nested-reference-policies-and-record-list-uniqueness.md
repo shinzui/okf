@@ -45,8 +45,9 @@ descriptor fixtures continue to decode and compile, and the final `okf-core` and
 - [x] (2026-08-19T19:50:28Z) Milestone 1: published the additive Dhall descriptor generation,
       preserved every frozen decoder through the complete 0.7.0.0 fallback, and exposed the new
       raw fields through stable JSON and `okf profile show` snapshots.
-- [ ] Milestone 2: compile, merge, inspect, and validate nested reference policies and record-list
-      uniqueness with focused definition and runtime tests.
+- [x] (2026-08-19T20:03:46Z) Milestone 2: compiled, merged, inspected, and validated nested
+      reference policies and record-list uniqueness with focused definition, runtime, fixture,
+      accessor, JSON, text, and CLI-diagnostic tests.
 - [ ] Milestone 3: render the effective rules in generated documentation, update public guidance
       and ADRs, regenerate the committed example, and pass all repository checks.
 - [ ] Milestone 4: after explicit release approval, publish `okf-core` and `okf-cli` 0.8.0.0 to
@@ -61,6 +62,15 @@ descriptor fixtures continue to decode and compile, and the final `okf-core` and
   `loadProfileFile preserves the complete 0.7.0.0 descriptor schema` with Dhall's
   `Expression doesn't match annotation` diff listing `uniqueBy`, nested `reference`,
   `allowLocal`, and `externalUriPattern`. Restoring both entries made both package suites pass.
+  Date: 2026-08-19.
+
+- Observation: Mori gained a registered `regex-tdfa` project between plan creation and
+  implementation.
+  Evidence: `mori registry search regex-tdfa` resolved
+  `mori://haskell-hvr/regex-tdfa/packages/regex-tdfa`; `mori registry show
+  haskell-hvr/regex-tdfa --full` reported the 1.3.2.6 corpus source, while Hackage's
+  `preferred.json` and upstream tag `v1.3.2.6` independently confirmed the released version.
+  The strict-`Text` source exposes the planned `compile` and `regexec` signatures.
   Date: 2026-08-19.
 
 
@@ -80,12 +90,13 @@ descriptor fixtures continue to decode and compile, and the final `okf-core` and
 - Decision: Use `regex-tdfa` with the Cabal bound `>=1.3.2 && <1.4`, compile patterns when the
   profile compiles, and decide whole-value matching by requiring empty text before and after the
   match.
-  Rationale: Mori has no registered `regex-tdfa` project, so the dependency was checked against
-  the authoritative Hackage source and upstream tags. Both identify 1.3.2.6 as current on
-  2026-08-19. That release implements POSIX extended regular expressions, accepts strict `Text`,
-  exposes `Text.Regex.TDFA.Text.compile :: CompOption -> ExecOption -> Text -> Either String Regex`,
-  and exposes `regexec`, whose before/match/after result proves a whole-value match without
-  rewriting an author's expression or relying on undocumented anchor behavior.
+  Rationale: Mori now resolves the source through
+  `mori://haskell-hvr/regex-tdfa/packages/regex-tdfa`, and the local 1.3.2.6 source agrees with the
+  authoritative Hackage metadata and upstream `v1.3.2.6` tag. That release implements POSIX
+  extended regular expressions, accepts strict `Text`, exposes
+  `Text.Regex.TDFA.Text.compile :: CompOption -> ExecOption -> Text -> Either String Regex`, and
+  exposes `regexec`, whose before/match/after result proves a whole-value match without rewriting
+  an author's expression or relying on undocumented anchor behavior.
   Date: 2026-08-19.
 
 - Decision: Keep the compiled regular expression as a private cache on opaque
@@ -424,8 +435,8 @@ cabal build all
 cabal test all --test-show-details=failures
 ```
 
-Before editing the Cabal bound during implementation, repeat the dependency-policy checks. Mori is
-expected to report no registered project; Hackage and upstream tags must still agree on a release
+Before editing the Cabal bound during implementation, repeat the dependency-policy checks. Mori
+resolves the dependency source, while Hackage and upstream tags must still agree on a release
 within `>=1.3.2 && <1.4`:
 
 ```bash
@@ -437,7 +448,7 @@ git ls-remote --tags https://github.com/haskell-hvr/regex-tdfa.git | tail -n 30
 The planning baseline on 2026-08-19 is:
 
 ```text
-Mori:          no matching project
+Mori:          mori://haskell-hvr/regex-tdfa/packages/regex-tdfa at 1.3.2.6
 Hackage:       newest normal version 1.3.2.6
 upstream tag:  v1.3.2.6
 chosen bound:  regex-tdfa >=1.3.2 && <1.4

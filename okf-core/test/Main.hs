@@ -264,6 +264,9 @@ main = do
         test "nested conditions use siblings and avoid cascading diagnostics" testNestedConditionalPresence,
         test "compileProfile rejects invalid document reference policies" testReferenceDefinitionErrors,
         test "document references resolve local handles and explicit external URIs" testDocumentReferenceValidation,
+        testIO "compileProfile exposes nested references and record-list uniqueness" testCompileNestedReferenceAndUniqueness,
+        testIO "nested references and record-list uniqueness validate in layers" testNestedReferenceAndUniquenessValidation,
+        testIO "compileProfile rejects invalid nested reference and uniqueness declarations" testNestedReferenceAndUniquenessDefinitionErrors,
         test "optional fields are never missing but are fully value-checked" testOptionalFieldPresence,
         test "optional reference fields resolve handles when present" testOptionalReferenceValidation,
         test "optional nested fields are never missing inside records" testOptionalNestedFieldPresence,
@@ -5149,6 +5152,211 @@ testReferenceDefinitionErrors = do
   assertEqual
     (Left (ConflictingReferencePrefix "Decision Record" path "ADR" "RFC" :| []))
     (compileProfile conflictSpec)
+
+testCompileNestedReferenceAndUniqueness :: IO (Either Text ())
+testCompileNestedReferenceAndUniqueness = do
+  loaded <- loadNestedReferenceSpec
+  pure $ do
+    spec <- loaded
+    compiled <- firstShow (compileProfile spec)
+    dependencies <- lookupBaseRule compiled "dependencies"
+    acceptanceCriteria <- lookupBaseRule compiled "acceptanceCriteria"
+    assertEqual (Just "id") (fieldRuleUniqueBy acceptanceCriteria)
+    case fieldRuleElementFields dependencies >>= Map.lookup "ref" of
+      Nothing -> Left "expected a compiled dependencies.ref rule"
+      Just referenceRule ->
+        assertEqual
+          ( Just
+              ( HandleReferenceRule
+                  "IR"
+                  ["mori"]
+                  False
+                  False
+                  (Just nestedReferencePattern)
+              )
+          )
+          (fieldRuleReference referenceRule)
+
+testNestedReferenceAndUniquenessValidation :: IO (Either Text ())
+testNestedReferenceAndUniquenessValidation = do
+  loaded <- loadNestedReferenceSpec
+  validRoot <- fixturePath "profile-nested-references-and-uniqueness-valid"
+  invalidRoot <- fixturePath "profile-nested-references-and-uniqueness-invalid"
+  validConcepts <- readBundle validRoot
+  invalidConcepts <- readBundle invalidRoot
+  pure $ do
+    spec <- loaded
+    compiled <- firstShow (compileProfile spec)
+    assertEqual [] (validateProfile PermissiveConformance compiled validConcepts)
+    duplicateId <- parseTestConceptId "requests/duplicate"
+    assertEqual
+      [DuplicateNestedFieldValue duplicateId (objectMemberPath "acceptanceCriteria" "id") (String "AC-1") (0 :| [1])]
+      (validateProfile PermissiveConformance compiled invalidConcepts)
+    assertReferenceCase compiled "local" "IR-1" (LocalDocumentReferenceNotAllowed <$> pureCaseId "local" <*> pure (nestedTestPathFor "dependencies" 0 "ref") <*> pure "IR-1")
+    assertReferenceCase compiled "scheme" "https://example.test/IR-1" (ExternalReferenceSchemeNotAllowed <$> pureCaseId "scheme" <*> pure (nestedTestPathFor "dependencies" 0 "ref") <*> pure "https" <*> pure ["mori"])
+    assertPatternCase compiled "artifact-kind" "mori://namespace/project/okf/decisions/concepts/IR-1"
+    assertPatternCase compiled "leading-zero" "mori://namespace/project/okf/improvement-requests/concepts/IR-01"
+    assertPatternCase compiled "query" "mori://namespace/project/okf/improvement-requests/concepts/IR-1?x=1"
+    assertPatternCase compiled "fragment" "mori://namespace/project/okf/improvement-requests/concepts/IR-1#x"
+    malformed <- referenceConcept "malformed" "not a reference" ["AC-1", "AC-2"]
+    malformedId <- parseTestConceptId "requests/malformed"
+    assertEqual
+      [MalformedDocumentReference malformedId (nestedTestPathFor "dependencies" 0 "ref") (String "not a reference")]
+      (validateProfile PermissiveConformance compiled [malformed])
+    grouped <- referenceConcept "groups" canonicalNestedReference ["AC-1", "AC-2", "AC-1", "AC-2"]
+    groupedId <- parseTestConceptId "requests/groups"
+    assertEqual
+      [ DuplicateNestedFieldValue groupedId (objectMemberPath "acceptanceCriteria" "id") (String "AC-1") (0 :| [2]),
+        DuplicateNestedFieldValue groupedId (objectMemberPath "acceptanceCriteria" "id") (String "AC-2") (1 :| [3])
+      ]
+      (validateProfile PermissiveConformance compiled [grouped])
+  where
+    pureCaseId name = parseTestConceptId ("requests/" <> name)
+
+    assertReferenceCase compiled name raw expectedAction = do
+      concept <- referenceConcept name raw ["AC-1", "AC-2"]
+      expected <- expectedAction
+      assertEqual [expected] (validateProfile PermissiveConformance compiled [concept])
+
+    assertPatternCase compiled name raw = do
+      cid <- parseTestConceptId ("requests/" <> name)
+      assertReferenceCase
+        compiled
+        name
+        raw
+        (Right (ExternalReferencePatternMismatch cid (nestedTestPathFor "dependencies" 0 "ref") raw nestedReferencePattern))
+
+testNestedReferenceAndUniquenessDefinitionErrors :: IO (Either Text ())
+testNestedReferenceAndUniquenessDefinitionErrors = do
+  loaded <- loadNestedReferenceSpec
+  pure $ do
+    spec <- loaded
+    dependencies <- lookupRaw "dependencies" spec
+    acceptance <- lookupRaw "acceptanceCriteria" spec
+    let invalidPattern = updateNestedRule "ref" (\rule -> rule {reference = setPattern "[" <$> rule ^. #reference}) dependencies
+        invalidPatternSpec = replaceBaseRule invalidPattern spec
+    assertSingleDefinitionError
+      (\case InvalidExternalUriPattern Nothing path "[" _ -> path == objectMemberPath "dependencies" "ref"; _ -> False)
+      (compileProfile invalidPatternSpec)
+
+    let typePattern = updateNestedRule "ref" (\rule -> rule {reference = setPattern "mori://different" <$> rule ^. #reference}) dependencies
+        patternConflictSpec = addTypeRule typePattern spec
+    assertSingleDefinitionError
+      (== ConflictingExternalUriPatterns "Improvement Request" (objectMemberPath "dependencies" "ref") nestedReferencePattern "mori://different")
+      (compileProfile patternConflictSpec)
+
+    let noElements = (requiredField "plainRecords") {uniqueBy = Just "id"}
+    assertSingleDefinitionError
+      (== UniqueByRequiresElementFields Nothing (fieldPath "plainRecords") "id")
+      (compileProfile (replaceBaseRule noElements spec))
+
+    let missingMember = acceptance {uniqueBy = Just "missing"}
+    assertSingleDefinitionError
+      (== UniqueByFieldNotDeclared Nothing (objectMemberPath "acceptanceCriteria" "missing"))
+      (compileProfile (replaceBaseRule missingMember spec))
+
+    let optionalMember = updateNestedPresence "id" acceptance
+    assertSingleDefinitionError
+      (== UniqueByFieldNotUnconditionallyRequired Nothing (objectMemberPath "acceptanceCriteria" "id"))
+      (compileProfile (replaceBaseRule optionalMember spec))
+
+    let listMember = updateNestedRule "id" (\rule -> rule {cardinality = List}) acceptance
+    assertSingleDefinitionError
+      (== UniqueByFieldNotScalar Nothing (objectMemberPath "acceptanceCriteria" "id") List)
+      (compileProfile (replaceBaseRule listMember spec))
+
+    let conflictingUnique = acceptance {uniqueBy = Just "text"}
+    assertSingleDefinitionError
+      (== ConflictingUniqueBy "Improvement Request" (fieldPath "acceptanceCriteria") "id" "text")
+      (compileProfile (addTypeRule conflictingUnique spec))
+  where
+    setPattern :: Text -> HandleReferenceRule -> HandleReferenceRule
+    setPattern patternText policy = policy {externalUriPattern = Just patternText}
+
+    lookupRaw :: Text -> ProfileSpec -> Either Text FieldRule
+    lookupRaw key spec =
+      case [rule | rule <- spec ^. #frontmatter . #required, rule ^. #field == key] of
+        [rule] -> Right rule
+        _ -> Left ("expected one raw rule for " <> key)
+
+    replaceBaseRule :: FieldRule -> ProfileSpec -> ProfileSpec
+    replaceBaseRule replacement spec =
+      spec
+        { frontmatter =
+            (spec ^. #frontmatter)
+              { required = replacement : filter ((/= replacement ^. #field) . (^. #field)) (spec ^. #frontmatter . #required)
+              }
+        }
+
+    addTypeRule :: FieldRule -> ProfileSpec -> ProfileSpec
+    addTypeRule typeField spec =
+      spec
+        { types =
+            [ typeRule
+                { frontmatter = FrontmatterRules {required = [typeField], recommended = [], optional = []}
+                }
+            | typeRule <- spec ^. #types
+            ]
+        }
+
+    updateNestedRule :: Text -> (NestedFieldRule -> NestedFieldRule) -> FieldRule -> FieldRule
+    updateNestedRule key change parent =
+      parent {elementFields = updateRules <$> parent ^. #elementFields}
+      where
+        updateRules :: NestedRules -> NestedRules
+        updateRules rules =
+          rules
+            { required = map update (rules ^. #required),
+              recommended = map update (rules ^. #recommended),
+              optional = map update (rules ^. #optional)
+            }
+        update rule | rule ^. #field == key = change rule
+        update rule = rule
+
+    updateNestedPresence :: Text -> FieldRule -> FieldRule
+    updateNestedPresence key parent =
+      parent {elementFields = move <$> parent ^. #elementFields}
+      where
+        move :: NestedRules -> NestedRules
+        move rules =
+          let (selected, remaining) = List.partition ((== key) . (^. #field)) (rules ^. #required)
+           in rules {required = remaining, optional = selected <> rules ^. #optional}
+
+    assertSingleDefinitionError matches = \case
+      Left (definitionError :| []) | matches definitionError -> Right ()
+      Left errors -> Left ("unexpected definition errors: " <> Text.pack (show (toList errors)))
+      Right _ -> Left "expected profile definition to fail"
+
+loadNestedReferenceSpec :: IO (Either Text ProfileSpec)
+loadNestedReferenceSpec = do
+  descriptorPath <- fixtureFilePath "profiles/nested-references-and-uniqueness.dhall"
+  first ("failed to load nested reference profile: " <>) <$> loadProfileFile descriptorPath
+
+nestedReferencePattern :: Text
+nestedReferencePattern = "mori://[^/]+/[^/]+/okf/improvement-requests/concepts/IR-[1-9][0-9]*"
+
+canonicalNestedReference :: Text
+canonicalNestedReference = "mori://namespace/project/okf/improvement-requests/concepts/IR-9"
+
+referenceConcept :: Text -> Text -> [Text] -> Either Text Concept
+referenceConcept name rawReference criterionIds =
+  profileConcept
+    ("requests/" <> name)
+    [ ("type", String "Improvement Request"),
+      ("requestId", String "IR-1"),
+      ("dependencies", toJSON [object ["ref" .= rawReference]]),
+      ( "acceptanceCriteria",
+        toJSON
+          [ object ["id" .= criterionId, "text" .= ("Criterion " <> criterionId)]
+          | criterionId <- criterionIds
+          ]
+      )
+    ]
+    "# Request\n"
+
+nestedTestPathFor :: Text -> Int -> Text -> FieldPath
+nestedTestPathFor parent elementIndex child =
+  FieldPath (FieldName parent :| [ArrayIndex elementIndex, FieldName child])
 
 testDocumentReferenceValidation :: Either Text ()
 testDocumentReferenceValidation = do

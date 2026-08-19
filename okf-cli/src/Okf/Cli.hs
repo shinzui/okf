@@ -2986,6 +2986,20 @@ renderProfileViolation compiled concepts = \case
       <> actualScheme
       <> ", allowed schemes: "
       <> renderList allowedSchemes
+  LocalDocumentReferenceNotAllowed cid fieldPath rawReference ->
+    renderConceptId cid
+      <> ": local document reference at "
+      <> renderFieldPath fieldPath
+      <> " is not allowed: "
+      <> rawReference
+  ExternalReferencePatternMismatch cid fieldPath rawReference patternText ->
+    renderConceptId cid
+      <> ": external reference at "
+      <> renderFieldPath fieldPath
+      <> " does not match whole-value pattern "
+      <> patternText
+      <> ": "
+      <> rawReference
   SelfDocumentReference cid fieldPath handle ->
     renderConceptId cid
       <> ": self reference at "
@@ -3023,6 +3037,15 @@ renderProfileViolation compiled concepts = \case
       <> renderFieldPath fieldPath
       <> " must be a record, found: "
       <> renderJsonValue actual
+  DuplicateNestedFieldValue cid fieldPath duplicateValue elementIndices ->
+    renderConceptId cid
+      <> ": duplicate value "
+      <> renderJsonValue duplicateValue
+      <> " for "
+      <> renderFieldPath fieldPath
+      <> " at element indices ["
+      <> Text.intercalate ", " (map (Text.pack . show) (toList elementIndices))
+      <> "]"
   PathPatternMismatch cid ctype patternText ->
     renderConceptId cid <> ": " <> ctype <> " must match path pattern: " <> patternText
   MissingResource cid ctype scheme ->
@@ -3198,6 +3221,52 @@ renderProfileDefinitionError = \case
       <> ": path at "
       <> renderFieldPath target
       <> " cannot also declare a document reference; a value is resolved as one or the other"
+  InvalidExternalUriPattern scope target patternText detail ->
+    renderScope scope
+      <> ": invalid external URI pattern at "
+      <> renderFieldPath target
+      <> ": "
+      <> patternText
+      <> " ("
+      <> detail
+      <> ")"
+  ConflictingExternalUriPatterns ctype target profilePattern typePattern ->
+    "type "
+      <> ctype
+      <> " frontmatter: conflicting external URI patterns for "
+      <> renderFieldPath target
+      <> " (profile: "
+      <> profilePattern
+      <> ", type: "
+      <> typePattern
+      <> ")"
+  UniqueByRequiresElementFields scope target key ->
+    renderScope scope
+      <> ": uniqueBy at "
+      <> renderFieldPath target
+      <> " names "
+      <> key
+      <> " but the field has no elementFields"
+  UniqueByFieldNotDeclared scope target ->
+    renderScope scope <> ": uniqueBy field is not declared at " <> renderFieldPath target
+  UniqueByFieldNotUnconditionallyRequired scope target ->
+    renderScope scope <> ": uniqueBy field must be unconditionally required at " <> renderFieldPath target
+  UniqueByFieldNotScalar scope target actualCardinality ->
+    renderScope scope
+      <> ": uniqueBy field must be scalar at "
+      <> renderFieldPath target
+      <> ", found: "
+      <> renderCardinality actualCardinality
+  ConflictingUniqueBy ctype target profileKey typeKey ->
+    "type "
+      <> ctype
+      <> " frontmatter: conflicting uniqueBy keys for "
+      <> renderFieldPath target
+      <> " (profile: "
+      <> profileKey
+      <> ", type: "
+      <> typeKey
+      <> ")"
   -- Each version message names *both* halves of the contradiction. One that said
   -- only "field requires OKF 0.2" would leave the author hunting for where the
   -- version is declared, which is the other end of the file.
