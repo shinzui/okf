@@ -3864,9 +3864,9 @@ validateProfileWithPresence presenceRule inventoryOf validationProfile compiled 
             participant _ = Nothing
 
             insertValue [] (value, elementIndex) = [(value, [elementIndex])]
-            insertValue ((groupValue, indices) : remaining) (value, elementIndex)
-              | groupValue == value = (groupValue, indices <> [elementIndex]) : remaining
-              | otherwise = (groupValue, indices) : insertValue remaining (value, elementIndex)
+            insertValue ((groupValue, elementIndices) : remaining) (value, elementIndex)
+              | groupValue == value = (groupValue, elementIndices <> [elementIndex]) : remaining
+              | otherwise = (groupValue, elementIndices) : insertValue remaining (value, elementIndex)
 
     checkUnknownFields cid ctype concept
       | spec ^. #allowUnknownFields = []

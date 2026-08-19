@@ -210,6 +210,7 @@ main = do
         test "profile value display names match the documented vocabulary" testProfileValueDisplayNames,
         testIO "profile documentation renders a root concept" testProfileDocumentationRootConcept,
         test "profile documentation renders object rules" testProfileDocumentationObjectFields,
+        testIO "profile documentation renders nested references and list uniqueness" testProfileDocumentationNestedReferenceAndUniqueness,
         test "profile documentation renders a required bundle version" testProfileDocumentationRequiredBundleVersion,
         testIO "profile documentation renders one concept per declared type" testProfileDocumentationTypeConcept,
         testIO "profile documentation renders inherited rules for a bare type" testProfileDocumentationInheritedRules,
@@ -6450,6 +6451,23 @@ testProfileDocumentationObjectFields = do
   -- list never shifts between rules.
   assertHasLine "- Object fields: none" bodyLines
 
+-- | Nested reference and parent uniqueness policies are compiled constraints,
+-- so generated documentation must expose both rather than silently dropping
+-- the rule kind that lives below the top-level field.
+testProfileDocumentationNestedReferenceAndUniqueness :: IO (Either Text ())
+testProfileDocumentationNestedReferenceAndUniqueness =
+  withRenderedProfileDocumentation
+    "profiles/nested-references-and-uniqueness.dhall"
+    defaultDocumentationOptions
+    ( \_compiled concepts -> do
+        typeConcept <- conceptAt 1 concepts
+        let bodyLines = conceptBodyLines typeConcept
+        assertHasLine
+          "    - `ref` — required; allowed values: any; cardinality: scalar; format: none; reference: local handles with prefix `IR`; external URIs with scheme `mori`; local handles prohibited; self-reference not allowed; external URI whole-value pattern `mori://[^/]+/[^/]+/okf/improvement-requests/concepts/IR-[1-9][0-9]*`"
+          bodyLines
+        assertHasLine "- Unique by: `id`" bodyLines
+    )
+
 testProfileDocumentationTypeConcept :: IO (Either Text ())
 testProfileDocumentationTypeConcept =
   withRenderedProfileDocumentation
@@ -6475,7 +6493,7 @@ testProfileDocumentationTypeConcept =
           "    - `kind` — required; allowed values: `human`, `model`; cardinality: scalar; format: none"
           bodyLines
         assertHasLine
-          "- Reference: local handles with prefix `ADR`; external URIs not allowed; self-reference not allowed"
+          "- Reference: local handles with prefix `ADR`; external URIs not allowed; local handles allowed; self-reference not allowed"
           bodyLines
         -- The profile-scope optional key must appear on the type page, under
         -- Optional: this is the merge being visible, which is the whole point.

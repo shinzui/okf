@@ -158,19 +158,44 @@ cross-scope paths, and conditional value constraints remain deliberately out of
 scope pending concrete evidence.
 
 Document references are another compiled field component. A
-`HandleReferenceRule` contains `localPrefix`, `externalUriSchemes`, and
-`allowSelf`. Compilation rejects invalid or undeclared prefixes, missing
-profile `idField` ownership, invalid URI schemes, a conflicting type-level
-prefix, and any reference rule combined with a named format. Matching
-profile/type declarations require the same prefix, intersect external schemes
-case-insensitively, and combine `allowSelf` with logical AND.
+`HandleReferenceRule` contains `localPrefix`, `externalUriSchemes`,
+`allowSelf`, `allowLocal`, and an optional `externalUriPattern`. Compilation
+rejects invalid or undeclared prefixes, missing profile `idField` ownership,
+invalid URI schemes or POSIX extended regular expressions, conflicting
+type-level prefixes or unequal non-empty patterns, and any reference rule
+combined with a named format. Matching profile/type declarations require the
+same prefix, intersect external schemes case-insensitively, combine `allowSelf`
+and `allowLocal` with logical AND, and treat an absent pattern as the merge
+identity. Equal patterns merge unchanged.
 
 Bundle validation builds one index of valid profile-governed document-ID owners
 and uses it for every reference field. Local handles must have the compiled
-prefix and appear in that index; a duplicate owner counts as present while the
-existing duplicate-ID check remains authoritative. Non-handles may pass only as
-valid absolute URIs with an explicitly allowed scheme. Validation is entirely
-offline and performs no registry, filesystem, DNS, or network resolution.
+prefix, be permitted by `allowLocal`, and appear in that index; a duplicate
+owner counts as present while the existing duplicate-ID check remains
+authoritative. Non-handles pass three ordered checks: valid absolute URI,
+explicitly allowed case-folded scheme, then a whole-value match against the
+compiled pattern when present. The regular expression is compiled once into a
+private `EffectiveFieldRule` cache and is deliberately omitted from its semantic
+`Eq` and `Show`. Validation is entirely offline and performs no registry,
+filesystem, DNS, network, or external-target resolution. `NestedFieldRule`
+carries the same reference component, so record-list and object members reuse
+the compiler, merge, cache, and runtime walk.
+
+Record-list uniqueness is another compiled parent-field component. A
+`FieldRule.uniqueBy` names one member of its effective `elementFields`; that
+member must be declared, unconditionally required, and effectively `Scalar`.
+Compilation rejects a missing element schema, a missing member, optional or
+conditional presence, a non-scalar member, and unequal non-empty profile/type
+keys. `Nothing` is the merge identity and equal keys merge unchanged.
+
+Runtime uniqueness is local to one parent list on one concept. Only values that
+the ordinary field evaluator classifies as present participate, so missing,
+blank, null, list, and object values retain their existing member diagnostics
+without producing duplicate noise. Equal JSON scalar values are grouped in
+source order, and one `DuplicateNestedFieldValue` reports every element index
+for each repeated value. The abstract inspection surface exposes the effective
+key as `fieldRuleUniqueBy`; it does not expose the compiled-rule constructor or
+the regex cache.
 
 Presence has three classifications, not two. Beside `required` and
 `recommended`, both rule records carry an `optional` list: a key the profile
@@ -251,13 +276,14 @@ intersect and `allowSelf` combines with logical AND, and unlike
 `mergeReferenceRule` it needs no failure case and no conflicting-definition
 error.
 
-Unlike `reference`, `path` is also a member of `NestedFieldRule`. The motivating
-field, `sources[].resource`, lives inside a list element and is unreachable from
-a top-level rule, so a path rule that could not descend would not do the job it
-exists for. `reference` is deliberately *not* added there: no v0.2 field names a
-document handle at nested scope, and an unused member of a published record is a
-compatibility event bought for nothing. That asymmetry is intentional and is
-stated in the schema file itself.
+`path` was the first rule kind added to `NestedFieldRule`. Its motivating field,
+`sources[].resource`, lives inside a list element and is unreachable from a
+top-level rule, so a path rule that could not descend would not do the job it
+exists for. `reference` was initially left top-level-only because no v0.2 field
+motivated the compatibility event. The later `dependencies[].ref` policy does:
+it must prohibit local handles and accept only Mori URIs for one artifact
+family. `reference` therefore now lives at both scopes, while the two rule kinds
+remain distinct and mutually exclusive on one field.
 
 **okf resolves a path only to a concept, and says so rather than pretending
 otherwise.** `validateProfile` receives `[Concept]` and no filesystem handle, and
@@ -432,6 +458,19 @@ This is also the first check of its kind anywhere in okf: before it, a
 frontmatter value naming a file that had been deleted was invisible to every
 check okf performed, because `Okf.Graph` reads links out of concept bodies and
 never looks at a frontmatter value.
+
+Nested reference policies and record-list uniqueness add
+`LocalDocumentReferenceNotAllowed`, `ExternalReferencePatternMismatch`, and
+`DuplicateNestedFieldValue` to `ProfileViolation`. They add
+`InvalidExternalUriPattern`, `ConflictingExternalUriPatterns`,
+`UniqueByRequiresElementFields`, `UniqueByFieldNotDeclared`,
+`UniqueByFieldNotUnconditionallyRequired`, `UniqueByFieldNotScalar`, and
+`ConflictingUniqueBy` to `ProfileDefinitionError`. Exhaustive consumers must
+handle these constructors before moving their okf pin. Adding `allowLocal` and
+`externalUriPattern` to `HandleReferenceRule`, `reference` to
+`NestedFieldRule`, and `uniqueBy` to `FieldRule` is one whole-descriptor Dhall
+generation. Its four no-op upgrade defaults are `True`, `Nothing`, `Nothing`,
+and `Nothing` respectively.
 
 Version enforcement adds four `ProfileDefinitionError` constructors —
 `InvalidProfileOkfVersion`, `ProfileOkfVersionNotUnderstood`,

@@ -7,6 +7,27 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- Profile reference policies can prohibit local document handles and constrain
+  external URI text with a whole-value POSIX extended regular expression.
+  References now work on nested record members as well as top-level fields;
+  external validation remains entirely offline.
+- Record-list rules can declare `uniqueBy` for an unconditionally required
+  scalar member. Duplicate values are reported once per value with every
+  element index, scoped to one list on one concept.
+
+### Changed
+
+- **Breaking:** the published profile descriptor adds `allowLocal` and
+  `externalUriPattern` to `HandleReferenceRule`, `reference` to
+  `NestedFieldRule`, and `uniqueBy` to `FieldRule`. Record-completion defaults
+  preserve the old behavior. Exhaustive Haskell consumers must handle the new
+  structured definition errors and profile violations.
+- Generated profile documentation now prints local-reference permission,
+  external whole-value patterns, nested reference policies, and a fixed
+  `Unique by` constraint for every field.
+
 ## [0.7.0.0] - 2026-08-18
 
 ### Added

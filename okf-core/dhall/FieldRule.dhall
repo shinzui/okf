@@ -23,6 +23,10 @@
 -- mapping. Declaring it alongside `cardinality = Cardinality.Scalar` or
 -- `Cardinality.List` is a profile definition error, because a mapping is
 -- neither.
+--
+-- `uniqueBy = Some key` applies only to `elementFields`: the named nested key
+-- must be unconditionally required and scalar, and its present values must be
+-- unique within each one parent list. `None` performs no comparison.
 let Cardinality = ./Cardinality.dhall
 
 let FieldFormat = ./FieldFormat.dhall

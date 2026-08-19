@@ -7,6 +7,30 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- `HandleReferenceRule` can prohibit local handles with `allowLocal` and narrow
+  external references with an optional whole-value POSIX ERE. The compiled
+  matcher is reused during validation, while URI syntax and scheme checks still
+  run first and no external target is resolved.
+- `NestedFieldRule.reference` applies the same compiled reference semantics to
+  members of record lists and object-valued fields.
+- `FieldRule.uniqueBy` enforces list-local uniqueness for one unconditionally
+  required scalar member. `fieldRuleUniqueBy` exposes the effective merged key
+  without exposing `EffectiveFieldRule` constructors.
+
+### Changed
+
+- **Breaking:** the raw profile schema and JSON representation add
+  `allowLocal`, `externalUriPattern`, nested `reference`, and `uniqueBy`.
+  Compatibility decoding supplies `True`, `Nothing`, `Nothing`, and `Nothing`
+  respectively for descriptors written against 0.7.0.0 and earlier.
+- **Breaking:** `ProfileDefinitionError` and `ProfileViolation` add structured
+  cases for invalid/conflicting patterns, invalid uniqueness declarations,
+  local-handle prohibition, pattern mismatch, and duplicate nested values.
+- Generated profile documentation prints effective local/external reference
+  constraints at both rule depths and a fixed `Unique by` bullet.
+
 ## [0.7.0.0] - 2026-08-18
 
 ### Added

@@ -59,6 +59,17 @@ instead: `compiledProfileTypeNames`, `compiledProfileBaseRules`,
 `EffectiveFieldRule` and `PresenceClause`. The constructors stay private, so the compiled
 encoding is still free to change.
 
+**Every field page uses a fixed constraint list, and nested lines expose every
+rule kind available at that depth.** A top-level rule always prints allowed
+values, cardinality, format, reference, path, condition, object fields, element
+fields, and `Unique by`, using `none` where a component is absent. A nested
+member line prints its reference or path clause when declared. Reference prose
+states whether local handles are allowed, names permitted external schemes, and
+prints the exact whole-value external pattern; it does not claim that okf
+resolves or checks an external target. This fixed shape means adding a compiled
+constraint changes generated output for every profile, even profiles that use
+the no-op default, and therefore requires regenerating the committed example.
+
 **Generation is deterministic and never reads the clock.** Every generated page records who
 produced it under the OKF v0.2 `generated` family, and `generated.by` is written by default,
 so provenance costs the caller nothing. What is *not* written by default is a time: neither
@@ -199,3 +210,7 @@ This ADR adds no constructor to `ProfileViolation` or `ProfileDefinitionError`, 
 exhaustive consumers — including Mori's `mori-cli/src/Mori/Okf/Advisory.hs`, which ADR 5
 names — acquire no obligation and need no coordinated release. The okf-core change is
 additive: new exports on `Okf.Profile`, one new exposed module.
+
+This ADR was amended on 2026-08-19 to cover nested reference clauses, explicit
+local/external policy prose, and the fixed `Unique by` bullet. The generated
+body changed, but the frontmatter contract encoded by the meta-profile did not.

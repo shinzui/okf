@@ -412,7 +412,8 @@ renderFieldRule level key rule =
         "- Cardinality: " <> renderCardinalityName (fieldRuleCardinality rule),
         "- Format: " <> maybe "none" renderFieldFormatName (fieldRuleFormat rule),
         "- Reference: " <> maybe "none" renderReference (fieldRuleReference rule),
-        "- Path: " <> maybe "none" renderPathRule (fieldRulePath rule)
+        "- Path: " <> maybe "none" renderPathRule (fieldRulePath rule),
+        "- Unique by: " <> maybe "none" code (fieldRuleUniqueBy rule)
       ]
         <> conditionBullets
         <> objectFieldBullets
@@ -455,13 +456,13 @@ renderFieldRule level key rule =
 -- | Nested element rules are depth-bounded at one level, so this is flat by
 -- construction: 'fieldRuleElementFields' on a nested rule is always 'Nothing'.
 --
--- The path clause is emitted only when the member declares one, unlike the
--- fixed bullet list of 'renderFieldRule'. This line is already a dense
--- semicolon-separated run and a member declares no path policy far more often
--- than not, so a @path: none@ on every member of every record would cost more
--- than it says. A nested path policy is nevertheless the motivating case for
--- path rules — @sources[].resource@ lives here — so it must be visible when it
--- is there.
+-- The reference and path clauses are emitted only when the member declares
+-- them, unlike the fixed bullet list of 'renderFieldRule'. This line is already
+-- a dense semicolon-separated run and most members declare neither policy, so
+-- @reference: none; path: none@ on every member of every record would cost more
+-- than it says. Both policies are nevertheless meaningful at nested scope —
+-- @dependencies[].ref@ and @sources[].resource@ live here — so each must be
+-- visible when it is present.
 renderElementField :: Text -> EffectiveFieldRule -> Text
 renderElementField key rule =
   code key
@@ -473,6 +474,7 @@ renderElementField key rule =
           "cardinality: " <> renderCardinalityName (fieldRuleCardinality rule),
           "format: " <> maybe "none" renderFieldFormatName (fieldRuleFormat rule)
         ]
+          <> foldMap (\policy -> ["reference: " <> renderReference policy]) (fieldRuleReference rule)
           <> foldMap (\policy -> ["path: " <> renderPathRule policy]) (fieldRulePath rule)
       )
     <> maybe "" (" — " <>) (nonBlank (fieldRuleDescription rule))
@@ -506,11 +508,17 @@ renderReference :: HandleReferenceRule -> Text
 renderReference policy =
   Text.intercalate
     "; "
-    [ "local handles with prefix " <> code (policy ^. #localPrefix),
-      externalPhrase,
-      if policy ^. #allowSelf then "self-reference allowed" else "self-reference not allowed"
-    ]
+    ( [ "local handles with prefix " <> code (policy ^. #localPrefix),
+        externalPhrase,
+        localPermissionPhrase,
+        if policy ^. #allowSelf then "self-reference allowed" else "self-reference not allowed"
+      ]
+        <> foldMap (\patternText -> ["external URI whole-value pattern " <> code patternText]) (policy ^. #externalUriPattern)
+    )
   where
+    localPermissionPhrase =
+      if policy ^. #allowLocal then "local handles allowed" else "local handles prohibited"
+
     externalPhrase =
       case policy ^. #externalUriSchemes of
         [] -> "external URIs not allowed"

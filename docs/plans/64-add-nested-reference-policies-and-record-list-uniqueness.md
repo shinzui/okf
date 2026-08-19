@@ -48,8 +48,9 @@ descriptor fixtures continue to decode and compile, and the final `okf-core` and
 - [x] (2026-08-19T20:03:46Z) Milestone 2: compiled, merged, inspected, and validated nested
       reference policies and record-list uniqueness with focused definition, runtime, fixture,
       accessor, JSON, text, and CLI-diagnostic tests.
-- [ ] Milestone 3: render the effective rules in generated documentation, update public guidance
-      and ADRs, regenerate the committed example, and pass all repository checks.
+- [x] (2026-08-19T20:22:00Z) Milestone 3: rendered the effective rules in generated
+      documentation, updated public guidance and ADRs, regenerated the committed example, and
+      passed formatting, build, test, package, extracted-sdist, and Nix checks.
 - [ ] Milestone 4: after explicit release approval, publish `okf-core` and `okf-cli` 0.8.0.0 to
       Hackage under the matching immutable Git tag and GitHub release.
 
@@ -71,6 +72,13 @@ descriptor fixtures continue to decode and compile, and the final `okf-core` and
   haskell-hvr/regex-tdfa --full` reported the 1.3.2.6 corpus source, while Hackage's
   `preferred.json` and upstream tag `v1.3.2.6` independently confirmed the released version.
   The strict-`Text` source exposes the planned `compile` and `regexec` signatures.
+  Date: 2026-08-19.
+
+- Observation: The generated-documentation meta-profile required no schema change.
+  Evidence: The renderer change adds body constraint prose only; generated frontmatter remains
+  exactly `type`, `title`, `description`, and `generated` with the optional legacy `timestamp`.
+  The unchanged `docs/profiles/profile-documentation.dhall` accepted all four regenerated pages
+  under `--profile-enforce --strict`, and the CLI byte-drift suite passed.
   Date: 2026-08-19.
 
 
@@ -133,10 +141,42 @@ descriptor fixtures continue to decode and compile, and the final `okf-core` and
   OKF's offline validator or release.
   Date: 2026-08-19.
 
+- Decision: Do not amend ADR 17 for the new duplicate-value diagnostic.
+  Rationale: `DuplicateNestedFieldValue` carries an Aeson `Value`, and the CLI renders it through
+  the existing `renderJsonValue` UTF-8 path exactly as ADR 17 requires. This is a new caller of an
+  established rule, not a change to the rule or its boundary.
+  Date: 2026-08-19.
+
+- Decision: Leave the generated-documentation meta-profile unchanged.
+  Rationale: The fixed `Unique by` bullet and nested reference clauses alter only Markdown bodies.
+  ADR 6's published frontmatter and concept-ID contract is unchanged, so editing the meta-profile
+  would claim a schema change that did not occur.
+  Date: 2026-08-19.
+
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+Milestones 1 through 3 are complete. The repository now publishes the four additive descriptor
+fields with a complete 0.7.0.0 compatibility generation; compiles and merges nested reference
+policies and list-local uniqueness; reports layered definition and runtime diagnostics; and renders
+the effective rules through both inspection and generated documentation. The focused valid and
+invalid bundles prove the motivating `dependencies[].ref` and `acceptanceCriteria[].id` shapes,
+including reuse of `AC-1` in a different concept.
+
+The documentation pass amended ADRs 1, 5, 6, and 11. ADR 17 was reviewed and intentionally left
+unchanged because the new `Value` diagnostic already uses its required renderer. The PostgreSQL
+documentation example was regenerated twice with an identical diff and validates strictly against
+the unchanged meta-profile.
+
+The pre-release tree passed `nix fmt`, `cabal build all`, both package suites, both `cabal check`
+commands with no errors or warnings, both 0.7.0.0 development sdists, a clean-room build and both
+suites from `/tmp/okf-0.7.0.0-sdist-final.xc3WRC`, and `nix flake check`. That temporary directory
+remains available for review. These are development-version proofs only: Milestone 4 must repeat
+them after the approved 0.8.0.0 version and dependency-bound edits.
+
+Publication remains deliberately pending. No version was bumped, tag created, remote updated,
+Hackage package uploaded, or GitHub release created. Milestone 4 begins only after explicit user
+approval of the prepared 0.8.0.0 changelogs.
 
 
 ## Context and Orientation
@@ -165,13 +205,13 @@ defaults live under `okf-core/dhall/defaults/`, and authoring helpers live under
 using record completion inherit new members while bare record literals require a compatibility
 decoder. `okf-core/dhall/package.dhall` re-exports this public schema.
 
-`okf-core/src/Okf/Profile.hs` owns the raw types, stable JSON encoders, thirteen frozen descriptor
+`okf-core/src/Okf/Profile.hs` owns the raw types, stable JSON encoders, frozen descriptor
 generations, compilation, accessors, profile-definition errors, runtime deviations, and validation
-walk. Today `NestedFieldRule` omits `reference`,
-`compileOptionalNestedFieldRule` hard-codes the effective reference to `Nothing`, and
-`checkRecordMember` checks presence, vocabulary, format, and path only. Top-level reference
-validation already parses a local `PREFIX-N` handle first, otherwise parses an absolute URI,
-checks a case-folded scheme, and performs no network access. The same module's
+walk. At the 0.7.0.0 baseline, `NestedFieldRule` omitted `reference`,
+`compileOptionalNestedFieldRule` hard-coded the effective reference to `Nothing`, and
+`checkRecordMember` checked presence, vocabulary, format, and path only. Top-level reference
+validation already parsed a local `PREFIX-N` handle first, otherwise parsed an absolute URI,
+checked a case-folded scheme, and performed no network access. The same module's
 `checkDuplicateDocumentIds` checks profile-owned top-level document handles across a bundle; it is
 not reusable for request-local nested members.
 

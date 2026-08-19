@@ -317,8 +317,9 @@ NESTED RECORD FIELDS
 
   A top-level FieldRule may set elementFields to required, recommended, and
   optional rules for every record in a list. The public schema is intentionally
-  bounded to one level: NestedFieldRule has vocabulary, cardinality, and format constraints but
-  cannot contain another elementFields value.
+  bounded to one level: NestedFieldRule has vocabulary, cardinality, format,
+  reference, path, and conditional-presence constraints but cannot contain
+  elementFields, objectFields, or uniqueBy.
 
   Use field.recordList with NestedFieldRule constructors or record completion.
   Declaring elementFields implies list cardinality; combining it with Scalar is
@@ -335,6 +336,27 @@ NESTED RECORD FIELDS
 
   Extra keys inside a record remain allowed. Nested field-name closure and a
   second nested level are not part of this schema.
+
+RECORD-LIST UNIQUENESS
+
+  A FieldRule with elementFields may set uniqueBy to the name of one nested
+  member. The member must be declared, unconditionally required, and effectively
+  Scalar. Missing, optional, conditionally required, Any, List, and object-only
+  keys are hard profile-definition errors.
+
+    field.recordList "acceptanceCriteria" acceptanceCriteriaRules
+      // { uniqueBy = Some "id" }
+
+  Values are compared only within that one list on that one concept. Reusing
+  AC-1 in another concept is valid. Each duplicated value produces one
+  diagnostic with all zero-based element indices, in first-occurrence order:
+
+    profile: requests/duplicate: duplicate value "AC-1" for acceptanceCriteria.id at element indices [0, 1]
+
+  Missing, blank, list, object, and null member values retain their normal
+  member diagnostic and are skipped by the duplicate pass. Across profile and
+  type scopes, None is the merge identity and equal keys merge; different keys
+  conflict.
 
 CONDITIONAL FIELD PRESENCE
 
@@ -387,35 +409,48 @@ OPTIONAL FIELDS
 
 DOCUMENT REFERENCES
 
-  A top-level FieldRule may set reference to a local handle prefix, a list of
-  allowed external URI schemes, and an allowSelf policy. The constructors cover
-  local-only and explicit external alternatives:
+  FieldRule and NestedFieldRule may set reference to a local handle prefix, an
+  allowLocal policy, a list of allowed external URI schemes, an optional
+  externalUriPattern, and an allowSelf policy. The constructors cover local-only
+  and explicit external alternatives:
 
     field.localReference "supersedes" "ADR"
     field.localOrExternalReference "supersededBy" "ADR" [ "mori" ]
 
-  The helpers default allowSelf to False. Use
-  okf.defaults.HandleReferenceRule record completion to override it.
+  The helpers default allowSelf to False, allowLocal to True, and
+  externalUriPattern to None. Use okf.defaults.HandleReferenceRule record
+  completion to override them.
 
   A canonical handle is checked first. A handle with another prefix is a
-  category error; one with the declared prefix must belong to a valid,
-  profile-governed concept in this bundle. Duplicate owners still produce the
-  existing duplicate-ID deviation but count as present, avoiding a false
-  dangling-reference message. Lists are checked element-wise with indexed paths.
+  category error. One with the declared prefix is rejected when allowLocal is
+  False; otherwise it must belong to a valid, profile-governed concept in this
+  bundle. Duplicate owners still produce the existing duplicate-ID deviation
+  but count as present, avoiding a false dangling-reference message. Lists are
+  checked element-wise with indexed paths.
 
     profile: decisions/current: supersedes[1] references ADR-99, which does not exist in this bundle
 
-  Text that is not a handle must be an absolute URI whose scheme is listed by
-  the policy. Scheme comparison is case-insensitive. okf checks syntax and the
-  scheme offline; it never resolves an external URI or consults Mori, a registry,
-  DNS, or the network.
+  Text that is not a handle passes three external checks in order: it must be a
+  valid absolute URI; its case-folded scheme must be listed; and, when present,
+  externalUriPattern must match the complete original text. The pattern uses
+  POSIX extended regular-expression syntax and is a whole-value match, not a
+  substring search. Write .* explicitly when surrounding text is intended.
+  Invalid patterns are rejected when the profile compiles.
+
+  These are offline syntax checks. okf never resolves the URI, checks whether
+  its target exists, or consults Mori, a registry, DNS, or the network.
 
   The local prefix must use document-handle grammar, be declared by at least one
   type idPrefix, and have a profile idField. URI schemes must use RFC 3986 scheme
   grammar. A reference field cannot also declare format. Matching profile/type
-  policies must use the same local prefix; their external schemes intersect and
-  self-reference is allowed only when both permit it. Invalid combinations are
-  hard profile-definition errors before any bundle is read.
+  policies must use the same local prefix; their external schemes intersect;
+  allowLocal and allowSelf combine with logical AND; None is the pattern merge
+  identity; equal patterns merge; and unequal patterns conflict. Invalid
+  combinations are hard profile-definition errors before any bundle is read.
+
+  Compatibility defaults are inert: older handle policies receive
+  allowLocal=True and externalUriPattern=None; older nested rules receive
+  reference=None; and older top-level rules receive uniqueBy=None.
 
   A registry reference may be a path to a Dhall file, a directory holding
   package.dhall, or a Dhall expression such as a hash-pinned URL. `okf profile

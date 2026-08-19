@@ -36,6 +36,7 @@ Human-readable name of the object, as a reader would say it.
 - Format: none
 - Reference: none
 - Path: none
+- Unique by: none
 - Condition: none
 - Object fields: none
 - Element fields: none
@@ -49,6 +50,7 @@ The OKF concept type; must be one of the type rules below.
 - Format: none
 - Reference: none
 - Path: none
+- Unique by: none
 - Condition: none
 - Object fields: none
 - Element fields: none
@@ -64,6 +66,7 @@ One or two sentences on what this object is for.
 - Format: none
 - Reference: none
 - Path: none
+- Unique by: none
 - Condition: none
 - Object fields: none
 - Element fields: none
@@ -78,6 +81,7 @@ Provenance for this description, superseding the v0.1 `timestamp` key (OKF v0.2 
 - Format: none
 - Reference: none
 - Path: none
+- Unique by: none
 - Condition: none
 - Object fields:
     - `at` — recommended; allowed values: any; cardinality: any; format: rfc3339-utc — UTC RFC3339 timestamp when the description was last confirmed accurate.
@@ -94,6 +98,7 @@ postgresql:// URI locating the live object.
 - Format: uri-with-scheme(postgresql)
 - Reference: none
 - Path: none
+- Unique by: none
 - Condition: none
 - Object fields: none
 - Element fields: none
@@ -110,6 +115,7 @@ Team accountable for the object, when one is named.
 - Format: none
 - Reference: none
 - Path: none
+- Unique by: none
 - Condition: none
 - Object fields: none
 - Element fields: none

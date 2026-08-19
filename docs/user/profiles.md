@@ -152,9 +152,10 @@ Each `FieldRule` — one frontmatter key, and optionally what it is for:
 | `format` | `Optional FieldFormat` | A parser-backed value contract: UTC RFC3339 timestamp, calendar date, absolute URI, URI with a required scheme, document handle, OKF v0.2 actor, `human:` actor, integer, non-negative integer, or boolean. `None` means unconstrained. See [actor and non-textual formats](#actor-and-non-textual-formats). |
 | `elementFields` | `Optional NestedRules` | When present, the field must be a list whose elements are flat records checked with nested required, recommended, and optional rules. `None` means no element schema. |
 | `objectFields` | `Optional NestedRules` | When present, the field's value must itself be a mapping, whose members are checked with the same nested rules. Declaring it alongside `elementFields` accepts either spelling and checks both against the same members. `None` means no object schema. |
-| `reference` | `Optional HandleReferenceRule` | Declares that present top-level values are local handles with one prefix or absolute external URIs using an explicitly allowed scheme. Local handles must resolve inside the bundle. |
+| `reference` | `Optional HandleReferenceRule` | Declares that present values are local handles with one prefix or absolute external URIs using an explicitly allowed scheme and optional whole-value pattern. Available on top-level and nested rules. Local handles may be prohibited; when allowed, they must resolve inside the bundle. |
 | `path` | `Optional PathReferenceRule` | Declares that present values name a path or URI per OKF v0.2 §6.2: an absolute URL with an allowed scheme, a bundle-relative path beginning with `/`, or a relative path resolved against the concept's own directory. Distinct from `reference`, and declaring both on one key is a definition error. See [path-valued fields](#path-valued-fields). |
 | `when` | `Optional FieldCondition` | Gates only this rule's required or recommended presence check on a same-scope scalar sibling having one of `hasValue`. Present values are still constrained when the condition is false. Rejected on an `optional` rule, which has no presence check to gate. |
+| `uniqueBy` | `Optional Text` | For a list of records declared with `elementFields`, requires present scalar values under the named unconditionally required member to be unique within that one parent list. `None` disables comparison. See [record-list uniqueness](#record-list-uniqueness). |
 
 A description is attached to the key it documents rather than kept in a parallel
 list, so it cannot drift away from the rule or outlive it. See
@@ -179,9 +180,9 @@ Use `elementFields` when one frontmatter key contains a list of flat records,
 such as reviews. `NestedRules` has the same three presence lists as
 `FrontmatterRules` — `required`, `recommended`, and `optional` — and
 `NestedFieldRule` has the same description, vocabulary, cardinality,
-named-format, and `path` fields as `FieldRule`, but deliberately has no
-`elementFields` and no `reference`; the
-schema cannot recurse beyond one list-of-records level.
+named-format, `reference`, `path`, and conditional-presence fields as
+`FieldRule`, but deliberately has no `elementFields`, `objectFields`, or
+`uniqueBy`; the schema cannot recurse beyond one record level.
 
 ```dhall
 let field = ../../okf-core/dhall/mk/FieldRule.dhall
@@ -210,9 +211,41 @@ modes, recommended nested fields under `--strict`, optional nested fields never,
 and present values always receive vocabulary, cardinality, and format checks.
 
 Diagnostics carry the complete path, including the list index, for example
-`reviews[2].outcome`. Extra keys inside each record remain allowed. The profile
-does not compare records, capture top-level fields, or validate a second nested
-level.
+`reviews[2].outcome`. Extra keys inside each record remain allowed. Unless the
+parent declares `uniqueBy`, the profile does not compare records. It never
+captures top-level fields or validates a second nested level.
+
+### Record-list uniqueness
+
+Set a top-level `FieldRule.uniqueBy` to the name of one member declared by its
+`elementFields` when a record list carries a list-local identity:
+
+```dhall
+    field.recordList
+      "acceptanceCriteria"
+      { required =
+        [ NestedFieldRule::{ field = "id", cardinality = Cardinality.Scalar }
+        , NestedFieldRule::{ field = "text", cardinality = Cardinality.Scalar }
+        ]
+      , recommended = [] : List NestedFieldRule.Type
+      , optional = [] : List NestedFieldRule.Type
+      }
+  //  { uniqueBy = Some "id" }
+```
+
+The named member must exist in the effective `elementFields`, be
+unconditionally required, and have effective `Scalar` cardinality. An optional
+or conditionally required key, `Any`, `List`, a missing member, and an
+object-only rule are profile-definition errors. Missing, blank, list, object,
+and null member values keep their ordinary member diagnostics and do not
+participate in the duplicate pass.
+
+Uniqueness is scoped to one list on one concept. Reusing `AC-1` in another
+concept is valid. Within one list, every duplicated value produces one
+diagnostic containing all of its zero-based element indices, and different
+duplicate groups are reported in first-occurrence order. Profile and type
+scopes merge `None` as the identity and the same key unchanged; two different
+keys are a definition error.
 
 ### Object-valued keys
 
@@ -1055,6 +1088,7 @@ export: documentation.architectureDecisions
 name: architecture-decision-records
 description: (none)
 okfVersion: 0.1
+requireBundleVersion: (none)
 allowUnknownTypes: false
 allowUnknownFields: true
 idField: docId
@@ -1066,6 +1100,7 @@ frontmatter.required:
     reference: (none)
     path: (none)
     when: (none)
+    uniqueBy: (none)
     objectFields: (none)
     elementFields: (none)
   - title: (none)
@@ -1075,6 +1110,7 @@ frontmatter.required:
     reference: (none)
     path: (none)
     when: (none)
+    uniqueBy: (none)
     objectFields: (none)
     elementFields: (none)
   - docId: (none)
@@ -1084,6 +1120,7 @@ frontmatter.required:
     reference: (none)
     path: (none)
     when: (none)
+    uniqueBy: (none)
     objectFields: (none)
     elementFields: (none)
   - status: (none)
@@ -1093,6 +1130,7 @@ frontmatter.required:
     reference: (none)
     path: (none)
     when: (none)
+    uniqueBy: (none)
     objectFields: (none)
     elementFields: (none)
   - date: (none)
@@ -1102,6 +1140,7 @@ frontmatter.required:
     reference: (none)
     path: (none)
     when: (none)
+    uniqueBy: (none)
     objectFields: (none)
     elementFields: (none)
 frontmatter.recommended:
@@ -1112,6 +1151,7 @@ frontmatter.recommended:
     reference: (none)
     path: (none)
     when: (none)
+    uniqueBy: (none)
     objectFields: (none)
     elementFields: (none)
   - timestamp: (none)
@@ -1121,6 +1161,7 @@ frontmatter.recommended:
     reference: (none)
     path: (none)
     when: (none)
+    uniqueBy: (none)
     objectFields: (none)
     elementFields: (none)
   - supersedes: (none)
@@ -1130,6 +1171,7 @@ frontmatter.recommended:
     reference: (none)
     path: (none)
     when: (none)
+    uniqueBy: (none)
     objectFields: (none)
     elementFields: (none)
   - supersededBy: (none)
@@ -1139,6 +1181,7 @@ frontmatter.recommended:
     reference: (none)
     path: (none)
     when: (none)
+    uniqueBy: (none)
     objectFields: (none)
     elementFields: (none)
   - originatingPlan: (none)
@@ -1148,6 +1191,7 @@ frontmatter.recommended:
     reference: (none)
     path: (none)
     when: (none)
+    uniqueBy: (none)
     objectFields: (none)
     elementFields: (none)
 frontmatter.optional: (none)
@@ -1196,6 +1240,7 @@ frontmatter.required:
     reference: (none)
     path: (none)
     when: (none)
+    uniqueBy: (none)
     objectFields: (none)
     elementFields: (none)
 frontmatter.recommended:
@@ -1206,6 +1251,7 @@ frontmatter.recommended:
     reference: (none)
     path: (none)
     when: (none)
+    uniqueBy: (none)
     objectFields: (none)
     elementFields: (none)
 frontmatter.optional:
@@ -1213,9 +1259,10 @@ frontmatter.optional:
     allowedValues: (any)
     cardinality: scalar
     format: (none)
-    reference: local-prefix(ADR), external-uri-schemes([]), allow-self(false)
+    reference: local-prefix(ADR), external-uri-schemes([]), allow-self(false), allow-local(true), external-uri-pattern((none))
     path: (none)
     when: (none)
+    uniqueBy: (none)
     objectFields: (none)
     elementFields: (none)
 ```
@@ -1673,11 +1720,13 @@ retired ID is not silently reused.
 
 ## Document references
 
-A top-level `FieldRule.reference` gives a frontmatter relationship an explicit
-target policy. `localPrefix` selects the only local handle category the field may
-name, `externalUriSchemes` lists absolute-URI alternatives, and `allowSelf`
-controls whether a local handle may resolve to the concept carrying it. An empty
-scheme list means local handles only.
+`FieldRule.reference` or `NestedFieldRule.reference` gives a frontmatter
+relationship an explicit target policy. `localPrefix` selects the local handle
+category, `allowLocal` decides whether that category is accepted at all,
+`externalUriSchemes` lists absolute-URI alternatives, `externalUriPattern`
+optionally narrows those alternatives, and `allowSelf` controls whether an
+allowed local handle may resolve to the concept carrying it. An empty scheme
+list means no external URI is accepted.
 
 ```dhall
 let okf = ./okf-core/dhall/package.dhall
@@ -1692,8 +1741,9 @@ in  [ field.localReference "supersedes" "ADR"
     ]
 ```
 
-The helpers default `allowSelf` to `False`. Use the exported
-`okf.defaults.HandleReferenceRule` when self-reference is intentional:
+The helpers default `allowSelf` to `False`, keep local handles allowed, and
+apply no external pattern. Use the exported
+`okf.defaults.HandleReferenceRule` when another policy is intentional:
 
 ```dhall
 okf.defaults.FieldRule::{
@@ -1708,22 +1758,36 @@ okf.defaults.FieldRule::{
 
 Reference policies apply to present strings and lists of strings. List failures
 carry the exact index, such as `supersedes[1]`. A parsed handle with another
-prefix is a category error; one with the declared prefix must resolve to a valid
-profile-governed ID in the current bundle. A duplicate target counts as present
-and continues to produce the existing duplicate-ID diagnostic rather than a
-false dangling error. Non-text values and text that is neither a canonical
-handle nor an absolute URI are malformed references.
+prefix is a category error. One with the declared prefix is rejected when
+`allowLocal = False`; otherwise it must resolve to a valid profile-governed ID
+in the current bundle. A duplicate target counts as present and continues to
+produce the existing duplicate-ID diagnostic rather than a false dangling
+error. Non-text values and text that is neither a canonical handle nor an
+absolute URI are malformed references.
 
-External schemes are compared case-insensitively and must be listed explicitly.
-okf validates only URI syntax and the allowed scheme: it performs no DNS,
-network, registry, cross-bundle, or cross-repository resolution. Mori owns that
-external graph boundary.
+An external value passes three checks in order: it must be a valid absolute URI,
+its case-folded scheme must be listed in `externalUriSchemes`, and, when
+`externalUriPattern = Some pattern`, its complete original text must match that
+pattern. Patterns use POSIX extended regular-expression syntax and are
+whole-value matches: a successful substring is not enough. Add `.*` explicitly
+when surrounding text is intended. Invalid patterns are profile-definition
+errors, before any bundle is read.
+
+All three external checks are offline syntax checks. okf does not perform DNS,
+network, registry, cross-bundle, or cross-repository resolution and never checks
+whether the URI target exists. Mori owns that external graph boundary.
 
 Compilation rejects malformed or undeclared local prefixes, invalid external
-scheme names, policies without an `idField`, different profile/type local
-prefixes, and a field that combines `reference` with `format`. Matching
-profile/type policies intersect their external schemes and permit self-reference
-only when both declarations allow it.
+scheme names or patterns, policies without an `idField`, different profile/type
+local prefixes, conflicting non-empty patterns, and a field that combines
+`reference` with `format`. Matching profile/type policies intersect their
+external schemes and combine `allowSelf` and `allowLocal` with logical AND.
+`True` is the merge identity for both booleans; `None` is the pattern identity;
+equal patterns merge unchanged, and unequal patterns conflict.
+
+Nested reference policies use exactly the same compiler, merge, and runtime
+checks. This is how a profile can make `dependencies[].ref` accept only a Mori
+improvement-request URI while prohibiting local `IR-N` handles.
 
 ```text
 profile: decisions/current: supersedes[1] references ADR-99, which does not exist in this bundle
@@ -1946,6 +2010,7 @@ in  [ -- 1. constructors — the form to reach for
       , reference = None okf.HandleReferenceRule
       , path = None okf.PathReferenceRule
       , when = None okf.FieldCondition
+      , uniqueBy = None Text
       }
     ]
 ```
@@ -1988,6 +2053,13 @@ exists**, since a descriptor written before these modules existed cannot
 retroactively have used them. Descriptors written for earlier okf versions keep
 loading for a different reason entirely: okf's decoder accepts the older shape
 too. See [Adding descriptions to an existing descriptor](#adding-descriptions-to-an-existing-descriptor).
+
+For the schema growth in this release, the four compatibility defaults are
+deliberately no-ops: an older `HandleReferenceRule` upgrades with
+`allowLocal = True` and `externalUriPattern = None Text`; an older
+`NestedFieldRule` upgrades with `reference = None HandleReferenceRule`; and an
+older `FieldRule` upgrades with `uniqueBy = None Text`. A descriptor using
+current record completion receives the same defaults directly.
 
 The dependency is **one-way**: okf publishes the schema and imports nothing in
 return. `okf validate --profile` accepts any descriptor path — local or one that

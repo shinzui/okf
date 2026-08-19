@@ -7,6 +7,20 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- `okf validate --profile` renders actionable diagnostics for prohibited local
+  handles, external URI pattern mismatches, and duplicate record-list member
+  values with every zero-based element index.
+
+### Changed
+
+- **Breaking:** requires the coordinated `okf-core` release that adds nested
+  reference policies and record-list uniqueness.
+- `okf profile show` includes `allow-local`, `external-uri-pattern`, nested
+  `reference`, and `uniqueBy`; generated profile documentation exposes the same
+  effective constraints.
+
 ## [0.7.0.0] - 2026-08-18
 
 ### Added

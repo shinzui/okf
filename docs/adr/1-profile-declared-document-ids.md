@@ -29,19 +29,22 @@ and otherwise contains ASCII letters or digits. The number is positive decimal
 with no leading zeros. Handles are unique across the whole bundle under the
 configured field.
 
-A top-level profile field may declare a `HandleReferenceRule`. The rule names
-one local handle prefix, an explicit list of permitted external URI schemes,
-and whether the source document may reference itself. Local references resolve
-only against valid, profile-governed owners in the current bundle: the owner
-must match a declared type, carry the configured `idField`, parse as a document
-ID, and use that type's exact `idPrefix`. Duplicate owners still make a handle
+A top-level or nested profile field may declare a `HandleReferenceRule`. The
+rule names one local handle prefix, whether local handles are permitted, an
+explicit list of permitted external URI schemes, an optional whole-value POSIX
+extended regular expression for external URI text, and whether the source
+document may reference itself. When permitted, local references resolve only
+against valid, profile-governed owners in the current bundle: the owner must
+match a declared type, carry the configured `idField`, parse as a document ID,
+and use that type's exact `idPrefix`. Duplicate owners still make a handle
 present while retaining the separate duplicate-ID diagnostic.
 
 Reference rules own the alternative value shape “local handle or allowed
 absolute URI” and therefore cannot be combined with an independent named
 format. When profile and type scopes both declare a reference rule, their local
 prefixes must agree, allowed external schemes are intersected
-case-insensitively, and `allowSelf` is combined with logical AND.
+case-insensitively, `allowLocal` and `allowSelf` are combined with logical AND,
+and whole-value patterns merge only when one is absent or both are equal.
 
 The canonical concept path remains authoritative. `okf show` tries path lookup
 first and only then falls back to handle lookup. Without a profile, handle
@@ -69,12 +72,14 @@ Renaming a document can preserve its short handle, but links written with
 canonical paths still need updating. Duplicate and malformed handles are
 profile deviations, advisory unless `--profile-enforce` is used.
 
-Reference validation reports malformed values, wrong local prefixes, dangling
-local targets, disallowed external schemes, and disallowed self references at
-their structural field paths. okf never resolves an external URI: it validates
-only absolute-URI syntax and the declared scheme. Mori owns any later
-cross-repository lookup. Inverse references, graph cycles, and external target
-existence remain outside this decision.
+Reference validation reports malformed values, wrong local prefixes, prohibited
+local handles, dangling local targets, disallowed external schemes, whole-value
+pattern mismatches, and disallowed self references at their structural field
+paths. Nested members use the same policy and indexed or object-member paths as
+top-level fields. okf never resolves an external URI: it validates absolute-URI
+syntax, the declared scheme, and the original text against the compiled pattern.
+Mori owns any later cross-repository lookup. Inverse references, graph cycles,
+and external target existence remain outside this decision.
 
 The Dhall schema addition is breaking for descriptors that construct closed
 records directly. The changelogs call out the required migration.
@@ -99,3 +104,8 @@ that a profile declares those prefixes, governs their fields, or guarantees
 their uniqueness. Listing does not load a profile, infer from paths or
 filenames, or access the network. No observed valid handle means the key is
 omitted, and a bundle that cannot be walked remains a path-only entry.
+
+This ADR was amended on 2026-08-19 to let reference policies prohibit local
+handles, constrain external URI text with a whole-value pattern, and apply at
+nested record scope. The offline boundary remains unchanged: pattern matching
+does not imply external target resolution.

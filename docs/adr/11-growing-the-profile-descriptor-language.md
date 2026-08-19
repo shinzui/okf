@@ -131,6 +131,24 @@ touches one record and a change that touches five cost the same in this chain, s
 there is no compatibility reason to split a coherent addition across plans. The
 reason to split is reviewability, which is a different argument.
 
+The 0.7.0.0-to-0.8.0.0 growth is the worked example with four fields across
+three records: `allowLocal` and `externalUriPattern` on
+`HandleReferenceRule`, `reference` on `NestedFieldRule`, and `uniqueBy` on
+`FieldRule`. It freezes one complete pre-change 0.7.0.0 descriptor generation
+and upgrades with `True`, `Nothing`, `Nothing`, and `Nothing`. The fixture is
+named for that exact released baseline and is proved by negative control in
+both decoder entry points.
+
+It also exposes a subtle corollary of whole-descriptor freezing: **an older
+generation that reused a current record is not actually frozen.** Several old
+generations had private field records but referred to the then-current
+`HandleReferenceRule`. Growing that shared record changed their Dhall type too,
+so they had to be rebound to the frozen pre-growth handle record. A private
+generation may share utilities and unions whose published type is stable, but
+it must not share a record that can gain a field. When GHC reports that an old
+upgrade now expects the current record, treat that as a hole in the historical
+freeze rather than supporting a hybrid descriptor shape no release published.
+
 **Not every plan is a schema event.** A change that adds only a compile-time
 check, a shipped descriptor, or a renderer freezes no generation and adds no
 fixture. Requiring a fixture of such a change would be cargo cult. Version
@@ -280,3 +298,7 @@ formats exposed. They are currently harmless only because the published
 it to. Anyone who widens it must expect to repair those fixtures in the same way,
 and would do better to reconsider whether the alternative can be reached from
 compilation instead.
+
+This ADR was amended on 2026-08-19 with the complete 0.7.0.0 generation and the
+rule that older generations must be rebound when they reused a record that
+later grows.
