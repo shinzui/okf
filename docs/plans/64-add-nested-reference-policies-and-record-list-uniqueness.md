@@ -153,6 +153,14 @@ descriptor fixtures continue to decode and compile, and the final `okf-core` and
   would claim a schema change that did not occur.
   Date: 2026-08-19.
 
+- Decision: Proceed with the coordinated 0.8.0.0 publication after the explicit release gate.
+  Rationale: The user approved the prepared root and package changelogs and authorized Milestone 4
+  on 2026-08-19. Release preflight found both packages at 0.7.0.0, `v0.7.0.0` as the latest tag,
+  five pending commits, and no existing 0.8.0.0 tag, Hackage package, or GitHub release. The latest
+  upstream `mori://shinzui/okf-profiles` release remains v0.10.0; refreshing that literal tag
+  reproduced the checked-in URL, hash, and catalogue with no diff.
+  Date: 2026-08-19.
+
 
 ## Outcomes & Retrospective
 
@@ -174,9 +182,17 @@ suites from `/tmp/okf-0.7.0.0-sdist-final.xc3WRC`, and `nix flake check`. That t
 remains available for review. These are development-version proofs only: Milestone 4 must repeat
 them after the approved 0.8.0.0 version and dependency-bound edits.
 
-Publication remains deliberately pending. No version was bumped, tag created, remote updated,
-Hackage package uploaded, or GitHub release created. Milestone 4 begins only after explicit user
-approval of the prepared 0.8.0.0 changelogs.
+Before approval, no version was bumped, tag created, remote updated, Hackage package uploaded, or
+GitHub release created. After explicit user approval, both package versions and the CLI's internal
+core bounds moved to 0.8.0.0 and the prepared changelogs gained their dated release sections. No
+tag or external release state was created before the versioned tree passed every gate below.
+
+After approval, the versioned 0.8.0.0 release tree passed `nix fmt`, `cabal build all`, both full
+package suites, both `cabal check` commands without errors or warnings, and `nix flake check`. Both
+0.8.0.0 sdists contain the required Dhall schema, frozen and runtime fixtures, and embedded CLI
+help. Building the two extracted packages together and running both suites passed from
+`/tmp/okf-0.8.0.0-sdist.zZJ49N`. That exact directory remains available for release review; the
+release commit and tag may now be created, while publication results remain to be recorded below.
 
 
 ## Context and Orientation

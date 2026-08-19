@@ -7,6 +7,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.8.0.0] - 2026-08-19
+
 ### Added
 
 - `okf validate --profile` renders actionable diagnostics for prohibited local
