@@ -51,8 +51,9 @@ descriptor fixtures continue to decode and compile, and the final `okf-core` and
 - [x] (2026-08-19T20:22:00Z) Milestone 3: rendered the effective rules in generated
       documentation, updated public guidance and ADRs, regenerated the committed example, and
       passed formatting, build, test, package, extracted-sdist, and Nix checks.
-- [ ] Milestone 4: after explicit release approval, publish `okf-core` and `okf-cli` 0.8.0.0 to
-      Hackage under the matching immutable Git tag and GitHub release.
+- [x] (2026-08-19T21:04:15Z) Milestone 4: after explicit release approval, published `okf-core`
+      and `okf-cli` 0.8.0.0 with Haddocks to Hackage under annotated tag `v0.8.0.0` and the matching
+      GitHub release.
 
 
 ## Surprises & Discoveries
@@ -79,6 +80,14 @@ descriptor fixtures continue to decode and compile, and the final `okf-core` and
   exactly `type`, `title`, `description`, and `generated` with the optional legacy `timestamp`.
   The unchanged `docs/profiles/profile-documentation.dhall` accepted all four regenerated pages
   under `--profile-enforce --strict`, and the CLI byte-drift suite passed.
+  Date: 2026-08-19.
+
+- Observation: The `okf-cli` source upload completed server-side despite Cabal reporting an HTTP/2
+  stream reset.
+  Evidence: The first and only `cabal upload --publish` invocation ended with curl error 92, after
+  transmitting the tarball. Before any retry, both the Hackage package page and its versioned Cabal
+  file returned HTTP 200. The upload was therefore not repeated; the subsequent Haddock upload
+  succeeded normally, and the final package and documentation URLs both returned HTTP 200.
   Date: 2026-08-19.
 
 
@@ -192,7 +201,20 @@ package suites, both `cabal check` commands without errors or warnings, and `nix
 0.8.0.0 sdists contain the required Dhall schema, frozen and runtime fixtures, and embedded CLI
 help. Building the two extracted packages together and running both suites passed from
 `/tmp/okf-0.8.0.0-sdist.zZJ49N`. That exact directory remains available for release review; the
-release commit and tag may now be created, while publication results remain to be recorded below.
+successful check cleared release commit and tag creation.
+
+The coordinated release is complete. Release commit
+`1b61d1d7adbdf8d90488805dc972801e45562c02` is named by the immutable annotated tag `v0.8.0.0`;
+remote `master` and the peeled tag both resolved to that commit after the push. Publication URLs:
+
+- `okf-core` source and Haddocks: <https://hackage.haskell.org/package/okf-core-0.8.0.0>
+- `okf-cli` source and Haddocks: <https://hackage.haskell.org/package/okf-cli-0.8.0.0>
+- GitHub release: <https://github.com/shinzui/okf/releases/tag/v0.8.0.0>
+
+All four HTTP endpoints for the two package pages and their `/docs/` roots returned 200 after
+publication. The GitHub release is neither a draft nor a prerelease and records the package links,
+the prepared changelog, and the new minimum 0.8.0.0 decoder contract for catalogs authoring these
+fields. The downstream catalog adoption remains intentionally outside this completed plan.
 
 
 ## Context and Orientation
