@@ -197,7 +197,9 @@ data FieldCondition = FieldCondition
 data HandleReferenceRule = HandleReferenceRule
   { localPrefix :: !Text,
     externalUriSchemes :: ![Text],
-    allowSelf :: !Bool
+    allowSelf :: !Bool,
+    allowLocal :: !Bool,
+    externalUriPattern :: !(Maybe Text)
   }
   deriving stock (Generic, Eq, Ord, Show)
   deriving anyclass (FromDhall)
@@ -243,7 +245,8 @@ data FieldRule = FieldRule
     objectFields :: !(Maybe NestedRules),
     reference :: !(Maybe HandleReferenceRule),
     path :: !(Maybe PathReferenceRule),
-    when :: !(Maybe FieldCondition)
+    when :: !(Maybe FieldCondition),
+    uniqueBy :: !(Maybe Text)
   }
   deriving stock (Generic, Eq, Show)
   deriving anyclass (FromDhall)
@@ -271,7 +274,8 @@ data NestedFieldRule = NestedFieldRule
     cardinality :: !Cardinality,
     format :: !(Maybe FieldFormat),
     path :: !(Maybe PathReferenceRule),
-    when :: !(Maybe FieldCondition)
+    when :: !(Maybe FieldCondition),
+    reference :: !(Maybe HandleReferenceRule)
   }
   deriving stock (Generic, Eq, Show)
   deriving anyclass (FromDhall)
@@ -385,11 +389,13 @@ instance ToJSON FieldCondition where
       ]
 
 instance ToJSON HandleReferenceRule where
-  toJSON HandleReferenceRule {localPrefix, externalUriSchemes, allowSelf} =
+  toJSON HandleReferenceRule {localPrefix, externalUriSchemes, allowSelf, allowLocal, externalUriPattern} =
     object
       [ "localPrefix" .= localPrefix,
         "externalUriSchemes" .= externalUriSchemes,
-        "allowSelf" .= allowSelf
+        "allowSelf" .= allowSelf,
+        "allowLocal" .= allowLocal,
+        "externalUriPattern" .= externalUriPattern
       ]
 
 instance ToJSON PathReferenceRule where
@@ -400,7 +406,7 @@ instance ToJSON PathReferenceRule where
       ]
 
 instance ToJSON FieldRule where
-  toJSON FieldRule {field = fieldName, description, allowedValues, cardinality, format, elementFields, objectFields, reference, path = pathRule, when = condition} =
+  toJSON FieldRule {field = fieldName, description, allowedValues, cardinality, format, elementFields, objectFields, reference, path = pathRule, when = condition, uniqueBy} =
     object
       [ "field" .= fieldName,
         "description" .= description,
@@ -414,7 +420,8 @@ instance ToJSON FieldRule where
         -- reads as "the keys this instance has always emitted, then the ones
         -- added since". A consumer keys on names, not position.
         "objectFields" .= objectFields,
-        "path" .= pathRule
+        "path" .= pathRule,
+        "uniqueBy" .= uniqueBy
       ]
 
 instance ToJSON NestedRules where
@@ -426,7 +433,7 @@ instance ToJSON NestedRules where
       ]
 
 instance ToJSON NestedFieldRule where
-  toJSON NestedFieldRule {field = fieldName, description, allowedValues, cardinality, format, path = pathRule, when = condition} =
+  toJSON NestedFieldRule {field = fieldName, description, allowedValues, cardinality, format, path = pathRule, when = condition, reference} =
     object
       [ "field" .= fieldName,
         "description" .= description,
@@ -435,7 +442,8 @@ instance ToJSON NestedFieldRule where
         "format" .= format,
         "when" .= condition,
         -- Appended for the same reason 'FieldRule' appends @objectFields@.
-        "path" .= pathRule
+        "path" .= pathRule,
+        "reference" .= reference
       ]
 
 instance ToJSON Cardinality where
@@ -569,6 +577,96 @@ upgradePreV02FieldFormat = \case
   LegacyUriWithScheme scheme -> UriWithScheme scheme
   LegacyDocumentHandle prefix -> DocumentHandle prefix
 
+-- | The complete 0.7.0.0 descriptor generation, frozen before nested
+-- document-reference policies and record-list uniqueness were added. Every
+-- record that directly or transitively contains one of the grown records is
+-- copied so a descriptor pinned to 0.7.0.0 remains decodable as one closed
+-- Dhall type.
+data PreNestedReferenceHandleReferenceRule = PreNestedReferenceHandleReferenceRule
+  { localPrefix :: !Text,
+    externalUriSchemes :: ![Text],
+    allowSelf :: !Bool
+  }
+  deriving stock (Generic, Eq, Ord, Show)
+  deriving anyclass (FromDhall)
+
+data PreNestedReferenceFieldRule = PreNestedReferenceFieldRule
+  { field :: !Text,
+    description :: !(Maybe Text),
+    allowedValues :: ![Text],
+    cardinality :: !Cardinality,
+    format :: !(Maybe FieldFormat),
+    elementFields :: !(Maybe PreNestedReferenceNestedRules),
+    objectFields :: !(Maybe PreNestedReferenceNestedRules),
+    reference :: !(Maybe PreNestedReferenceHandleReferenceRule),
+    path :: !(Maybe PathReferenceRule),
+    when :: !(Maybe FieldCondition)
+  }
+  deriving stock (Generic, Eq, Show)
+  deriving anyclass (FromDhall)
+
+data PreNestedReferenceNestedRules = PreNestedReferenceNestedRules
+  { required :: ![PreNestedReferenceNestedFieldRule],
+    recommended :: ![PreNestedReferenceNestedFieldRule],
+    optional :: ![PreNestedReferenceNestedFieldRule]
+  }
+  deriving stock (Generic, Eq, Show)
+  deriving anyclass (FromDhall)
+
+data PreNestedReferenceNestedFieldRule = PreNestedReferenceNestedFieldRule
+  { field :: !Text,
+    description :: !(Maybe Text),
+    allowedValues :: ![Text],
+    cardinality :: !Cardinality,
+    format :: !(Maybe FieldFormat),
+    path :: !(Maybe PathReferenceRule),
+    when :: !(Maybe FieldCondition)
+  }
+  deriving stock (Generic, Eq, Show)
+  deriving anyclass (FromDhall)
+
+data PreNestedReferenceFrontmatterRules = PreNestedReferenceFrontmatterRules
+  { required :: ![PreNestedReferenceFieldRule],
+    recommended :: ![PreNestedReferenceFieldRule],
+    optional :: ![PreNestedReferenceFieldRule]
+  }
+  deriving stock (Generic, Eq, Show)
+  deriving anyclass (FromDhall)
+
+data PreNestedReferenceProfileSpec = PreNestedReferenceProfileSpec
+  { name :: !Text,
+    description :: !(Maybe Text),
+    okfVersion :: !Text,
+    frontmatter :: !PreNestedReferenceFrontmatterRules,
+    allowUnknownTypes :: !Bool,
+    allowUnknownFields :: !Bool,
+    idField :: !(Maybe Text),
+    requireBundleVersion :: !(Maybe Text),
+    types :: ![PreNestedReferenceTypeRule]
+  }
+  deriving stock (Generic, Eq, Show)
+  deriving anyclass (FromDhall)
+
+data PreNestedReferenceTypeRule = PreNestedReferenceTypeRule
+  { type_ :: !Text,
+    description :: !(Maybe Text),
+    frontmatter :: !PreNestedReferenceFrontmatterRules,
+    pathPattern :: !(Maybe Text),
+    resourceScheme :: !(Maybe Text),
+    requireSchemaSection :: !Bool,
+    schemaColumns :: ![Text],
+    idPrefix :: !(Maybe Text)
+  }
+  deriving stock (Generic, Eq, Show)
+
+instance FromDhall PreNestedReferenceTypeRule where
+  autoWith _normalizer =
+    genericAutoWith
+      (Dhall.defaultInterpretOptions {Dhall.fieldModifier = stripTrailingUnderscore})
+    where
+      stripTrailingUnderscore fieldName =
+        fromMaybe fieldName (Text.stripSuffix "_" fieldName)
+
 -- | The complete descriptor generation frozen before a profile could require its
 -- bundle to declare an OKF version. This is the immediately preceding public
 -- descriptor generation: it is today's shape minus the @requireBundleVersion@
@@ -583,11 +681,11 @@ data PreBundleVersionProfileSpec = PreBundleVersionProfileSpec
   { name :: !Text,
     description :: !(Maybe Text),
     okfVersion :: !Text,
-    frontmatter :: !FrontmatterRules,
+    frontmatter :: !PreNestedReferenceFrontmatterRules,
     allowUnknownTypes :: !Bool,
     allowUnknownFields :: !Bool,
     idField :: !(Maybe Text),
-    types :: ![TypeRule]
+    types :: ![PreNestedReferenceTypeRule]
   }
   deriving stock (Generic, Eq, Show)
   deriving anyclass (FromDhall)
@@ -607,7 +705,7 @@ data PrePathProfileFieldRule = PrePathProfileFieldRule
     format :: !(Maybe FieldFormat),
     elementFields :: !(Maybe PrePathProfileNestedRules),
     objectFields :: !(Maybe PrePathProfileNestedRules),
-    reference :: !(Maybe HandleReferenceRule),
+    reference :: !(Maybe PreNestedReferenceHandleReferenceRule),
     when :: !(Maybe FieldCondition)
   }
   deriving stock (Generic, Eq, Show)
@@ -687,7 +785,7 @@ data PreActorProfileFieldRule = PreActorProfileFieldRule
     format :: !(Maybe PreV02FieldFormat),
     elementFields :: !(Maybe PreActorProfileNestedRules),
     objectFields :: !(Maybe PreActorProfileNestedRules),
-    reference :: !(Maybe HandleReferenceRule),
+    reference :: !(Maybe PreNestedReferenceHandleReferenceRule),
     when :: !(Maybe FieldCondition)
   }
   deriving stock (Generic, Eq, Show)
@@ -767,7 +865,7 @@ data PreObjectProfileFieldRule = PreObjectProfileFieldRule
     cardinality :: !Cardinality,
     format :: !(Maybe PreV02FieldFormat),
     elementFields :: !(Maybe PreObjectProfileNestedRules),
-    reference :: !(Maybe HandleReferenceRule),
+    reference :: !(Maybe PreNestedReferenceHandleReferenceRule),
     when :: !(Maybe FieldCondition)
   }
   deriving stock (Generic, Eq, Show)
@@ -846,7 +944,7 @@ data ReferenceProfileFieldRule = ReferenceProfileFieldRule
     cardinality :: !Cardinality,
     format :: !(Maybe PreV02FieldFormat),
     elementFields :: !(Maybe ReferenceProfileNestedRules),
-    reference :: !(Maybe HandleReferenceRule),
+    reference :: !(Maybe PreNestedReferenceHandleReferenceRule),
     when :: !(Maybe FieldCondition)
   }
   deriving stock (Generic, Eq, Show)
@@ -1293,6 +1391,83 @@ instance FromDhall DescribedTypeRule where
 emptyFrontmatterRules :: FrontmatterRules
 emptyFrontmatterRules = FrontmatterRules {required = [], recommended = [], optional = []}
 
+upgradePreNestedReferenceHandleRule :: PreNestedReferenceHandleReferenceRule -> HandleReferenceRule
+upgradePreNestedReferenceHandleRule previous =
+  HandleReferenceRule
+    { localPrefix = previous ^. #localPrefix,
+      externalUriSchemes = previous ^. #externalUriSchemes,
+      allowSelf = previous ^. #allowSelf,
+      allowLocal = True,
+      externalUriPattern = Nothing
+    }
+
+upgradePreNestedReferenceFrontmatter :: PreNestedReferenceFrontmatterRules -> FrontmatterRules
+upgradePreNestedReferenceFrontmatter previous =
+  FrontmatterRules
+    { required = map upgradeField (previous ^. #required),
+      recommended = map upgradeField (previous ^. #recommended),
+      optional = map upgradeField (previous ^. #optional)
+    }
+  where
+    upgradeField rule =
+      FieldRule
+        { field = rule ^. #field,
+          description = rule ^. #description,
+          allowedValues = rule ^. #allowedValues,
+          cardinality = rule ^. #cardinality,
+          format = rule ^. #format,
+          elementFields = upgradeNestedRules <$> rule ^. #elementFields,
+          objectFields = upgradeNestedRules <$> rule ^. #objectFields,
+          reference = upgradePreNestedReferenceHandleRule <$> rule ^. #reference,
+          path = rule ^. #path,
+          when = rule ^. #when,
+          uniqueBy = Nothing
+        }
+    upgradeNestedRules rules =
+      NestedRules
+        { required = map upgradeNestedField (rules ^. #required),
+          recommended = map upgradeNestedField (rules ^. #recommended),
+          optional = map upgradeNestedField (rules ^. #optional)
+        }
+    upgradeNestedField rule =
+      NestedFieldRule
+        { field = rule ^. #field,
+          description = rule ^. #description,
+          allowedValues = rule ^. #allowedValues,
+          cardinality = rule ^. #cardinality,
+          format = rule ^. #format,
+          path = rule ^. #path,
+          when = rule ^. #when,
+          reference = Nothing
+        }
+
+upgradePreNestedReferenceTypeRule :: PreNestedReferenceTypeRule -> TypeRule
+upgradePreNestedReferenceTypeRule rule =
+  TypeRule
+    { type_ = rule ^. #type_,
+      description = rule ^. #description,
+      frontmatter = upgradePreNestedReferenceFrontmatter (rule ^. #frontmatter),
+      pathPattern = rule ^. #pathPattern,
+      resourceScheme = rule ^. #resourceScheme,
+      requireSchemaSection = rule ^. #requireSchemaSection,
+      schemaColumns = rule ^. #schemaColumns,
+      idPrefix = rule ^. #idPrefix
+    }
+
+upgradePreNestedReferenceProfile :: PreNestedReferenceProfileSpec -> ProfileSpec
+upgradePreNestedReferenceProfile previous =
+  ProfileSpec
+    { name = previous ^. #name,
+      description = previous ^. #description,
+      okfVersion = previous ^. #okfVersion,
+      frontmatter = upgradePreNestedReferenceFrontmatter (previous ^. #frontmatter),
+      allowUnknownTypes = previous ^. #allowUnknownTypes,
+      allowUnknownFields = previous ^. #allowUnknownFields,
+      idField = previous ^. #idField,
+      requireBundleVersion = previous ^. #requireBundleVersion,
+      types = map upgradePreNestedReferenceTypeRule (previous ^. #types)
+    }
+
 upgradePrePathProfileFrontmatter :: PrePathProfileFrontmatterRules -> FrontmatterRules
 upgradePrePathProfileFrontmatter previous =
   FrontmatterRules
@@ -1310,9 +1485,10 @@ upgradePrePathProfileFrontmatter previous =
           format = rule ^. #format,
           elementFields = upgradeNestedRules <$> rule ^. #elementFields,
           objectFields = upgradeNestedRules <$> rule ^. #objectFields,
-          reference = rule ^. #reference,
+          reference = upgradePreNestedReferenceHandleRule <$> rule ^. #reference,
           path = Nothing,
-          when = rule ^. #when
+          when = rule ^. #when,
+          uniqueBy = Nothing
         }
     upgradeNestedRules rules =
       NestedRules
@@ -1328,7 +1504,8 @@ upgradePrePathProfileFrontmatter previous =
           cardinality = rule ^. #cardinality,
           format = rule ^. #format,
           path = Nothing,
-          when = rule ^. #when
+          when = rule ^. #when,
+          reference = Nothing
         }
 
 upgradePreActorProfileFrontmatter :: PreActorProfileFrontmatterRules -> FrontmatterRules
@@ -1348,9 +1525,10 @@ upgradePreActorProfileFrontmatter previous =
           format = upgradePreV02FieldFormat <$> rule ^. #format,
           elementFields = upgradeNestedRules <$> rule ^. #elementFields,
           objectFields = upgradeNestedRules <$> rule ^. #objectFields,
-          reference = rule ^. #reference,
+          reference = upgradePreNestedReferenceHandleRule <$> rule ^. #reference,
           path = Nothing,
-          when = rule ^. #when
+          when = rule ^. #when,
+          uniqueBy = Nothing
         }
     upgradeNestedRules rules =
       NestedRules
@@ -1366,7 +1544,8 @@ upgradePreActorProfileFrontmatter previous =
           cardinality = rule ^. #cardinality,
           format = upgradePreV02FieldFormat <$> rule ^. #format,
           path = Nothing,
-          when = rule ^. #when
+          when = rule ^. #when,
+          reference = Nothing
         }
 
 upgradePreObjectProfileFrontmatter :: PreObjectProfileFrontmatterRules -> FrontmatterRules
@@ -1386,9 +1565,10 @@ upgradePreObjectProfileFrontmatter previous =
           format = upgradePreV02FieldFormat <$> rule ^. #format,
           elementFields = upgradeNestedRules <$> rule ^. #elementFields,
           objectFields = Nothing,
-          reference = rule ^. #reference,
+          reference = upgradePreNestedReferenceHandleRule <$> rule ^. #reference,
           path = Nothing,
-          when = rule ^. #when
+          when = rule ^. #when,
+          uniqueBy = Nothing
         }
     upgradeNestedRules rules =
       NestedRules
@@ -1404,7 +1584,8 @@ upgradePreObjectProfileFrontmatter previous =
           cardinality = rule ^. #cardinality,
           format = upgradePreV02FieldFormat <$> rule ^. #format,
           path = Nothing,
-          when = rule ^. #when
+          when = rule ^. #when,
+          reference = Nothing
         }
 
 upgradeReferenceProfileFrontmatter :: ReferenceProfileFrontmatterRules -> FrontmatterRules
@@ -1424,9 +1605,10 @@ upgradeReferenceProfileFrontmatter previous =
           format = upgradePreV02FieldFormat <$> rule ^. #format,
           elementFields = upgradeNestedRules <$> rule ^. #elementFields,
           objectFields = Nothing,
-          reference = rule ^. #reference,
+          reference = upgradePreNestedReferenceHandleRule <$> rule ^. #reference,
           path = Nothing,
-          when = rule ^. #when
+          when = rule ^. #when,
+          uniqueBy = Nothing
         }
     upgradeNestedRules rules =
       NestedRules
@@ -1442,7 +1624,8 @@ upgradeReferenceProfileFrontmatter previous =
           cardinality = rule ^. #cardinality,
           format = upgradePreV02FieldFormat <$> rule ^. #format,
           path = Nothing,
-          when = rule ^. #when
+          when = rule ^. #when,
+          reference = Nothing
         }
 
 upgradePreviousFrontmatter :: PreviousFrontmatterRules -> FrontmatterRules
@@ -1464,7 +1647,8 @@ upgradePreviousFrontmatter previous =
           objectFields = Nothing,
           reference = Nothing,
           path = Nothing,
-          when = Nothing
+          when = Nothing,
+          uniqueBy = Nothing
         }
 
 upgradeConditionalProfileFrontmatter :: ConditionalProfileFrontmatterRules -> FrontmatterRules
@@ -1486,7 +1670,8 @@ upgradeConditionalProfileFrontmatter previous =
           objectFields = Nothing,
           reference = Nothing,
           path = Nothing,
-          when = rule ^. #when
+          when = rule ^. #when,
+          uniqueBy = Nothing
         }
     upgradeNestedRules rules =
       NestedRules
@@ -1502,7 +1687,8 @@ upgradeConditionalProfileFrontmatter previous =
           cardinality = rule ^. #cardinality,
           format = upgradePreV02FieldFormat <$> rule ^. #format,
           path = Nothing,
-          when = rule ^. #when
+          when = rule ^. #when,
+          reference = Nothing
         }
 
 upgradeNestedProfileFrontmatter :: NestedProfileFrontmatterRules -> FrontmatterRules
@@ -1524,7 +1710,8 @@ upgradeNestedProfileFrontmatter previous =
           objectFields = Nothing,
           reference = Nothing,
           path = Nothing,
-          when = Nothing
+          when = Nothing,
+          uniqueBy = Nothing
         }
     upgradeNestedProfileRules rules =
       NestedRules
@@ -1540,7 +1727,8 @@ upgradeNestedProfileFrontmatter previous =
           cardinality = rule ^. #cardinality,
           format = upgradePreV02FieldFormat <$> rule ^. #format,
           path = Nothing,
-          when = Nothing
+          when = Nothing,
+          reference = Nothing
         }
 
 upgradeFormatFrontmatter :: FormatFrontmatterRules -> FrontmatterRules
@@ -1562,7 +1750,8 @@ upgradeFormatFrontmatter previous =
           objectFields = Nothing,
           reference = Nothing,
           path = Nothing,
-          when = Nothing
+          when = Nothing,
+          uniqueBy = Nothing
         }
 
 upgradeCardinalityFrontmatter :: CardinalityFrontmatterRules -> FrontmatterRules
@@ -1584,7 +1773,8 @@ upgradeCardinalityFrontmatter previous =
           objectFields = Nothing,
           reference = Nothing,
           path = Nothing,
-          when = Nothing
+          when = Nothing,
+          uniqueBy = Nothing
         }
 
 upgradeVocabularyFrontmatter :: VocabularyFrontmatterRules -> FrontmatterRules
@@ -1606,26 +1796,25 @@ upgradeVocabularyFrontmatter previous =
           objectFields = Nothing,
           reference = Nothing,
           path = Nothing,
-          when = Nothing
+          when = Nothing,
+          uniqueBy = Nothing
         }
 
--- | Lift the generation frozen before @requireBundleVersion@ forward. Every rule
--- record is shared with today's schema, so this copies members across and
--- supplies the one no-op default: a descriptor that predates the member demands
--- nothing of its bundle's version declaration, which is what it meant when it
--- was written.
+-- | Lift the generation frozen before @requireBundleVersion@ forward. Its
+-- contained rule records use the shared 0.7.0.0 frozen types because those
+-- records later grew too.
 upgradePreBundleVersionProfile :: PreBundleVersionProfileSpec -> ProfileSpec
 upgradePreBundleVersionProfile previous =
   ProfileSpec
     { name = previous ^. #name,
       description = previous ^. #description,
       okfVersion = previous ^. #okfVersion,
-      frontmatter = previous ^. #frontmatter,
+      frontmatter = upgradePreNestedReferenceFrontmatter (previous ^. #frontmatter),
       allowUnknownTypes = previous ^. #allowUnknownTypes,
       allowUnknownFields = previous ^. #allowUnknownFields,
       idField = previous ^. #idField,
       requireBundleVersion = Nothing,
-      types = previous ^. #types
+      types = map upgradePreNestedReferenceTypeRule (previous ^. #types)
     }
 
 upgradePrePathProfile :: PrePathProfileSpec -> ProfileSpec
@@ -1935,7 +2124,7 @@ upgradeLegacyProfile legacy =
       types = map upgradeRule (legacy ^. #types)
     }
   where
-    undocumented key = FieldRule {field = key, description = Nothing, allowedValues = [], cardinality = Any, format = Nothing, elementFields = Nothing, objectFields = Nothing, reference = Nothing, path = Nothing, when = Nothing}
+    undocumented key = FieldRule {field = key, description = Nothing, allowedValues = [], cardinality = Any, format = Nothing, elementFields = Nothing, objectFields = Nothing, reference = Nothing, path = Nothing, when = Nothing, uniqueBy = Nothing}
     upgradeRule rule =
       TypeRule
         { type_ = rule ^. #type_,
@@ -1951,7 +2140,7 @@ upgradeLegacyProfile legacy =
 -- | Load and decode a Dhall profile descriptor from a file path. Any evaluation
 -- or decoding failure is captured as a human-readable 'Left'.
 --
--- The pre-bundle-version shape, pre-path shape, pre-actor shape, pre-object
+-- The pre-nested-reference shape, pre-bundle-version shape, pre-path shape, pre-actor shape, pre-object
 -- shape, reference-aware shape,
 -- condition-aware shape, bounded-nested shape, EP-4
 -- format shape, EP-3 cardinality shape, EP-2 vocabulary shape, type-aware EP-1
@@ -1973,7 +2162,8 @@ loadProfileFile path = do
     -- picks that generation's decoder. Adding a generation is one line here.
     frozenDecoders :: [IO (Maybe ProfileSpec)]
     frozenDecoders =
-      [ attempt upgradePreBundleVersionProfile,
+      [ attempt upgradePreNestedReferenceProfile,
+        attempt upgradePreBundleVersionProfile,
         attempt upgradePrePathProfile,
         attempt upgradePreActorProfile,
         attempt upgradePreObjectProfile,
@@ -2006,7 +2196,7 @@ loadProfileFile path = do
         `catch` \(exception :: SomeException) -> pure (Left (Text.pack (show exception)))
 
 -- | Does an already-evaluated Dhall expression decode as a profile? Tries the
--- current schema, then the pre-bundle-version, pre-path, pre-actor, pre-object,
+-- current schema, then the pre-nested-reference, pre-bundle-version, pre-path, pre-actor, pre-object,
 -- reference-aware,
 -- condition-aware, bounded-nested, EP-4, EP-3, EP-2, EP-1, self-documenting, and
 -- okf 0.2.x schemas, so the published @okf-profiles@ package still enumerates.
@@ -2015,6 +2205,7 @@ loadProfileFile path = do
 decodeProfileExpr :: Expr Src Void -> Maybe ProfileSpec
 decodeProfileExpr expression =
   Dhall.rawInput Dhall.auto expression
+    <|> fmap upgradePreNestedReferenceProfile (Dhall.rawInput Dhall.auto expression)
     <|> fmap upgradePreBundleVersionProfile (Dhall.rawInput Dhall.auto expression)
     <|> fmap upgradePrePathProfile (Dhall.rawInput Dhall.auto expression)
     <|> fmap upgradePreActorProfile (Dhall.rawInput Dhall.auto expression)
@@ -2949,7 +3140,9 @@ compileReferenceRule policy =
   HandleReferenceRule
     { localPrefix = policy ^. #localPrefix,
       externalUriSchemes = map Text.toCaseFold (deduplicateSchemes (policy ^. #externalUriSchemes)),
-      allowSelf = policy ^. #allowSelf
+      allowSelf = policy ^. #allowSelf,
+      allowLocal = policy ^. #allowLocal,
+      externalUriPattern = policy ^. #externalUriPattern
     }
 
 compilePathRule :: PathReferenceRule -> PathReferenceRule
@@ -3000,7 +3193,9 @@ mergeReferenceRule (Just profilePolicy) (Just typePolicy)
               filter
                 (`Set.member` Set.fromList (typePolicy ^. #externalUriSchemes))
                 (profilePolicy ^. #externalUriSchemes),
-            allowSelf = profilePolicy ^. #allowSelf && typePolicy ^. #allowSelf
+            allowSelf = profilePolicy ^. #allowSelf && typePolicy ^. #allowSelf,
+            allowLocal = profilePolicy ^. #allowLocal && typePolicy ^. #allowLocal,
+            externalUriPattern = typePolicy ^. #externalUriPattern <|> profilePolicy ^. #externalUriPattern
           }
   | otherwise = Nothing
 

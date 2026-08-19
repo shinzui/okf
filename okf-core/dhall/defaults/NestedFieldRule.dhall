@@ -9,6 +9,8 @@ let FieldCondition = ../FieldCondition.dhall
 
 let PathReferenceRule = ../PathReferenceRule.dhall
 
+let HandleReferenceRule = ../HandleReferenceRule.dhall
+
 in  { Type = NestedFieldRuleType
     , default =
       { description = None Text
@@ -17,5 +19,6 @@ in  { Type = NestedFieldRuleType
       , format = None FieldFormat
       , path = None PathReferenceRule
       , when = None FieldCondition
+      , reference = None HandleReferenceRule
       }
     }

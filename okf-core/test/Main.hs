@@ -7,6 +7,7 @@ import Data.Foldable (for_, toList)
 import Data.List qualified as List
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
+import Data.Maybe (catMaybes)
 import Data.Set qualified as Set
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text.IO
@@ -149,6 +150,7 @@ main = do
         testIO "fixture attested computation bundle reports one missing runtime and no path problem" testFixtureAttestedComputation,
         testIO "loadProfileFile decodes the postgresql fixture" testLoadProfileFixture,
         testIO "loadProfileFile decodes record-completed document ID rules" testLoadDocumentIdProfileFixture,
+        testIO "loadProfileFile exposes nested reference and uniqueness declarations" testLoadNestedReferenceProfileFixture,
         testIO "loadProfileFile accepts the pre-type-frontmatter described schema" testLoadDescribedProfileFixture,
         testIO "loadProfileFile accepts the frozen EP-1 type-aware schema" testLoadTypeAwareCompatibilityFixture,
         testIO "loadProfileFile accepts the frozen EP-2 vocabulary schema" testLoadVocabularyCompatibilityFixture,
@@ -159,6 +161,7 @@ main = do
         testIO "loadProfileFile decodes same-scope conditions" testLoadConditionalFieldsProfileFixture,
         testIO "loadProfileFile preserves the frozen condition-aware schema" testLoadConditionalCompatibilityFixture,
         testIO "loadProfileFile preserves the frozen reference-aware schema" testLoadReferenceCompatibilityFixture,
+        testIO "loadProfileFile preserves the complete 0.7.0.0 descriptor schema" testLoadPreNestedReferenceCompatibilityFixture,
         testIO "every frozen generation fixture compiles, not merely decodes" testFrozenFixturesCompile,
         testIO "loadProfileFile preserves the frozen pre-bundle-version schema" testLoadPreBundleVersionCompatibilityFixture,
         testIO "loadProfileFile preserves the frozen pre-path schema" testLoadPrePathCompatibilityFixture,
@@ -2483,6 +2486,46 @@ testLoadDocumentIdProfileFixture = do
         [Just "The OKF concept type; must be a type rule below.", Nothing]
         (map (^. #description) (spec ^. #frontmatter . #required))
 
+testLoadNestedReferenceProfileFixture :: IO (Either Text ())
+testLoadNestedReferenceProfileFixture = do
+  path <- fixtureFilePath "profiles/nested-references-and-uniqueness.dhall"
+  result <- loadProfileFile path
+  pure $ case result of
+    Left err -> Left ("failed to load nested reference profile: " <> err)
+    Right spec -> do
+      dependencies <- lookupRawRule "dependencies" (spec ^. #frontmatter . #required)
+      acceptanceCriteria <- lookupRawRule "acceptanceCriteria" (spec ^. #frontmatter . #required)
+      assertEqual (Just "id") (acceptanceCriteria ^. #uniqueBy)
+      case dependencies ^. #elementFields of
+        Just NestedRules {required = [nestedReferenceRule]} -> do
+          let expectedPolicy =
+                HandleReferenceRule
+                  "IR"
+                  ["mori"]
+                  False
+                  False
+                  (Just "mori://[^/]+/[^/]+/okf/improvement-requests/concepts/IR-[1-9][0-9]*")
+          assertEqual (Just expectedPolicy) (nestedReferenceRule ^. #reference)
+          assertEqual
+            ( object
+                [ "field" .= ("ref" :: Text),
+                  "description" .= (Nothing :: Maybe Text),
+                  "allowedValues" .= ([] :: [Text]),
+                  "cardinality" .= ("scalar" :: Text),
+                  "format" .= (Nothing :: Maybe Text),
+                  "when" .= (Nothing :: Maybe FieldCondition),
+                  "path" .= (Nothing :: Maybe PathReferenceRule),
+                  "reference" .= Just expectedPolicy
+                ]
+            )
+            (toJSON nestedReferenceRule)
+        _ -> Left "expected dependencies.ref as one required nested rule"
+  where
+    lookupRawRule key rules =
+      case [rule | rule <- rules, rule ^. #field == key] of
+        [rule] -> Right rule
+        _ -> Left ("expected one raw rule for " <> key)
+
 testLoadDescribedProfileFixture :: IO (Either Text ())
 testLoadDescribedProfileFixture = do
   path <- fixtureFilePath "profiles/described.dhall"
@@ -2622,7 +2665,7 @@ testLoadReferenceCompatibilityFixture = do
       case spec ^. #frontmatter . #recommended of
         [referenceRule, conditionRule, reviewsRule] -> do
           assertEqual
-            (Just (HandleReferenceRule "ADR" ["mori"] False))
+            (Just (handleReferenceRule "ADR" ["mori"] False))
             (referenceRule ^. #reference)
           assertEqual (Just (FieldCondition "status" ["superseded"])) (conditionRule ^. #when)
           case reviewsRule ^. #elementFields of
@@ -2690,12 +2733,37 @@ frozenGenerationFixtures =
     "formats-mp8-ep2.dhall",
     "path-references-mp8-ep3.dhall",
     "pre-bundle-version.dhall",
+    "pre-nested-references-and-uniqueness-0.7.0.0.dhall",
     -- Not a frozen generation but a *documented* one: this is the descriptor
     -- @docs\/user\/profiles.md@ shows for the specification §10 contract as a
     -- house convention. It is listed here so the documented descriptor cannot
     -- rot into something that no longer compiles.
     "attested-computation-house.dhall"
   ]
+
+testLoadPreNestedReferenceCompatibilityFixture :: IO (Either Text ())
+testLoadPreNestedReferenceCompatibilityFixture = do
+  path <- fixtureFilePath "profiles/pre-nested-references-and-uniqueness-0.7.0.0.dhall"
+  result <- loadProfileFile path
+  pure $ case result of
+    Left err -> Left ("failed to load frozen 0.7.0.0 profile: " <> err)
+    Right spec -> do
+      assertEqual "pre-nested-references-and-uniqueness-0.7.0.0" (spec ^. #name)
+      assertEqual (Just "0.2") (spec ^. #requireBundleVersion)
+      let allTopRules = spec ^. #frontmatter . #required <> spec ^. #frontmatter . #recommended <> spec ^. #frontmatter . #optional
+      assertEqual (replicate (length allTopRules) Nothing) (map (^. #uniqueBy) allTopRules)
+      case [policy | rule <- allTopRules, Just policy <- [rule ^. #reference]] of
+        [policy] -> do
+          assertEqual True (policy ^. #allowLocal)
+          assertEqual Nothing (policy ^. #externalUriPattern)
+        _ -> Left "expected exactly one upgraded 0.7.0.0 reference policy"
+      let nestedRules =
+            [ nestedRule
+            | rule <- allTopRules,
+              rules <- catMaybes [rule ^. #elementFields, rule ^. #objectFields],
+              nestedRule <- rules ^. #required <> rules ^. #recommended <> rules ^. #optional
+            ]
+      assertEqual (replicate (length nestedRules) Nothing) (map (^. #reference) nestedRules)
 
 -- | The generation frozen immediately before @requireBundleVersion@: a descriptor
 -- with no such member still loads, the member arrives as 'Nothing', and every
@@ -2720,7 +2788,7 @@ testLoadPreBundleVersionCompatibilityFixture = do
       assertEqual (Just "docId") (spec ^. #idField)
       assertEqual ["type", "generated"] (map (^. #field) (spec ^. #frontmatter . #required))
       assertEqual
-        (Just (HandleReferenceRule "ADR" ["mori"] False))
+        (Just (handleReferenceRule "ADR" ["mori"] False))
         (case spec ^. #frontmatter . #optional of rule : _ -> rule ^. #reference; [] -> Nothing)
       assertEqual
         [Just Profile.HumanActor]
@@ -2751,7 +2819,7 @@ testLoadPrePathCompatibilityFixture = do
         (concatMap (map (^. #path) . (^. #frontmatter . #required)) (spec ^. #types))
       -- Everything the frozen descriptor did declare survives the upgrade.
       assertEqual
-        (Just (HandleReferenceRule "ADR" ["mori"] False))
+        (Just (handleReferenceRule "ADR" ["mori"] False))
         (case spec ^. #frontmatter . #optional of rule : _ -> rule ^. #reference; [] -> Nothing)
       assertEqual
         [Just Profile.NonNegativeInteger]
@@ -2836,7 +2904,7 @@ testLoadPreObjectCompatibilityFixture = do
       case spec ^. #frontmatter . #recommended of
         [referenceRule, reviewsRule] -> do
           assertEqual
-            (Just (HandleReferenceRule "ADR" ["mori"] False))
+            (Just (handleReferenceRule "ADR" ["mori"] False))
             (referenceRule ^. #reference)
           case reviewsRule ^. #elementFields of
             Just NestedRules {required = [kindRule], recommended = [notesRule], optional = [urlRule]} -> do
@@ -2931,7 +2999,8 @@ testProfileJsonShape = do
                                "objectFields" .= (Nothing :: Maybe Value),
                                "reference" .= (Nothing :: Maybe HandleReferenceRule),
                                "path" .= (Nothing :: Maybe PathReferenceRule),
-                               "when" .= (Nothing :: Maybe FieldCondition)
+                               "when" .= (Nothing :: Maybe FieldCondition),
+                               "uniqueBy" .= (Nothing :: Maybe Text)
                              ],
                            object
                              [ "field" .= ("title" :: Text),
@@ -2943,7 +3012,8 @@ testProfileJsonShape = do
                                "objectFields" .= (Nothing :: Maybe Value),
                                "reference" .= (Nothing :: Maybe HandleReferenceRule),
                                "path" .= (Nothing :: Maybe PathReferenceRule),
-                               "when" .= (Nothing :: Maybe FieldCondition)
+                               "when" .= (Nothing :: Maybe FieldCondition),
+                               "uniqueBy" .= (Nothing :: Maybe Text)
                              ]
                          ],
                     "recommended"
@@ -2958,7 +3028,8 @@ testProfileJsonShape = do
                                "objectFields" .= (Nothing :: Maybe Value),
                                "reference" .= (Nothing :: Maybe HandleReferenceRule),
                                "path" .= (Nothing :: Maybe PathReferenceRule),
-                               "when" .= (Nothing :: Maybe FieldCondition)
+                               "when" .= (Nothing :: Maybe FieldCondition),
+                               "uniqueBy" .= (Nothing :: Maybe Text)
                              ]
                          ],
                     "optional"
@@ -2973,7 +3044,8 @@ testProfileJsonShape = do
                                "objectFields" .= (Nothing :: Maybe Value),
                                "reference" .= (Nothing :: Maybe HandleReferenceRule),
                                "path" .= (Nothing :: Maybe PathReferenceRule),
-                               "when" .= (Nothing :: Maybe FieldCondition)
+                               "when" .= (Nothing :: Maybe FieldCondition),
+                               "uniqueBy" .= (Nothing :: Maybe Text)
                              ]
                          ]
                   ],
@@ -3022,10 +3094,12 @@ testHandleReferenceJsonShape =
     ( object
         [ "localPrefix" .= ("ADR" :: Text),
           "externalUriSchemes" .= (["mori", "https"] :: [Text]),
-          "allowSelf" .= False
+          "allowSelf" .= False,
+          "allowLocal" .= True,
+          "externalUriPattern" .= (Nothing :: Maybe Text)
         ]
     )
-    (toJSON (HandleReferenceRule "ADR" ["mori", "https"] False))
+    (toJSON (handleReferenceRule "ADR" ["mori", "https"] False))
 
 -- | A registry record enumerates every field that decodes as a profile, one
 -- level down as well as at the top, sorted by export path. The @Profile@ schema
@@ -3434,7 +3508,7 @@ testFindConceptsByDocumentId = do
 -- | An undocumented frontmatter key: the validation tests care about names, not
 -- prose, and descriptions never affect validation.
 requiredField :: Text -> FieldRule
-requiredField key = FieldRule {field = key, description = Nothing, allowedValues = [], cardinality = Any, format = Nothing, elementFields = Nothing, objectFields = Nothing, reference = Nothing, path = Nothing, when = Nothing}
+requiredField key = FieldRule {field = key, description = Nothing, allowedValues = [], cardinality = Any, format = Nothing, elementFields = Nothing, objectFields = Nothing, reference = Nothing, path = Nothing, when = Nothing, uniqueBy = Nothing}
 
 -- | Build a 'FieldRule' positionally in the argument order this file used
 -- before 'FieldRule' gained @objectFields@, filling that member in as
@@ -3463,7 +3537,31 @@ fieldRule key description allowedValues cardinality format elementFields referen
       objectFields = Nothing,
       reference,
       path = Nothing,
-      when = condition
+      when = condition,
+      uniqueBy = Nothing
+    }
+
+handleReferenceRule :: Text -> [Text] -> Bool -> HandleReferenceRule
+handleReferenceRule prefix schemes selfAllowed =
+  HandleReferenceRule
+    { localPrefix = prefix,
+      externalUriSchemes = schemes,
+      allowSelf = selfAllowed,
+      allowLocal = True,
+      externalUriPattern = Nothing
+    }
+
+nestedFieldRule :: Text -> Maybe Text -> [Text] -> Cardinality -> Maybe FieldFormat -> Maybe PathReferenceRule -> Maybe FieldCondition -> NestedFieldRule
+nestedFieldRule key description allowedValues cardinality format path condition =
+  NestedFieldRule
+    { field = key,
+      description,
+      allowedValues,
+      cardinality,
+      format,
+      path,
+      when = condition,
+      reference = Nothing
     }
 
 -- | A standalone profile literal so the validation tests do not depend on the
@@ -4044,15 +4142,15 @@ testCompiledNestedRules :: Either Text ()
 testCompiledNestedRules = do
   let profileRules =
         NestedRules
-          { required = [NestedFieldRule "kind" Nothing ["decision", "implementation"] Any Nothing Nothing Nothing],
-            recommended = [NestedFieldRule "notes" Nothing [] Scalar Nothing Nothing Nothing],
+          { required = [nestedFieldRule "kind" Nothing ["decision", "implementation"] Any Nothing Nothing Nothing],
+            recommended = [nestedFieldRule "notes" Nothing [] Scalar Nothing Nothing Nothing],
             optional = []
           }
       typeRules =
         NestedRules
           { required =
-              [ NestedFieldRule "kind" Nothing ["implementation", "operations"] Any Nothing Nothing Nothing,
-                NestedFieldRule "outcome" Nothing ["approved", "rejected"] Any Nothing Nothing Nothing
+              [ nestedFieldRule "kind" Nothing ["implementation", "operations"] Any Nothing Nothing Nothing,
+                nestedFieldRule "outcome" Nothing ["approved", "rejected"] Any Nothing Nothing Nothing
               ],
             recommended = [],
             optional = []
@@ -4181,15 +4279,15 @@ nestedReviewProfileSpec =
     nestedRules =
       NestedRules
         { required =
-            [ NestedFieldRule "kind" Nothing ["human", "model"] Any Nothing Nothing Nothing,
-              NestedFieldRule "reviewer" Nothing [] Scalar Nothing Nothing Nothing,
-              NestedFieldRule "reviewed_at" Nothing [] Any (Just Rfc3339Utc) Nothing Nothing,
-              NestedFieldRule "document_timestamp" Nothing [] Any (Just Rfc3339Utc) Nothing Nothing,
-              NestedFieldRule "scope" Nothing reviewScopes Any Nothing Nothing Nothing,
-              NestedFieldRule "outcome" Nothing ["approved", "changes-requested", "commented"] Any Nothing Nothing Nothing,
-              NestedFieldRule "context" Nothing [] Scalar Nothing Nothing Nothing
+            [ nestedFieldRule "kind" Nothing ["human", "model"] Any Nothing Nothing Nothing,
+              nestedFieldRule "reviewer" Nothing [] Scalar Nothing Nothing Nothing,
+              nestedFieldRule "reviewed_at" Nothing [] Any (Just Rfc3339Utc) Nothing Nothing,
+              nestedFieldRule "document_timestamp" Nothing [] Any (Just Rfc3339Utc) Nothing Nothing,
+              nestedFieldRule "scope" Nothing reviewScopes Any Nothing Nothing Nothing,
+              nestedFieldRule "outcome" Nothing ["approved", "changes-requested", "commented"] Any Nothing Nothing Nothing,
+              nestedFieldRule "context" Nothing [] Scalar Nothing Nothing Nothing
             ],
-          recommended = [NestedFieldRule "notes" Nothing [] Scalar Nothing Nothing Nothing],
+          recommended = [nestedFieldRule "notes" Nothing [] Scalar Nothing Nothing Nothing],
           optional = []
         }
 
@@ -4221,7 +4319,8 @@ objectProfileWithRules key declaredCardinality objectRules elementRules =
                     objectFields = objectRules,
                     reference = Nothing,
                     path = Nothing,
-                    when = Nothing
+                    when = Nothing,
+                    uniqueBy = Nothing
                   }
               ],
             recommended = [],
@@ -4239,8 +4338,8 @@ objectProfileWithRules key declaredCardinality objectRules elementRules =
 provenanceMemberRules :: NestedRules
 provenanceMemberRules =
   NestedRules
-    { required = [NestedFieldRule "by" (Just "Who or what produced this content.") [] Any Nothing Nothing Nothing],
-      recommended = [NestedFieldRule "at" Nothing [] Any (Just Rfc3339Utc) Nothing Nothing],
+    { required = [nestedFieldRule "by" (Just "Who or what produced this content.") [] Any Nothing Nothing Nothing],
+      recommended = [nestedFieldRule "at" Nothing [] Any (Just Rfc3339Utc) Nothing Nothing],
       optional = []
     }
 
@@ -4370,7 +4469,7 @@ sourcesPathProfile permittedSchemes =
     memberRules =
       NestedRules
         { required =
-            [ (NestedFieldRule "resource" Nothing [] Any Nothing Nothing Nothing)
+            [ (nestedFieldRule "resource" Nothing [] Any Nothing Nothing Nothing)
                 { path = Just (PathReferenceRule permittedSchemes False)
                 }
             ],
@@ -4435,7 +4534,7 @@ testPathDefinitionErrors = do
         ( pathProfileWith
             (Just (PathReferenceRule [] False))
             Nothing
-            (Just (HandleReferenceRule "ADR" [] False))
+            (Just (handleReferenceRule "ADR" [] False))
             Nothing
         )
     )
@@ -4655,7 +4754,7 @@ testValidatePathObjectScope = do
               ( Just
                   NestedRules
                     { required =
-                        [ (NestedFieldRule "resource" Nothing [] Any Nothing Nothing Nothing)
+                        [ (nestedFieldRule "resource" Nothing [] Any Nothing Nothing Nothing)
                             { path = Just (PathReferenceRule [] False)
                             }
                         ],
@@ -4891,8 +4990,8 @@ testConditionDefinitionErrors = do
   let nestedCrossScope =
         NestedRules
           { required =
-              [ NestedFieldRule "kind" Nothing ["human", "model"] Scalar Nothing Nothing Nothing,
-                NestedFieldRule "provider" Nothing [] Scalar Nothing Nothing (Just (FieldCondition "status" ["active"]))
+              [ nestedFieldRule "kind" Nothing ["human", "model"] Scalar Nothing Nothing Nothing,
+                nestedFieldRule "provider" Nothing [] Scalar Nothing Nothing (Just (FieldCondition "status" ["active"]))
               ],
             recommended = [],
             optional = []
@@ -4973,11 +5072,11 @@ testNestedConditionalPresence = do
   let nestedRules =
         NestedRules
           { required =
-              [ NestedFieldRule "kind" Nothing ["human", "model"] Scalar Nothing Nothing Nothing,
-                NestedFieldRule "provider" Nothing [] Scalar Nothing Nothing (Just (FieldCondition "kind" ["model"]))
+              [ nestedFieldRule "kind" Nothing ["human", "model"] Scalar Nothing Nothing Nothing,
+                nestedFieldRule "provider" Nothing [] Scalar Nothing Nothing (Just (FieldCondition "kind" ["model"]))
               ],
             recommended =
-              [NestedFieldRule "notes" Nothing [] Scalar Nothing Nothing (Just (FieldCondition "kind" ["human"]))],
+              [nestedFieldRule "notes" Nothing [] Scalar Nothing Nothing (Just (FieldCondition "kind" ["human"]))],
             optional = []
           }
       spec = nestedProfileWithRules List nestedRules Nothing
@@ -5010,7 +5109,7 @@ testReferenceDefinitionErrors = do
           Scalar
           fieldFormat
           Nothing
-          (Just (HandleReferenceRule prefix schemes False))
+          (Just (handleReferenceRule prefix schemes False))
           Nothing
       baseType = firstTypeRule testDocumentIdProfileSpec
       specWith profileIdField typeRules profileRules =
@@ -5053,8 +5152,8 @@ testReferenceDefinitionErrors = do
 
 testDocumentReferenceValidation :: Either Text ()
 testDocumentReferenceValidation = do
-  let referencePolicy = HandleReferenceRule "ADR" ["mori", "MORI"] False
-      selfPolicy = HandleReferenceRule "ADR" [] True
+  let referencePolicy = handleReferenceRule "ADR" ["mori", "MORI"] False
+      selfPolicy = handleReferenceRule "ADR" [] True
       referenceRules =
         [ fieldRule "references" Nothing [] List Nothing Nothing (Just referencePolicy) Nothing,
           fieldRule "selfReference" Nothing [] Scalar Nothing Nothing (Just selfPolicy) Nothing
@@ -5191,7 +5290,7 @@ testOptionalReferenceValidation = do
           .~ FrontmatterRules
             { required = [requiredField "type", requiredField "title"],
               recommended = [],
-              optional = [fieldRule "supersedes" Nothing [] Scalar Nothing Nothing (Just (HandleReferenceRule "ADR" [] False)) Nothing]
+              optional = [fieldRule "supersedes" Nothing [] Scalar Nothing Nothing (Just (handleReferenceRule "ADR" [] False)) Nothing]
             }
   compiled <- firstShow (compileProfile spec)
   target <- decisionTestConcept "decisions/target" "Target" "ADR-1" []
@@ -5210,9 +5309,9 @@ testOptionalNestedFieldPresence :: Either Text ()
 testOptionalNestedFieldPresence = do
   let nestedRules =
         NestedRules
-          { required = [NestedFieldRule "kind" Nothing ["human", "model"] Scalar Nothing Nothing Nothing],
-            recommended = [NestedFieldRule "notes" Nothing [] Scalar Nothing Nothing Nothing],
-            optional = [NestedFieldRule "model" Nothing ["opus", "sonnet"] Scalar Nothing Nothing Nothing]
+          { required = [nestedFieldRule "kind" Nothing ["human", "model"] Scalar Nothing Nothing Nothing],
+            recommended = [nestedFieldRule "notes" Nothing [] Scalar Nothing Nothing Nothing],
+            optional = [nestedFieldRule "model" Nothing ["opus", "sonnet"] Scalar Nothing Nothing Nothing]
           }
   compiled <- firstShow (compileProfile (nestedProfileWithRules Any nestedRules Nothing))
   concept <-
@@ -5315,9 +5414,9 @@ testOptionalDefinitionErrors = do
     )
   let nestedRules =
         NestedRules
-          { required = [NestedFieldRule "kind" Nothing ["model"] Scalar Nothing Nothing Nothing],
+          { required = [nestedFieldRule "kind" Nothing ["model"] Scalar Nothing Nothing Nothing],
             recommended = [],
-            optional = [NestedFieldRule "model" Nothing [] Scalar Nothing Nothing (Just (FieldCondition "kind" ["model"]))]
+            optional = [nestedFieldRule "model" Nothing [] Scalar Nothing Nothing (Just (FieldCondition "kind" ["model"]))]
           }
   assertEqual
     (Left (OptionalFieldWithCondition Nothing (FieldPath (FieldName "reviews" :| [FieldName "model"])) :| []))
@@ -5956,7 +6055,7 @@ testCompiledProfileOptionalPresence = do
         (presenceSummary supersededByRule)
       supersedesRule <- lookupCompiledRule "supersedes" rules
       assertEqual
-        (Just (HandleReferenceRule "ADR" [] False))
+        (Just (handleReferenceRule "ADR" [] False))
         (fieldRuleReference supersedesRule)
       reviewsRule <- lookupCompiledRule "reviews" rules
       nested <- maybe (Left "reviews declares no element fields") Right (fieldRuleElementFields reviewsRule)

@@ -1904,7 +1904,8 @@ renderProfileDetail
           indent <> "    format: " <> maybe "(none)" renderFieldFormat (rule ^. #format),
           indent <> "    reference: " <> maybe "(none)" renderHandleReferenceRule (rule ^. #reference),
           indent <> "    path: " <> maybe "(none)" renderPathReferenceRule (rule ^. #path),
-          indent <> "    when: " <> maybe "(none)" renderCondition (rule ^. #when)
+          indent <> "    when: " <> maybe "(none)" renderCondition (rule ^. #when),
+          indent <> "    uniqueBy: " <> renderOptional (rule ^. #uniqueBy)
         ]
           -- The two nested shapes print together and in this order, matching
           -- 'Okf.Profile.Documentation.renderFieldRule', which is the other
@@ -1933,6 +1934,7 @@ renderProfileDetail
           indent <> "    allowedValues: " <> renderVocabulary (rule ^. #allowedValues),
           indent <> "    cardinality: " <> renderCardinality (rule ^. #cardinality),
           indent <> "    format: " <> maybe "(none)" renderFieldFormat (rule ^. #format),
+          indent <> "    reference: " <> maybe "(none)" renderHandleReferenceRule (rule ^. #reference),
           indent <> "    path: " <> maybe "(none)" renderPathReferenceRule (rule ^. #path),
           indent <> "    when: " <> maybe "(none)" renderCondition (rule ^. #when)
         ]
@@ -3261,13 +3263,17 @@ renderFieldFormat = \case
   Boolean -> "boolean"
 
 renderHandleReferenceRule :: HandleReferenceRule -> Text
-renderHandleReferenceRule HandleReferenceRule {localPrefix, externalUriSchemes, allowSelf} =
+renderHandleReferenceRule HandleReferenceRule {localPrefix, externalUriSchemes, allowSelf, allowLocal, externalUriPattern} =
   "local-prefix("
     <> localPrefix
     <> "), external-uri-schemes("
     <> renderList externalUriSchemes
     <> "), allow-self("
     <> (if allowSelf then "true" else "false")
+    <> "), allow-local("
+    <> (if allowLocal then "true" else "false")
+    <> "), external-uri-pattern("
+    <> fromMaybe "(none)" externalUriPattern
     <> ")"
   where
     renderList xs = "[" <> Text.intercalate ", " xs <> "]"

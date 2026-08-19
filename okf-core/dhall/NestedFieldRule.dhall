@@ -20,6 +20,8 @@ let FieldCondition = ./FieldCondition.dhall
 
 let PathReferenceRule = ./PathReferenceRule.dhall
 
+let HandleReferenceRule = ./HandleReferenceRule.dhall
+
 in  { field : Text
     , description : Optional Text
     , allowedValues : List Text
@@ -27,4 +29,5 @@ in  { field : Text
     , format : Optional FieldFormat
     , path : Optional PathReferenceRule
     , when : Optional FieldCondition
+    , reference : Optional HandleReferenceRule
     }

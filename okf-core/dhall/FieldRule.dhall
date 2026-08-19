@@ -45,4 +45,5 @@ in  { field : Text
     , reference : Optional HandleReferenceRule
     , path : Optional PathReferenceRule
     , when : Optional FieldCondition
+    , uniqueBy : Optional Text
     }

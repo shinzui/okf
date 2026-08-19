@@ -4,4 +4,6 @@
 { localPrefix : Text
 , externalUriSchemes : List Text
 , allowSelf : Bool
+, allowLocal : Bool
+, externalUriPattern : Optional Text
 }

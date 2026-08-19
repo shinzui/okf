@@ -24,5 +24,6 @@ in  { Type = FieldRuleType
       , reference = None HandleReferenceRule
       , path = None PathReferenceRule
       , when = None FieldCondition
+      , uniqueBy = None Text
       }
     }
