@@ -22,7 +22,7 @@
       hsdev = inputs.haskell-nix-dev.lib.${system};
       basePackages = pkgs.haskell.packages."ghc9124";
 
-      inherit (pkgs.haskell.lib.compose) doJailbreak dontCheck markUnbroken;
+      inherit (pkgs.haskell.lib.compose) doJailbreak dontCheck dontHaddock markUnbroken;
 
       haskellPackages = basePackages.override {
         overrides = final: prev:
@@ -73,13 +73,23 @@
       # "okf v0.1.0.0 (dirty)".
       gitRev = inputs.self.shortRev or "dirty";
 
-      okf-core = haskellPackages.callCabal2nix "okf-core" (inputs.self + "/okf-core") { };
+      # `dontHaddock` below: okf ships a CLI, not a library anyone reads Haddock
+      # for, and these are exactly the derivations that rebuild on every `nix build`
+      # here and on every `darwin-rebuild` in mori://shinzui/dotfiles.nix. nixpkgs'
+      # builder defaults `doHaddock` to true, which adds a `doc` output plus a
+      # Haddock pass over the package and its dependencies' interfaces — pure
+      # repeated cost. Scoped to these packages rather than the whole scope (which
+      # is what `disableHaddock = true` on mori://shinzui/haskell-nix's
+      # `mkChannelExtension` would do) so the dependency closure keeps its hashes
+      # instead of needing a one-time full rebuild.
+
+      okf-core = dontHaddock (haskellPackages.callCabal2nix "okf-core" (inputs.self + "/okf-core") { });
 
       # nix build strips .git/, so the Template Haskell hash read in
       # Okf.Cli.Version returns Left. We inject the SHA as the CPP macro GIT_HASH
       # at configure time so the module's #ifdef GIT_HASH fallback supplies it.
       # The escaped quotes make GIT_HASH expand to a Haskell string literal.
-      okf-cli = pkgs.haskell.lib.compose.overrideCabal
+      okf-cli = dontHaddock (pkgs.haskell.lib.compose.overrideCabal
         (drv: {
           configureFlags = (drv.configureFlags or [ ]) ++ [
             "--ghc-option=-DGIT_HASH=\"${builtins.substring 0 7 gitRev}\""
@@ -87,7 +97,7 @@
         })
         (haskellPackages.callCabal2nix "okf-cli" (inputs.self + "/okf-cli") {
           inherit okf-core;
-        });
+        }));
 
       baseDevPackages = [
         pkgs.zlib
