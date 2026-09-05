@@ -21,14 +21,17 @@
 -- `execution`, `consent` and `signalBounds`. This rule shells out and wants
 -- `queued = True`; announcing must not sit behind a recording in that queue.
 --
--- Pinned to mori-schema 9899d45 (`feat(automation): add project release signal
--- family`) rather than the current 92dd706, which adds `SignalAction.cascade`.
--- The installed mori is v4.0.0.0 and has no `cascade` field: a config carrying
--- one would fail to decode. Bump this pin together with automation/announce.dhall
--- once mori v5.0.0.0 is the installed binary.
+-- Pinned to mori-schema 92dd706, which adds `SignalAction.cascade`. This file
+-- does not emit a signal and would load against the older 9899d45 too; it
+-- tracks automation/announce.dhall, which needs the cascade, so the two never
+-- disagree about what schema this repo's automation is written against.
+--
+-- Both configs therefore require mori v5.0.0.0. The v4.0.0.0 decoder has no
+-- `cascade` field and rejects a config carrying one outright, with
+-- "Expression doesn't match annotation" naming the whole record.
 let Schema =
-      https://raw.githubusercontent.com/shinzui/mori-schema/9899d4544790da7120e8150c73e56cb53fe35191/package.dhall
-        sha256:4024df757a0178e37fb0b5f04d7deb284dc3ee9bfea89a6610b793338101e284
+      https://raw.githubusercontent.com/shinzui/mori-schema/92dd706fd8f8774134a062bab539267ddf58c698/package.dhall
+        sha256:cd67f87469901ded4680ed519443849988f8ed7473f7c8121770b778341f3135
 
 in  Schema.Automation::{
     , events =
