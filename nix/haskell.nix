@@ -22,10 +22,34 @@
       hsdev = inputs.haskell-nix-dev.lib.${system};
       basePackages = pkgs.haskell.packages."ghc9124";
 
-      inherit (pkgs.haskell.lib.compose) doJailbreak dontCheck dontHaddock markUnbroken;
+      inherit (pkgs.haskell.lib.compose) doJailbreak dontCheck markUnbroken;
+
+      # okf builds its package set straight from nixpkgs rather than through
+      # mori://shinzui/haskell-nix's registry overlay, so it does not inherit
+      # that flake's build settings and has to state them itself. These are the
+      # same two, for the same reason: okf ships a CLI, nothing reads the
+      # profiling way or the `doc` output, and `haskell.packages.ghc9124.*` is
+      # absent from cache.nixos.org, so every consumer compiled both from source
+      # on every change.
+      #
+      # Whole-scope rather than per package, which is not a preference:
+      # profiling is contagious across a dependency edge -- a library built the
+      # `p_` way needs its dependencies' `p_hi` files -- so a set that mixes the
+      # two settings fails to build the moment a profiled package depends on an
+      # unprofiled one. Overriding `mkDerivation` moves every package at once,
+      # which is the only self-consistent way to flip it.
+      #
+      # This sets a default, not a ceiling: `haskell.lib.compose.doHaddock` and
+      # `enableLibraryProfiling` still re-apply on top for a single package.
+      fleetBuildSettings = _final: prev: {
+        mkDerivation = args: prev.mkDerivation (args // {
+          enableLibraryProfiling = false;
+          doHaddock = false;
+        });
+      };
 
       haskellPackages = basePackages.override {
-        overrides = final: prev:
+        overrides = lib.composeExtensions fleetBuildSettings (final: prev:
           let
             callHackageNoCheck = pkg: ver: sha256:
               dontCheck (doJailbreak (final.callHackageDirect
@@ -61,7 +85,7 @@
             baikai-openai =
               callHackageNoCheck "baikai-openai" "0.5.0.0"
                 "12zm1xy8wba8s6s909iwvs7kb9nvvcd1pwrhvamgad1wlnz18c9x";
-          };
+          });
       };
 
       # okf is a multi-package project: okf-core (library) and okf-cli (library +
@@ -73,23 +97,13 @@
       # "okf v0.1.0.0 (dirty)".
       gitRev = inputs.self.shortRev or "dirty";
 
-      # `dontHaddock` below: okf ships a CLI, not a library anyone reads Haddock
-      # for, and these are exactly the derivations that rebuild on every `nix build`
-      # here and on every `darwin-rebuild` in mori://shinzui/dotfiles.nix. nixpkgs'
-      # builder defaults `doHaddock` to true, which adds a `doc` output plus a
-      # Haddock pass over the package and its dependencies' interfaces — pure
-      # repeated cost. Scoped to these packages rather than the whole scope (which
-      # is what `disableHaddock = true` on mori://shinzui/haskell-nix's
-      # `mkChannelExtension` would do) so the dependency closure keeps its hashes
-      # instead of needing a one-time full rebuild.
-
-      okf-core = dontHaddock (haskellPackages.callCabal2nix "okf-core" (inputs.self + "/okf-core") { });
+      okf-core = haskellPackages.callCabal2nix "okf-core" (inputs.self + "/okf-core") { };
 
       # nix build strips .git/, so the Template Haskell hash read in
       # Okf.Cli.Version returns Left. We inject the SHA as the CPP macro GIT_HASH
       # at configure time so the module's #ifdef GIT_HASH fallback supplies it.
       # The escaped quotes make GIT_HASH expand to a Haskell string literal.
-      okf-cli = dontHaddock (pkgs.haskell.lib.compose.overrideCabal
+      okf-cli = pkgs.haskell.lib.compose.overrideCabal
         (drv: {
           configureFlags = (drv.configureFlags or [ ]) ++ [
             "--ghc-option=-DGIT_HASH=\"${builtins.substring 0 7 gitRev}\""
@@ -97,7 +111,7 @@
         })
         (haskellPackages.callCabal2nix "okf-cli" (inputs.self + "/okf-cli") {
           inherit okf-core;
-        }));
+        });
 
       baseDevPackages = [
         pkgs.zlib
