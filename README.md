@@ -225,11 +225,14 @@ that reviewed pin and its offline conformance fixture together with
 A profile can also document itself. `okf profile document` generates an OKF
 bundle describing a profile — one page for the profile, one page per concept type
 it declares — so a team's house conventions become something you browse, link to,
-and review in a pull request rather than read as Dhall. Each type page shows the
-rules that actually apply to that type, with the profile-wide rules and the
-type's own already merged. The output is an ordinary OKF bundle, and generation
-never reads the clock, so regenerating it in CI and running `git diff
---exit-code` is a complete drift check.
+and review in a pull request rather than read as Dhall. Optional multiline
+`guidance` carries procedural instructions separately from concise descriptions
+and checked rules. The root page renders profile-wide guidance; each type page
+renders that guidance first and then any additive type-specific guidance, before
+showing the merged rules that actually apply to the type. Guidance is rendered as
+Markdown body text only: it is never validated or executed. The output is an
+ordinary OKF bundle, and generation never reads the clock, so regenerating it in
+CI and running `git diff --exit-code` is a complete drift check.
 
 Every generated page records its producer as `generated.by:
 process:okf-profile-document`, so the output passes `okf validate --strict`

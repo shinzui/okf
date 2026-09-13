@@ -45,6 +45,19 @@ Generations are tried newest-first, and when every decoder fails the **current**
 decoder's error is the one reported, because an author wants to know how their
 descriptor differs from today's schema rather than from a retired one.
 
+**The pure registry chain must reject lossy width fallbacks.** `decodeProfileExpr`
+uses `Dhall.rawInput`, which invokes an extractor without first checking the
+expression against that decoder's exact expected type. Dhall's generic record
+extractor accepts extra members. A descriptor can therefore fall through to an
+older generation and appear to decode successfully while silently discarding
+members that generation does not know. A generation boundary that is vulnerable
+to this must fail closed before trying older pure decoders. The 0.8.0.0 boundary
+does so whenever the normalized expression contains record members introduced
+after 0.7 (`uniqueBy`, `allowLocal`, or `externalUriPattern`). Its negative
+control exercises both explicit file loading and registry enumeration: removing
+the exact fallback must make both paths reject the fixture rather than accept a
+lossy upgrade.
+
 In both functions the generations are a *list*, newest first, so inserting one is
 a single line at the top. `loadProfileFile` was a nested `case` staircase until it
 reached fourteen levels and roughly fifty-five columns of indentation, at which
@@ -302,3 +315,8 @@ compilation instead.
 This ADR was amended on 2026-08-19 with the complete 0.7.0.0 generation and the
 rule that older generations must be rebound when they reused a record that
 later grows.
+
+It was amended again on 2026-09-13 after the 0.8.0.0 negative control exposed
+`Dhall.rawInput` record-width decoding in the registry path. The pure fallback
+chain now fails closed at that generation boundary, and compatibility tests must
+prove the file and registry paths independently.

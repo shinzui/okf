@@ -2401,8 +2401,8 @@ upgradeDescribedProfile described =
           idPrefix = rule ^. #idPrefix
         }
 
--- | Lift a 0.2.x profile into the current shape by attaching no descriptions
--- and empty type-specific frontmatter.
+-- | Lift a 0.2.x profile into the current shape by attaching neither
+-- descriptions nor guidance, and by supplying empty type-specific frontmatter.
 upgradeLegacyProfile :: LegacyProfileSpec -> ProfileSpec
 upgradeLegacyProfile legacy =
   ProfileSpec

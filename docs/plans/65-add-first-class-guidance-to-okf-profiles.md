@@ -55,6 +55,9 @@ This section must always reflect the actual current state of the work.
 - [x] (2026-09-13 14:41Z) Milestone 4: documented the authoring contract, updated all three
   changelogs, added ADR 19 and amended ADRs 4 and 6, then passed the final Dhall, Cabal,
   generated-example, formatting, pre-commit, and Nix validation set.
+- [x] (2026-09-13 14:50Z) Closed the follow-up documentation audit: expanded the README
+  contract, brought both current-schema Dhall examples up to date, recorded the pure-decoder
+  width-fallback hazard in ADR 11, and corrected the legacy-upgrade Haddock.
 - [x] (2026-09-13 14:02Z) Established a clean baseline: the constructor scan found only the
   expected core and CLI pattern matches, and `cabal test all` passed both `okf-core-test` and
   `okf-cli-test` before implementation.
@@ -176,6 +179,12 @@ under `cabal test all` passed; the committed documentation drift test and unchan
 conformance test passed; explicit strict validation printed `OK: 4 concepts (okf_version 0.2)`;
 `nix flake check` passed treefmt and pre-commit on aarch64-darwin; and `git diff --check` passed.
 No Cabal version, validation constructor, compact profile-list shape, or execution path changed.
+
+A repository-wide documentation audit then found four secondary surfaces the initial pass had
+missed: the top-level README, two annotated current-schema examples in the profile guide, the
+compatibility architecture record, and the legacy-upgrade Haddock. Those surfaces now describe
+the guidance contract, typecheck against the current schema, and preserve the decoder lesson as
+durable maintenance guidance.
 
 
 ## Context and Orientation

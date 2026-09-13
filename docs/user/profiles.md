@@ -837,14 +837,20 @@ let attesterMembers =
       NestedRules::{ required = [ nested.bundlePath "resource" ] }
 
 in  { name = "attested-computation-house"
+    , description = Some
+        "A house convention for the OKF v0.2 attested computation contract."
+    , guidance = None Text
     , okfVersion = "0.2"
     , frontmatter = { required = [ field.plain "type" ], recommended = [] : List FieldRule.Type, optional = [] : List FieldRule.Type }
     , allowUnknownTypes = True
     , allowUnknownFields = True
     , idField = None Text
+    , requireBundleVersion = None Text
     , types =
       [ TypeRule::{
         , type = "Attested Computation"
+        , description = Some
+            "A sanctioned computation, with the means to check that a value came from running it."
         , frontmatter =
           { required =
             [ field.recordList "parameters" parameterMembers
@@ -1773,6 +1779,7 @@ let field = ../../../dhall/mk/FieldRule.dhall
 
 in  { name = "decisions"
     , description = Some "How this team records architectural decisions."
+    , guidance = None Text
     , okfVersion = "0.1"
     , frontmatter =
       { required =
@@ -1790,7 +1797,9 @@ in  { name = "decisions"
         ]
       }
     , allowUnknownTypes = False
+    , allowUnknownFields = True
     , idField = Some "docId"
+    , requireBundleVersion = None Text
     , types =
       [ TypeRule::{
         , type = "Decision Record"
