@@ -86,6 +86,12 @@ let TypeRule = ../../okf-core/dhall/defaults/TypeRule.dhall
 in  { name = "shinzui-postgresql"
     , description = Some
         "Conventions for documenting a PostgreSQL database as an OKF bundle."
+    , guidance = Some
+        ''
+        Inspect the live PostgreSQL object and its relevant DDL before documenting it. Record what exists now, not an intended design.
+
+        Write enough context that another reader can locate the object and verify the description against the database.
+        ''
     , okfVersion = "0.2"
     , frontmatter =
       { required =
@@ -115,6 +121,10 @@ in  { name = "shinzui-postgresql"
         , type = "PostgreSQL Table"
         , description = Some
             "One physical table in a schema, including its column list."
+        , guidance = Some
+            ''
+            Inspect the live columns, types, nullability, keys, constraints, and indexes before writing the schema table.
+            ''
         , pathPattern = Some "schemas/*/tables/*"
         , resourceScheme = Some "postgresql"
         , requireSchemaSection = True
@@ -131,6 +141,7 @@ The fields:
 |-------|------|---------|
 | `name` | `Text` | A label for the profile. |
 | `description` | `Optional Text` | Prose documenting the profile as a whole. Shown by `okf profile show` and in the `DESCRIPTION` column of `okf profile list`. Documentary only — never checked against a bundle. |
+| `guidance` | `Optional Text` | Multiline Markdown telling every author how to produce useful documents under this profile. Shown by `okf profile show` and generated documentation, but omitted from compact profile listings. Prescriptive, never validated or executed. |
 | `okfVersion` | `Text` | The OKF version the conventions target, as `<major>.<minor>`. Checked against the rules the profile declares; see [the declared OKF version](#the-declared-okf-version). |
 | `frontmatter.required` | `List FieldRule` | Frontmatter keys every concept must have as a non-empty value. A missing or empty key is reported as `missing profile-required field`. |
 | `frontmatter.recommended` | `List FieldRule` | Keys checked only by `okf validate --strict`; a missing value is reported as `missing profile-recommended field`. |
@@ -167,12 +178,73 @@ Each `TypeRule`:
 |-------|------|---------|
 | `type` | `Text` | The exact `type` frontmatter string this rule applies to. |
 | `description` | `Optional Text` | Prose explaining what this concept type is for. Documentary only. |
+| `guidance` | `Optional Text` | Multiline Markdown adding the authoring procedure for this type. Generated type pages show profile-wide guidance first and type-specific guidance second. Prescriptive, never validated or executed. |
 | `frontmatter` | `FrontmatterRules` | Required, recommended, and optional keys added for this type. Profile and type scopes merge value constraints by key, retain separate presence clauses, prefer applicable required clauses over strict recommendations, prefer type-level prose, and intersect two non-empty vocabularies. `defaults.TypeRule` supplies empty lists. |
 | `pathPattern` | `Optional Text` | A segment-glob the concept ID must match. `*` matches exactly one segment; a single trailing `**` matches one or more remaining segments; any other segment matches literally. For example `schemas/*/tables/*` matches `schemas/sales/tables/orders`. A mismatch is reported as `must match path pattern`. |
 | `resourceScheme` | `Optional Text` | When set, the concept's `resource:` value must begin with `<scheme>://`. A missing resource is reported as `requires a resource with scheme`; a wrong scheme as `resource must use scheme`. |
 | `requireSchemaSection` | `Bool` | When `True`, the body must contain a `# Schema` heading followed by a GitHub-flavored Markdown table. A missing section is reported as `requires a # Schema section`. |
 | `schemaColumns` | `List Text` | The required leading columns of the `# Schema` table header, compared case-insensitively and trimmed as a **prefix** of the actual columns. Extra trailing columns are allowed. A mismatch is reported as `# Schema columns ... do not start with required ...`. |
 | `idPrefix` | `Optional Text` | When set, concepts of this type must carry a document ID under `idField` with the declared prefix. Missing IDs are reported as `requires a document ID with prefix`; malformed IDs as `document ID must look like PREFIX-<number>`; duplicates as `duplicate document ID`. |
+
+### Description, guidance, and checked rules
+
+These three parts of a profile answer different questions:
+
+- `description` says what a profile, type, or field is. Keep it concise enough for
+  listings and generated frontmatter.
+- `guidance` says how an author should do the work. It may contain paragraphs,
+  lists, links, or fenced examples. Profile guidance applies to every type; a
+  matching type rule adds its guidance after the profile-wide block.
+- structured rules say what okf can check: required keys, value shapes and
+  formats, paths, document references, file locations, and schema tables.
+
+Guidance is prescriptive but not evidence that the instruction was followed.
+okf publishes and renders it; okf does not run commands from it, invoke tools,
+connect to services, or produce a `ProfileViolation` because of its prose.
+
+For example, a QA-runbook profile can separate universal practice from two
+different procedures:
+
+```dhall
+let okf = ../../okf-core/dhall/package.dhall
+
+let field = okf.mk.FieldRule
+
+in  okf.defaults.Profile::{
+    , name = "qa-runbooks"
+    , guidance = Some
+        ''
+        Record the setup, cleanup, and evidence for every run.
+        ''
+    , frontmatter = okf.defaults.FrontmatterRules::{
+      , required = [ field.plain "type" ]
+      }
+    , types =
+      [ okf.defaults.TypeRule::{
+        , type = "API"
+        , guidance = Some
+            ''
+            Add a source-controlled Hurl file that exercises successful and important failure responses, run it, and retain useful output as evidence.
+            ''
+        , frontmatter = okf.defaults.FrontmatterRules::{
+          , required = [ field.bundlePath "hurlFile" ]
+          }
+        }
+      , okf.defaults.TypeRule::{
+        , type = "Feature"
+        , guidance = Some
+            ''
+            Exercise the public behavior, inspect the generated domain-event stream, verify event types, payloads, ordering, and stream identity, then verify the externally observable result.
+            ''
+        }
+      ]
+    }
+```
+
+Here the `hurlFile` path rule can check that a referenced file resolves inside
+the bundle. It cannot establish that the file tests the right responses or that
+anyone ran Hurl. Likewise, a structured `expectedEvents` field could record
+event names, but okf never queries an event store to confirm what happened.
 
 ### One-level nested record rules
 
@@ -1087,6 +1159,7 @@ okf profile show documentation.architectureDecisions --registry /path/to/okf-pro
 export: documentation.architectureDecisions
 name: architecture-decision-records
 description: (none)
+guidance: (none)
 okfVersion: 0.1
 requireBundleVersion: (none)
 allowUnknownTypes: false
@@ -1198,6 +1271,7 @@ frontmatter.optional: (none)
 
 type: Architecture Decision Record
   description: (none)
+  guidance: (none)
   frontmatter.required: (none)
   frontmatter.recommended: (none)
   frontmatter.optional: (none)
@@ -1213,7 +1287,9 @@ Use it with:
 ```
 
 Every optional field prints, as `(none)` when absent, so the output shape does
-not shift between profiles and stays reliable to grep. All three presence lists
+not shift between profiles and stays reliable to grep. Present multiline
+guidance prints beneath a `guidance:` header with its internal lines and blank
+lines preserved. All three presence lists
 print at profile scope, under every type rule, and inside `objectFields` and
 `elementFields`, always in the order required, recommended, optional. Type rules
 print in the order the profile declares them.
@@ -1369,9 +1445,12 @@ The compatibility `registry` key is present only when exactly one registry
 source is selected; it is absent when several sources resolve. Configuration
 origins use `{ "kind": "config", "path": … }`, environment origins name the
 winning variable, and the default uses `{ "kind": "built-in" }`.
-`profile show --json` still emits the profile object alone. The abbreviated
-`profile` object above only illustrates the envelope; real output contains the
-complete profile, whose type-rule name key is `type`, matching the Dhall field.
+`profile show --json` still emits the profile object alone. Its complete object
+includes `guidance` at profile scope and on every type rule, as a JSON string or
+`null`; newlines remain embedded in the string. Guidance is deliberately absent
+from the abbreviated profile-list object. The abbreviated `profile` object above
+only illustrates that envelope; the type-rule name key in full output is `type`,
+matching the Dhall field.
 
 
 ## Generating profile documentation
@@ -1401,9 +1480,14 @@ description: Conventions for documenting a PostgreSQL database as an OKF bundle.
 
 Conventions for documenting a PostgreSQL database as an OKF bundle.
 
+## Guidance
+
+Inspect the live PostgreSQL object and its relevant DDL before documenting it.
+Record what exists now, not an intended design.
+
 ## Settings
 
-- OKF version: `0.1`
+- OKF version: `0.2`
 - Unknown concept types: rejected
 - Unknown frontmatter keys: allowed
 - Document ID field: none
@@ -1437,10 +1521,15 @@ profile input at all, the command opens the local descriptor picker. Pass an
 explicit input in scripts and CI.
 
 The root page, `profile.md`, carries the profile's settings, its profile-wide
-frontmatter rules, and a link to each type page. Each type page carries that
-type's own settings — path pattern, resource scheme, schema columns, document ID
-prefix — and its frontmatter rules grouped into Required, Recommended, and
-Optional. The concept ID of a type page is the type string lowercased with
+frontmatter rules, its guidance when declared, and a link to each type page.
+Each type page carries that type's own settings — path pattern, resource scheme,
+schema columns, document ID prefix — and its frontmatter rules grouped into
+Required, Recommended, and Optional. When guidance applies, the type page has a
+`## Guidance` section containing `### Profile-wide` first and
+`### Type-specific` second. A one-scope page still labels its one block, while
+blank or absent guidance creates no empty heading. Guidance remains Markdown
+body content and is never copied into the generated YAML frontmatter. The
+concept ID of a type page is the type string lowercased with
 non-alphanumeric characters replaced by hyphens, so `PostgreSQL Table` becomes
 `types/postgresql-table`.
 
@@ -1478,16 +1567,18 @@ Recommended keys carry an extra bullet reading "Checked only under `--strict`",
 which answers the question a reader of a profile most often has: will this stop
 my build?
 
-### Descriptions are what make the pages worth reading
+### Descriptions and guidance make the pages worth reading
 
-The `description` prose you write on the profile, on each type rule, and on each
-frontmatter key — see [Descriptor schema](#descriptor-schema) — is exactly what
-fills the generated pages. A profile with no descriptions still generates, with
-a synthesized one-line summary standing in for the missing prose, but a
-documented profile generates something a new team member can actually learn from.
+The concise `description` prose you write on the profile, on each type rule, and
+on each frontmatter key — see [Descriptor schema](#descriptor-schema) — explains
+identity and purpose. Multiline `guidance` supplies the authoring procedure. A
+profile with no descriptions still generates, with a synthesized one-line
+summary standing in for missing frontmatter prose, and a profile with no
+guidance simply has no Guidance section.
 
-Descriptions remain purely documentary. Writing one never causes a bundle to
-pass or fail anything.
+Descriptions and guidance remain documentary. Writing either never causes a
+bundle to pass or fail anything, and rendering guidance never executes the
+instructions it contains.
 
 ### The output is an ordinary OKF bundle
 
@@ -2199,6 +2290,25 @@ the same kind of opt-in edit.
 
 Descriptions are documentation and nothing more. They add no check, no violation,
 and no way for a bundle to fail because of one.
+
+### Adding guidance to an existing descriptor
+
+`guidance : Optional Text` at profile and type scope follows the same compatibility
+pattern. It is a breaking addition to the published Dhall record types and to the
+public Haskell `ProfileSpec` and `TypeRule` constructors, but it is not a forced
+migration for descriptor values. okf freezes the complete 0.8.0.0 descriptor
+generation and upgrades its missing guidance to `None`/`Nothing`. Current record
+completion supplies the same no-op default.
+
+An annotated descriptor that moves its `okf.Profile` import to the new schema
+must either use record completion or add `guidance = None Text` at profile scope
+and on every bare type-rule record. To adopt the feature, replace those values
+with `Some ''...''`. The text may be multiline Markdown; generated documentation
+trims outer whitespace but preserves internal structure.
+
+This compatibility does not change the field's meaning: old and new descriptors
+produce identical validation results when their structured rules are otherwise
+the same.
 
 ## A worked example
 

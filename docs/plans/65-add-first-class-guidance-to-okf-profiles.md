@@ -44,14 +44,20 @@ Use a checklist to summarize granular steps. Every stopping point must be docume
 even if it requires splitting a partially completed task into two ("done" vs. "remaining").
 This section must always reflect the actual current state of the work.
 
-- [ ] Milestone 1: publish `guidance` in the Dhall and Haskell profile models, add the
-  frozen pre-guidance decoder generation, and prove old descriptors still load and compile.
-- [ ] Milestone 2: expose guidance through text and JSON profile inspection and generate
-  profile-wide and effective per-type guidance in `okf profile document` output.
-- [ ] Milestone 3: add the QA-runbook acceptance descriptor, update the shipped PostgreSQL
-  example, regenerate its documentation bundle, and pin the output with core and CLI tests.
-- [ ] Milestone 4: document the authoring contract, update changelogs and architectural
-  records, run the full test suite, and record the final compatibility evidence.
+- [x] (2026-09-13 14:27Z) Milestone 1: published `guidance` in the Dhall and Haskell profile models, added the
+  frozen pre-guidance decoder generation, and proved old descriptors still load and compile.
+- [x] (2026-09-13 14:32Z) Milestone 2: exposed multiline guidance through text and full JSON
+  inspection, rendered ordered effective guidance in generated documentation without changing
+  frontmatter, and covered combined, single-scope, blank, absent, and validation-inert cases.
+- [x] (2026-09-13 14:33Z) Milestone 3: added the QA-runbook acceptance descriptor, authored
+  live-object guidance for the shipped PostgreSQL profile, regenerated its documentation
+  twice to prove stability, and passed the CLI drift and unchanged meta-profile checks.
+- [x] (2026-09-13 14:41Z) Milestone 4: documented the authoring contract, updated all three
+  changelogs, added ADR 19 and amended ADRs 4 and 6, then passed the final Dhall, Cabal,
+  generated-example, formatting, pre-commit, and Nix validation set.
+- [x] (2026-09-13 14:02Z) Established a clean baseline: the constructor scan found only the
+  expected core and CLI pattern matches, and `cabal test all` passed both `okf-core-test` and
+  `okf-cli-test` before implementation.
 
 
 ## Surprises & Discoveries
@@ -59,7 +65,17 @@ This section must always reflect the actual current state of the work.
 Document unexpected behaviors, bugs, optimizations, or insights discovered during
 implementation. Provide concise evidence.
 
-(None yet.)
+- Discovery: `Dhall.rawInput` invokes a decoder's extractor without first checking the
+  expression against the decoder's expected type. Generic record extractors ignore extra
+  members, so without a guard the 0.8.0.0 fixture fell through to the 0.7 decoder during
+  registry enumeration and silently lost `uniqueBy`, nested `reference`, `allowLocal`, and
+  `externalUriPattern` data.
+  Evidence: with the new `PreGuidance` registry decoder temporarily removed, GHCi initially
+  returned a populated `Right [RegistryEntry ...]` whose upgraded rules held `uniqueBy =
+  Nothing` and `reference = Nothing`. After guarding older pure decoders when post-0.7 record
+  members are present, the same call returned `Right []` while `loadProfileFile` returned the
+  expected current-schema type error.
+  Date: 2026-09-13
 
 
 ## Decision Log
@@ -125,6 +141,15 @@ Record every decision made while working on the plan.
   event-stream use case without reversing that dependency.
   Date: 2026-09-13
 
+- Decision: Refuse to run registry expressions containing post-0.7 descriptor record members
+  through pre-0.8 fallback decoders.
+  Rationale: `Dhall.rawInput` intentionally skips the decoder's expected-type check, and its
+  generic record extractor accepts width-subtyped records. Without the guard, a missing newest
+  fallback can appear to work while dropping newer declarations. The file loader already uses
+  `Dhall.inputFile`, which performs the exact expected-type check; the registry path now avoids
+  the corresponding lossy fallback while retaining all genuinely older generations.
+  Date: 2026-09-13
+
 
 ## Outcomes & Retrospective
 
@@ -133,7 +158,24 @@ Compare the result against the original purpose. Before marking the plan complet
 distill durable project context from the Decision Log, Surprises & Discoveries, and
 this section into docs/adr/. Keep task-local execution details here.
 
-(To be filled during and after implementation.)
+The profile language now has a distinct procedural prose channel at profile and type scope.
+Text and full JSON inspection preserve multiline guidance, generated documentation presents
+universal instructions before additive type instructions, and neither validation nor generated
+frontmatter changed. The QA fixture proves the requested Hurl and domain-event-stream scenario;
+the regenerated PostgreSQL bundle makes the behavior visible in a committed user-facing example.
+
+Compatibility is preserved for descriptor values through a complete frozen 0.8.0.0 generation
+registered in both loading paths. The negative control exposed a pre-existing hazard in registry
+decoding: `Dhall.rawInput` accepts record width and could silently discard fields through an older
+fallback. The new guard makes the tested generation fail closed when its exact fallback is absent,
+while the restored decoder preserves all nested reference, uniqueness, path, object, and format
+data and supplies `Nothing` guidance.
+
+Final evidence: all six targeted Dhall type checks were silent; `cabal build all` and both suites
+under `cabal test all` passed; the committed documentation drift test and unchanged meta-profile
+conformance test passed; explicit strict validation printed `OK: 4 concepts (okf_version 0.2)`;
+`nix flake check` passed treefmt and pre-commit on aarch64-darwin; and `git diff --check` passed.
+No Cabal version, validation constructor, compact profile-list shape, or execution path changed.
 
 
 ## Context and Orientation

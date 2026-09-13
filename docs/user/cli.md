@@ -976,6 +976,11 @@ and must be narrowed with exactly one `--registry`.
 
 `profile show` closes with the two-line Dhall snippet that consumes the profile,
 which is all `okf validate --profile` needs — there is no separate install step.
+Its text output prints `guidance: (none)` after each absent profile or type
+description, or an indented multiline block with internal blank lines preserved.
+`profile show --json` includes `guidance` as a string or `null` on the complete
+profile and every type rule. Compact `profile list` output and its abbreviated
+JSON profile objects do not include guidance.
 
 | Exit code | Meaning |
 |-----------|---------|
@@ -996,6 +1001,11 @@ deletes, and regenerates `index.md` for every directory under `--out` — so poi
 it at a directory dedicated to the generated documentation. Running it twice with
 the same inputs produces byte-identical output, which makes
 `git diff --exit-code` after regenerating a complete CI drift check.
+
+Generated profile pages place multiline authoring guidance in the Markdown body,
+never YAML frontmatter. A type page labels universal `Profile-wide` guidance
+before additive `Type-specific` guidance. The command renders these instructions
+but does not execute them or treat their prose as profile validation.
 
 See [profiles.md](./profiles.md) for what a registry is in more detail, and its
 [Generating profile documentation](./profiles.md#generating-profile-documentation)

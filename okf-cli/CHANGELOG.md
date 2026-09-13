@@ -7,6 +7,19 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- `okf profile show` renders optional profile and type guidance as stable
+  multiline blocks, and `--json` exposes the same string-or-null fields.
+  `okf profile document` renders profile-wide guidance before additive
+  type-specific guidance in Markdown bodies and never executes the prose.
+
+### Changed
+
+- **Breaking:** requires the coordinated `okf-core` release whose public
+  profile schema and Haskell records add `guidance`; older descriptor values
+  remain accepted by okf-core's frozen compatibility decoder.
+
 ## [0.8.0.0] - 2026-08-19
 
 ### Added

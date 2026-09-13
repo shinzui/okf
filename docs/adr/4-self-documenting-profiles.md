@@ -140,3 +140,9 @@ profile that declares no prose still documents — the generator synthesizes a
 `description` for the frontmatter so generated output passes strict validation,
 and leaves the document body's prose paragraph out entirely rather than inventing
 one.)*
+
+*(Amended 2026-09-13: [ADR 19](./19-profile-guidance-is-prescriptive-and-never-executed.md)
+adds a distinct `guidance` prose channel at profile and type scope. Descriptions
+retain the identity-and-purpose role decided here; guidance carries longer
+procedural advice. Both remain non-validating, and guidance is also explicitly
+non-executable.)*

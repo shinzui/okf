@@ -7,6 +7,20 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- `ProfileSpec.guidance` and `TypeRule.guidance` carry optional multiline
+  authoring Markdown. JSON preserves the fields as strings or `null`, and
+  generated documentation renders profile-wide then type-specific guidance in
+  body sections while leaving validation and generated frontmatter unchanged.
+
+### Changed
+
+- **Breaking:** the public Haskell constructors and published Dhall `Profile`
+  and `TypeRule` record types gain `guidance`. Completion defaults supply
+  `None Text`; a complete frozen 0.8.0.0 decoder upgrades old descriptors with
+  `Nothing` in both scopes and is registered for file and registry decoding.
+
 ## [0.8.0.0] - 2026-08-19
 
 ### Added

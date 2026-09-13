@@ -140,9 +140,16 @@ GENERATING DOCUMENTATION
   leaves you to compose them. Recommended keys carry a bullet saying they are
   checked only under --strict.
 
+  Profile and type rules may also carry multiline `guidance`. The root page
+  renders profile guidance. Every applicable type page renders a Guidance
+  section with Profile-wide prose first and Type-specific prose second; a type
+  rule adds to, never replaces, the universal instruction. Blank or absent
+  guidance creates no section, and guidance remains body Markdown rather than
+  generated frontmatter.
+
   The `description` prose you write on the profile, on a type rule, and on
-  each key is what fills the generated pages. A profile with no descriptions
-  still generates, with synthesized summaries.
+  each key identifies what it documents. A profile with no descriptions still
+  generates, with synthesized summaries.
 
   The output is an ordinary OKF bundle, so okf validate, okf graph, and
   okf show all work on it. Generation never reads the clock, so regenerating
@@ -179,13 +186,26 @@ GENERATING DOCUMENTATION
   what a generated documentation bundle looks like, and
   examples/postgresql-profile/ as a committed worked example.
 
-DESCRIPTIONS
+DESCRIPTIONS, GUIDANCE, AND RULES
 
   A profile may document itself: one description for the profile as a whole,
   one per required, recommended, or optional frontmatter key, and one per type
   rule.
-  Descriptions are prose for humans -- okf never checks one against a bundle
-  and none can produce a deviation.
+  A description says what the profile, type, or key is and stays concise enough
+  for listings and generated frontmatter.
+
+  `guidance : Optional Text` is a separate multiline Markdown field on the
+  profile and every type rule. It says how an author should work. Profile
+  guidance applies to every type, and matching type guidance is added after it.
+  `okf profile show` prints each block after its description, preserving
+  internal lines; absent or whitespace-only values print `guidance: (none)`.
+  Full show JSON includes string-or-null guidance fields, while compact profile
+  listings omit them.
+
+  Structured rules say what okf can actually check. Descriptions and guidance
+  are prose for humans and tools -- neither can produce a deviation. okf never
+  runs a command from guidance, invokes Hurl, queries an event stream, or
+  executes a fenced code block.
 
   `okf profile list` shows the profile's own description on the indented line
   below its identity, reading "-" when it has none. `okf profile show` prints
@@ -196,8 +216,9 @@ DESCRIPTIONS
 
     profile: schemas/sales/tables/orders: missing profile-required field: title (Human-readable name of the object.)
 
-  Descriptions are optional and additive. A descriptor written before they
-  existed loads unchanged and simply shows none; nothing needs migrating. See
+  Descriptions and guidance are optional and additive. A descriptor written
+  before either schema generation loads through its frozen compatibility
+  decoder and simply shows none; nothing needs migrating. See
   docs/user/profiles.md for how to add them to a descriptor you already have.
 
 TYPE-AWARE FRONTMATTER

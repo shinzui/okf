@@ -214,3 +214,12 @@ additive: new exports on `Okf.Profile`, one new exposed module.
 This ADR was amended on 2026-08-19 to cover nested reference clauses, explicit
 local/external policy prose, and the fixed `Unique by` bullet. The generated
 body changed, but the frontmatter contract encoded by the meta-profile did not.
+
+This ADR was amended on 2026-09-13 after
+[ADR 19](./19-profile-guidance-is-prescriptive-and-never-executed.md) added
+profile guidance. The root body renders non-blank profile guidance between its
+description and Settings. Each type body renders effective guidance after its
+declaring-profile sentence and before Type settings, labeling profile-wide prose
+before additive type-specific prose. Blank or absent values create no heading.
+Guidance is body Markdown only: generated frontmatter, concept types, IDs, the
+meta-profile, and all overwrite and determinism rules remain unchanged.

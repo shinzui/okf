@@ -7,6 +7,20 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- Profiles and type rules can carry optional multiline `guidance` for
+  prescriptive authoring instructions. Full profile inspection exposes it, and
+  generated profile documentation renders profile-wide guidance before
+  additive type-specific guidance without validating or executing the prose.
+
+### Changed
+
+- **Breaking:** the public Dhall `Profile` and `TypeRule` records and Haskell
+  `ProfileSpec` and `TypeRule` constructors gain `guidance`. Record-completion
+  defaults supply absence, and the frozen 0.8.0.0 decoder keeps older descriptor
+  values loading through both direct-file and registry paths.
+
 ## [0.8.0.0] - 2026-08-19
 
 ### Added
