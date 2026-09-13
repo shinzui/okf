@@ -8,6 +8,7 @@ where
 
 import Baikai.Kit.Command qualified as Engine
 import Baikai.Kit.Config (KitScope (..))
+import Baikai.Kit.Install (OverwritePolicy (..))
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Okf.Cli.Config (OkfConfig)
@@ -19,7 +20,7 @@ import Options.Applicative
 data KitCommand
   = KitList
   | KitInstall !Text !KitScope
-  | KitUpdate !(Maybe Text)
+  | KitUpdate !(Maybe Text) !OverwritePolicy
   | KitUninstall !Text !KitScope
   | KitStatus
   deriving stock (Show, Eq)
@@ -43,6 +44,10 @@ kitCommandParser =
     updateParser =
       KitUpdate
         <$> optional (textArgument (metavar "NAME" <> help "Name of a specific item to update (default: all)"))
+        <*> flag
+          KeepLocalEdits
+          OverwriteLocalEdits
+          (long "force" <> help "Reinstall items even if their installed files were modified locally")
 
     uninstallParser =
       KitUninstall
@@ -63,6 +68,6 @@ toEngineCommand :: KitCommand -> Engine.KitCommand
 toEngineCommand = \case
   KitList -> Engine.KitList
   KitInstall name scope -> Engine.KitInstall name scope
-  KitUpdate name -> Engine.KitUpdate name
+  KitUpdate name policy -> Engine.KitUpdate name policy
   KitUninstall name scope -> Engine.KitUninstall name scope
   KitStatus -> Engine.KitStatus

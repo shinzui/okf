@@ -321,6 +321,7 @@ main = do
           parseSucceeds ["kit", "install", "demo-skill", "--project"],
           parseSucceeds ["kit", "update"],
           parseSucceeds ["kit", "update", "demo-skill"],
+          parseSucceeds ["kit", "update", "demo-skill", "--force"],
           parseSucceeds ["kit", "uninstall", "demo-skill"],
           parseSucceeds ["kit", "uninstall", "demo-skill", "--project"],
           parseSucceeds ["kit", "status"],
