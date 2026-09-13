@@ -58,10 +58,15 @@ in  Schema.Automation::{
               , "git-tag:{{ref.name}}"
               ]
             ,
-              -- One `mori registry release record` against a local Postgres.
-              -- Without an explicit value this inherits the 600-second default
-              -- and holds the FIFO group for ten minutes on a hung database.
-              timeout = Some +60
+              -- One `mori registry release record` against a local Postgres, but
+              -- every RunCommand runs inside `nix develop --command`, and that
+              -- entry dominates: the first run recorded here (v0.9.0.0, on
+              -- 2026-09-13) took 31.6s, over half of the 60 seconds this used to
+              -- allow. shinzui/keiro timed out six reactions at 60s while the nix
+              -- eval cache was cold and settled on 300s; match it. An explicit
+              -- bound still keeps a hung database from holding the FIFO group for
+              -- the 600-second default.
+              timeout = Some +300
             }
           ]
         }
