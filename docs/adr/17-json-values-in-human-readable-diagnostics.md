@@ -1,9 +1,16 @@
+---
+type: Architecture Decision Record
+title: JSON values in human-readable diagnostics
+description: Decode encoded JSON to `Text` only via UTF-8 decoding, never through a `Char8` module, when rendering human-readable diagnostics.
+generated:
+  by: claude/sonnet-5
+  at: "2026-08-16T20:12:53Z"
+docId: ADR-17
+status: Accepted
+date: 2026-08-16
+---
+
 # ADR 17: JSON values in human-readable diagnostics
-
-Status: Accepted
-
-Date: 2026-08-16
-
 
 ## Context
 

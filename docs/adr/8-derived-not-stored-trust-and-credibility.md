@@ -1,9 +1,16 @@
+---
+type: Architecture Decision Record
+title: Derived-not-stored trust and credibility
+description: Compute trust tiers, latest verification, and staleness on read from frontmatter, never store them as a field, cache, or generated output.
+generated:
+  by: claude/sonnet-5
+  at: "2026-08-01T03:26:25Z"
+docId: ADR-8
+status: Accepted
+date: 2026-07-31
+---
+
 # ADR 8: Derived-not-stored trust and credibility
-
-Status: Accepted
-
-Date: 2026-07-31
-
 
 ## Context
 

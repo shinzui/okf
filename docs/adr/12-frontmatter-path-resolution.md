@@ -1,9 +1,16 @@
+---
+type: Architecture Decision Record
+title: Frontmatter path resolution
+description: Let a path-valued frontmatter field resolve against any regular file the bundle inventory walks, not only Markdown concepts.
+generated:
+  by: claude/sonnet-5
+  at: "2026-08-01T20:32:42Z"
+docId: ADR-12
+status: Accepted
+date: 2026-08-01
+---
+
 # ADR 12: Frontmatter path resolution
-
-Status: Accepted
-
-Date: 2026-08-01
-
 
 ## Context
 

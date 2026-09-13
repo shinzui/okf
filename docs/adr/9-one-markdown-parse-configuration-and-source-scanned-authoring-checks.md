@@ -1,9 +1,16 @@
+---
+type: Architecture Decision Record
+title: One Markdown parse configuration, and authoring checks read source text
+description: Route every Markdown body parse through one shared `markdownOptions` list, and read authoring checks from source text rather than parsed output.
+generated:
+  by: claude/sonnet-5
+  at: "2026-08-01T04:32:30Z"
+docId: ADR-9
+status: Accepted
+date: 2026-07-31
+---
+
 # ADR 9: One Markdown parse configuration, and authoring checks read source text
-
-Status: Accepted
-
-Date: 2026-07-31
-
 
 ## Context
 

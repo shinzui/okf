@@ -1,9 +1,16 @@
+---
+type: Architecture Decision Record
+title: Growing the profile descriptor language
+description: "Ship every additive profile-schema change as one frozen generation: a private prior-shape copy, an `upgrade*` lifter, and a fixture-backed test."
+generated:
+  by: claude/sonnet-5
+  at: "2026-09-13T15:05:43Z"
+docId: ADR-11
+status: Accepted
+date: 2026-08-01
+---
+
 # ADR 11: Growing the profile descriptor language
-
-Status: Accepted
-
-Date: 2026-08-01
-
 
 ## Context
 

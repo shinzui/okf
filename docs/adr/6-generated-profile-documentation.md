@@ -1,9 +1,16 @@
+---
+type: Architecture Decision Record
+title: Generated profile documentation
+description: Generate a profile's own documentation as an ordinary cross-linked OKF bundle, one concept per profile and per declared type rule.
+generated:
+  by: claude/sonnet-5
+  at: "2026-09-13T14:43:18Z"
+docId: ADR-6
+status: Accepted
+date: 2026-07-31
+---
+
 # ADR 6: Generated profile documentation
-
-Status: Accepted
-
-Date: 2026-07-31
-
 
 ## Context
 

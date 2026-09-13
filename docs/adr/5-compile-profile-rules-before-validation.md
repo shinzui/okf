@@ -1,9 +1,16 @@
+---
+type: Architecture Decision Record
+title: Compile profile rules before validation
+description: Validate a raw ProfileSpec once into an opaque CompiledProfile, or structured errors, before it can be used for bundle validation.
+generated:
+  by: claude/sonnet-5
+  at: "2026-08-19T20:27:45Z"
+docId: ADR-5
+status: Accepted
+date: 2026-07-29
+---
+
 # ADR 5: Compile profile rules before validation
-
-Status: Accepted
-
-Date: 2026-07-29
-
 
 ## Context
 

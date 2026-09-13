@@ -1,9 +1,16 @@
+---
+type: Architecture Decision Record
+title: Querying a bundle, and where filter semantics live
+description: Put concept-filter matching semantics in `okf-core`'s `Okf.Query` so every consumer shares one definition of a match.
+generated:
+  by: claude/sonnet-5
+  at: "2026-08-18T14:03:07Z"
+docId: ADR-15
+status: Accepted
+date: 2026-08-09
+---
+
 # ADR 15: Querying a bundle, and where filter semantics live
-
-Status: Accepted
-
-Date: 2026-08-09
-
 
 ## Context
 

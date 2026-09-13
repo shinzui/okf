@@ -1,9 +1,16 @@
+---
+type: Architecture Decision Record
+title: Interactive bundle and concept selection
+description: Make bundle and concept selection in `okf show` interactive only when an argument is omitted, never mandatory.
+generated:
+  by: claude/sonnet-5
+  at: "2026-08-18T16:12:24Z"
+docId: ADR-2
+status: Accepted
+date: 2026-07-25
+---
+
 # ADR 2: Interactive bundle and concept selection
-
-Status: Accepted
-
-Date: 2026-07-25
-
 
 ## Context
 

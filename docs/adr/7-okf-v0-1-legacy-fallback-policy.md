@@ -1,9 +1,16 @@
+---
+type: Architecture Decision Record
+title: OKF v0.1 legacy fallback policy
+description: Read the legacy v0.1 `timestamp` key when `generated` is absent, but let `generated.at` win whenever both are present.
+generated:
+  by: claude/sonnet-5
+  at: "2026-08-01T12:57:43Z"
+docId: ADR-7
+status: Accepted
+date: 2026-07-31
+---
+
 # ADR 7: OKF v0.1 legacy fallback policy
-
-Status: Accepted
-
-Date: 2026-07-31
-
 
 ## Context
 

@@ -1,9 +1,16 @@
+---
+type: Architecture Decision Record
+title: The `references/` convention and non-Markdown files
+description: Confirm that a Markdown file under `references/` is an ordinary concept that must carry a `type`, endorsing existing behavior rather than changing it.
+generated:
+  by: claude/sonnet-5
+  at: "2026-08-01T20:32:42Z"
+docId: ADR-13
+status: Accepted
+date: 2026-08-01
+---
+
 # ADR 13: The `references/` convention and non-Markdown files
-
-Status: Accepted
-
-Date: 2026-08-01
-
 
 ## Context
 

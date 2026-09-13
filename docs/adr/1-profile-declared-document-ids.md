@@ -1,9 +1,16 @@
+---
+type: Architecture Decision Record
+title: Profile-declared document IDs
+description: Let a profile declare a frontmatter idField and per-type idPrefix so concepts get rename-stable PREFIX-N handles with profile-scoped reference validation.
+generated:
+  by: claude/sonnet-5
+  at: "2026-08-19T20:27:45Z"
+docId: ADR-1
+status: Accepted
+date: 2026-07-25
+---
+
 # ADR 1: Profile-declared document IDs
-
-Status: Accepted
-
-Date: 2026-07-25
-
 
 ## Context
 

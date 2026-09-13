@@ -1,9 +1,16 @@
+---
+type: Architecture Decision Record
+title: Local profile descriptor discovery
+description: Treat any `.dhall` file that decodes through okf-core's current-or-frozen profile decoder chain as a discoverable local descriptor, independent of filename or directory.
+generated:
+  by: claude/sonnet-5
+  at: "2026-08-18T18:36:40Z"
+docId: ADR-18
+status: Accepted
+date: 2026-08-18
+---
+
 # ADR 18: Local profile descriptor discovery
-
-Status: Accepted
-
-Date: 2026-08-18
-
 
 ## Context
 

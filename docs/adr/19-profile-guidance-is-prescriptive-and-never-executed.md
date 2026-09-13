@@ -1,9 +1,16 @@
+---
+type: Architecture Decision Record
+title: Profile guidance is prescriptive and never executed
+description: Let a profile and each type rule carry optional multiline `guidance` prose for procedural authoring advice that is never executed or validated.
+generated:
+  by: claude/sonnet-5
+  at: "2026-09-13T14:43:18Z"
+docId: ADR-19
+status: Accepted
+date: 2026-09-13
+---
+
 # ADR 19: Profile guidance is prescriptive and never executed
-
-Status: Accepted
-
-Date: 2026-09-13
-
 
 ## Context
 

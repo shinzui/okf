@@ -1,8 +1,16 @@
+---
+type: Architecture Decision Record
+title: Self-documenting profiles
+description: Let a profile carry optional, purely documentary `description` prose at the profile, field, and type-rule levels.
+generated:
+  by: claude/sonnet-5
+  at: "2026-09-13T14:43:18Z"
+docId: ADR-4
+status: Accepted
+date: 2026-07-28
+---
+
 # ADR 4: Self-documenting profiles
-
-Status: Accepted
-
-Date: 2026-07-28
 
 Supersedes the "Profile listings deliberately carry no description" decision in
 [ADR 3](./3-profile-registries.md).

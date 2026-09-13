@@ -360,6 +360,17 @@ Run all tests:
 cabal test all
 ```
 
+Validate this repository's own OKF bundles (strict profile and log
+enforcement) before sending a change that touches `docs/adr/` or
+`docs/capabilities/`:
+
+```bash
+cabal run okf -- validate docs/adr \
+  --profile docs/adr/profile.dhall --profile-enforce --log-enforce
+cabal run okf -- validate docs/capabilities \
+  --profile docs/capabilities/profile.dhall --profile-enforce --log-enforce
+```
+
 
 ## Implementation Boundaries
 

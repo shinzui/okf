@@ -1,9 +1,16 @@
+---
+type: Architecture Decision Record
+title: Profile registries
+description: Treat any Dhall record whose fields evaluate to profile values as a registry, with no manifest or registry-specific file format.
+generated:
+  by: claude/sonnet-5
+  at: "2026-08-18T21:55:28Z"
+docId: ADR-3
+status: Accepted
+date: 2026-07-26
+---
+
 # ADR 3: Profile registries
-
-Status: Accepted
-
-Date: 2026-07-26
-
 
 ## Context
 

@@ -1,9 +1,16 @@
+---
+type: Architecture Decision Record
+title: okf records computations and never runs them
+description: Record a computation and the means to check it without ever executing or attesting it, as a normative OKF §10 boundary.
+generated:
+  by: claude/sonnet-5
+  at: "2026-08-01T21:12:55Z"
+docId: ADR-14
+status: Accepted
+date: 2026-08-01
+---
+
 # ADR 14: okf records computations and never runs them
-
-Status: Accepted
-
-Date: 2026-08-01
-
 
 ## Context
 

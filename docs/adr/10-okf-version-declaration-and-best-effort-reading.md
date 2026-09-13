@@ -1,9 +1,16 @@
+---
+type: Architecture Decision Record
+title: The bundle version declaration, and best-effort reading of it
+description: Read the bundle's OKF version declaration from the reserved root `index.md` by path, best-effort, without treating it as a concept.
+generated:
+  by: claude/sonnet-5
+  at: "2026-08-01T23:06:15Z"
+docId: ADR-10
+status: Accepted
+date: 2026-08-01
+---
+
 # ADR 10: The bundle version declaration, and best-effort reading of it
-
-Status: Accepted
-
-Date: 2026-08-01
-
 
 ## Context
 

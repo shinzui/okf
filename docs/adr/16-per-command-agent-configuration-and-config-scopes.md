@@ -1,9 +1,16 @@
+---
+type: Architecture Decision Record
+title: Per-command agent configuration, config scopes, and who owns vendor flags
+description: Apply project/global two-scope layering only to the `agent` config block, leaving `kit` and `profiles` first-found-wins.
+generated:
+  by: claude/sonnet-5
+  at: "2026-08-11T19:48:09Z"
+docId: ADR-16
+status: Accepted
+date: 2026-08-11
+---
+
 # ADR 16: Per-command agent configuration, config scopes, and who owns vendor flags
-
-Status: Accepted
-
-Date: 2026-08-11
-
 
 ## Context
 
