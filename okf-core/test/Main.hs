@@ -3269,13 +3269,16 @@ testPinnedCatalogueDecodes = do
     Left err -> Left ("failed to load pinned catalogue snapshot: " <> err)
     Right entries -> do
       assertEqual
-        [ "coordination.bugReports",
+        [ "assurance.failureModes",
+          "assurance.reviews",
+          "coordination.bugReports",
           "coordination.capabilities",
           "coordination.improvementRequests",
           "coordination.useCases",
           "documentation.architectureDecisions",
           "documentation.patternCatalog",
           "documentation.researchDocuments",
+          "documentation.userDocumentation",
           "okfV02",
           "postgresql",
           "tanPostgresql"

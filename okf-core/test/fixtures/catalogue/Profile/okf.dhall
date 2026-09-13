@@ -40,6 +40,14 @@
                 , path :
                     Optional
                       { allowSelf : Bool, externalUriSchemes : List Text }
+                , reference :
+                    Optional
+                      { allowLocal : Bool
+                      , allowSelf : Bool
+                      , externalUriPattern : Optional Text
+                      , externalUriSchemes : List Text
+                      , localPrefix : Text
+                      }
                 , when : Optional { field : Text, hasValue : List Text }
                 }
           , recommended :
@@ -64,6 +72,14 @@
                 , path :
                     Optional
                       { allowSelf : Bool, externalUriSchemes : List Text }
+                , reference :
+                    Optional
+                      { allowLocal : Bool
+                      , allowSelf : Bool
+                      , externalUriPattern : Optional Text
+                      , externalUriSchemes : List Text
+                      , localPrefix : Text
+                      }
                 , when : Optional { field : Text, hasValue : List Text }
                 }
           , required :
@@ -88,6 +104,14 @@
                 , path :
                     Optional
                       { allowSelf : Bool, externalUriSchemes : List Text }
+                , reference :
+                    Optional
+                      { allowLocal : Bool
+                      , allowSelf : Bool
+                      , externalUriPattern : Optional Text
+                      , externalUriSchemes : List Text
+                      , localPrefix : Text
+                      }
                 , when : Optional { field : Text, hasValue : List Text }
                 }
           }
@@ -129,6 +153,14 @@
                 , path :
                     Optional
                       { allowSelf : Bool, externalUriSchemes : List Text }
+                , reference :
+                    Optional
+                      { allowLocal : Bool
+                      , allowSelf : Bool
+                      , externalUriPattern : Optional Text
+                      , externalUriSchemes : List Text
+                      , localPrefix : Text
+                      }
                 , when : Optional { field : Text, hasValue : List Text }
                 }
           , recommended :
@@ -153,6 +185,14 @@
                 , path :
                     Optional
                       { allowSelf : Bool, externalUriSchemes : List Text }
+                , reference :
+                    Optional
+                      { allowLocal : Bool
+                      , allowSelf : Bool
+                      , externalUriPattern : Optional Text
+                      , externalUriSchemes : List Text
+                      , localPrefix : Text
+                      }
                 , when : Optional { field : Text, hasValue : List Text }
                 }
           , required :
@@ -177,16 +217,27 @@
                 , path :
                     Optional
                       { allowSelf : Bool, externalUriSchemes : List Text }
+                , reference :
+                    Optional
+                      { allowLocal : Bool
+                      , allowSelf : Bool
+                      , externalUriPattern : Optional Text
+                      , externalUriSchemes : List Text
+                      , localPrefix : Text
+                      }
                 , when : Optional { field : Text, hasValue : List Text }
                 }
           }
     , path : Optional { allowSelf : Bool, externalUriSchemes : List Text }
     , reference :
         Optional
-          { allowSelf : Bool
+          { allowLocal : Bool
+          , allowSelf : Bool
+          , externalUriPattern : Optional Text
           , externalUriSchemes : List Text
           , localPrefix : Text
           }
+    , uniqueBy : Optional Text
     , when : Optional { field : Text, hasValue : List Text }
     }
 , FrontmatterRules =
@@ -219,6 +270,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , recommended :
@@ -243,6 +302,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , required :
@@ -267,6 +334,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 }
@@ -308,6 +383,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , recommended :
@@ -332,6 +415,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , required :
@@ -356,16 +447,27 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 }
           , path : Optional { allowSelf : Bool, externalUriSchemes : List Text }
           , reference :
               Optional
-                { allowSelf : Bool
+                { allowLocal : Bool
+                , allowSelf : Bool
+                , externalUriPattern : Optional Text
                 , externalUriSchemes : List Text
                 , localPrefix : Text
                 }
+          , uniqueBy : Optional Text
           , when : Optional { field : Text, hasValue : List Text }
           }
     , recommended :
@@ -397,6 +499,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , recommended :
@@ -421,6 +531,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , required :
@@ -445,6 +563,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 }
@@ -486,6 +612,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , recommended :
@@ -510,6 +644,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , required :
@@ -534,16 +676,27 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 }
           , path : Optional { allowSelf : Bool, externalUriSchemes : List Text }
           , reference :
               Optional
-                { allowSelf : Bool
+                { allowLocal : Bool
+                , allowSelf : Bool
+                , externalUriPattern : Optional Text
                 , externalUriSchemes : List Text
                 , localPrefix : Text
                 }
+          , uniqueBy : Optional Text
           , when : Optional { field : Text, hasValue : List Text }
           }
     , required :
@@ -575,6 +728,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , recommended :
@@ -599,6 +760,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , required :
@@ -623,6 +792,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 }
@@ -664,6 +841,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , recommended :
@@ -688,6 +873,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , required :
@@ -712,21 +905,37 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 }
           , path : Optional { allowSelf : Bool, externalUriSchemes : List Text }
           , reference :
               Optional
-                { allowSelf : Bool
+                { allowLocal : Bool
+                , allowSelf : Bool
+                , externalUriPattern : Optional Text
                 , externalUriSchemes : List Text
                 , localPrefix : Text
                 }
+          , uniqueBy : Optional Text
           , when : Optional { field : Text, hasValue : List Text }
           }
     }
 , HandleReferenceRule =
-    { allowSelf : Bool, externalUriSchemes : List Text, localPrefix : Text }
+    { allowLocal : Bool
+    , allowSelf : Bool
+    , externalUriPattern : Optional Text
+    , externalUriSchemes : List Text
+    , localPrefix : Text
+    }
 , NestedFieldRule =
     { allowedValues : List Text
     , cardinality : < Any | List | Scalar >
@@ -746,6 +955,14 @@
           | UriWithScheme : Text
           >
     , path : Optional { allowSelf : Bool, externalUriSchemes : List Text }
+    , reference :
+        Optional
+          { allowLocal : Bool
+          , allowSelf : Bool
+          , externalUriPattern : Optional Text
+          , externalUriSchemes : List Text
+          , localPrefix : Text
+          }
     , when : Optional { field : Text, hasValue : List Text }
     }
 , NestedRules =
@@ -769,6 +986,14 @@
                 | UriWithScheme : Text
                 >
           , path : Optional { allowSelf : Bool, externalUriSchemes : List Text }
+          , reference :
+              Optional
+                { allowLocal : Bool
+                , allowSelf : Bool
+                , externalUriPattern : Optional Text
+                , externalUriSchemes : List Text
+                , localPrefix : Text
+                }
           , when : Optional { field : Text, hasValue : List Text }
           }
     , recommended :
@@ -791,6 +1016,14 @@
                 | UriWithScheme : Text
                 >
           , path : Optional { allowSelf : Bool, externalUriSchemes : List Text }
+          , reference :
+              Optional
+                { allowLocal : Bool
+                , allowSelf : Bool
+                , externalUriPattern : Optional Text
+                , externalUriSchemes : List Text
+                , localPrefix : Text
+                }
           , when : Optional { field : Text, hasValue : List Text }
           }
     , required :
@@ -813,6 +1046,14 @@
                 | UriWithScheme : Text
                 >
           , path : Optional { allowSelf : Bool, externalUriSchemes : List Text }
+          , reference :
+              Optional
+                { allowLocal : Bool
+                , allowSelf : Bool
+                , externalUriPattern : Optional Text
+                , externalUriSchemes : List Text
+                , localPrefix : Text
+                }
           , when : Optional { field : Text, hasValue : List Text }
           }
     }
@@ -853,6 +1094,14 @@
                                 { allowSelf : Bool
                                 , externalUriSchemes : List Text
                                 }
+                          , reference :
+                              Optional
+                                { allowLocal : Bool
+                                , allowSelf : Bool
+                                , externalUriPattern : Optional Text
+                                , externalUriSchemes : List Text
+                                , localPrefix : Text
+                                }
                           , when :
                               Optional { field : Text, hasValue : List Text }
                           }
@@ -880,6 +1129,14 @@
                                 { allowSelf : Bool
                                 , externalUriSchemes : List Text
                                 }
+                          , reference :
+                              Optional
+                                { allowLocal : Bool
+                                , allowSelf : Bool
+                                , externalUriPattern : Optional Text
+                                , externalUriSchemes : List Text
+                                , localPrefix : Text
+                                }
                           , when :
                               Optional { field : Text, hasValue : List Text }
                           }
@@ -906,6 +1163,14 @@
                               Optional
                                 { allowSelf : Bool
                                 , externalUriSchemes : List Text
+                                }
+                          , reference :
+                              Optional
+                                { allowLocal : Bool
+                                , allowSelf : Bool
+                                , externalUriPattern : Optional Text
+                                , externalUriSchemes : List Text
+                                , localPrefix : Text
                                 }
                           , when :
                               Optional { field : Text, hasValue : List Text }
@@ -951,6 +1216,14 @@
                                 { allowSelf : Bool
                                 , externalUriSchemes : List Text
                                 }
+                          , reference :
+                              Optional
+                                { allowLocal : Bool
+                                , allowSelf : Bool
+                                , externalUriPattern : Optional Text
+                                , externalUriSchemes : List Text
+                                , localPrefix : Text
+                                }
                           , when :
                               Optional { field : Text, hasValue : List Text }
                           }
@@ -977,6 +1250,14 @@
                               Optional
                                 { allowSelf : Bool
                                 , externalUriSchemes : List Text
+                                }
+                          , reference :
+                              Optional
+                                { allowLocal : Bool
+                                , allowSelf : Bool
+                                , externalUriPattern : Optional Text
+                                , externalUriSchemes : List Text
+                                , localPrefix : Text
                                 }
                           , when :
                               Optional { field : Text, hasValue : List Text }
@@ -1005,6 +1286,14 @@
                                 { allowSelf : Bool
                                 , externalUriSchemes : List Text
                                 }
+                          , reference :
+                              Optional
+                                { allowLocal : Bool
+                                , allowSelf : Bool
+                                , externalUriPattern : Optional Text
+                                , externalUriSchemes : List Text
+                                , localPrefix : Text
+                                }
                           , when :
                               Optional { field : Text, hasValue : List Text }
                           }
@@ -1013,10 +1302,13 @@
                   Optional { allowSelf : Bool, externalUriSchemes : List Text }
               , reference :
                   Optional
-                    { allowSelf : Bool
+                    { allowLocal : Bool
+                    , allowSelf : Bool
+                    , externalUriPattern : Optional Text
                     , externalUriSchemes : List Text
                     , localPrefix : Text
                     }
+              , uniqueBy : Optional Text
               , when : Optional { field : Text, hasValue : List Text }
               }
         , recommended :
@@ -1050,6 +1342,14 @@
                                 { allowSelf : Bool
                                 , externalUriSchemes : List Text
                                 }
+                          , reference :
+                              Optional
+                                { allowLocal : Bool
+                                , allowSelf : Bool
+                                , externalUriPattern : Optional Text
+                                , externalUriSchemes : List Text
+                                , localPrefix : Text
+                                }
                           , when :
                               Optional { field : Text, hasValue : List Text }
                           }
@@ -1077,6 +1377,14 @@
                                 { allowSelf : Bool
                                 , externalUriSchemes : List Text
                                 }
+                          , reference :
+                              Optional
+                                { allowLocal : Bool
+                                , allowSelf : Bool
+                                , externalUriPattern : Optional Text
+                                , externalUriSchemes : List Text
+                                , localPrefix : Text
+                                }
                           , when :
                               Optional { field : Text, hasValue : List Text }
                           }
@@ -1103,6 +1411,14 @@
                               Optional
                                 { allowSelf : Bool
                                 , externalUriSchemes : List Text
+                                }
+                          , reference :
+                              Optional
+                                { allowLocal : Bool
+                                , allowSelf : Bool
+                                , externalUriPattern : Optional Text
+                                , externalUriSchemes : List Text
+                                , localPrefix : Text
                                 }
                           , when :
                               Optional { field : Text, hasValue : List Text }
@@ -1148,6 +1464,14 @@
                                 { allowSelf : Bool
                                 , externalUriSchemes : List Text
                                 }
+                          , reference :
+                              Optional
+                                { allowLocal : Bool
+                                , allowSelf : Bool
+                                , externalUriPattern : Optional Text
+                                , externalUriSchemes : List Text
+                                , localPrefix : Text
+                                }
                           , when :
                               Optional { field : Text, hasValue : List Text }
                           }
@@ -1174,6 +1498,14 @@
                               Optional
                                 { allowSelf : Bool
                                 , externalUriSchemes : List Text
+                                }
+                          , reference :
+                              Optional
+                                { allowLocal : Bool
+                                , allowSelf : Bool
+                                , externalUriPattern : Optional Text
+                                , externalUriSchemes : List Text
+                                , localPrefix : Text
                                 }
                           , when :
                               Optional { field : Text, hasValue : List Text }
@@ -1202,6 +1534,14 @@
                                 { allowSelf : Bool
                                 , externalUriSchemes : List Text
                                 }
+                          , reference :
+                              Optional
+                                { allowLocal : Bool
+                                , allowSelf : Bool
+                                , externalUriPattern : Optional Text
+                                , externalUriSchemes : List Text
+                                , localPrefix : Text
+                                }
                           , when :
                               Optional { field : Text, hasValue : List Text }
                           }
@@ -1210,10 +1550,13 @@
                   Optional { allowSelf : Bool, externalUriSchemes : List Text }
               , reference :
                   Optional
-                    { allowSelf : Bool
+                    { allowLocal : Bool
+                    , allowSelf : Bool
+                    , externalUriPattern : Optional Text
                     , externalUriSchemes : List Text
                     , localPrefix : Text
                     }
+              , uniqueBy : Optional Text
               , when : Optional { field : Text, hasValue : List Text }
               }
         , required :
@@ -1247,6 +1590,14 @@
                                 { allowSelf : Bool
                                 , externalUriSchemes : List Text
                                 }
+                          , reference :
+                              Optional
+                                { allowLocal : Bool
+                                , allowSelf : Bool
+                                , externalUriPattern : Optional Text
+                                , externalUriSchemes : List Text
+                                , localPrefix : Text
+                                }
                           , when :
                               Optional { field : Text, hasValue : List Text }
                           }
@@ -1274,6 +1625,14 @@
                                 { allowSelf : Bool
                                 , externalUriSchemes : List Text
                                 }
+                          , reference :
+                              Optional
+                                { allowLocal : Bool
+                                , allowSelf : Bool
+                                , externalUriPattern : Optional Text
+                                , externalUriSchemes : List Text
+                                , localPrefix : Text
+                                }
                           , when :
                               Optional { field : Text, hasValue : List Text }
                           }
@@ -1300,6 +1659,14 @@
                               Optional
                                 { allowSelf : Bool
                                 , externalUriSchemes : List Text
+                                }
+                          , reference :
+                              Optional
+                                { allowLocal : Bool
+                                , allowSelf : Bool
+                                , externalUriPattern : Optional Text
+                                , externalUriSchemes : List Text
+                                , localPrefix : Text
                                 }
                           , when :
                               Optional { field : Text, hasValue : List Text }
@@ -1345,6 +1712,14 @@
                                 { allowSelf : Bool
                                 , externalUriSchemes : List Text
                                 }
+                          , reference :
+                              Optional
+                                { allowLocal : Bool
+                                , allowSelf : Bool
+                                , externalUriPattern : Optional Text
+                                , externalUriSchemes : List Text
+                                , localPrefix : Text
+                                }
                           , when :
                               Optional { field : Text, hasValue : List Text }
                           }
@@ -1371,6 +1746,14 @@
                               Optional
                                 { allowSelf : Bool
                                 , externalUriSchemes : List Text
+                                }
+                          , reference :
+                              Optional
+                                { allowLocal : Bool
+                                , allowSelf : Bool
+                                , externalUriPattern : Optional Text
+                                , externalUriSchemes : List Text
+                                , localPrefix : Text
                                 }
                           , when :
                               Optional { field : Text, hasValue : List Text }
@@ -1399,6 +1782,14 @@
                                 { allowSelf : Bool
                                 , externalUriSchemes : List Text
                                 }
+                          , reference :
+                              Optional
+                                { allowLocal : Bool
+                                , allowSelf : Bool
+                                , externalUriPattern : Optional Text
+                                , externalUriSchemes : List Text
+                                , localPrefix : Text
+                                }
                           , when :
                               Optional { field : Text, hasValue : List Text }
                           }
@@ -1407,10 +1798,13 @@
                   Optional { allowSelf : Bool, externalUriSchemes : List Text }
               , reference :
                   Optional
-                    { allowSelf : Bool
+                    { allowLocal : Bool
+                    , allowSelf : Bool
+                    , externalUriPattern : Optional Text
                     , externalUriSchemes : List Text
                     , localPrefix : Text
                     }
+              , uniqueBy : Optional Text
               , when : Optional { field : Text, hasValue : List Text }
               }
         }
@@ -1453,6 +1847,14 @@
                                       { allowSelf : Bool
                                       , externalUriSchemes : List Text
                                       }
+                                , reference :
+                                    Optional
+                                      { allowLocal : Bool
+                                      , allowSelf : Bool
+                                      , externalUriPattern : Optional Text
+                                      , externalUriSchemes : List Text
+                                      , localPrefix : Text
+                                      }
                                 , when :
                                     Optional
                                       { field : Text, hasValue : List Text }
@@ -1481,6 +1883,14 @@
                                       { allowSelf : Bool
                                       , externalUriSchemes : List Text
                                       }
+                                , reference :
+                                    Optional
+                                      { allowLocal : Bool
+                                      , allowSelf : Bool
+                                      , externalUriPattern : Optional Text
+                                      , externalUriSchemes : List Text
+                                      , localPrefix : Text
+                                      }
                                 , when :
                                     Optional
                                       { field : Text, hasValue : List Text }
@@ -1508,6 +1918,14 @@
                                     Optional
                                       { allowSelf : Bool
                                       , externalUriSchemes : List Text
+                                      }
+                                , reference :
+                                    Optional
+                                      { allowLocal : Bool
+                                      , allowSelf : Bool
+                                      , externalUriPattern : Optional Text
+                                      , externalUriSchemes : List Text
+                                      , localPrefix : Text
                                       }
                                 , when :
                                     Optional
@@ -1554,6 +1972,14 @@
                                       { allowSelf : Bool
                                       , externalUriSchemes : List Text
                                       }
+                                , reference :
+                                    Optional
+                                      { allowLocal : Bool
+                                      , allowSelf : Bool
+                                      , externalUriPattern : Optional Text
+                                      , externalUriSchemes : List Text
+                                      , localPrefix : Text
+                                      }
                                 , when :
                                     Optional
                                       { field : Text, hasValue : List Text }
@@ -1581,6 +2007,14 @@
                                     Optional
                                       { allowSelf : Bool
                                       , externalUriSchemes : List Text
+                                      }
+                                , reference :
+                                    Optional
+                                      { allowLocal : Bool
+                                      , allowSelf : Bool
+                                      , externalUriPattern : Optional Text
+                                      , externalUriSchemes : List Text
+                                      , localPrefix : Text
                                       }
                                 , when :
                                     Optional
@@ -1610,6 +2044,14 @@
                                       { allowSelf : Bool
                                       , externalUriSchemes : List Text
                                       }
+                                , reference :
+                                    Optional
+                                      { allowLocal : Bool
+                                      , allowSelf : Bool
+                                      , externalUriPattern : Optional Text
+                                      , externalUriSchemes : List Text
+                                      , localPrefix : Text
+                                      }
                                 , when :
                                     Optional
                                       { field : Text, hasValue : List Text }
@@ -1620,10 +2062,13 @@
                           { allowSelf : Bool, externalUriSchemes : List Text }
                     , reference :
                         Optional
-                          { allowSelf : Bool
+                          { allowLocal : Bool
+                          , allowSelf : Bool
+                          , externalUriPattern : Optional Text
                           , externalUriSchemes : List Text
                           , localPrefix : Text
                           }
+                    , uniqueBy : Optional Text
                     , when : Optional { field : Text, hasValue : List Text }
                     }
               , recommended :
@@ -1657,6 +2102,14 @@
                                       { allowSelf : Bool
                                       , externalUriSchemes : List Text
                                       }
+                                , reference :
+                                    Optional
+                                      { allowLocal : Bool
+                                      , allowSelf : Bool
+                                      , externalUriPattern : Optional Text
+                                      , externalUriSchemes : List Text
+                                      , localPrefix : Text
+                                      }
                                 , when :
                                     Optional
                                       { field : Text, hasValue : List Text }
@@ -1685,6 +2138,14 @@
                                       { allowSelf : Bool
                                       , externalUriSchemes : List Text
                                       }
+                                , reference :
+                                    Optional
+                                      { allowLocal : Bool
+                                      , allowSelf : Bool
+                                      , externalUriPattern : Optional Text
+                                      , externalUriSchemes : List Text
+                                      , localPrefix : Text
+                                      }
                                 , when :
                                     Optional
                                       { field : Text, hasValue : List Text }
@@ -1712,6 +2173,14 @@
                                     Optional
                                       { allowSelf : Bool
                                       , externalUriSchemes : List Text
+                                      }
+                                , reference :
+                                    Optional
+                                      { allowLocal : Bool
+                                      , allowSelf : Bool
+                                      , externalUriPattern : Optional Text
+                                      , externalUriSchemes : List Text
+                                      , localPrefix : Text
                                       }
                                 , when :
                                     Optional
@@ -1758,6 +2227,14 @@
                                       { allowSelf : Bool
                                       , externalUriSchemes : List Text
                                       }
+                                , reference :
+                                    Optional
+                                      { allowLocal : Bool
+                                      , allowSelf : Bool
+                                      , externalUriPattern : Optional Text
+                                      , externalUriSchemes : List Text
+                                      , localPrefix : Text
+                                      }
                                 , when :
                                     Optional
                                       { field : Text, hasValue : List Text }
@@ -1785,6 +2262,14 @@
                                     Optional
                                       { allowSelf : Bool
                                       , externalUriSchemes : List Text
+                                      }
+                                , reference :
+                                    Optional
+                                      { allowLocal : Bool
+                                      , allowSelf : Bool
+                                      , externalUriPattern : Optional Text
+                                      , externalUriSchemes : List Text
+                                      , localPrefix : Text
                                       }
                                 , when :
                                     Optional
@@ -1814,6 +2299,14 @@
                                       { allowSelf : Bool
                                       , externalUriSchemes : List Text
                                       }
+                                , reference :
+                                    Optional
+                                      { allowLocal : Bool
+                                      , allowSelf : Bool
+                                      , externalUriPattern : Optional Text
+                                      , externalUriSchemes : List Text
+                                      , localPrefix : Text
+                                      }
                                 , when :
                                     Optional
                                       { field : Text, hasValue : List Text }
@@ -1824,10 +2317,13 @@
                           { allowSelf : Bool, externalUriSchemes : List Text }
                     , reference :
                         Optional
-                          { allowSelf : Bool
+                          { allowLocal : Bool
+                          , allowSelf : Bool
+                          , externalUriPattern : Optional Text
                           , externalUriSchemes : List Text
                           , localPrefix : Text
                           }
+                    , uniqueBy : Optional Text
                     , when : Optional { field : Text, hasValue : List Text }
                     }
               , required :
@@ -1861,6 +2357,14 @@
                                       { allowSelf : Bool
                                       , externalUriSchemes : List Text
                                       }
+                                , reference :
+                                    Optional
+                                      { allowLocal : Bool
+                                      , allowSelf : Bool
+                                      , externalUriPattern : Optional Text
+                                      , externalUriSchemes : List Text
+                                      , localPrefix : Text
+                                      }
                                 , when :
                                     Optional
                                       { field : Text, hasValue : List Text }
@@ -1889,6 +2393,14 @@
                                       { allowSelf : Bool
                                       , externalUriSchemes : List Text
                                       }
+                                , reference :
+                                    Optional
+                                      { allowLocal : Bool
+                                      , allowSelf : Bool
+                                      , externalUriPattern : Optional Text
+                                      , externalUriSchemes : List Text
+                                      , localPrefix : Text
+                                      }
                                 , when :
                                     Optional
                                       { field : Text, hasValue : List Text }
@@ -1916,6 +2428,14 @@
                                     Optional
                                       { allowSelf : Bool
                                       , externalUriSchemes : List Text
+                                      }
+                                , reference :
+                                    Optional
+                                      { allowLocal : Bool
+                                      , allowSelf : Bool
+                                      , externalUriPattern : Optional Text
+                                      , externalUriSchemes : List Text
+                                      , localPrefix : Text
                                       }
                                 , when :
                                     Optional
@@ -1962,6 +2482,14 @@
                                       { allowSelf : Bool
                                       , externalUriSchemes : List Text
                                       }
+                                , reference :
+                                    Optional
+                                      { allowLocal : Bool
+                                      , allowSelf : Bool
+                                      , externalUriPattern : Optional Text
+                                      , externalUriSchemes : List Text
+                                      , localPrefix : Text
+                                      }
                                 , when :
                                     Optional
                                       { field : Text, hasValue : List Text }
@@ -1989,6 +2517,14 @@
                                     Optional
                                       { allowSelf : Bool
                                       , externalUriSchemes : List Text
+                                      }
+                                , reference :
+                                    Optional
+                                      { allowLocal : Bool
+                                      , allowSelf : Bool
+                                      , externalUriPattern : Optional Text
+                                      , externalUriSchemes : List Text
+                                      , localPrefix : Text
                                       }
                                 , when :
                                     Optional
@@ -2018,6 +2554,14 @@
                                       { allowSelf : Bool
                                       , externalUriSchemes : List Text
                                       }
+                                , reference :
+                                    Optional
+                                      { allowLocal : Bool
+                                      , allowSelf : Bool
+                                      , externalUriPattern : Optional Text
+                                      , externalUriSchemes : List Text
+                                      , localPrefix : Text
+                                      }
                                 , when :
                                     Optional
                                       { field : Text, hasValue : List Text }
@@ -2028,10 +2572,13 @@
                           { allowSelf : Bool, externalUriSchemes : List Text }
                     , reference :
                         Optional
-                          { allowSelf : Bool
+                          { allowLocal : Bool
+                          , allowSelf : Bool
+                          , externalUriPattern : Optional Text
                           , externalUriSchemes : List Text
                           , localPrefix : Text
                           }
+                    , uniqueBy : Optional Text
                     , when : Optional { field : Text, hasValue : List Text }
                     }
               }
@@ -2077,6 +2624,14 @@
                                 { allowSelf : Bool
                                 , externalUriSchemes : List Text
                                 }
+                          , reference :
+                              Optional
+                                { allowLocal : Bool
+                                , allowSelf : Bool
+                                , externalUriPattern : Optional Text
+                                , externalUriSchemes : List Text
+                                , localPrefix : Text
+                                }
                           , when :
                               Optional { field : Text, hasValue : List Text }
                           }
@@ -2104,6 +2659,14 @@
                                 { allowSelf : Bool
                                 , externalUriSchemes : List Text
                                 }
+                          , reference :
+                              Optional
+                                { allowLocal : Bool
+                                , allowSelf : Bool
+                                , externalUriPattern : Optional Text
+                                , externalUriSchemes : List Text
+                                , localPrefix : Text
+                                }
                           , when :
                               Optional { field : Text, hasValue : List Text }
                           }
@@ -2130,6 +2693,14 @@
                               Optional
                                 { allowSelf : Bool
                                 , externalUriSchemes : List Text
+                                }
+                          , reference :
+                              Optional
+                                { allowLocal : Bool
+                                , allowSelf : Bool
+                                , externalUriPattern : Optional Text
+                                , externalUriSchemes : List Text
+                                , localPrefix : Text
                                 }
                           , when :
                               Optional { field : Text, hasValue : List Text }
@@ -2175,6 +2746,14 @@
                                 { allowSelf : Bool
                                 , externalUriSchemes : List Text
                                 }
+                          , reference :
+                              Optional
+                                { allowLocal : Bool
+                                , allowSelf : Bool
+                                , externalUriPattern : Optional Text
+                                , externalUriSchemes : List Text
+                                , localPrefix : Text
+                                }
                           , when :
                               Optional { field : Text, hasValue : List Text }
                           }
@@ -2201,6 +2780,14 @@
                               Optional
                                 { allowSelf : Bool
                                 , externalUriSchemes : List Text
+                                }
+                          , reference :
+                              Optional
+                                { allowLocal : Bool
+                                , allowSelf : Bool
+                                , externalUriPattern : Optional Text
+                                , externalUriSchemes : List Text
+                                , localPrefix : Text
                                 }
                           , when :
                               Optional { field : Text, hasValue : List Text }
@@ -2229,6 +2816,14 @@
                                 { allowSelf : Bool
                                 , externalUriSchemes : List Text
                                 }
+                          , reference :
+                              Optional
+                                { allowLocal : Bool
+                                , allowSelf : Bool
+                                , externalUriPattern : Optional Text
+                                , externalUriSchemes : List Text
+                                , localPrefix : Text
+                                }
                           , when :
                               Optional { field : Text, hasValue : List Text }
                           }
@@ -2237,10 +2832,13 @@
                   Optional { allowSelf : Bool, externalUriSchemes : List Text }
               , reference :
                   Optional
-                    { allowSelf : Bool
+                    { allowLocal : Bool
+                    , allowSelf : Bool
+                    , externalUriPattern : Optional Text
                     , externalUriSchemes : List Text
                     , localPrefix : Text
                     }
+              , uniqueBy : Optional Text
               , when : Optional { field : Text, hasValue : List Text }
               }
         , recommended :
@@ -2274,6 +2872,14 @@
                                 { allowSelf : Bool
                                 , externalUriSchemes : List Text
                                 }
+                          , reference :
+                              Optional
+                                { allowLocal : Bool
+                                , allowSelf : Bool
+                                , externalUriPattern : Optional Text
+                                , externalUriSchemes : List Text
+                                , localPrefix : Text
+                                }
                           , when :
                               Optional { field : Text, hasValue : List Text }
                           }
@@ -2301,6 +2907,14 @@
                                 { allowSelf : Bool
                                 , externalUriSchemes : List Text
                                 }
+                          , reference :
+                              Optional
+                                { allowLocal : Bool
+                                , allowSelf : Bool
+                                , externalUriPattern : Optional Text
+                                , externalUriSchemes : List Text
+                                , localPrefix : Text
+                                }
                           , when :
                               Optional { field : Text, hasValue : List Text }
                           }
@@ -2327,6 +2941,14 @@
                               Optional
                                 { allowSelf : Bool
                                 , externalUriSchemes : List Text
+                                }
+                          , reference :
+                              Optional
+                                { allowLocal : Bool
+                                , allowSelf : Bool
+                                , externalUriPattern : Optional Text
+                                , externalUriSchemes : List Text
+                                , localPrefix : Text
                                 }
                           , when :
                               Optional { field : Text, hasValue : List Text }
@@ -2372,6 +2994,14 @@
                                 { allowSelf : Bool
                                 , externalUriSchemes : List Text
                                 }
+                          , reference :
+                              Optional
+                                { allowLocal : Bool
+                                , allowSelf : Bool
+                                , externalUriPattern : Optional Text
+                                , externalUriSchemes : List Text
+                                , localPrefix : Text
+                                }
                           , when :
                               Optional { field : Text, hasValue : List Text }
                           }
@@ -2398,6 +3028,14 @@
                               Optional
                                 { allowSelf : Bool
                                 , externalUriSchemes : List Text
+                                }
+                          , reference :
+                              Optional
+                                { allowLocal : Bool
+                                , allowSelf : Bool
+                                , externalUriPattern : Optional Text
+                                , externalUriSchemes : List Text
+                                , localPrefix : Text
                                 }
                           , when :
                               Optional { field : Text, hasValue : List Text }
@@ -2426,6 +3064,14 @@
                                 { allowSelf : Bool
                                 , externalUriSchemes : List Text
                                 }
+                          , reference :
+                              Optional
+                                { allowLocal : Bool
+                                , allowSelf : Bool
+                                , externalUriPattern : Optional Text
+                                , externalUriSchemes : List Text
+                                , localPrefix : Text
+                                }
                           , when :
                               Optional { field : Text, hasValue : List Text }
                           }
@@ -2434,10 +3080,13 @@
                   Optional { allowSelf : Bool, externalUriSchemes : List Text }
               , reference :
                   Optional
-                    { allowSelf : Bool
+                    { allowLocal : Bool
+                    , allowSelf : Bool
+                    , externalUriPattern : Optional Text
                     , externalUriSchemes : List Text
                     , localPrefix : Text
                     }
+              , uniqueBy : Optional Text
               , when : Optional { field : Text, hasValue : List Text }
               }
         , required :
@@ -2471,6 +3120,14 @@
                                 { allowSelf : Bool
                                 , externalUriSchemes : List Text
                                 }
+                          , reference :
+                              Optional
+                                { allowLocal : Bool
+                                , allowSelf : Bool
+                                , externalUriPattern : Optional Text
+                                , externalUriSchemes : List Text
+                                , localPrefix : Text
+                                }
                           , when :
                               Optional { field : Text, hasValue : List Text }
                           }
@@ -2498,6 +3155,14 @@
                                 { allowSelf : Bool
                                 , externalUriSchemes : List Text
                                 }
+                          , reference :
+                              Optional
+                                { allowLocal : Bool
+                                , allowSelf : Bool
+                                , externalUriPattern : Optional Text
+                                , externalUriSchemes : List Text
+                                , localPrefix : Text
+                                }
                           , when :
                               Optional { field : Text, hasValue : List Text }
                           }
@@ -2524,6 +3189,14 @@
                               Optional
                                 { allowSelf : Bool
                                 , externalUriSchemes : List Text
+                                }
+                          , reference :
+                              Optional
+                                { allowLocal : Bool
+                                , allowSelf : Bool
+                                , externalUriPattern : Optional Text
+                                , externalUriSchemes : List Text
+                                , localPrefix : Text
                                 }
                           , when :
                               Optional { field : Text, hasValue : List Text }
@@ -2569,6 +3242,14 @@
                                 { allowSelf : Bool
                                 , externalUriSchemes : List Text
                                 }
+                          , reference :
+                              Optional
+                                { allowLocal : Bool
+                                , allowSelf : Bool
+                                , externalUriPattern : Optional Text
+                                , externalUriSchemes : List Text
+                                , localPrefix : Text
+                                }
                           , when :
                               Optional { field : Text, hasValue : List Text }
                           }
@@ -2595,6 +3276,14 @@
                               Optional
                                 { allowSelf : Bool
                                 , externalUriSchemes : List Text
+                                }
+                          , reference :
+                              Optional
+                                { allowLocal : Bool
+                                , allowSelf : Bool
+                                , externalUriPattern : Optional Text
+                                , externalUriSchemes : List Text
+                                , localPrefix : Text
                                 }
                           , when :
                               Optional { field : Text, hasValue : List Text }
@@ -2623,6 +3312,14 @@
                                 { allowSelf : Bool
                                 , externalUriSchemes : List Text
                                 }
+                          , reference :
+                              Optional
+                                { allowLocal : Bool
+                                , allowSelf : Bool
+                                , externalUriPattern : Optional Text
+                                , externalUriSchemes : List Text
+                                , localPrefix : Text
+                                }
                           , when :
                               Optional { field : Text, hasValue : List Text }
                           }
@@ -2631,10 +3328,13 @@
                   Optional { allowSelf : Bool, externalUriSchemes : List Text }
               , reference :
                   Optional
-                    { allowSelf : Bool
+                    { allowLocal : Bool
+                    , allowSelf : Bool
+                    , externalUriPattern : Optional Text
                     , externalUriSchemes : List Text
                     , localPrefix : Text
                     }
+              , uniqueBy : Optional Text
               , when : Optional { field : Text, hasValue : List Text }
               }
         }
@@ -2675,6 +3375,14 @@
                     , path :
                         Optional
                           { allowSelf : Bool, externalUriSchemes : List Text }
+                    , reference :
+                        Optional
+                          { allowLocal : Bool
+                          , allowSelf : Bool
+                          , externalUriPattern : Optional Text
+                          , externalUriSchemes : List Text
+                          , localPrefix : Text
+                          }
                     , when : Optional { field : Text, hasValue : List Text }
                     }
               , recommended :
@@ -2699,6 +3407,14 @@
                     , path :
                         Optional
                           { allowSelf : Bool, externalUriSchemes : List Text }
+                    , reference :
+                        Optional
+                          { allowLocal : Bool
+                          , allowSelf : Bool
+                          , externalUriPattern : Optional Text
+                          , externalUriSchemes : List Text
+                          , localPrefix : Text
+                          }
                     , when : Optional { field : Text, hasValue : List Text }
                     }
               , required :
@@ -2723,6 +3439,14 @@
                     , path :
                         Optional
                           { allowSelf : Bool, externalUriSchemes : List Text }
+                    , reference :
+                        Optional
+                          { allowLocal : Bool
+                          , allowSelf : Bool
+                          , externalUriPattern : Optional Text
+                          , externalUriSchemes : List Text
+                          , localPrefix : Text
+                          }
                     , when : Optional { field : Text, hasValue : List Text }
                     }
               }
@@ -2764,6 +3488,14 @@
                     , path :
                         Optional
                           { allowSelf : Bool, externalUriSchemes : List Text }
+                    , reference :
+                        Optional
+                          { allowLocal : Bool
+                          , allowSelf : Bool
+                          , externalUriPattern : Optional Text
+                          , externalUriSchemes : List Text
+                          , localPrefix : Text
+                          }
                     , when : Optional { field : Text, hasValue : List Text }
                     }
               , recommended :
@@ -2788,6 +3520,14 @@
                     , path :
                         Optional
                           { allowSelf : Bool, externalUriSchemes : List Text }
+                    , reference :
+                        Optional
+                          { allowLocal : Bool
+                          , allowSelf : Bool
+                          , externalUriPattern : Optional Text
+                          , externalUriSchemes : List Text
+                          , localPrefix : Text
+                          }
                     , when : Optional { field : Text, hasValue : List Text }
                     }
               , required :
@@ -2812,16 +3552,27 @@
                     , path :
                         Optional
                           { allowSelf : Bool, externalUriSchemes : List Text }
+                    , reference :
+                        Optional
+                          { allowLocal : Bool
+                          , allowSelf : Bool
+                          , externalUriPattern : Optional Text
+                          , externalUriSchemes : List Text
+                          , localPrefix : Text
+                          }
                     , when : Optional { field : Text, hasValue : List Text }
                     }
               }
         , path : Optional { allowSelf : Bool, externalUriSchemes : List Text }
         , reference :
             Optional
-              { allowSelf : Bool
+              { allowLocal : Bool
+              , allowSelf : Bool
+              , externalUriPattern : Optional Text
               , externalUriSchemes : List Text
               , localPrefix : Text
               }
+        , uniqueBy : Optional Text
         , when : Optional { field : Text, hasValue : List Text }
         }
     , default =
@@ -2852,6 +3603,14 @@
                   , path :
                       Optional
                         { allowSelf : Bool, externalUriSchemes : List Text }
+                  , reference :
+                      Optional
+                        { allowLocal : Bool
+                        , allowSelf : Bool
+                        , externalUriPattern : Optional Text
+                        , externalUriSchemes : List Text
+                        , localPrefix : Text
+                        }
                   , when : Optional { field : Text, hasValue : List Text }
                   }
             , recommended :
@@ -2876,6 +3635,14 @@
                   , path :
                       Optional
                         { allowSelf : Bool, externalUriSchemes : List Text }
+                  , reference :
+                      Optional
+                        { allowLocal : Bool
+                        , allowSelf : Bool
+                        , externalUriPattern : Optional Text
+                        , externalUriSchemes : List Text
+                        , localPrefix : Text
+                        }
                   , when : Optional { field : Text, hasValue : List Text }
                   }
             , required :
@@ -2900,6 +3667,14 @@
                   , path :
                       Optional
                         { allowSelf : Bool, externalUriSchemes : List Text }
+                  , reference :
+                      Optional
+                        { allowLocal : Bool
+                        , allowSelf : Bool
+                        , externalUriPattern : Optional Text
+                        , externalUriSchemes : List Text
+                        , localPrefix : Text
+                        }
                   , when : Optional { field : Text, hasValue : List Text }
                   }
             }
@@ -2940,6 +3715,14 @@
                   , path :
                       Optional
                         { allowSelf : Bool, externalUriSchemes : List Text }
+                  , reference :
+                      Optional
+                        { allowLocal : Bool
+                        , allowSelf : Bool
+                        , externalUriPattern : Optional Text
+                        , externalUriSchemes : List Text
+                        , localPrefix : Text
+                        }
                   , when : Optional { field : Text, hasValue : List Text }
                   }
             , recommended :
@@ -2964,6 +3747,14 @@
                   , path :
                       Optional
                         { allowSelf : Bool, externalUriSchemes : List Text }
+                  , reference :
+                      Optional
+                        { allowLocal : Bool
+                        , allowSelf : Bool
+                        , externalUriPattern : Optional Text
+                        , externalUriSchemes : List Text
+                        , localPrefix : Text
+                        }
                   , when : Optional { field : Text, hasValue : List Text }
                   }
             , required :
@@ -2988,16 +3779,27 @@
                   , path :
                       Optional
                         { allowSelf : Bool, externalUriSchemes : List Text }
+                  , reference :
+                      Optional
+                        { allowLocal : Bool
+                        , allowSelf : Bool
+                        , externalUriPattern : Optional Text
+                        , externalUriSchemes : List Text
+                        , localPrefix : Text
+                        }
                   , when : Optional { field : Text, hasValue : List Text }
                   }
             }
       , path = None { allowSelf : Bool, externalUriSchemes : List Text }
       , reference =
           None
-            { allowSelf : Bool
+            { allowLocal : Bool
+            , allowSelf : Bool
+            , externalUriPattern : Optional Text
             , externalUriSchemes : List Text
             , localPrefix : Text
             }
+      , uniqueBy = None Text
       , when = None { field : Text, hasValue : List Text }
       }
     }
@@ -3034,6 +3836,14 @@
                                 { allowSelf : Bool
                                 , externalUriSchemes : List Text
                                 }
+                          , reference :
+                              Optional
+                                { allowLocal : Bool
+                                , allowSelf : Bool
+                                , externalUriPattern : Optional Text
+                                , externalUriSchemes : List Text
+                                , localPrefix : Text
+                                }
                           , when :
                               Optional { field : Text, hasValue : List Text }
                           }
@@ -3061,6 +3871,14 @@
                                 { allowSelf : Bool
                                 , externalUriSchemes : List Text
                                 }
+                          , reference :
+                              Optional
+                                { allowLocal : Bool
+                                , allowSelf : Bool
+                                , externalUriPattern : Optional Text
+                                , externalUriSchemes : List Text
+                                , localPrefix : Text
+                                }
                           , when :
                               Optional { field : Text, hasValue : List Text }
                           }
@@ -3087,6 +3905,14 @@
                               Optional
                                 { allowSelf : Bool
                                 , externalUriSchemes : List Text
+                                }
+                          , reference :
+                              Optional
+                                { allowLocal : Bool
+                                , allowSelf : Bool
+                                , externalUriPattern : Optional Text
+                                , externalUriSchemes : List Text
+                                , localPrefix : Text
                                 }
                           , when :
                               Optional { field : Text, hasValue : List Text }
@@ -3132,6 +3958,14 @@
                                 { allowSelf : Bool
                                 , externalUriSchemes : List Text
                                 }
+                          , reference :
+                              Optional
+                                { allowLocal : Bool
+                                , allowSelf : Bool
+                                , externalUriPattern : Optional Text
+                                , externalUriSchemes : List Text
+                                , localPrefix : Text
+                                }
                           , when :
                               Optional { field : Text, hasValue : List Text }
                           }
@@ -3158,6 +3992,14 @@
                               Optional
                                 { allowSelf : Bool
                                 , externalUriSchemes : List Text
+                                }
+                          , reference :
+                              Optional
+                                { allowLocal : Bool
+                                , allowSelf : Bool
+                                , externalUriPattern : Optional Text
+                                , externalUriSchemes : List Text
+                                , localPrefix : Text
                                 }
                           , when :
                               Optional { field : Text, hasValue : List Text }
@@ -3186,6 +4028,14 @@
                                 { allowSelf : Bool
                                 , externalUriSchemes : List Text
                                 }
+                          , reference :
+                              Optional
+                                { allowLocal : Bool
+                                , allowSelf : Bool
+                                , externalUriPattern : Optional Text
+                                , externalUriSchemes : List Text
+                                , localPrefix : Text
+                                }
                           , when :
                               Optional { field : Text, hasValue : List Text }
                           }
@@ -3194,10 +4044,13 @@
                   Optional { allowSelf : Bool, externalUriSchemes : List Text }
               , reference :
                   Optional
-                    { allowSelf : Bool
+                    { allowLocal : Bool
+                    , allowSelf : Bool
+                    , externalUriPattern : Optional Text
                     , externalUriSchemes : List Text
                     , localPrefix : Text
                     }
+              , uniqueBy : Optional Text
               , when : Optional { field : Text, hasValue : List Text }
               }
         , recommended :
@@ -3231,6 +4084,14 @@
                                 { allowSelf : Bool
                                 , externalUriSchemes : List Text
                                 }
+                          , reference :
+                              Optional
+                                { allowLocal : Bool
+                                , allowSelf : Bool
+                                , externalUriPattern : Optional Text
+                                , externalUriSchemes : List Text
+                                , localPrefix : Text
+                                }
                           , when :
                               Optional { field : Text, hasValue : List Text }
                           }
@@ -3258,6 +4119,14 @@
                                 { allowSelf : Bool
                                 , externalUriSchemes : List Text
                                 }
+                          , reference :
+                              Optional
+                                { allowLocal : Bool
+                                , allowSelf : Bool
+                                , externalUriPattern : Optional Text
+                                , externalUriSchemes : List Text
+                                , localPrefix : Text
+                                }
                           , when :
                               Optional { field : Text, hasValue : List Text }
                           }
@@ -3284,6 +4153,14 @@
                               Optional
                                 { allowSelf : Bool
                                 , externalUriSchemes : List Text
+                                }
+                          , reference :
+                              Optional
+                                { allowLocal : Bool
+                                , allowSelf : Bool
+                                , externalUriPattern : Optional Text
+                                , externalUriSchemes : List Text
+                                , localPrefix : Text
                                 }
                           , when :
                               Optional { field : Text, hasValue : List Text }
@@ -3329,6 +4206,14 @@
                                 { allowSelf : Bool
                                 , externalUriSchemes : List Text
                                 }
+                          , reference :
+                              Optional
+                                { allowLocal : Bool
+                                , allowSelf : Bool
+                                , externalUriPattern : Optional Text
+                                , externalUriSchemes : List Text
+                                , localPrefix : Text
+                                }
                           , when :
                               Optional { field : Text, hasValue : List Text }
                           }
@@ -3355,6 +4240,14 @@
                               Optional
                                 { allowSelf : Bool
                                 , externalUriSchemes : List Text
+                                }
+                          , reference :
+                              Optional
+                                { allowLocal : Bool
+                                , allowSelf : Bool
+                                , externalUriPattern : Optional Text
+                                , externalUriSchemes : List Text
+                                , localPrefix : Text
                                 }
                           , when :
                               Optional { field : Text, hasValue : List Text }
@@ -3383,6 +4276,14 @@
                                 { allowSelf : Bool
                                 , externalUriSchemes : List Text
                                 }
+                          , reference :
+                              Optional
+                                { allowLocal : Bool
+                                , allowSelf : Bool
+                                , externalUriPattern : Optional Text
+                                , externalUriSchemes : List Text
+                                , localPrefix : Text
+                                }
                           , when :
                               Optional { field : Text, hasValue : List Text }
                           }
@@ -3391,10 +4292,13 @@
                   Optional { allowSelf : Bool, externalUriSchemes : List Text }
               , reference :
                   Optional
-                    { allowSelf : Bool
+                    { allowLocal : Bool
+                    , allowSelf : Bool
+                    , externalUriPattern : Optional Text
                     , externalUriSchemes : List Text
                     , localPrefix : Text
                     }
+              , uniqueBy : Optional Text
               , when : Optional { field : Text, hasValue : List Text }
               }
         , required :
@@ -3428,6 +4332,14 @@
                                 { allowSelf : Bool
                                 , externalUriSchemes : List Text
                                 }
+                          , reference :
+                              Optional
+                                { allowLocal : Bool
+                                , allowSelf : Bool
+                                , externalUriPattern : Optional Text
+                                , externalUriSchemes : List Text
+                                , localPrefix : Text
+                                }
                           , when :
                               Optional { field : Text, hasValue : List Text }
                           }
@@ -3455,6 +4367,14 @@
                                 { allowSelf : Bool
                                 , externalUriSchemes : List Text
                                 }
+                          , reference :
+                              Optional
+                                { allowLocal : Bool
+                                , allowSelf : Bool
+                                , externalUriPattern : Optional Text
+                                , externalUriSchemes : List Text
+                                , localPrefix : Text
+                                }
                           , when :
                               Optional { field : Text, hasValue : List Text }
                           }
@@ -3481,6 +4401,14 @@
                               Optional
                                 { allowSelf : Bool
                                 , externalUriSchemes : List Text
+                                }
+                          , reference :
+                              Optional
+                                { allowLocal : Bool
+                                , allowSelf : Bool
+                                , externalUriPattern : Optional Text
+                                , externalUriSchemes : List Text
+                                , localPrefix : Text
                                 }
                           , when :
                               Optional { field : Text, hasValue : List Text }
@@ -3526,6 +4454,14 @@
                                 { allowSelf : Bool
                                 , externalUriSchemes : List Text
                                 }
+                          , reference :
+                              Optional
+                                { allowLocal : Bool
+                                , allowSelf : Bool
+                                , externalUriPattern : Optional Text
+                                , externalUriSchemes : List Text
+                                , localPrefix : Text
+                                }
                           , when :
                               Optional { field : Text, hasValue : List Text }
                           }
@@ -3552,6 +4488,14 @@
                               Optional
                                 { allowSelf : Bool
                                 , externalUriSchemes : List Text
+                                }
+                          , reference :
+                              Optional
+                                { allowLocal : Bool
+                                , allowSelf : Bool
+                                , externalUriPattern : Optional Text
+                                , externalUriSchemes : List Text
+                                , localPrefix : Text
                                 }
                           , when :
                               Optional { field : Text, hasValue : List Text }
@@ -3580,6 +4524,14 @@
                                 { allowSelf : Bool
                                 , externalUriSchemes : List Text
                                 }
+                          , reference :
+                              Optional
+                                { allowLocal : Bool
+                                , allowSelf : Bool
+                                , externalUriPattern : Optional Text
+                                , externalUriSchemes : List Text
+                                , localPrefix : Text
+                                }
                           , when :
                               Optional { field : Text, hasValue : List Text }
                           }
@@ -3588,10 +4540,13 @@
                   Optional { allowSelf : Bool, externalUriSchemes : List Text }
               , reference :
                   Optional
-                    { allowSelf : Bool
+                    { allowLocal : Bool
+                    , allowSelf : Bool
+                    , externalUriPattern : Optional Text
                     , externalUriSchemes : List Text
                     , localPrefix : Text
                     }
+              , uniqueBy : Optional Text
               , when : Optional { field : Text, hasValue : List Text }
               }
         }
@@ -3627,6 +4582,14 @@
                                    { allowSelf : Bool
                                    , externalUriSchemes : List Text
                                    }
+                             , reference :
+                                 Optional
+                                   { allowLocal : Bool
+                                   , allowSelf : Bool
+                                   , externalUriPattern : Optional Text
+                                   , externalUriSchemes : List Text
+                                   , localPrefix : Text
+                                   }
                              , when :
                                  Optional { field : Text, hasValue : List Text }
                              }
@@ -3654,6 +4617,14 @@
                                    { allowSelf : Bool
                                    , externalUriSchemes : List Text
                                    }
+                             , reference :
+                                 Optional
+                                   { allowLocal : Bool
+                                   , allowSelf : Bool
+                                   , externalUriPattern : Optional Text
+                                   , externalUriSchemes : List Text
+                                   , localPrefix : Text
+                                   }
                              , when :
                                  Optional { field : Text, hasValue : List Text }
                              }
@@ -3680,6 +4651,14 @@
                                  Optional
                                    { allowSelf : Bool
                                    , externalUriSchemes : List Text
+                                   }
+                             , reference :
+                                 Optional
+                                   { allowLocal : Bool
+                                   , allowSelf : Bool
+                                   , externalUriPattern : Optional Text
+                                   , externalUriSchemes : List Text
+                                   , localPrefix : Text
                                    }
                              , when :
                                  Optional { field : Text, hasValue : List Text }
@@ -3725,6 +4704,14 @@
                                    { allowSelf : Bool
                                    , externalUriSchemes : List Text
                                    }
+                             , reference :
+                                 Optional
+                                   { allowLocal : Bool
+                                   , allowSelf : Bool
+                                   , externalUriPattern : Optional Text
+                                   , externalUriSchemes : List Text
+                                   , localPrefix : Text
+                                   }
                              , when :
                                  Optional { field : Text, hasValue : List Text }
                              }
@@ -3751,6 +4738,14 @@
                                  Optional
                                    { allowSelf : Bool
                                    , externalUriSchemes : List Text
+                                   }
+                             , reference :
+                                 Optional
+                                   { allowLocal : Bool
+                                   , allowSelf : Bool
+                                   , externalUriPattern : Optional Text
+                                   , externalUriSchemes : List Text
+                                   , localPrefix : Text
                                    }
                              , when :
                                  Optional { field : Text, hasValue : List Text }
@@ -3779,6 +4774,14 @@
                                    { allowSelf : Bool
                                    , externalUriSchemes : List Text
                                    }
+                             , reference :
+                                 Optional
+                                   { allowLocal : Bool
+                                   , allowSelf : Bool
+                                   , externalUriPattern : Optional Text
+                                   , externalUriSchemes : List Text
+                                   , localPrefix : Text
+                                   }
                              , when :
                                  Optional { field : Text, hasValue : List Text }
                              }
@@ -3788,10 +4791,13 @@
                        { allowSelf : Bool, externalUriSchemes : List Text }
                  , reference :
                      Optional
-                       { allowSelf : Bool
+                       { allowLocal : Bool
+                       , allowSelf : Bool
+                       , externalUriPattern : Optional Text
                        , externalUriSchemes : List Text
                        , localPrefix : Text
                        }
+                 , uniqueBy : Optional Text
                  , when : Optional { field : Text, hasValue : List Text }
                  }
       , recommended =
@@ -3825,6 +4831,14 @@
                                    { allowSelf : Bool
                                    , externalUriSchemes : List Text
                                    }
+                             , reference :
+                                 Optional
+                                   { allowLocal : Bool
+                                   , allowSelf : Bool
+                                   , externalUriPattern : Optional Text
+                                   , externalUriSchemes : List Text
+                                   , localPrefix : Text
+                                   }
                              , when :
                                  Optional { field : Text, hasValue : List Text }
                              }
@@ -3852,6 +4866,14 @@
                                    { allowSelf : Bool
                                    , externalUriSchemes : List Text
                                    }
+                             , reference :
+                                 Optional
+                                   { allowLocal : Bool
+                                   , allowSelf : Bool
+                                   , externalUriPattern : Optional Text
+                                   , externalUriSchemes : List Text
+                                   , localPrefix : Text
+                                   }
                              , when :
                                  Optional { field : Text, hasValue : List Text }
                              }
@@ -3878,6 +4900,14 @@
                                  Optional
                                    { allowSelf : Bool
                                    , externalUriSchemes : List Text
+                                   }
+                             , reference :
+                                 Optional
+                                   { allowLocal : Bool
+                                   , allowSelf : Bool
+                                   , externalUriPattern : Optional Text
+                                   , externalUriSchemes : List Text
+                                   , localPrefix : Text
                                    }
                              , when :
                                  Optional { field : Text, hasValue : List Text }
@@ -3923,6 +4953,14 @@
                                    { allowSelf : Bool
                                    , externalUriSchemes : List Text
                                    }
+                             , reference :
+                                 Optional
+                                   { allowLocal : Bool
+                                   , allowSelf : Bool
+                                   , externalUriPattern : Optional Text
+                                   , externalUriSchemes : List Text
+                                   , localPrefix : Text
+                                   }
                              , when :
                                  Optional { field : Text, hasValue : List Text }
                              }
@@ -3949,6 +4987,14 @@
                                  Optional
                                    { allowSelf : Bool
                                    , externalUriSchemes : List Text
+                                   }
+                             , reference :
+                                 Optional
+                                   { allowLocal : Bool
+                                   , allowSelf : Bool
+                                   , externalUriPattern : Optional Text
+                                   , externalUriSchemes : List Text
+                                   , localPrefix : Text
                                    }
                              , when :
                                  Optional { field : Text, hasValue : List Text }
@@ -3977,6 +5023,14 @@
                                    { allowSelf : Bool
                                    , externalUriSchemes : List Text
                                    }
+                             , reference :
+                                 Optional
+                                   { allowLocal : Bool
+                                   , allowSelf : Bool
+                                   , externalUriPattern : Optional Text
+                                   , externalUriSchemes : List Text
+                                   , localPrefix : Text
+                                   }
                              , when :
                                  Optional { field : Text, hasValue : List Text }
                              }
@@ -3986,10 +5040,13 @@
                        { allowSelf : Bool, externalUriSchemes : List Text }
                  , reference :
                      Optional
-                       { allowSelf : Bool
+                       { allowLocal : Bool
+                       , allowSelf : Bool
+                       , externalUriPattern : Optional Text
                        , externalUriSchemes : List Text
                        , localPrefix : Text
                        }
+                 , uniqueBy : Optional Text
                  , when : Optional { field : Text, hasValue : List Text }
                  }
       , required =
@@ -4023,6 +5080,14 @@
                                    { allowSelf : Bool
                                    , externalUriSchemes : List Text
                                    }
+                             , reference :
+                                 Optional
+                                   { allowLocal : Bool
+                                   , allowSelf : Bool
+                                   , externalUriPattern : Optional Text
+                                   , externalUriSchemes : List Text
+                                   , localPrefix : Text
+                                   }
                              , when :
                                  Optional { field : Text, hasValue : List Text }
                              }
@@ -4050,6 +5115,14 @@
                                    { allowSelf : Bool
                                    , externalUriSchemes : List Text
                                    }
+                             , reference :
+                                 Optional
+                                   { allowLocal : Bool
+                                   , allowSelf : Bool
+                                   , externalUriPattern : Optional Text
+                                   , externalUriSchemes : List Text
+                                   , localPrefix : Text
+                                   }
                              , when :
                                  Optional { field : Text, hasValue : List Text }
                              }
@@ -4076,6 +5149,14 @@
                                  Optional
                                    { allowSelf : Bool
                                    , externalUriSchemes : List Text
+                                   }
+                             , reference :
+                                 Optional
+                                   { allowLocal : Bool
+                                   , allowSelf : Bool
+                                   , externalUriPattern : Optional Text
+                                   , externalUriSchemes : List Text
+                                   , localPrefix : Text
                                    }
                              , when :
                                  Optional { field : Text, hasValue : List Text }
@@ -4121,6 +5202,14 @@
                                    { allowSelf : Bool
                                    , externalUriSchemes : List Text
                                    }
+                             , reference :
+                                 Optional
+                                   { allowLocal : Bool
+                                   , allowSelf : Bool
+                                   , externalUriPattern : Optional Text
+                                   , externalUriSchemes : List Text
+                                   , localPrefix : Text
+                                   }
                              , when :
                                  Optional { field : Text, hasValue : List Text }
                              }
@@ -4147,6 +5236,14 @@
                                  Optional
                                    { allowSelf : Bool
                                    , externalUriSchemes : List Text
+                                   }
+                             , reference :
+                                 Optional
+                                   { allowLocal : Bool
+                                   , allowSelf : Bool
+                                   , externalUriPattern : Optional Text
+                                   , externalUriSchemes : List Text
+                                   , localPrefix : Text
                                    }
                              , when :
                                  Optional { field : Text, hasValue : List Text }
@@ -4175,6 +5272,14 @@
                                    { allowSelf : Bool
                                    , externalUriSchemes : List Text
                                    }
+                             , reference :
+                                 Optional
+                                   { allowLocal : Bool
+                                   , allowSelf : Bool
+                                   , externalUriPattern : Optional Text
+                                   , externalUriSchemes : List Text
+                                   , localPrefix : Text
+                                   }
                              , when :
                                  Optional { field : Text, hasValue : List Text }
                              }
@@ -4184,18 +5289,31 @@
                        { allowSelf : Bool, externalUriSchemes : List Text }
                  , reference :
                      Optional
-                       { allowSelf : Bool
+                       { allowLocal : Bool
+                       , allowSelf : Bool
+                       , externalUriPattern : Optional Text
                        , externalUriSchemes : List Text
                        , localPrefix : Text
                        }
+                 , uniqueBy : Optional Text
                  , when : Optional { field : Text, hasValue : List Text }
                  }
       }
     }
   , HandleReferenceRule =
     { Type =
-        { allowSelf : Bool, externalUriSchemes : List Text, localPrefix : Text }
-    , default = { allowSelf = False, externalUriSchemes = [] : List Text }
+        { allowLocal : Bool
+        , allowSelf : Bool
+        , externalUriPattern : Optional Text
+        , externalUriSchemes : List Text
+        , localPrefix : Text
+        }
+    , default =
+      { allowLocal = True
+      , allowSelf = False
+      , externalUriPattern = None Text
+      , externalUriSchemes = [] : List Text
+      }
     }
   , NestedFieldRule =
     { Type =
@@ -4217,6 +5335,14 @@
               | UriWithScheme : Text
               >
         , path : Optional { allowSelf : Bool, externalUriSchemes : List Text }
+        , reference :
+            Optional
+              { allowLocal : Bool
+              , allowSelf : Bool
+              , externalUriPattern : Optional Text
+              , externalUriSchemes : List Text
+              , localPrefix : Text
+              }
         , when : Optional { field : Text, hasValue : List Text }
         }
     , default =
@@ -4237,6 +5363,14 @@
             | UriWithScheme : Text
             >
       , path = None { allowSelf : Bool, externalUriSchemes : List Text }
+      , reference =
+          None
+            { allowLocal : Bool
+            , allowSelf : Bool
+            , externalUriPattern : Optional Text
+            , externalUriSchemes : List Text
+            , localPrefix : Text
+            }
       , when = None { field : Text, hasValue : List Text }
       }
     }
@@ -4263,6 +5397,14 @@
                     >
               , path :
                   Optional { allowSelf : Bool, externalUriSchemes : List Text }
+              , reference :
+                  Optional
+                    { allowLocal : Bool
+                    , allowSelf : Bool
+                    , externalUriPattern : Optional Text
+                    , externalUriSchemes : List Text
+                    , localPrefix : Text
+                    }
               , when : Optional { field : Text, hasValue : List Text }
               }
         , recommended :
@@ -4286,6 +5428,14 @@
                     >
               , path :
                   Optional { allowSelf : Bool, externalUriSchemes : List Text }
+              , reference :
+                  Optional
+                    { allowLocal : Bool
+                    , allowSelf : Bool
+                    , externalUriPattern : Optional Text
+                    , externalUriSchemes : List Text
+                    , localPrefix : Text
+                    }
               , when : Optional { field : Text, hasValue : List Text }
               }
         , required :
@@ -4309,6 +5459,14 @@
                     >
               , path :
                   Optional { allowSelf : Bool, externalUriSchemes : List Text }
+              , reference :
+                  Optional
+                    { allowLocal : Bool
+                    , allowSelf : Bool
+                    , externalUriPattern : Optional Text
+                    , externalUriSchemes : List Text
+                    , localPrefix : Text
+                    }
               , when : Optional { field : Text, hasValue : List Text }
               }
         }
@@ -4335,6 +5493,14 @@
                  , path :
                      Optional
                        { allowSelf : Bool, externalUriSchemes : List Text }
+                 , reference :
+                     Optional
+                       { allowLocal : Bool
+                       , allowSelf : Bool
+                       , externalUriPattern : Optional Text
+                       , externalUriSchemes : List Text
+                       , localPrefix : Text
+                       }
                  , when : Optional { field : Text, hasValue : List Text }
                  }
       , recommended =
@@ -4359,6 +5525,14 @@
                  , path :
                      Optional
                        { allowSelf : Bool, externalUriSchemes : List Text }
+                 , reference :
+                     Optional
+                       { allowLocal : Bool
+                       , allowSelf : Bool
+                       , externalUriPattern : Optional Text
+                       , externalUriSchemes : List Text
+                       , localPrefix : Text
+                       }
                  , when : Optional { field : Text, hasValue : List Text }
                  }
       , required =
@@ -4383,6 +5557,14 @@
                  , path :
                      Optional
                        { allowSelf : Bool, externalUriSchemes : List Text }
+                 , reference :
+                     Optional
+                       { allowLocal : Bool
+                       , allowSelf : Bool
+                       , externalUriPattern : Optional Text
+                       , externalUriSchemes : List Text
+                       , localPrefix : Text
+                       }
                  , when : Optional { field : Text, hasValue : List Text }
                  }
       }
@@ -4428,6 +5610,14 @@
                                     { allowSelf : Bool
                                     , externalUriSchemes : List Text
                                     }
+                              , reference :
+                                  Optional
+                                    { allowLocal : Bool
+                                    , allowSelf : Bool
+                                    , externalUriPattern : Optional Text
+                                    , externalUriSchemes : List Text
+                                    , localPrefix : Text
+                                    }
                               , when :
                                   Optional
                                     { field : Text, hasValue : List Text }
@@ -4456,6 +5646,14 @@
                                     { allowSelf : Bool
                                     , externalUriSchemes : List Text
                                     }
+                              , reference :
+                                  Optional
+                                    { allowLocal : Bool
+                                    , allowSelf : Bool
+                                    , externalUriPattern : Optional Text
+                                    , externalUriSchemes : List Text
+                                    , localPrefix : Text
+                                    }
                               , when :
                                   Optional
                                     { field : Text, hasValue : List Text }
@@ -4483,6 +5681,14 @@
                                   Optional
                                     { allowSelf : Bool
                                     , externalUriSchemes : List Text
+                                    }
+                              , reference :
+                                  Optional
+                                    { allowLocal : Bool
+                                    , allowSelf : Bool
+                                    , externalUriPattern : Optional Text
+                                    , externalUriSchemes : List Text
+                                    , localPrefix : Text
                                     }
                               , when :
                                   Optional
@@ -4529,6 +5735,14 @@
                                     { allowSelf : Bool
                                     , externalUriSchemes : List Text
                                     }
+                              , reference :
+                                  Optional
+                                    { allowLocal : Bool
+                                    , allowSelf : Bool
+                                    , externalUriPattern : Optional Text
+                                    , externalUriSchemes : List Text
+                                    , localPrefix : Text
+                                    }
                               , when :
                                   Optional
                                     { field : Text, hasValue : List Text }
@@ -4556,6 +5770,14 @@
                                   Optional
                                     { allowSelf : Bool
                                     , externalUriSchemes : List Text
+                                    }
+                              , reference :
+                                  Optional
+                                    { allowLocal : Bool
+                                    , allowSelf : Bool
+                                    , externalUriPattern : Optional Text
+                                    , externalUriSchemes : List Text
+                                    , localPrefix : Text
                                     }
                               , when :
                                   Optional
@@ -4585,6 +5807,14 @@
                                     { allowSelf : Bool
                                     , externalUriSchemes : List Text
                                     }
+                              , reference :
+                                  Optional
+                                    { allowLocal : Bool
+                                    , allowSelf : Bool
+                                    , externalUriPattern : Optional Text
+                                    , externalUriSchemes : List Text
+                                    , localPrefix : Text
+                                    }
                               , when :
                                   Optional
                                     { field : Text, hasValue : List Text }
@@ -4595,10 +5825,13 @@
                         { allowSelf : Bool, externalUriSchemes : List Text }
                   , reference :
                       Optional
-                        { allowSelf : Bool
+                        { allowLocal : Bool
+                        , allowSelf : Bool
+                        , externalUriPattern : Optional Text
                         , externalUriSchemes : List Text
                         , localPrefix : Text
                         }
+                  , uniqueBy : Optional Text
                   , when : Optional { field : Text, hasValue : List Text }
                   }
             , recommended :
@@ -4632,6 +5865,14 @@
                                     { allowSelf : Bool
                                     , externalUriSchemes : List Text
                                     }
+                              , reference :
+                                  Optional
+                                    { allowLocal : Bool
+                                    , allowSelf : Bool
+                                    , externalUriPattern : Optional Text
+                                    , externalUriSchemes : List Text
+                                    , localPrefix : Text
+                                    }
                               , when :
                                   Optional
                                     { field : Text, hasValue : List Text }
@@ -4660,6 +5901,14 @@
                                     { allowSelf : Bool
                                     , externalUriSchemes : List Text
                                     }
+                              , reference :
+                                  Optional
+                                    { allowLocal : Bool
+                                    , allowSelf : Bool
+                                    , externalUriPattern : Optional Text
+                                    , externalUriSchemes : List Text
+                                    , localPrefix : Text
+                                    }
                               , when :
                                   Optional
                                     { field : Text, hasValue : List Text }
@@ -4687,6 +5936,14 @@
                                   Optional
                                     { allowSelf : Bool
                                     , externalUriSchemes : List Text
+                                    }
+                              , reference :
+                                  Optional
+                                    { allowLocal : Bool
+                                    , allowSelf : Bool
+                                    , externalUriPattern : Optional Text
+                                    , externalUriSchemes : List Text
+                                    , localPrefix : Text
                                     }
                               , when :
                                   Optional
@@ -4733,6 +5990,14 @@
                                     { allowSelf : Bool
                                     , externalUriSchemes : List Text
                                     }
+                              , reference :
+                                  Optional
+                                    { allowLocal : Bool
+                                    , allowSelf : Bool
+                                    , externalUriPattern : Optional Text
+                                    , externalUriSchemes : List Text
+                                    , localPrefix : Text
+                                    }
                               , when :
                                   Optional
                                     { field : Text, hasValue : List Text }
@@ -4760,6 +6025,14 @@
                                   Optional
                                     { allowSelf : Bool
                                     , externalUriSchemes : List Text
+                                    }
+                              , reference :
+                                  Optional
+                                    { allowLocal : Bool
+                                    , allowSelf : Bool
+                                    , externalUriPattern : Optional Text
+                                    , externalUriSchemes : List Text
+                                    , localPrefix : Text
                                     }
                               , when :
                                   Optional
@@ -4789,6 +6062,14 @@
                                     { allowSelf : Bool
                                     , externalUriSchemes : List Text
                                     }
+                              , reference :
+                                  Optional
+                                    { allowLocal : Bool
+                                    , allowSelf : Bool
+                                    , externalUriPattern : Optional Text
+                                    , externalUriSchemes : List Text
+                                    , localPrefix : Text
+                                    }
                               , when :
                                   Optional
                                     { field : Text, hasValue : List Text }
@@ -4799,10 +6080,13 @@
                         { allowSelf : Bool, externalUriSchemes : List Text }
                   , reference :
                       Optional
-                        { allowSelf : Bool
+                        { allowLocal : Bool
+                        , allowSelf : Bool
+                        , externalUriPattern : Optional Text
                         , externalUriSchemes : List Text
                         , localPrefix : Text
                         }
+                  , uniqueBy : Optional Text
                   , when : Optional { field : Text, hasValue : List Text }
                   }
             , required :
@@ -4836,6 +6120,14 @@
                                     { allowSelf : Bool
                                     , externalUriSchemes : List Text
                                     }
+                              , reference :
+                                  Optional
+                                    { allowLocal : Bool
+                                    , allowSelf : Bool
+                                    , externalUriPattern : Optional Text
+                                    , externalUriSchemes : List Text
+                                    , localPrefix : Text
+                                    }
                               , when :
                                   Optional
                                     { field : Text, hasValue : List Text }
@@ -4864,6 +6156,14 @@
                                     { allowSelf : Bool
                                     , externalUriSchemes : List Text
                                     }
+                              , reference :
+                                  Optional
+                                    { allowLocal : Bool
+                                    , allowSelf : Bool
+                                    , externalUriPattern : Optional Text
+                                    , externalUriSchemes : List Text
+                                    , localPrefix : Text
+                                    }
                               , when :
                                   Optional
                                     { field : Text, hasValue : List Text }
@@ -4891,6 +6191,14 @@
                                   Optional
                                     { allowSelf : Bool
                                     , externalUriSchemes : List Text
+                                    }
+                              , reference :
+                                  Optional
+                                    { allowLocal : Bool
+                                    , allowSelf : Bool
+                                    , externalUriPattern : Optional Text
+                                    , externalUriSchemes : List Text
+                                    , localPrefix : Text
                                     }
                               , when :
                                   Optional
@@ -4937,6 +6245,14 @@
                                     { allowSelf : Bool
                                     , externalUriSchemes : List Text
                                     }
+                              , reference :
+                                  Optional
+                                    { allowLocal : Bool
+                                    , allowSelf : Bool
+                                    , externalUriPattern : Optional Text
+                                    , externalUriSchemes : List Text
+                                    , localPrefix : Text
+                                    }
                               , when :
                                   Optional
                                     { field : Text, hasValue : List Text }
@@ -4964,6 +6280,14 @@
                                   Optional
                                     { allowSelf : Bool
                                     , externalUriSchemes : List Text
+                                    }
+                              , reference :
+                                  Optional
+                                    { allowLocal : Bool
+                                    , allowSelf : Bool
+                                    , externalUriPattern : Optional Text
+                                    , externalUriSchemes : List Text
+                                    , localPrefix : Text
                                     }
                               , when :
                                   Optional
@@ -4993,6 +6317,14 @@
                                     { allowSelf : Bool
                                     , externalUriSchemes : List Text
                                     }
+                              , reference :
+                                  Optional
+                                    { allowLocal : Bool
+                                    , allowSelf : Bool
+                                    , externalUriPattern : Optional Text
+                                    , externalUriSchemes : List Text
+                                    , localPrefix : Text
+                                    }
                               , when :
                                   Optional
                                     { field : Text, hasValue : List Text }
@@ -5003,10 +6335,13 @@
                         { allowSelf : Bool, externalUriSchemes : List Text }
                   , reference :
                       Optional
-                        { allowSelf : Bool
+                        { allowLocal : Bool
+                        , allowSelf : Bool
+                        , externalUriPattern : Optional Text
                         , externalUriSchemes : List Text
                         , localPrefix : Text
                         }
+                  , uniqueBy : Optional Text
                   , when : Optional { field : Text, hasValue : List Text }
                   }
             }
@@ -5049,6 +6384,14 @@
                                           { allowSelf : Bool
                                           , externalUriSchemes : List Text
                                           }
+                                    , reference :
+                                        Optional
+                                          { allowLocal : Bool
+                                          , allowSelf : Bool
+                                          , externalUriPattern : Optional Text
+                                          , externalUriSchemes : List Text
+                                          , localPrefix : Text
+                                          }
                                     , when :
                                         Optional
                                           { field : Text, hasValue : List Text }
@@ -5077,6 +6420,14 @@
                                           { allowSelf : Bool
                                           , externalUriSchemes : List Text
                                           }
+                                    , reference :
+                                        Optional
+                                          { allowLocal : Bool
+                                          , allowSelf : Bool
+                                          , externalUriPattern : Optional Text
+                                          , externalUriSchemes : List Text
+                                          , localPrefix : Text
+                                          }
                                     , when :
                                         Optional
                                           { field : Text, hasValue : List Text }
@@ -5104,6 +6455,14 @@
                                         Optional
                                           { allowSelf : Bool
                                           , externalUriSchemes : List Text
+                                          }
+                                    , reference :
+                                        Optional
+                                          { allowLocal : Bool
+                                          , allowSelf : Bool
+                                          , externalUriPattern : Optional Text
+                                          , externalUriSchemes : List Text
+                                          , localPrefix : Text
                                           }
                                     , when :
                                         Optional
@@ -5150,6 +6509,14 @@
                                           { allowSelf : Bool
                                           , externalUriSchemes : List Text
                                           }
+                                    , reference :
+                                        Optional
+                                          { allowLocal : Bool
+                                          , allowSelf : Bool
+                                          , externalUriPattern : Optional Text
+                                          , externalUriSchemes : List Text
+                                          , localPrefix : Text
+                                          }
                                     , when :
                                         Optional
                                           { field : Text, hasValue : List Text }
@@ -5177,6 +6544,14 @@
                                         Optional
                                           { allowSelf : Bool
                                           , externalUriSchemes : List Text
+                                          }
+                                    , reference :
+                                        Optional
+                                          { allowLocal : Bool
+                                          , allowSelf : Bool
+                                          , externalUriPattern : Optional Text
+                                          , externalUriSchemes : List Text
+                                          , localPrefix : Text
                                           }
                                     , when :
                                         Optional
@@ -5206,6 +6581,14 @@
                                           { allowSelf : Bool
                                           , externalUriSchemes : List Text
                                           }
+                                    , reference :
+                                        Optional
+                                          { allowLocal : Bool
+                                          , allowSelf : Bool
+                                          , externalUriPattern : Optional Text
+                                          , externalUriSchemes : List Text
+                                          , localPrefix : Text
+                                          }
                                     , when :
                                         Optional
                                           { field : Text, hasValue : List Text }
@@ -5218,10 +6601,13 @@
                               }
                         , reference :
                             Optional
-                              { allowSelf : Bool
+                              { allowLocal : Bool
+                              , allowSelf : Bool
+                              , externalUriPattern : Optional Text
                               , externalUriSchemes : List Text
                               , localPrefix : Text
                               }
+                        , uniqueBy : Optional Text
                         , when : Optional { field : Text, hasValue : List Text }
                         }
                   , recommended :
@@ -5255,6 +6641,14 @@
                                           { allowSelf : Bool
                                           , externalUriSchemes : List Text
                                           }
+                                    , reference :
+                                        Optional
+                                          { allowLocal : Bool
+                                          , allowSelf : Bool
+                                          , externalUriPattern : Optional Text
+                                          , externalUriSchemes : List Text
+                                          , localPrefix : Text
+                                          }
                                     , when :
                                         Optional
                                           { field : Text, hasValue : List Text }
@@ -5283,6 +6677,14 @@
                                           { allowSelf : Bool
                                           , externalUriSchemes : List Text
                                           }
+                                    , reference :
+                                        Optional
+                                          { allowLocal : Bool
+                                          , allowSelf : Bool
+                                          , externalUriPattern : Optional Text
+                                          , externalUriSchemes : List Text
+                                          , localPrefix : Text
+                                          }
                                     , when :
                                         Optional
                                           { field : Text, hasValue : List Text }
@@ -5310,6 +6712,14 @@
                                         Optional
                                           { allowSelf : Bool
                                           , externalUriSchemes : List Text
+                                          }
+                                    , reference :
+                                        Optional
+                                          { allowLocal : Bool
+                                          , allowSelf : Bool
+                                          , externalUriPattern : Optional Text
+                                          , externalUriSchemes : List Text
+                                          , localPrefix : Text
                                           }
                                     , when :
                                         Optional
@@ -5356,6 +6766,14 @@
                                           { allowSelf : Bool
                                           , externalUriSchemes : List Text
                                           }
+                                    , reference :
+                                        Optional
+                                          { allowLocal : Bool
+                                          , allowSelf : Bool
+                                          , externalUriPattern : Optional Text
+                                          , externalUriSchemes : List Text
+                                          , localPrefix : Text
+                                          }
                                     , when :
                                         Optional
                                           { field : Text, hasValue : List Text }
@@ -5383,6 +6801,14 @@
                                         Optional
                                           { allowSelf : Bool
                                           , externalUriSchemes : List Text
+                                          }
+                                    , reference :
+                                        Optional
+                                          { allowLocal : Bool
+                                          , allowSelf : Bool
+                                          , externalUriPattern : Optional Text
+                                          , externalUriSchemes : List Text
+                                          , localPrefix : Text
                                           }
                                     , when :
                                         Optional
@@ -5412,6 +6838,14 @@
                                           { allowSelf : Bool
                                           , externalUriSchemes : List Text
                                           }
+                                    , reference :
+                                        Optional
+                                          { allowLocal : Bool
+                                          , allowSelf : Bool
+                                          , externalUriPattern : Optional Text
+                                          , externalUriSchemes : List Text
+                                          , localPrefix : Text
+                                          }
                                     , when :
                                         Optional
                                           { field : Text, hasValue : List Text }
@@ -5424,10 +6858,13 @@
                               }
                         , reference :
                             Optional
-                              { allowSelf : Bool
+                              { allowLocal : Bool
+                              , allowSelf : Bool
+                              , externalUriPattern : Optional Text
                               , externalUriSchemes : List Text
                               , localPrefix : Text
                               }
+                        , uniqueBy : Optional Text
                         , when : Optional { field : Text, hasValue : List Text }
                         }
                   , required :
@@ -5461,6 +6898,14 @@
                                           { allowSelf : Bool
                                           , externalUriSchemes : List Text
                                           }
+                                    , reference :
+                                        Optional
+                                          { allowLocal : Bool
+                                          , allowSelf : Bool
+                                          , externalUriPattern : Optional Text
+                                          , externalUriSchemes : List Text
+                                          , localPrefix : Text
+                                          }
                                     , when :
                                         Optional
                                           { field : Text, hasValue : List Text }
@@ -5489,6 +6934,14 @@
                                           { allowSelf : Bool
                                           , externalUriSchemes : List Text
                                           }
+                                    , reference :
+                                        Optional
+                                          { allowLocal : Bool
+                                          , allowSelf : Bool
+                                          , externalUriPattern : Optional Text
+                                          , externalUriSchemes : List Text
+                                          , localPrefix : Text
+                                          }
                                     , when :
                                         Optional
                                           { field : Text, hasValue : List Text }
@@ -5516,6 +6969,14 @@
                                         Optional
                                           { allowSelf : Bool
                                           , externalUriSchemes : List Text
+                                          }
+                                    , reference :
+                                        Optional
+                                          { allowLocal : Bool
+                                          , allowSelf : Bool
+                                          , externalUriPattern : Optional Text
+                                          , externalUriSchemes : List Text
+                                          , localPrefix : Text
                                           }
                                     , when :
                                         Optional
@@ -5562,6 +7023,14 @@
                                           { allowSelf : Bool
                                           , externalUriSchemes : List Text
                                           }
+                                    , reference :
+                                        Optional
+                                          { allowLocal : Bool
+                                          , allowSelf : Bool
+                                          , externalUriPattern : Optional Text
+                                          , externalUriSchemes : List Text
+                                          , localPrefix : Text
+                                          }
                                     , when :
                                         Optional
                                           { field : Text, hasValue : List Text }
@@ -5589,6 +7058,14 @@
                                         Optional
                                           { allowSelf : Bool
                                           , externalUriSchemes : List Text
+                                          }
+                                    , reference :
+                                        Optional
+                                          { allowLocal : Bool
+                                          , allowSelf : Bool
+                                          , externalUriPattern : Optional Text
+                                          , externalUriSchemes : List Text
+                                          , localPrefix : Text
                                           }
                                     , when :
                                         Optional
@@ -5618,6 +7095,14 @@
                                           { allowSelf : Bool
                                           , externalUriSchemes : List Text
                                           }
+                                    , reference :
+                                        Optional
+                                          { allowLocal : Bool
+                                          , allowSelf : Bool
+                                          , externalUriPattern : Optional Text
+                                          , externalUriSchemes : List Text
+                                          , localPrefix : Text
+                                          }
                                     , when :
                                         Optional
                                           { field : Text, hasValue : List Text }
@@ -5630,10 +7115,13 @@
                               }
                         , reference :
                             Optional
-                              { allowSelf : Bool
+                              { allowLocal : Bool
+                              , allowSelf : Bool
+                              , externalUriPattern : Optional Text
                               , externalUriSchemes : List Text
                               , localPrefix : Text
                               }
+                        , uniqueBy : Optional Text
                         , when : Optional { field : Text, hasValue : List Text }
                         }
                   }
@@ -5681,6 +7169,14 @@
                                      { allowSelf : Bool
                                      , externalUriSchemes : List Text
                                      }
+                               , reference :
+                                   Optional
+                                     { allowLocal : Bool
+                                     , allowSelf : Bool
+                                     , externalUriPattern : Optional Text
+                                     , externalUriSchemes : List Text
+                                     , localPrefix : Text
+                                     }
                                , when :
                                    Optional
                                      { field : Text, hasValue : List Text }
@@ -5709,6 +7205,14 @@
                                      { allowSelf : Bool
                                      , externalUriSchemes : List Text
                                      }
+                               , reference :
+                                   Optional
+                                     { allowLocal : Bool
+                                     , allowSelf : Bool
+                                     , externalUriPattern : Optional Text
+                                     , externalUriSchemes : List Text
+                                     , localPrefix : Text
+                                     }
                                , when :
                                    Optional
                                      { field : Text, hasValue : List Text }
@@ -5736,6 +7240,14 @@
                                    Optional
                                      { allowSelf : Bool
                                      , externalUriSchemes : List Text
+                                     }
+                               , reference :
+                                   Optional
+                                     { allowLocal : Bool
+                                     , allowSelf : Bool
+                                     , externalUriPattern : Optional Text
+                                     , externalUriSchemes : List Text
+                                     , localPrefix : Text
                                      }
                                , when :
                                    Optional
@@ -5782,6 +7294,14 @@
                                      { allowSelf : Bool
                                      , externalUriSchemes : List Text
                                      }
+                               , reference :
+                                   Optional
+                                     { allowLocal : Bool
+                                     , allowSelf : Bool
+                                     , externalUriPattern : Optional Text
+                                     , externalUriSchemes : List Text
+                                     , localPrefix : Text
+                                     }
                                , when :
                                    Optional
                                      { field : Text, hasValue : List Text }
@@ -5809,6 +7329,14 @@
                                    Optional
                                      { allowSelf : Bool
                                      , externalUriSchemes : List Text
+                                     }
+                               , reference :
+                                   Optional
+                                     { allowLocal : Bool
+                                     , allowSelf : Bool
+                                     , externalUriPattern : Optional Text
+                                     , externalUriSchemes : List Text
+                                     , localPrefix : Text
                                      }
                                , when :
                                    Optional
@@ -5838,6 +7366,14 @@
                                      { allowSelf : Bool
                                      , externalUriSchemes : List Text
                                      }
+                               , reference :
+                                   Optional
+                                     { allowLocal : Bool
+                                     , allowSelf : Bool
+                                     , externalUriPattern : Optional Text
+                                     , externalUriSchemes : List Text
+                                     , localPrefix : Text
+                                     }
                                , when :
                                    Optional
                                      { field : Text, hasValue : List Text }
@@ -5848,10 +7384,13 @@
                          { allowSelf : Bool, externalUriSchemes : List Text }
                    , reference :
                        Optional
-                         { allowSelf : Bool
+                         { allowLocal : Bool
+                         , allowSelf : Bool
+                         , externalUriPattern : Optional Text
                          , externalUriSchemes : List Text
                          , localPrefix : Text
                          }
+                   , uniqueBy : Optional Text
                    , when : Optional { field : Text, hasValue : List Text }
                    }
         , recommended =
@@ -5885,6 +7424,14 @@
                                      { allowSelf : Bool
                                      , externalUriSchemes : List Text
                                      }
+                               , reference :
+                                   Optional
+                                     { allowLocal : Bool
+                                     , allowSelf : Bool
+                                     , externalUriPattern : Optional Text
+                                     , externalUriSchemes : List Text
+                                     , localPrefix : Text
+                                     }
                                , when :
                                    Optional
                                      { field : Text, hasValue : List Text }
@@ -5913,6 +7460,14 @@
                                      { allowSelf : Bool
                                      , externalUriSchemes : List Text
                                      }
+                               , reference :
+                                   Optional
+                                     { allowLocal : Bool
+                                     , allowSelf : Bool
+                                     , externalUriPattern : Optional Text
+                                     , externalUriSchemes : List Text
+                                     , localPrefix : Text
+                                     }
                                , when :
                                    Optional
                                      { field : Text, hasValue : List Text }
@@ -5940,6 +7495,14 @@
                                    Optional
                                      { allowSelf : Bool
                                      , externalUriSchemes : List Text
+                                     }
+                               , reference :
+                                   Optional
+                                     { allowLocal : Bool
+                                     , allowSelf : Bool
+                                     , externalUriPattern : Optional Text
+                                     , externalUriSchemes : List Text
+                                     , localPrefix : Text
                                      }
                                , when :
                                    Optional
@@ -5986,6 +7549,14 @@
                                      { allowSelf : Bool
                                      , externalUriSchemes : List Text
                                      }
+                               , reference :
+                                   Optional
+                                     { allowLocal : Bool
+                                     , allowSelf : Bool
+                                     , externalUriPattern : Optional Text
+                                     , externalUriSchemes : List Text
+                                     , localPrefix : Text
+                                     }
                                , when :
                                    Optional
                                      { field : Text, hasValue : List Text }
@@ -6013,6 +7584,14 @@
                                    Optional
                                      { allowSelf : Bool
                                      , externalUriSchemes : List Text
+                                     }
+                               , reference :
+                                   Optional
+                                     { allowLocal : Bool
+                                     , allowSelf : Bool
+                                     , externalUriPattern : Optional Text
+                                     , externalUriSchemes : List Text
+                                     , localPrefix : Text
                                      }
                                , when :
                                    Optional
@@ -6042,6 +7621,14 @@
                                      { allowSelf : Bool
                                      , externalUriSchemes : List Text
                                      }
+                               , reference :
+                                   Optional
+                                     { allowLocal : Bool
+                                     , allowSelf : Bool
+                                     , externalUriPattern : Optional Text
+                                     , externalUriSchemes : List Text
+                                     , localPrefix : Text
+                                     }
                                , when :
                                    Optional
                                      { field : Text, hasValue : List Text }
@@ -6052,10 +7639,13 @@
                          { allowSelf : Bool, externalUriSchemes : List Text }
                    , reference :
                        Optional
-                         { allowSelf : Bool
+                         { allowLocal : Bool
+                         , allowSelf : Bool
+                         , externalUriPattern : Optional Text
                          , externalUriSchemes : List Text
                          , localPrefix : Text
                          }
+                   , uniqueBy : Optional Text
                    , when : Optional { field : Text, hasValue : List Text }
                    }
         , required =
@@ -6089,6 +7679,14 @@
                                      { allowSelf : Bool
                                      , externalUriSchemes : List Text
                                      }
+                               , reference :
+                                   Optional
+                                     { allowLocal : Bool
+                                     , allowSelf : Bool
+                                     , externalUriPattern : Optional Text
+                                     , externalUriSchemes : List Text
+                                     , localPrefix : Text
+                                     }
                                , when :
                                    Optional
                                      { field : Text, hasValue : List Text }
@@ -6117,6 +7715,14 @@
                                      { allowSelf : Bool
                                      , externalUriSchemes : List Text
                                      }
+                               , reference :
+                                   Optional
+                                     { allowLocal : Bool
+                                     , allowSelf : Bool
+                                     , externalUriPattern : Optional Text
+                                     , externalUriSchemes : List Text
+                                     , localPrefix : Text
+                                     }
                                , when :
                                    Optional
                                      { field : Text, hasValue : List Text }
@@ -6144,6 +7750,14 @@
                                    Optional
                                      { allowSelf : Bool
                                      , externalUriSchemes : List Text
+                                     }
+                               , reference :
+                                   Optional
+                                     { allowLocal : Bool
+                                     , allowSelf : Bool
+                                     , externalUriPattern : Optional Text
+                                     , externalUriSchemes : List Text
+                                     , localPrefix : Text
                                      }
                                , when :
                                    Optional
@@ -6190,6 +7804,14 @@
                                      { allowSelf : Bool
                                      , externalUriSchemes : List Text
                                      }
+                               , reference :
+                                   Optional
+                                     { allowLocal : Bool
+                                     , allowSelf : Bool
+                                     , externalUriPattern : Optional Text
+                                     , externalUriSchemes : List Text
+                                     , localPrefix : Text
+                                     }
                                , when :
                                    Optional
                                      { field : Text, hasValue : List Text }
@@ -6217,6 +7839,14 @@
                                    Optional
                                      { allowSelf : Bool
                                      , externalUriSchemes : List Text
+                                     }
+                               , reference :
+                                   Optional
+                                     { allowLocal : Bool
+                                     , allowSelf : Bool
+                                     , externalUriPattern : Optional Text
+                                     , externalUriSchemes : List Text
+                                     , localPrefix : Text
                                      }
                                , when :
                                    Optional
@@ -6246,6 +7876,14 @@
                                      { allowSelf : Bool
                                      , externalUriSchemes : List Text
                                      }
+                               , reference :
+                                   Optional
+                                     { allowLocal : Bool
+                                     , allowSelf : Bool
+                                     , externalUriPattern : Optional Text
+                                     , externalUriSchemes : List Text
+                                     , localPrefix : Text
+                                     }
                                , when :
                                    Optional
                                      { field : Text, hasValue : List Text }
@@ -6256,10 +7894,13 @@
                          { allowSelf : Bool, externalUriSchemes : List Text }
                    , reference :
                        Optional
-                         { allowSelf : Bool
+                         { allowLocal : Bool
+                         , allowSelf : Bool
+                         , externalUriPattern : Optional Text
                          , externalUriSchemes : List Text
                          , localPrefix : Text
                          }
+                   , uniqueBy : Optional Text
                    , when : Optional { field : Text, hasValue : List Text }
                    }
         }
@@ -6301,6 +7942,15 @@
                                              { allowSelf : Bool
                                              , externalUriSchemes : List Text
                                              }
+                                       , reference :
+                                           Optional
+                                             { allowLocal : Bool
+                                             , allowSelf : Bool
+                                             , externalUriPattern :
+                                                 Optional Text
+                                             , externalUriSchemes : List Text
+                                             , localPrefix : Text
+                                             }
                                        , when :
                                            Optional
                                              { field : Text
@@ -6331,6 +7981,15 @@
                                              { allowSelf : Bool
                                              , externalUriSchemes : List Text
                                              }
+                                       , reference :
+                                           Optional
+                                             { allowLocal : Bool
+                                             , allowSelf : Bool
+                                             , externalUriPattern :
+                                                 Optional Text
+                                             , externalUriSchemes : List Text
+                                             , localPrefix : Text
+                                             }
                                        , when :
                                            Optional
                                              { field : Text
@@ -6360,6 +8019,15 @@
                                            Optional
                                              { allowSelf : Bool
                                              , externalUriSchemes : List Text
+                                             }
+                                       , reference :
+                                           Optional
+                                             { allowLocal : Bool
+                                             , allowSelf : Bool
+                                             , externalUriPattern :
+                                                 Optional Text
+                                             , externalUriSchemes : List Text
+                                             , localPrefix : Text
                                              }
                                        , when :
                                            Optional
@@ -6408,6 +8076,15 @@
                                              { allowSelf : Bool
                                              , externalUriSchemes : List Text
                                              }
+                                       , reference :
+                                           Optional
+                                             { allowLocal : Bool
+                                             , allowSelf : Bool
+                                             , externalUriPattern :
+                                                 Optional Text
+                                             , externalUriSchemes : List Text
+                                             , localPrefix : Text
+                                             }
                                        , when :
                                            Optional
                                              { field : Text
@@ -6437,6 +8114,15 @@
                                            Optional
                                              { allowSelf : Bool
                                              , externalUriSchemes : List Text
+                                             }
+                                       , reference :
+                                           Optional
+                                             { allowLocal : Bool
+                                             , allowSelf : Bool
+                                             , externalUriPattern :
+                                                 Optional Text
+                                             , externalUriSchemes : List Text
+                                             , localPrefix : Text
                                              }
                                        , when :
                                            Optional
@@ -6468,6 +8154,15 @@
                                              { allowSelf : Bool
                                              , externalUriSchemes : List Text
                                              }
+                                       , reference :
+                                           Optional
+                                             { allowLocal : Bool
+                                             , allowSelf : Bool
+                                             , externalUriPattern :
+                                                 Optional Text
+                                             , externalUriSchemes : List Text
+                                             , localPrefix : Text
+                                             }
                                        , when :
                                            Optional
                                              { field : Text
@@ -6482,10 +8177,13 @@
                                  }
                            , reference :
                                Optional
-                                 { allowSelf : Bool
+                                 { allowLocal : Bool
+                                 , allowSelf : Bool
+                                 , externalUriPattern : Optional Text
                                  , externalUriSchemes : List Text
                                  , localPrefix : Text
                                  }
+                           , uniqueBy : Optional Text
                            , when :
                                Optional { field : Text, hasValue : List Text }
                            }
@@ -6520,6 +8218,15 @@
                                              { allowSelf : Bool
                                              , externalUriSchemes : List Text
                                              }
+                                       , reference :
+                                           Optional
+                                             { allowLocal : Bool
+                                             , allowSelf : Bool
+                                             , externalUriPattern :
+                                                 Optional Text
+                                             , externalUriSchemes : List Text
+                                             , localPrefix : Text
+                                             }
                                        , when :
                                            Optional
                                              { field : Text
@@ -6550,6 +8257,15 @@
                                              { allowSelf : Bool
                                              , externalUriSchemes : List Text
                                              }
+                                       , reference :
+                                           Optional
+                                             { allowLocal : Bool
+                                             , allowSelf : Bool
+                                             , externalUriPattern :
+                                                 Optional Text
+                                             , externalUriSchemes : List Text
+                                             , localPrefix : Text
+                                             }
                                        , when :
                                            Optional
                                              { field : Text
@@ -6579,6 +8295,15 @@
                                            Optional
                                              { allowSelf : Bool
                                              , externalUriSchemes : List Text
+                                             }
+                                       , reference :
+                                           Optional
+                                             { allowLocal : Bool
+                                             , allowSelf : Bool
+                                             , externalUriPattern :
+                                                 Optional Text
+                                             , externalUriSchemes : List Text
+                                             , localPrefix : Text
                                              }
                                        , when :
                                            Optional
@@ -6627,6 +8352,15 @@
                                              { allowSelf : Bool
                                              , externalUriSchemes : List Text
                                              }
+                                       , reference :
+                                           Optional
+                                             { allowLocal : Bool
+                                             , allowSelf : Bool
+                                             , externalUriPattern :
+                                                 Optional Text
+                                             , externalUriSchemes : List Text
+                                             , localPrefix : Text
+                                             }
                                        , when :
                                            Optional
                                              { field : Text
@@ -6656,6 +8390,15 @@
                                            Optional
                                              { allowSelf : Bool
                                              , externalUriSchemes : List Text
+                                             }
+                                       , reference :
+                                           Optional
+                                             { allowLocal : Bool
+                                             , allowSelf : Bool
+                                             , externalUriPattern :
+                                                 Optional Text
+                                             , externalUriSchemes : List Text
+                                             , localPrefix : Text
                                              }
                                        , when :
                                            Optional
@@ -6687,6 +8430,15 @@
                                              { allowSelf : Bool
                                              , externalUriSchemes : List Text
                                              }
+                                       , reference :
+                                           Optional
+                                             { allowLocal : Bool
+                                             , allowSelf : Bool
+                                             , externalUriPattern :
+                                                 Optional Text
+                                             , externalUriSchemes : List Text
+                                             , localPrefix : Text
+                                             }
                                        , when :
                                            Optional
                                              { field : Text
@@ -6701,10 +8453,13 @@
                                  }
                            , reference :
                                Optional
-                                 { allowSelf : Bool
+                                 { allowLocal : Bool
+                                 , allowSelf : Bool
+                                 , externalUriPattern : Optional Text
                                  , externalUriSchemes : List Text
                                  , localPrefix : Text
                                  }
+                           , uniqueBy : Optional Text
                            , when :
                                Optional { field : Text, hasValue : List Text }
                            }
@@ -6739,6 +8494,15 @@
                                              { allowSelf : Bool
                                              , externalUriSchemes : List Text
                                              }
+                                       , reference :
+                                           Optional
+                                             { allowLocal : Bool
+                                             , allowSelf : Bool
+                                             , externalUriPattern :
+                                                 Optional Text
+                                             , externalUriSchemes : List Text
+                                             , localPrefix : Text
+                                             }
                                        , when :
                                            Optional
                                              { field : Text
@@ -6769,6 +8533,15 @@
                                              { allowSelf : Bool
                                              , externalUriSchemes : List Text
                                              }
+                                       , reference :
+                                           Optional
+                                             { allowLocal : Bool
+                                             , allowSelf : Bool
+                                             , externalUriPattern :
+                                                 Optional Text
+                                             , externalUriSchemes : List Text
+                                             , localPrefix : Text
+                                             }
                                        , when :
                                            Optional
                                              { field : Text
@@ -6798,6 +8571,15 @@
                                            Optional
                                              { allowSelf : Bool
                                              , externalUriSchemes : List Text
+                                             }
+                                       , reference :
+                                           Optional
+                                             { allowLocal : Bool
+                                             , allowSelf : Bool
+                                             , externalUriPattern :
+                                                 Optional Text
+                                             , externalUriSchemes : List Text
+                                             , localPrefix : Text
                                              }
                                        , when :
                                            Optional
@@ -6846,6 +8628,15 @@
                                              { allowSelf : Bool
                                              , externalUriSchemes : List Text
                                              }
+                                       , reference :
+                                           Optional
+                                             { allowLocal : Bool
+                                             , allowSelf : Bool
+                                             , externalUriPattern :
+                                                 Optional Text
+                                             , externalUriSchemes : List Text
+                                             , localPrefix : Text
+                                             }
                                        , when :
                                            Optional
                                              { field : Text
@@ -6875,6 +8666,15 @@
                                            Optional
                                              { allowSelf : Bool
                                              , externalUriSchemes : List Text
+                                             }
+                                       , reference :
+                                           Optional
+                                             { allowLocal : Bool
+                                             , allowSelf : Bool
+                                             , externalUriPattern :
+                                                 Optional Text
+                                             , externalUriSchemes : List Text
+                                             , localPrefix : Text
                                              }
                                        , when :
                                            Optional
@@ -6906,6 +8706,15 @@
                                              { allowSelf : Bool
                                              , externalUriSchemes : List Text
                                              }
+                                       , reference :
+                                           Optional
+                                             { allowLocal : Bool
+                                             , allowSelf : Bool
+                                             , externalUriPattern :
+                                                 Optional Text
+                                             , externalUriSchemes : List Text
+                                             , localPrefix : Text
+                                             }
                                        , when :
                                            Optional
                                              { field : Text
@@ -6920,10 +8729,13 @@
                                  }
                            , reference :
                                Optional
-                                 { allowSelf : Bool
+                                 { allowLocal : Bool
+                                 , allowSelf : Bool
+                                 , externalUriPattern : Optional Text
                                  , externalUriSchemes : List Text
                                  , localPrefix : Text
                                  }
+                           , uniqueBy : Optional Text
                            , when :
                                Optional { field : Text, hasValue : List Text }
                            }
@@ -6972,6 +8784,14 @@
                                     { allowSelf : Bool
                                     , externalUriSchemes : List Text
                                     }
+                              , reference :
+                                  Optional
+                                    { allowLocal : Bool
+                                    , allowSelf : Bool
+                                    , externalUriPattern : Optional Text
+                                    , externalUriSchemes : List Text
+                                    , localPrefix : Text
+                                    }
                               , when :
                                   Optional
                                     { field : Text, hasValue : List Text }
@@ -7000,6 +8820,14 @@
                                     { allowSelf : Bool
                                     , externalUriSchemes : List Text
                                     }
+                              , reference :
+                                  Optional
+                                    { allowLocal : Bool
+                                    , allowSelf : Bool
+                                    , externalUriPattern : Optional Text
+                                    , externalUriSchemes : List Text
+                                    , localPrefix : Text
+                                    }
                               , when :
                                   Optional
                                     { field : Text, hasValue : List Text }
@@ -7027,6 +8855,14 @@
                                   Optional
                                     { allowSelf : Bool
                                     , externalUriSchemes : List Text
+                                    }
+                              , reference :
+                                  Optional
+                                    { allowLocal : Bool
+                                    , allowSelf : Bool
+                                    , externalUriPattern : Optional Text
+                                    , externalUriSchemes : List Text
+                                    , localPrefix : Text
                                     }
                               , when :
                                   Optional
@@ -7073,6 +8909,14 @@
                                     { allowSelf : Bool
                                     , externalUriSchemes : List Text
                                     }
+                              , reference :
+                                  Optional
+                                    { allowLocal : Bool
+                                    , allowSelf : Bool
+                                    , externalUriPattern : Optional Text
+                                    , externalUriSchemes : List Text
+                                    , localPrefix : Text
+                                    }
                               , when :
                                   Optional
                                     { field : Text, hasValue : List Text }
@@ -7100,6 +8944,14 @@
                                   Optional
                                     { allowSelf : Bool
                                     , externalUriSchemes : List Text
+                                    }
+                              , reference :
+                                  Optional
+                                    { allowLocal : Bool
+                                    , allowSelf : Bool
+                                    , externalUriPattern : Optional Text
+                                    , externalUriSchemes : List Text
+                                    , localPrefix : Text
                                     }
                               , when :
                                   Optional
@@ -7129,6 +8981,14 @@
                                     { allowSelf : Bool
                                     , externalUriSchemes : List Text
                                     }
+                              , reference :
+                                  Optional
+                                    { allowLocal : Bool
+                                    , allowSelf : Bool
+                                    , externalUriPattern : Optional Text
+                                    , externalUriSchemes : List Text
+                                    , localPrefix : Text
+                                    }
                               , when :
                                   Optional
                                     { field : Text, hasValue : List Text }
@@ -7139,10 +8999,13 @@
                         { allowSelf : Bool, externalUriSchemes : List Text }
                   , reference :
                       Optional
-                        { allowSelf : Bool
+                        { allowLocal : Bool
+                        , allowSelf : Bool
+                        , externalUriPattern : Optional Text
                         , externalUriSchemes : List Text
                         , localPrefix : Text
                         }
+                  , uniqueBy : Optional Text
                   , when : Optional { field : Text, hasValue : List Text }
                   }
             , recommended :
@@ -7176,6 +9039,14 @@
                                     { allowSelf : Bool
                                     , externalUriSchemes : List Text
                                     }
+                              , reference :
+                                  Optional
+                                    { allowLocal : Bool
+                                    , allowSelf : Bool
+                                    , externalUriPattern : Optional Text
+                                    , externalUriSchemes : List Text
+                                    , localPrefix : Text
+                                    }
                               , when :
                                   Optional
                                     { field : Text, hasValue : List Text }
@@ -7204,6 +9075,14 @@
                                     { allowSelf : Bool
                                     , externalUriSchemes : List Text
                                     }
+                              , reference :
+                                  Optional
+                                    { allowLocal : Bool
+                                    , allowSelf : Bool
+                                    , externalUriPattern : Optional Text
+                                    , externalUriSchemes : List Text
+                                    , localPrefix : Text
+                                    }
                               , when :
                                   Optional
                                     { field : Text, hasValue : List Text }
@@ -7231,6 +9110,14 @@
                                   Optional
                                     { allowSelf : Bool
                                     , externalUriSchemes : List Text
+                                    }
+                              , reference :
+                                  Optional
+                                    { allowLocal : Bool
+                                    , allowSelf : Bool
+                                    , externalUriPattern : Optional Text
+                                    , externalUriSchemes : List Text
+                                    , localPrefix : Text
                                     }
                               , when :
                                   Optional
@@ -7277,6 +9164,14 @@
                                     { allowSelf : Bool
                                     , externalUriSchemes : List Text
                                     }
+                              , reference :
+                                  Optional
+                                    { allowLocal : Bool
+                                    , allowSelf : Bool
+                                    , externalUriPattern : Optional Text
+                                    , externalUriSchemes : List Text
+                                    , localPrefix : Text
+                                    }
                               , when :
                                   Optional
                                     { field : Text, hasValue : List Text }
@@ -7304,6 +9199,14 @@
                                   Optional
                                     { allowSelf : Bool
                                     , externalUriSchemes : List Text
+                                    }
+                              , reference :
+                                  Optional
+                                    { allowLocal : Bool
+                                    , allowSelf : Bool
+                                    , externalUriPattern : Optional Text
+                                    , externalUriSchemes : List Text
+                                    , localPrefix : Text
                                     }
                               , when :
                                   Optional
@@ -7333,6 +9236,14 @@
                                     { allowSelf : Bool
                                     , externalUriSchemes : List Text
                                     }
+                              , reference :
+                                  Optional
+                                    { allowLocal : Bool
+                                    , allowSelf : Bool
+                                    , externalUriPattern : Optional Text
+                                    , externalUriSchemes : List Text
+                                    , localPrefix : Text
+                                    }
                               , when :
                                   Optional
                                     { field : Text, hasValue : List Text }
@@ -7343,10 +9254,13 @@
                         { allowSelf : Bool, externalUriSchemes : List Text }
                   , reference :
                       Optional
-                        { allowSelf : Bool
+                        { allowLocal : Bool
+                        , allowSelf : Bool
+                        , externalUriPattern : Optional Text
                         , externalUriSchemes : List Text
                         , localPrefix : Text
                         }
+                  , uniqueBy : Optional Text
                   , when : Optional { field : Text, hasValue : List Text }
                   }
             , required :
@@ -7380,6 +9294,14 @@
                                     { allowSelf : Bool
                                     , externalUriSchemes : List Text
                                     }
+                              , reference :
+                                  Optional
+                                    { allowLocal : Bool
+                                    , allowSelf : Bool
+                                    , externalUriPattern : Optional Text
+                                    , externalUriSchemes : List Text
+                                    , localPrefix : Text
+                                    }
                               , when :
                                   Optional
                                     { field : Text, hasValue : List Text }
@@ -7408,6 +9330,14 @@
                                     { allowSelf : Bool
                                     , externalUriSchemes : List Text
                                     }
+                              , reference :
+                                  Optional
+                                    { allowLocal : Bool
+                                    , allowSelf : Bool
+                                    , externalUriPattern : Optional Text
+                                    , externalUriSchemes : List Text
+                                    , localPrefix : Text
+                                    }
                               , when :
                                   Optional
                                     { field : Text, hasValue : List Text }
@@ -7435,6 +9365,14 @@
                                   Optional
                                     { allowSelf : Bool
                                     , externalUriSchemes : List Text
+                                    }
+                              , reference :
+                                  Optional
+                                    { allowLocal : Bool
+                                    , allowSelf : Bool
+                                    , externalUriPattern : Optional Text
+                                    , externalUriSchemes : List Text
+                                    , localPrefix : Text
                                     }
                               , when :
                                   Optional
@@ -7481,6 +9419,14 @@
                                     { allowSelf : Bool
                                     , externalUriSchemes : List Text
                                     }
+                              , reference :
+                                  Optional
+                                    { allowLocal : Bool
+                                    , allowSelf : Bool
+                                    , externalUriPattern : Optional Text
+                                    , externalUriSchemes : List Text
+                                    , localPrefix : Text
+                                    }
                               , when :
                                   Optional
                                     { field : Text, hasValue : List Text }
@@ -7508,6 +9454,14 @@
                                   Optional
                                     { allowSelf : Bool
                                     , externalUriSchemes : List Text
+                                    }
+                              , reference :
+                                  Optional
+                                    { allowLocal : Bool
+                                    , allowSelf : Bool
+                                    , externalUriPattern : Optional Text
+                                    , externalUriSchemes : List Text
+                                    , localPrefix : Text
                                     }
                               , when :
                                   Optional
@@ -7537,6 +9491,14 @@
                                     { allowSelf : Bool
                                     , externalUriSchemes : List Text
                                     }
+                              , reference :
+                                  Optional
+                                    { allowLocal : Bool
+                                    , allowSelf : Bool
+                                    , externalUriPattern : Optional Text
+                                    , externalUriSchemes : List Text
+                                    , localPrefix : Text
+                                    }
                               , when :
                                   Optional
                                     { field : Text, hasValue : List Text }
@@ -7547,10 +9509,13 @@
                         { allowSelf : Bool, externalUriSchemes : List Text }
                   , reference :
                       Optional
-                        { allowSelf : Bool
+                        { allowLocal : Bool
+                        , allowSelf : Bool
+                        , externalUriPattern : Optional Text
                         , externalUriSchemes : List Text
                         , localPrefix : Text
                         }
+                  , uniqueBy : Optional Text
                   , when : Optional { field : Text, hasValue : List Text }
                   }
             }
@@ -7595,6 +9560,14 @@
                                      { allowSelf : Bool
                                      , externalUriSchemes : List Text
                                      }
+                               , reference :
+                                   Optional
+                                     { allowLocal : Bool
+                                     , allowSelf : Bool
+                                     , externalUriPattern : Optional Text
+                                     , externalUriSchemes : List Text
+                                     , localPrefix : Text
+                                     }
                                , when :
                                    Optional
                                      { field : Text, hasValue : List Text }
@@ -7623,6 +9596,14 @@
                                      { allowSelf : Bool
                                      , externalUriSchemes : List Text
                                      }
+                               , reference :
+                                   Optional
+                                     { allowLocal : Bool
+                                     , allowSelf : Bool
+                                     , externalUriPattern : Optional Text
+                                     , externalUriSchemes : List Text
+                                     , localPrefix : Text
+                                     }
                                , when :
                                    Optional
                                      { field : Text, hasValue : List Text }
@@ -7650,6 +9631,14 @@
                                    Optional
                                      { allowSelf : Bool
                                      , externalUriSchemes : List Text
+                                     }
+                               , reference :
+                                   Optional
+                                     { allowLocal : Bool
+                                     , allowSelf : Bool
+                                     , externalUriPattern : Optional Text
+                                     , externalUriSchemes : List Text
+                                     , localPrefix : Text
                                      }
                                , when :
                                    Optional
@@ -7696,6 +9685,14 @@
                                      { allowSelf : Bool
                                      , externalUriSchemes : List Text
                                      }
+                               , reference :
+                                   Optional
+                                     { allowLocal : Bool
+                                     , allowSelf : Bool
+                                     , externalUriPattern : Optional Text
+                                     , externalUriSchemes : List Text
+                                     , localPrefix : Text
+                                     }
                                , when :
                                    Optional
                                      { field : Text, hasValue : List Text }
@@ -7723,6 +9720,14 @@
                                    Optional
                                      { allowSelf : Bool
                                      , externalUriSchemes : List Text
+                                     }
+                               , reference :
+                                   Optional
+                                     { allowLocal : Bool
+                                     , allowSelf : Bool
+                                     , externalUriPattern : Optional Text
+                                     , externalUriSchemes : List Text
+                                     , localPrefix : Text
                                      }
                                , when :
                                    Optional
@@ -7752,6 +9757,14 @@
                                      { allowSelf : Bool
                                      , externalUriSchemes : List Text
                                      }
+                               , reference :
+                                   Optional
+                                     { allowLocal : Bool
+                                     , allowSelf : Bool
+                                     , externalUriPattern : Optional Text
+                                     , externalUriSchemes : List Text
+                                     , localPrefix : Text
+                                     }
                                , when :
                                    Optional
                                      { field : Text, hasValue : List Text }
@@ -7762,10 +9775,13 @@
                          { allowSelf : Bool, externalUriSchemes : List Text }
                    , reference :
                        Optional
-                         { allowSelf : Bool
+                         { allowLocal : Bool
+                         , allowSelf : Bool
+                         , externalUriPattern : Optional Text
                          , externalUriSchemes : List Text
                          , localPrefix : Text
                          }
+                   , uniqueBy : Optional Text
                    , when : Optional { field : Text, hasValue : List Text }
                    }
         , recommended =
@@ -7799,6 +9815,14 @@
                                      { allowSelf : Bool
                                      , externalUriSchemes : List Text
                                      }
+                               , reference :
+                                   Optional
+                                     { allowLocal : Bool
+                                     , allowSelf : Bool
+                                     , externalUriPattern : Optional Text
+                                     , externalUriSchemes : List Text
+                                     , localPrefix : Text
+                                     }
                                , when :
                                    Optional
                                      { field : Text, hasValue : List Text }
@@ -7827,6 +9851,14 @@
                                      { allowSelf : Bool
                                      , externalUriSchemes : List Text
                                      }
+                               , reference :
+                                   Optional
+                                     { allowLocal : Bool
+                                     , allowSelf : Bool
+                                     , externalUriPattern : Optional Text
+                                     , externalUriSchemes : List Text
+                                     , localPrefix : Text
+                                     }
                                , when :
                                    Optional
                                      { field : Text, hasValue : List Text }
@@ -7854,6 +9886,14 @@
                                    Optional
                                      { allowSelf : Bool
                                      , externalUriSchemes : List Text
+                                     }
+                               , reference :
+                                   Optional
+                                     { allowLocal : Bool
+                                     , allowSelf : Bool
+                                     , externalUriPattern : Optional Text
+                                     , externalUriSchemes : List Text
+                                     , localPrefix : Text
                                      }
                                , when :
                                    Optional
@@ -7900,6 +9940,14 @@
                                      { allowSelf : Bool
                                      , externalUriSchemes : List Text
                                      }
+                               , reference :
+                                   Optional
+                                     { allowLocal : Bool
+                                     , allowSelf : Bool
+                                     , externalUriPattern : Optional Text
+                                     , externalUriSchemes : List Text
+                                     , localPrefix : Text
+                                     }
                                , when :
                                    Optional
                                      { field : Text, hasValue : List Text }
@@ -7927,6 +9975,14 @@
                                    Optional
                                      { allowSelf : Bool
                                      , externalUriSchemes : List Text
+                                     }
+                               , reference :
+                                   Optional
+                                     { allowLocal : Bool
+                                     , allowSelf : Bool
+                                     , externalUriPattern : Optional Text
+                                     , externalUriSchemes : List Text
+                                     , localPrefix : Text
                                      }
                                , when :
                                    Optional
@@ -7956,6 +10012,14 @@
                                      { allowSelf : Bool
                                      , externalUriSchemes : List Text
                                      }
+                               , reference :
+                                   Optional
+                                     { allowLocal : Bool
+                                     , allowSelf : Bool
+                                     , externalUriPattern : Optional Text
+                                     , externalUriSchemes : List Text
+                                     , localPrefix : Text
+                                     }
                                , when :
                                    Optional
                                      { field : Text, hasValue : List Text }
@@ -7966,10 +10030,13 @@
                          { allowSelf : Bool, externalUriSchemes : List Text }
                    , reference :
                        Optional
-                         { allowSelf : Bool
+                         { allowLocal : Bool
+                         , allowSelf : Bool
+                         , externalUriPattern : Optional Text
                          , externalUriSchemes : List Text
                          , localPrefix : Text
                          }
+                   , uniqueBy : Optional Text
                    , when : Optional { field : Text, hasValue : List Text }
                    }
         , required =
@@ -8003,6 +10070,14 @@
                                      { allowSelf : Bool
                                      , externalUriSchemes : List Text
                                      }
+                               , reference :
+                                   Optional
+                                     { allowLocal : Bool
+                                     , allowSelf : Bool
+                                     , externalUriPattern : Optional Text
+                                     , externalUriSchemes : List Text
+                                     , localPrefix : Text
+                                     }
                                , when :
                                    Optional
                                      { field : Text, hasValue : List Text }
@@ -8031,6 +10106,14 @@
                                      { allowSelf : Bool
                                      , externalUriSchemes : List Text
                                      }
+                               , reference :
+                                   Optional
+                                     { allowLocal : Bool
+                                     , allowSelf : Bool
+                                     , externalUriPattern : Optional Text
+                                     , externalUriSchemes : List Text
+                                     , localPrefix : Text
+                                     }
                                , when :
                                    Optional
                                      { field : Text, hasValue : List Text }
@@ -8058,6 +10141,14 @@
                                    Optional
                                      { allowSelf : Bool
                                      , externalUriSchemes : List Text
+                                     }
+                               , reference :
+                                   Optional
+                                     { allowLocal : Bool
+                                     , allowSelf : Bool
+                                     , externalUriPattern : Optional Text
+                                     , externalUriSchemes : List Text
+                                     , localPrefix : Text
                                      }
                                , when :
                                    Optional
@@ -8104,6 +10195,14 @@
                                      { allowSelf : Bool
                                      , externalUriSchemes : List Text
                                      }
+                               , reference :
+                                   Optional
+                                     { allowLocal : Bool
+                                     , allowSelf : Bool
+                                     , externalUriPattern : Optional Text
+                                     , externalUriSchemes : List Text
+                                     , localPrefix : Text
+                                     }
                                , when :
                                    Optional
                                      { field : Text, hasValue : List Text }
@@ -8131,6 +10230,14 @@
                                    Optional
                                      { allowSelf : Bool
                                      , externalUriSchemes : List Text
+                                     }
+                               , reference :
+                                   Optional
+                                     { allowLocal : Bool
+                                     , allowSelf : Bool
+                                     , externalUriPattern : Optional Text
+                                     , externalUriSchemes : List Text
+                                     , localPrefix : Text
                                      }
                                , when :
                                    Optional
@@ -8160,6 +10267,14 @@
                                      { allowSelf : Bool
                                      , externalUriSchemes : List Text
                                      }
+                               , reference :
+                                   Optional
+                                     { allowLocal : Bool
+                                     , allowSelf : Bool
+                                     , externalUriPattern : Optional Text
+                                     , externalUriSchemes : List Text
+                                     , localPrefix : Text
+                                     }
                                , when :
                                    Optional
                                      { field : Text, hasValue : List Text }
@@ -8170,10 +10285,13 @@
                          { allowSelf : Bool, externalUriSchemes : List Text }
                    , reference :
                        Optional
-                         { allowSelf : Bool
+                         { allowLocal : Bool
+                         , allowSelf : Bool
+                         , externalUriPattern : Optional Text
                          , externalUriSchemes : List Text
                          , localPrefix : Text
                          }
+                   , uniqueBy : Optional Text
                    , when : Optional { field : Text, hasValue : List Text }
                    }
         }
@@ -8216,6 +10334,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , recommended :
@@ -8240,6 +10366,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , required :
@@ -8264,6 +10398,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 }
@@ -8304,6 +10446,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , recommended :
@@ -8328,6 +10478,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , required :
@@ -8352,16 +10510,27 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 }
           , path = None { allowSelf : Bool, externalUriSchemes : List Text }
           , reference =
               None
-                { allowSelf : Bool
+                { allowLocal : Bool
+                , allowSelf : Bool
+                , externalUriPattern : Optional Text
                 , externalUriSchemes : List Text
                 , localPrefix : Text
                 }
+          , uniqueBy = None Text
           , when = None { field : Text, hasValue : List Text }
           }
     , boolean =
@@ -8393,6 +10562,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , recommended :
@@ -8417,6 +10594,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , required :
@@ -8441,6 +10626,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 }
@@ -8481,6 +10674,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , recommended :
@@ -8505,6 +10706,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , required :
@@ -8529,16 +10738,27 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 }
           , path = None { allowSelf : Bool, externalUriSchemes : List Text }
           , reference =
               None
-                { allowSelf : Bool
+                { allowLocal : Bool
+                , allowSelf : Bool
+                , externalUriPattern : Optional Text
                 , externalUriSchemes : List Text
                 , localPrefix : Text
                 }
+          , uniqueBy = None Text
           , when = None { field : Text, hasValue : List Text }
           }
     , bundlePath =
@@ -8570,6 +10790,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , recommended :
@@ -8594,6 +10822,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , required :
@@ -8618,6 +10854,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 }
@@ -8659,6 +10903,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , recommended :
@@ -8683,6 +10935,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , required :
@@ -8707,6 +10967,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 }
@@ -8714,10 +10982,13 @@
             { allowSelf = False, externalUriSchemes = [] : List Text }
           , reference =
               None
-                { allowSelf : Bool
+                { allowLocal : Bool
+                , allowSelf : Bool
+                , externalUriPattern : Optional Text
                 , externalUriSchemes : List Text
                 , localPrefix : Text
                 }
+          , uniqueBy = None Text
           , when = None { field : Text, hasValue : List Text }
           }
     , conditional =
@@ -8751,6 +11022,14 @@
                               { allowSelf : Bool
                               , externalUriSchemes : List Text
                               }
+                        , reference :
+                            Optional
+                              { allowLocal : Bool
+                              , allowSelf : Bool
+                              , externalUriPattern : Optional Text
+                              , externalUriSchemes : List Text
+                              , localPrefix : Text
+                              }
                         , when : Optional { field : Text, hasValue : List Text }
                         }
                   , recommended :
@@ -8777,6 +11056,14 @@
                               { allowSelf : Bool
                               , externalUriSchemes : List Text
                               }
+                        , reference :
+                            Optional
+                              { allowLocal : Bool
+                              , allowSelf : Bool
+                              , externalUriPattern : Optional Text
+                              , externalUriSchemes : List Text
+                              , localPrefix : Text
+                              }
                         , when : Optional { field : Text, hasValue : List Text }
                         }
                   , required :
@@ -8802,6 +11089,14 @@
                             Optional
                               { allowSelf : Bool
                               , externalUriSchemes : List Text
+                              }
+                        , reference :
+                            Optional
+                              { allowLocal : Bool
+                              , allowSelf : Bool
+                              , externalUriPattern : Optional Text
+                              , externalUriSchemes : List Text
+                              , localPrefix : Text
                               }
                         , when : Optional { field : Text, hasValue : List Text }
                         }
@@ -8846,6 +11141,14 @@
                               { allowSelf : Bool
                               , externalUriSchemes : List Text
                               }
+                        , reference :
+                            Optional
+                              { allowLocal : Bool
+                              , allowSelf : Bool
+                              , externalUriPattern : Optional Text
+                              , externalUriSchemes : List Text
+                              , localPrefix : Text
+                              }
                         , when : Optional { field : Text, hasValue : List Text }
                         }
                   , recommended :
@@ -8871,6 +11174,14 @@
                             Optional
                               { allowSelf : Bool
                               , externalUriSchemes : List Text
+                              }
+                        , reference :
+                            Optional
+                              { allowLocal : Bool
+                              , allowSelf : Bool
+                              , externalUriPattern : Optional Text
+                              , externalUriSchemes : List Text
+                              , localPrefix : Text
                               }
                         , when : Optional { field : Text, hasValue : List Text }
                         }
@@ -8898,6 +11209,14 @@
                               { allowSelf : Bool
                               , externalUriSchemes : List Text
                               }
+                        , reference :
+                            Optional
+                              { allowLocal : Bool
+                              , allowSelf : Bool
+                              , externalUriPattern : Optional Text
+                              , externalUriSchemes : List Text
+                              , localPrefix : Text
+                              }
                         , when : Optional { field : Text, hasValue : List Text }
                         }
                   }
@@ -8905,10 +11224,13 @@
                 Optional { allowSelf : Bool, externalUriSchemes : List Text }
             , reference :
                 Optional
-                  { allowSelf : Bool
+                  { allowLocal : Bool
+                  , allowSelf : Bool
+                  , externalUriPattern : Optional Text
                   , externalUriSchemes : List Text
                   , localPrefix : Text
                   }
+            , uniqueBy : Optional Text
             , when : Optional { field : Text, hasValue : List Text }
             }
           ) ->
@@ -8944,6 +11266,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , recommended :
@@ -8968,6 +11298,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , required :
@@ -8992,6 +11330,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 }
@@ -9032,6 +11378,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , recommended :
@@ -9056,6 +11410,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , required :
@@ -9080,16 +11442,27 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 }
           , path = None { allowSelf : Bool, externalUriSchemes : List Text }
           , reference =
               None
-                { allowSelf : Bool
+                { allowLocal : Bool
+                , allowSelf : Bool
+                , externalUriPattern : Optional Text
                 , externalUriSchemes : List Text
                 , localPrefix : Text
                 }
+          , uniqueBy = None Text
           , when = None { field : Text, hasValue : List Text }
           }
     , documentHandle =
@@ -9122,6 +11495,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , recommended :
@@ -9146,6 +11527,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , required :
@@ -9170,6 +11559,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 }
@@ -9212,6 +11609,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , recommended :
@@ -9236,6 +11641,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , required :
@@ -9260,16 +11673,27 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 }
           , path = None { allowSelf : Bool, externalUriSchemes : List Text }
           , reference =
               None
-                { allowSelf : Bool
+                { allowLocal : Bool
+                , allowSelf : Bool
+                , externalUriPattern : Optional Text
                 , externalUriSchemes : List Text
                 , localPrefix : Text
                 }
+          , uniqueBy = None Text
           , when = None { field : Text, hasValue : List Text }
           }
     , documented =
@@ -9302,6 +11726,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , recommended :
@@ -9326,6 +11758,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , required :
@@ -9350,6 +11790,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 }
@@ -9391,6 +11839,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , recommended :
@@ -9415,6 +11871,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , required :
@@ -9439,16 +11903,27 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 }
           , path = None { allowSelf : Bool, externalUriSchemes : List Text }
           , reference =
               None
-                { allowSelf : Bool
+                { allowLocal : Bool
+                , allowSelf : Bool
+                , externalUriPattern : Optional Text
                 , externalUriSchemes : List Text
                 , localPrefix : Text
                 }
+          , uniqueBy = None Text
           , when = None { field : Text, hasValue : List Text }
           }
     , enum =
@@ -9481,6 +11956,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , recommended :
@@ -9505,6 +11988,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , required :
@@ -9529,6 +12020,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 }
@@ -9570,6 +12069,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , recommended :
@@ -9594,6 +12101,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , required :
@@ -9618,16 +12133,27 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 }
           , path = None { allowSelf : Bool, externalUriSchemes : List Text }
           , reference =
               None
-                { allowSelf : Bool
+                { allowLocal : Bool
+                , allowSelf : Bool
+                , externalUriPattern : Optional Text
                 , externalUriSchemes : List Text
                 , localPrefix : Text
                 }
+          , uniqueBy = None Text
           , when = None { field : Text, hasValue : List Text }
           }
     , humanActor =
@@ -9659,6 +12185,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , recommended :
@@ -9683,6 +12217,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , required :
@@ -9707,6 +12249,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 }
@@ -9747,6 +12297,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , recommended :
@@ -9771,6 +12329,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , required :
@@ -9795,16 +12361,27 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 }
           , path = None { allowSelf : Bool, externalUriSchemes : List Text }
           , reference =
               None
-                { allowSelf : Bool
+                { allowLocal : Bool
+                , allowSelf : Bool
+                , externalUriPattern : Optional Text
                 , externalUriSchemes : List Text
                 , localPrefix : Text
                 }
+          , uniqueBy = None Text
           , when = None { field : Text, hasValue : List Text }
           }
     , integer =
@@ -9836,6 +12413,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , recommended :
@@ -9860,6 +12445,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , required :
@@ -9884,6 +12477,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 }
@@ -9924,6 +12525,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , recommended :
@@ -9948,6 +12557,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , required :
@@ -9972,16 +12589,27 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 }
           , path = None { allowSelf : Bool, externalUriSchemes : List Text }
           , reference =
               None
-                { allowSelf : Bool
+                { allowLocal : Bool
+                , allowSelf : Bool
+                , externalUriPattern : Optional Text
                 , externalUriSchemes : List Text
                 , localPrefix : Text
                 }
+          , uniqueBy = None Text
           , when = None { field : Text, hasValue : List Text }
           }
     , list =
@@ -10013,6 +12641,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , recommended :
@@ -10037,6 +12673,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , required :
@@ -10061,6 +12705,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 }
@@ -10102,6 +12754,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , recommended :
@@ -10126,6 +12786,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , required :
@@ -10150,16 +12818,27 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 }
           , path = None { allowSelf : Bool, externalUriSchemes : List Text }
           , reference =
               None
-                { allowSelf : Bool
+                { allowLocal : Bool
+                , allowSelf : Bool
+                , externalUriPattern : Optional Text
                 , externalUriSchemes : List Text
                 , localPrefix : Text
                 }
+          , uniqueBy = None Text
           , when = None { field : Text, hasValue : List Text }
           }
     , localOrExternalPath =
@@ -10192,6 +12871,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , recommended :
@@ -10216,6 +12903,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , required :
@@ -10240,6 +12935,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 }
@@ -10281,6 +12984,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , recommended :
@@ -10305,6 +13016,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , required :
@@ -10329,16 +13048,27 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 }
           , path = Some { allowSelf = False, externalUriSchemes = _ }
           , reference =
               None
-                { allowSelf : Bool
+                { allowLocal : Bool
+                , allowSelf : Bool
+                , externalUriPattern : Optional Text
                 , externalUriSchemes : List Text
                 , localPrefix : Text
                 }
+          , uniqueBy = None Text
           , when = None { field : Text, hasValue : List Text }
           }
     , localOrExternalReference =
@@ -10372,6 +13102,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , recommended :
@@ -10396,6 +13134,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , required :
@@ -10420,6 +13166,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 }
@@ -10461,6 +13215,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , recommended :
@@ -10485,6 +13247,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , required :
@@ -10509,12 +13279,26 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 }
           , path = None { allowSelf : Bool, externalUriSchemes : List Text }
           , reference = Some
-            { allowSelf = False, externalUriSchemes = _, localPrefix = _@1 }
+            { allowLocal = True
+            , allowSelf = False
+            , externalUriPattern = None Text
+            , externalUriSchemes = _
+            , localPrefix = _@1
+            }
+          , uniqueBy = None Text
           , when = None { field : Text, hasValue : List Text }
           }
     , localReference =
@@ -10547,6 +13331,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , recommended :
@@ -10571,6 +13363,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , required :
@@ -10595,6 +13395,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 }
@@ -10636,6 +13444,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , recommended :
@@ -10660,6 +13476,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , required :
@@ -10684,15 +13508,26 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 }
           , path = None { allowSelf : Bool, externalUriSchemes : List Text }
           , reference = Some
-            { allowSelf = False
+            { allowLocal = True
+            , allowSelf = False
+            , externalUriPattern = None Text
             , externalUriSchemes = [] : List Text
             , localPrefix = _
             }
+          , uniqueBy = None Text
           , when = None { field : Text, hasValue : List Text }
           }
     , nonNegativeInteger =
@@ -10724,6 +13559,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , recommended :
@@ -10748,6 +13591,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , required :
@@ -10772,6 +13623,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 }
@@ -10812,6 +13671,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , recommended :
@@ -10836,6 +13703,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , required :
@@ -10860,16 +13735,27 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 }
           , path = None { allowSelf : Bool, externalUriSchemes : List Text }
           , reference =
               None
-                { allowSelf : Bool
+                { allowLocal : Bool
+                , allowSelf : Bool
+                , externalUriPattern : Optional Text
                 , externalUriSchemes : List Text
                 , localPrefix : Text
                 }
+          , uniqueBy = None Text
           , when = None { field : Text, hasValue : List Text }
           }
     , plain =
@@ -10901,6 +13787,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , recommended :
@@ -10925,6 +13819,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , required :
@@ -10949,6 +13851,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 }
@@ -10990,6 +13900,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , recommended :
@@ -11014,6 +13932,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , required :
@@ -11038,16 +13964,27 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 }
           , path = None { allowSelf : Bool, externalUriSchemes : List Text }
           , reference =
               None
-                { allowSelf : Bool
+                { allowLocal : Bool
+                , allowSelf : Bool
+                , externalUriPattern : Optional Text
                 , externalUriSchemes : List Text
                 , localPrefix : Text
                 }
+          , uniqueBy = None Text
           , when = None { field : Text, hasValue : List Text }
           }
     , record =
@@ -11075,6 +14012,14 @@
                   , path :
                       Optional
                         { allowSelf : Bool, externalUriSchemes : List Text }
+                  , reference :
+                      Optional
+                        { allowLocal : Bool
+                        , allowSelf : Bool
+                        , externalUriPattern : Optional Text
+                        , externalUriSchemes : List Text
+                        , localPrefix : Text
+                        }
                   , when : Optional { field : Text, hasValue : List Text }
                   }
             , recommended :
@@ -11099,6 +14044,14 @@
                   , path :
                       Optional
                         { allowSelf : Bool, externalUriSchemes : List Text }
+                  , reference :
+                      Optional
+                        { allowLocal : Bool
+                        , allowSelf : Bool
+                        , externalUriPattern : Optional Text
+                        , externalUriSchemes : List Text
+                        , localPrefix : Text
+                        }
                   , when : Optional { field : Text, hasValue : List Text }
                   }
             , required :
@@ -11123,6 +14076,14 @@
                   , path :
                       Optional
                         { allowSelf : Bool, externalUriSchemes : List Text }
+                  , reference :
+                      Optional
+                        { allowLocal : Bool
+                        , allowSelf : Bool
+                        , externalUriPattern : Optional Text
+                        , externalUriSchemes : List Text
+                        , localPrefix : Text
+                        }
                   , when : Optional { field : Text, hasValue : List Text }
                   }
             }
@@ -11154,6 +14115,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , recommended :
@@ -11178,6 +14147,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , required :
@@ -11202,6 +14179,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 }
@@ -11223,10 +14208,13 @@
           , path = None { allowSelf : Bool, externalUriSchemes : List Text }
           , reference =
               None
-                { allowSelf : Bool
+                { allowLocal : Bool
+                , allowSelf : Bool
+                , externalUriPattern : Optional Text
                 , externalUriSchemes : List Text
                 , localPrefix : Text
                 }
+          , uniqueBy = None Text
           , when = None { field : Text, hasValue : List Text }
           }
     , recordList =
@@ -11254,6 +14242,14 @@
                   , path :
                       Optional
                         { allowSelf : Bool, externalUriSchemes : List Text }
+                  , reference :
+                      Optional
+                        { allowLocal : Bool
+                        , allowSelf : Bool
+                        , externalUriPattern : Optional Text
+                        , externalUriSchemes : List Text
+                        , localPrefix : Text
+                        }
                   , when : Optional { field : Text, hasValue : List Text }
                   }
             , recommended :
@@ -11278,6 +14274,14 @@
                   , path :
                       Optional
                         { allowSelf : Bool, externalUriSchemes : List Text }
+                  , reference :
+                      Optional
+                        { allowLocal : Bool
+                        , allowSelf : Bool
+                        , externalUriPattern : Optional Text
+                        , externalUriSchemes : List Text
+                        , localPrefix : Text
+                        }
                   , when : Optional { field : Text, hasValue : List Text }
                   }
             , required :
@@ -11302,6 +14306,14 @@
                   , path :
                       Optional
                         { allowSelf : Bool, externalUriSchemes : List Text }
+                  , reference :
+                      Optional
+                        { allowLocal : Bool
+                        , allowSelf : Bool
+                        , externalUriPattern : Optional Text
+                        , externalUriSchemes : List Text
+                        , localPrefix : Text
+                        }
                   , when : Optional { field : Text, hasValue : List Text }
                   }
             }
@@ -11348,6 +14360,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , recommended :
@@ -11372,6 +14392,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , required :
@@ -11396,16 +14424,27 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 }
           , path = None { allowSelf : Bool, externalUriSchemes : List Text }
           , reference =
               None
-                { allowSelf : Bool
+                { allowLocal : Bool
+                , allowSelf : Bool
+                , externalUriPattern : Optional Text
                 , externalUriSchemes : List Text
                 , localPrefix : Text
                 }
+          , uniqueBy = None Text
           , when = None { field : Text, hasValue : List Text }
           }
     , recordOrList =
@@ -11433,6 +14472,14 @@
                   , path :
                       Optional
                         { allowSelf : Bool, externalUriSchemes : List Text }
+                  , reference :
+                      Optional
+                        { allowLocal : Bool
+                        , allowSelf : Bool
+                        , externalUriPattern : Optional Text
+                        , externalUriSchemes : List Text
+                        , localPrefix : Text
+                        }
                   , when : Optional { field : Text, hasValue : List Text }
                   }
             , recommended :
@@ -11457,6 +14504,14 @@
                   , path :
                       Optional
                         { allowSelf : Bool, externalUriSchemes : List Text }
+                  , reference :
+                      Optional
+                        { allowLocal : Bool
+                        , allowSelf : Bool
+                        , externalUriPattern : Optional Text
+                        , externalUriSchemes : List Text
+                        , localPrefix : Text
+                        }
                   , when : Optional { field : Text, hasValue : List Text }
                   }
             , required :
@@ -11481,6 +14536,14 @@
                   , path :
                       Optional
                         { allowSelf : Bool, externalUriSchemes : List Text }
+                  , reference :
+                      Optional
+                        { allowLocal : Bool
+                        , allowSelf : Bool
+                        , externalUriPattern : Optional Text
+                        , externalUriSchemes : List Text
+                        , localPrefix : Text
+                        }
                   , when : Optional { field : Text, hasValue : List Text }
                   }
             }
@@ -11507,10 +14570,13 @@
           , path = None { allowSelf : Bool, externalUriSchemes : List Text }
           , reference =
               None
-                { allowSelf : Bool
+                { allowLocal : Bool
+                , allowSelf : Bool
+                , externalUriPattern : Optional Text
                 , externalUriSchemes : List Text
                 , localPrefix : Text
                 }
+          , uniqueBy = None Text
           , when = None { field : Text, hasValue : List Text }
           }
     , rfc3339Utc =
@@ -11542,6 +14608,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , recommended :
@@ -11566,6 +14640,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , required :
@@ -11590,6 +14672,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 }
@@ -11630,6 +14720,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , recommended :
@@ -11654,6 +14752,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , required :
@@ -11678,16 +14784,27 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 }
           , path = None { allowSelf : Bool, externalUriSchemes : List Text }
           , reference =
               None
-                { allowSelf : Bool
+                { allowLocal : Bool
+                , allowSelf : Bool
+                , externalUriPattern : Optional Text
                 , externalUriSchemes : List Text
                 , localPrefix : Text
                 }
+          , uniqueBy = None Text
           , when = None { field : Text, hasValue : List Text }
           }
     , scalar =
@@ -11719,6 +14836,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , recommended :
@@ -11743,6 +14868,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , required :
@@ -11767,6 +14900,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 }
@@ -11808,6 +14949,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , recommended :
@@ -11832,6 +14981,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , required :
@@ -11856,16 +15013,27 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 }
           , path = None { allowSelf : Bool, externalUriSchemes : List Text }
           , reference =
               None
-                { allowSelf : Bool
+                { allowLocal : Bool
+                , allowSelf : Bool
+                , externalUriPattern : Optional Text
                 , externalUriSchemes : List Text
                 , localPrefix : Text
                 }
+          , uniqueBy = None Text
           , when = None { field : Text, hasValue : List Text }
           }
     , uri =
@@ -11897,6 +15065,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , recommended :
@@ -11921,6 +15097,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , required :
@@ -11945,6 +15129,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 }
@@ -11985,6 +15177,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , recommended :
@@ -12009,6 +15209,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , required :
@@ -12033,16 +15241,27 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 }
           , path = None { allowSelf : Bool, externalUriSchemes : List Text }
           , reference =
               None
-                { allowSelf : Bool
+                { allowLocal : Bool
+                , allowSelf : Bool
+                , externalUriPattern : Optional Text
                 , externalUriSchemes : List Text
                 , localPrefix : Text
                 }
+          , uniqueBy = None Text
           , when = None { field : Text, hasValue : List Text }
           }
     , uriWithScheme =
@@ -12075,6 +15294,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , recommended :
@@ -12099,6 +15326,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , required :
@@ -12123,6 +15358,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 }
@@ -12165,6 +15408,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , recommended :
@@ -12189,6 +15440,14 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 , required :
@@ -12213,16 +15472,27 @@
                       , path :
                           Optional
                             { allowSelf : Bool, externalUriSchemes : List Text }
+                      , reference :
+                          Optional
+                            { allowLocal : Bool
+                            , allowSelf : Bool
+                            , externalUriPattern : Optional Text
+                            , externalUriSchemes : List Text
+                            , localPrefix : Text
+                            }
                       , when : Optional { field : Text, hasValue : List Text }
                       }
                 }
           , path = None { allowSelf : Bool, externalUriSchemes : List Text }
           , reference =
               None
-                { allowSelf : Bool
+                { allowLocal : Bool
+                , allowSelf : Bool
+                , externalUriPattern : Optional Text
                 , externalUriSchemes : List Text
                 , localPrefix : Text
                 }
+          , uniqueBy = None Text
           , when = None { field : Text, hasValue : List Text }
           }
     }
@@ -12246,6 +15516,14 @@
               | UriWithScheme : Text
               >.Actor
           , path = None { allowSelf : Bool, externalUriSchemes : List Text }
+          , reference =
+              None
+                { allowLocal : Bool
+                , allowSelf : Bool
+                , externalUriPattern : Optional Text
+                , externalUriSchemes : List Text
+                , localPrefix : Text
+                }
           , when = None { field : Text, hasValue : List Text }
           }
     , boolean =
@@ -12267,6 +15545,14 @@
               | UriWithScheme : Text
               >.Boolean
           , path = None { allowSelf : Bool, externalUriSchemes : List Text }
+          , reference =
+              None
+                { allowLocal : Bool
+                , allowSelf : Bool
+                , externalUriPattern : Optional Text
+                , externalUriSchemes : List Text
+                , localPrefix : Text
+                }
           , when = None { field : Text, hasValue : List Text }
           }
     , bundlePath =
@@ -12290,6 +15576,14 @@
                 >
           , path = Some
             { allowSelf = False, externalUriSchemes = [] : List Text }
+          , reference =
+              None
+                { allowLocal : Bool
+                , allowSelf : Bool
+                , externalUriPattern : Optional Text
+                , externalUriSchemes : List Text
+                , localPrefix : Text
+                }
           , when = None { field : Text, hasValue : List Text }
           }
     , conditional =
@@ -12313,6 +15607,14 @@
                   >
             , path :
                 Optional { allowSelf : Bool, externalUriSchemes : List Text }
+            , reference :
+                Optional
+                  { allowLocal : Bool
+                  , allowSelf : Bool
+                  , externalUriPattern : Optional Text
+                  , externalUriSchemes : List Text
+                  , localPrefix : Text
+                  }
             , when : Optional { field : Text, hasValue : List Text }
             }
           ) ->
@@ -12338,6 +15640,14 @@
               | UriWithScheme : Text
               >.Date
           , path = None { allowSelf : Bool, externalUriSchemes : List Text }
+          , reference =
+              None
+                { allowLocal : Bool
+                , allowSelf : Bool
+                , externalUriPattern : Optional Text
+                , externalUriSchemes : List Text
+                , localPrefix : Text
+                }
           , when = None { field : Text, hasValue : List Text }
           }
     , documentHandle =
@@ -12362,6 +15672,14 @@
                   _
               )
           , path = None { allowSelf : Bool, externalUriSchemes : List Text }
+          , reference =
+              None
+                { allowLocal : Bool
+                , allowSelf : Bool
+                , externalUriPattern : Optional Text
+                , externalUriSchemes : List Text
+                , localPrefix : Text
+                }
           , when = None { field : Text, hasValue : List Text }
           }
     , documented =
@@ -12385,6 +15703,14 @@
                 | UriWithScheme : Text
                 >
           , path = None { allowSelf : Bool, externalUriSchemes : List Text }
+          , reference =
+              None
+                { allowLocal : Bool
+                , allowSelf : Bool
+                , externalUriPattern : Optional Text
+                , externalUriSchemes : List Text
+                , localPrefix : Text
+                }
           , when = None { field : Text, hasValue : List Text }
           }
     , enum =
@@ -12408,6 +15734,14 @@
                 | UriWithScheme : Text
                 >
           , path = None { allowSelf : Bool, externalUriSchemes : List Text }
+          , reference =
+              None
+                { allowLocal : Bool
+                , allowSelf : Bool
+                , externalUriPattern : Optional Text
+                , externalUriSchemes : List Text
+                , localPrefix : Text
+                }
           , when = None { field : Text, hasValue : List Text }
           }
     , humanActor =
@@ -12429,6 +15763,14 @@
               | UriWithScheme : Text
               >.HumanActor
           , path = None { allowSelf : Bool, externalUriSchemes : List Text }
+          , reference =
+              None
+                { allowLocal : Bool
+                , allowSelf : Bool
+                , externalUriPattern : Optional Text
+                , externalUriSchemes : List Text
+                , localPrefix : Text
+                }
           , when = None { field : Text, hasValue : List Text }
           }
     , integer =
@@ -12450,6 +15792,14 @@
               | UriWithScheme : Text
               >.Integer
           , path = None { allowSelf : Bool, externalUriSchemes : List Text }
+          , reference =
+              None
+                { allowLocal : Bool
+                , allowSelf : Bool
+                , externalUriPattern : Optional Text
+                , externalUriSchemes : List Text
+                , localPrefix : Text
+                }
           , when = None { field : Text, hasValue : List Text }
           }
     , list =
@@ -12472,6 +15822,14 @@
                 | UriWithScheme : Text
                 >
           , path = None { allowSelf : Bool, externalUriSchemes : List Text }
+          , reference =
+              None
+                { allowLocal : Bool
+                , allowSelf : Bool
+                , externalUriPattern : Optional Text
+                , externalUriSchemes : List Text
+                , localPrefix : Text
+                }
           , when = None { field : Text, hasValue : List Text }
           }
     , localOrExternalPath =
@@ -12495,6 +15853,14 @@
                 | UriWithScheme : Text
                 >
           , path = Some { allowSelf = False, externalUriSchemes = _ }
+          , reference =
+              None
+                { allowLocal : Bool
+                , allowSelf : Bool
+                , externalUriPattern : Optional Text
+                , externalUriSchemes : List Text
+                , localPrefix : Text
+                }
           , when = None { field : Text, hasValue : List Text }
           }
     , nonNegativeInteger =
@@ -12516,6 +15882,14 @@
               | UriWithScheme : Text
               >.NonNegativeInteger
           , path = None { allowSelf : Bool, externalUriSchemes : List Text }
+          , reference =
+              None
+                { allowLocal : Bool
+                , allowSelf : Bool
+                , externalUriPattern : Optional Text
+                , externalUriSchemes : List Text
+                , localPrefix : Text
+                }
           , when = None { field : Text, hasValue : List Text }
           }
     , plain =
@@ -12538,6 +15912,14 @@
                 | UriWithScheme : Text
                 >
           , path = None { allowSelf : Bool, externalUriSchemes : List Text }
+          , reference =
+              None
+                { allowLocal : Bool
+                , allowSelf : Bool
+                , externalUriPattern : Optional Text
+                , externalUriSchemes : List Text
+                , localPrefix : Text
+                }
           , when = None { field : Text, hasValue : List Text }
           }
     , rfc3339Utc =
@@ -12559,6 +15941,14 @@
               | UriWithScheme : Text
               >.Rfc3339Utc
           , path = None { allowSelf : Bool, externalUriSchemes : List Text }
+          , reference =
+              None
+                { allowLocal : Bool
+                , allowSelf : Bool
+                , externalUriPattern : Optional Text
+                , externalUriSchemes : List Text
+                , localPrefix : Text
+                }
           , when = None { field : Text, hasValue : List Text }
           }
     , scalar =
@@ -12581,6 +15971,14 @@
                 | UriWithScheme : Text
                 >
           , path = None { allowSelf : Bool, externalUriSchemes : List Text }
+          , reference =
+              None
+                { allowLocal : Bool
+                , allowSelf : Bool
+                , externalUriPattern : Optional Text
+                , externalUriSchemes : List Text
+                , localPrefix : Text
+                }
           , when = None { field : Text, hasValue : List Text }
           }
     , uri =
@@ -12602,6 +16000,14 @@
               | UriWithScheme : Text
               >.Uri
           , path = None { allowSelf : Bool, externalUriSchemes : List Text }
+          , reference =
+              None
+                { allowLocal : Bool
+                , allowSelf : Bool
+                , externalUriPattern : Optional Text
+                , externalUriSchemes : List Text
+                , localPrefix : Text
+                }
           , when = None { field : Text, hasValue : List Text }
           }
     , uriWithScheme =
@@ -12626,6 +16032,14 @@
                   _
               )
           , path = None { allowSelf : Bool, externalUriSchemes : List Text }
+          , reference =
+              None
+                { allowLocal : Bool
+                , allowSelf : Bool
+                , externalUriPattern : Optional Text
+                , externalUriSchemes : List Text
+                , localPrefix : Text
+                }
           , when = None { field : Text, hasValue : List Text }
           }
     }

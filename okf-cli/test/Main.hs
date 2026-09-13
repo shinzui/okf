@@ -968,18 +968,18 @@ testProfileSourceResolutionRendering =
   let rendered = renderProfileSourceResolution sampleProfileSourceResolutions FreshnessNotChecked
    in all
         (`Text.isInfixOf` rendered)
-        [ "okf-profiles v0.10.0 (pinned)",
+        [ "okf-profiles v0.14.0 (pinned)",
           "[built-in default]",
           "[env: OKF_PROFILE_REGISTRIES]",
           "failed (import-failure)",
-          "Pinned catalogue: okf-profiles v0.10.0",
+          "Pinned catalogue: okf-profiles v0.14.0",
           "1. --registry flag (repeatable)",
           "lookup fails closed."
         ]
 
 testProfileSourcesJsonShape :: Bool
 testProfileSourcesJsonShape =
-  profileSourcesJson sampleProfileSourceResolutions (FreshnessOutdated "v0.10.0" "v0.11.0")
+  profileSourcesJson sampleProfileSourceResolutions (FreshnessOutdated "v0.14.0" "v0.15.0")
     == Aeson.object
       [ "sources"
           Aeson..= [ Aeson.object
@@ -1009,13 +1009,13 @@ testProfileSourcesJsonShape =
                              ]
                        ]
                    ],
-        "pinnedVersion" Aeson..= Just ("v0.10.0" :: Text.Text),
+        "pinnedVersion" Aeson..= Just ("v0.14.0" :: Text.Text),
         "freshness"
           Aeson..= Aeson.object
             [ "status" Aeson..= ("outdated" :: Text.Text),
-              "pinnedVersion" Aeson..= ("v0.10.0" :: Text.Text),
-              "latestVersion" Aeson..= ("v0.11.0" :: Text.Text),
-              "refreshCommand" Aeson..= ("scripts/refresh-default-registry.sh v0.11.0" :: Text.Text)
+              "pinnedVersion" Aeson..= ("v0.14.0" :: Text.Text),
+              "latestVersion" Aeson..= ("v0.15.0" :: Text.Text),
+              "refreshCommand" Aeson..= ("scripts/refresh-default-registry.sh v0.15.0" :: Text.Text)
             ],
         "precedence" Aeson..= profileSourcePrecedenceFixture
       ]
@@ -1040,7 +1040,7 @@ testProfileReleaseTagParsing =
     && parseReleaseVersionTag "v0.9.3" == Just (ReleaseVersion 0 9 3)
     && parseReleaseVersionTag "0.10.0" == Nothing
     && parseReleaseVersionTag "v0.10" == Nothing
-    && pinnedRegistryTag defaultRegistryReference == Just "v0.10.0"
+    && pinnedRegistryTag defaultRegistryReference == Just "v0.14.0"
     && latestReleaseTag
       "aaa\trefs/tags/v0.9.3\nbbb\trefs/tags/not-a-version\nccc\trefs/tags/v0.10.0\n"
       == Just "v0.10.0"

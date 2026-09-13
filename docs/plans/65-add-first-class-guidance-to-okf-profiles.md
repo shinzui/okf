@@ -58,6 +58,9 @@ This section must always reflect the actual current state of the work.
 - [x] (2026-09-13 14:50Z) Closed the follow-up documentation audit: expanded the README
   contract, brought both current-schema Dhall examples up to date, recorded the pure-decoder
   width-fallback hazard in ADR 11, and corrected the legacy-upgrade Haddock.
+- [x] (2026-09-13 15:19Z) Clarified the downstream handoff: adopting the released guidance
+  schema in `mori://shinzui/okf-profiles` and designing a new assurance profile are separate
+  future ExecPlans, and the internal QA fixture does not settle the latter's public contract.
 - [x] (2026-09-13 14:02Z) Established a clean baseline: the constructor scan found only the
   expected core and CLI pattern matches, and `cabal test all` passed both `okf-core-test` and
   `okf-cli-test` before implementation.
@@ -137,11 +140,24 @@ Record every decision made while working on the plan.
   Date: 2026-09-13
 
 - Decision: Use a QA-runbook descriptor with `API` and `Feature` types as the focused
-  acceptance fixture, but leave publication of the actual shared QA profile to
-  `mori://shinzui/okf-profiles` after an okf release containing this schema.
+  acceptance fixture, but do not publish it as a shared profile from this repository;
+  `mori://shinzui/okf-profiles` owns any decision to publish a related catalog profile after an
+  okf release containing this schema.
   Rationale: okf owns the generic descriptor language and keeps its tests offline; the catalog
   repository owns shared house conventions. The fixture proves the requested Hurl and
   event-stream use case without reversing that dependency.
+  Date: 2026-09-13
+
+- Decision: Split the downstream catalog work into two future ExecPlans. The first only adopts
+  the released okf schema, ports guidance to existing catalog profiles where appropriate,
+  regenerates their documentation, and closes catalog metadata drift. A distinct later plan
+  will design and publish any new assurance profile after its purpose, name, concept types,
+  structured rules, evidence model, and guidance have been worked through. The `qa-runbooks`
+  fixture in this repository is an illustrative schema test and does not choose that public
+  contract or its export name.
+  Rationale: schema adoption is a bounded compatibility update that can ship as soon as okf is
+  released. Combining it with an immature profile would either delay that update or turn the
+  fixture's deliberately minimal vocabulary into a public convention without adequate design.
   Date: 2026-09-13
 
 - Decision: Refuse to run registry expressions containing post-0.7 descriptor record members
@@ -185,6 +201,11 @@ missed: the top-level README, two annotated current-schema examples in the profi
 compatibility architecture record, and the legacy-upgrade Haddock. Those surfaces now describe
 the guidance contract, typecheck against the current schema, and preserve the decoder lesson as
 durable maintenance guidance.
+
+The downstream catalog handoff is intentionally split. `mori://shinzui/okf-profiles` can adopt
+the released schema and improve existing profile guidance independently; a new assurance profile
+will receive its own design and ExecPlan later. No public name, export, concept taxonomy, or
+evidence contract is implied by this repository's `qa-runbooks` acceptance fixture.
 
 
 ## Context and Orientation
@@ -656,5 +677,14 @@ decoding, `aeson` for JSON, and `text` for multiline prose. Hurl and an event st
 in the QA-runbook example; neither becomes an okf dependency and neither is invoked by tests.
 
 The shared catalog at `mori://shinzui/okf-profiles` is a downstream consumer, not an
-implementation dependency. After okf publishes the new schema, that project can pin the release
-and publish the actual `assurance.qaRunbooks` profile in a separate ExecPlan.
+implementation dependency. After okf publishes the new schema, one catalog ExecPlan can pin the
+release, port guidance to appropriate existing profiles, regenerate their documentation, and
+repair catalog metadata drift without adding a profile. A separate later ExecPlan may publish
+a new assurance profile after its artifact contract has been designed; this plan deliberately
+does not choose its name or export.
+
+
+Revision note (2026-09-13): Split the downstream `okf-profiles` handoff into an immediate schema
+adoption plan and a later new-profile design plan at the user's request. This prevents the focused
+`qa-runbooks` test fixture from prematurely defining a public catalog profile that still needs
+domain design.

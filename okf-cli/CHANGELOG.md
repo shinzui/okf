@@ -7,6 +7,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.9.0.0] - 2026-09-13
+
 ### Added
 
 - `okf profile show` renders optional profile and type guidance as stable
@@ -19,6 +21,11 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - **Breaking:** requires the coordinated `okf-core` release whose public
   profile schema and Haskell records add `guidance`; older descriptor values
   remain accepted by okf-core's frozen compatibility decoder.
+- Requires `okf-core ^>=0.9.0.0`.
+- `okf profile list` and `okf profile sources` report the built-in
+  `mori://shinzui/okf-profiles` v0.14.0 catalogue (thirteen profiles, up from
+  ten), including `assurance.reviews`, `assurance.failureModes`, and
+  `documentation.userDocumentation`.
 
 ## [0.8.0.0] - 2026-08-19
 

@@ -7,6 +7,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.9.0.0] - 2026-09-13
+
 ### Added
 
 - `ProfileSpec.guidance` and `TypeRule.guidance` carry optional multiline
@@ -20,6 +22,9 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   and `TypeRule` record types gain `guidance`. Completion defaults supply
   `None Text`; a complete frozen 0.8.0.0 decoder upgrades old descriptors with
   `Nothing` in both scopes and is registered for file and registry decoding.
+- `defaultRegistryReference` now pins `mori://shinzui/okf-profiles` v0.14.0
+  (from v0.10.0); the offline catalogue conformance fixture decodes all
+  thirteen published profiles.
 
 ## [0.8.0.0] - 2026-08-19
 
