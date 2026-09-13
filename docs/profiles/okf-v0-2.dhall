@@ -64,6 +64,7 @@ let trustMembers =
 in    { name = "okf-v0-2"
       , description = Some
           "Reference profile for the OKF v0.2 frontmatter families: provenance, trust, lifecycle, and sources."
+      , guidance = None Text
       , okfVersion = "0.2"
       , frontmatter =
         { required =

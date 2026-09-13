@@ -9,13 +9,15 @@
 -- `idPrefix = Some "ADR"` means concepts governed by this rule are expected to
 -- carry a handle of the form `ADR-<number>` in the profile's ID field.
 --
--- `description` explains, in prose, what this concept type is for. It is
--- documentary only and is never checked against a bundle.
+-- `description` concisely explains what this concept type is for. `guidance` is
+-- multiline Markdown adding authoring procedure specific to this type. Neither
+-- is checked against a bundle, and guidance is never executed by okf.
 let FrontmatterRules = ./FrontmatterRules.dhall
 
 in
 { type : Text
 , description : Optional Text
+, guidance : Optional Text
 , frontmatter : FrontmatterRules
 , pathPattern : Optional Text
 , resourceScheme : Optional Text

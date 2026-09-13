@@ -8,6 +8,7 @@ let FieldRule = ../../../dhall/FieldRule.dhall
 
 in    { name = "type-frontmatter"
       , description = Some "Exercises profile-wide and type-specific field rules."
+      , guidance = None Text
       , okfVersion = "0.1"
       , frontmatter =
         { required =

@@ -1861,6 +1861,7 @@ renderProfileDetail
   ProfileSpec
     { name,
       description,
+      guidance,
       okfVersion,
       frontmatter,
       allowUnknownTypes,
@@ -1871,13 +1872,15 @@ renderProfileDetail
     } =
     [ "export: " <> displayExport exportPath,
       "name: " <> name,
-      "description: " <> renderOptional description,
-      "okfVersion: " <> okfVersion,
-      "requireBundleVersion: " <> renderOptional requireBundleVersion,
-      "allowUnknownTypes: " <> renderFlag allowUnknownTypes,
-      "allowUnknownFields: " <> renderFlag allowUnknownFields,
-      "idField: " <> renderOptional idField
+      "description: " <> renderOptional description
     ]
+      <> renderGuidance "" guidance
+      <> [ "okfVersion: " <> okfVersion,
+           "requireBundleVersion: " <> renderOptional requireBundleVersion,
+           "allowUnknownTypes: " <> renderFlag allowUnknownTypes,
+           "allowUnknownFields: " <> renderFlag allowUnknownFields,
+           "idField: " <> renderOptional idField
+         ]
       <> renderPresenceLists "" frontmatter
       <> concatMap renderTypeRule typeRules
     where
@@ -1943,6 +1946,7 @@ renderProfileDetail
         TypeRule
           { type_ = ruleType,
             description = ruleDescription,
+            guidance = ruleGuidance,
             frontmatter = typeFrontmatter,
             pathPattern,
             resourceScheme,
@@ -1954,6 +1958,7 @@ renderProfileDetail
             "type: " <> ruleType,
             "  description: " <> renderOptional ruleDescription
           ]
+            <> renderGuidance "  " ruleGuidance
             <> renderPresenceLists "  " typeFrontmatter
             <> [ "  pathPattern: " <> renderOptional pathPattern,
                  "  resourceScheme: " <> renderOptional resourceScheme,
@@ -1964,6 +1969,13 @@ renderProfileDetail
 
       renderFlag True = "true"
       renderFlag False = "false"
+      renderGuidance indent prose =
+        case trimOuterBlankLines (maybe [] Text.lines prose) of
+          [] -> [indent <> "guidance: (none)"]
+          proseLines ->
+            (indent <> "guidance:") : map (indent <>) (map ("  " <>) proseLines)
+      trimOuterBlankLines = List.dropWhileEnd isBlank . dropWhile isBlank
+      isBlank = Text.null . Text.strip
       renderOptional = fromMaybe "(none)"
       renderList [] = "(none)"
       renderList values = Text.intercalate ", " values

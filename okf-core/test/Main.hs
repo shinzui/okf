@@ -3,11 +3,13 @@
 module Main (main) where
 
 import Data.Aeson (object, toJSON, (.=))
+import Data.Aeson qualified as Aeson
+import Data.Aeson.KeyMap qualified as KeyMap
 import Data.Foldable (for_, toList)
 import Data.List qualified as List
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (catMaybes)
+import Data.Maybe (catMaybes, maybeToList)
 import Data.Set qualified as Set
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text.IO
@@ -162,6 +164,9 @@ main = do
         testIO "loadProfileFile preserves the frozen condition-aware schema" testLoadConditionalCompatibilityFixture,
         testIO "loadProfileFile preserves the frozen reference-aware schema" testLoadReferenceCompatibilityFixture,
         testIO "loadProfileFile preserves the complete 0.7.0.0 descriptor schema" testLoadPreNestedReferenceCompatibilityFixture,
+        testIO "loadProfileFile and registry decoding preserve the complete 0.8.0.0 descriptor schema" testLoadPreGuidanceCompatibilityFixture,
+        testIO "loadProfileFile and JSON preserve multiline guidance" testLoadGuidanceFixture,
+        testIO "guidance does not affect profile validation" testGuidanceDoesNotAffectValidation,
         testIO "every frozen generation fixture compiles, not merely decodes" testFrozenFixturesCompile,
         testIO "loadProfileFile preserves the frozen pre-bundle-version schema" testLoadPreBundleVersionCompatibilityFixture,
         testIO "loadProfileFile preserves the frozen pre-path schema" testLoadPrePathCompatibilityFixture,
@@ -214,6 +219,7 @@ main = do
         test "profile documentation renders a required bundle version" testProfileDocumentationRequiredBundleVersion,
         testIO "profile documentation renders one concept per declared type" testProfileDocumentationTypeConcept,
         testIO "profile documentation renders inherited rules for a bare type" testProfileDocumentationInheritedRules,
+        testIO "profile documentation renders effective guidance without frontmatter leakage" testProfileDocumentationGuidance,
         testIO "generated profile documentation round-trips through serialize and parse" testProfileDocumentationRoundTrip,
         testIO "generated profile documentation validates permissively and strictly" testProfileDocumentationValidates,
         testIO "generated profile documentation carries the default generated actor" testProfileDocumentationDefaultGenerated,
@@ -2738,12 +2744,129 @@ frozenGenerationFixtures =
     "path-references-mp8-ep3.dhall",
     "pre-bundle-version.dhall",
     "pre-nested-references-and-uniqueness-0.7.0.0.dhall",
+    "pre-guidance-0.8.0.0.dhall",
     -- Not a frozen generation but a *documented* one: this is the descriptor
     -- @docs\/user\/profiles.md@ shows for the specification §10 contract as a
     -- house convention. It is listed here so the documented descriptor cannot
     -- rot into something that no longer compiles.
     "attested-computation-house.dhall"
   ]
+
+-- | The complete okf-core 0.8.0.0 descriptor generation predates guidance.
+-- Both explicit file loading and registry enumeration must reach the same newest
+-- frozen decoder, preserve every old value, attach absent guidance at both
+-- scopes, and leave the upgraded profile compilable.
+testLoadPreGuidanceCompatibilityFixture :: IO (Either Text ())
+testLoadPreGuidanceCompatibilityFixture = do
+  path <- fixtureFilePath "profiles/pre-guidance-0.8.0.0.dhall"
+  loaded <- loadProfileFile path
+  registered <- loadRegistry (RegistryFile path)
+  pure $ do
+    spec <- first ("failed to load frozen pre-guidance profile: " <>) loaded
+    assertEqual "pre-guidance-0.8.0.0" (spec ^. #name)
+    assertEqual (Just "The complete public 0.8.0.0 descriptor shape.") (spec ^. #description)
+    assertEqual Nothing (spec ^. #guidance)
+    assertEqual "0.2" (spec ^. #okfVersion)
+    assertEqual False (spec ^. #allowUnknownTypes)
+    assertEqual True (spec ^. #allowUnknownFields)
+    assertEqual (Just "docId") (spec ^. #idField)
+    assertEqual (Just "0.2") (spec ^. #requireBundleVersion)
+    assertEqual ["type", "dependencies", "generated"] (map (^. #field) (spec ^. #frontmatter . #required))
+    assertEqual [Just Profile.NonNegativeInteger] (map (^. #format) (spec ^. #frontmatter . #recommended))
+    assertEqual [Just "METRIC"] (map (^. #idPrefix) (spec ^. #types))
+    assertEqual [Nothing] (map (^. #guidance) (spec ^. #types))
+    case spec ^. #frontmatter . #required of
+      [_typeRule, dependenciesRule, generatedRule] -> do
+        assertEqual (Just "id") (dependenciesRule ^. #uniqueBy)
+        case dependenciesRule ^. #elementFields of
+          Just NestedRules {optional = [refRule]} ->
+            assertEqual
+              (Just (HandleReferenceRule "METRIC" ["mori"] False False (Just "mori://shinzui/.+")))
+              (refRule ^. #reference)
+          _ -> Left "expected the frozen nested reference rule to survive"
+        case generatedRule ^. #objectFields of
+          Just NestedRules {required = [_byRule, atRule]} ->
+            assertEqual (Just Rfc3339Utc) (atRule ^. #format)
+          _ -> Left "expected the frozen object rules to survive"
+      _ -> Left "expected three frozen required rules"
+    _ <- first (Text.pack . show . toList) (compileProfile spec)
+    entries <- first ("failed to enumerate frozen pre-guidance profile: " <>) registered
+    assertEqual [""] (map (^. #export) entries)
+    assertEqual ["pre-guidance-0.8.0.0"] (map (^. #spec . #name) entries)
+    assertEqual [Nothing] (map (^. #spec . #guidance) entries)
+    registrySpec <- case entries of
+      [entry] -> Right (entry ^. #spec)
+      _ -> Left "expected exactly one frozen pre-guidance registry entry"
+    assertEqual
+      [Just "id"]
+      [ rule ^. #uniqueBy
+      | rule <- registrySpec ^. #frontmatter . #required,
+        rule ^. #field == "dependencies"
+      ]
+    case [ nestedRule ^. #reference
+         | rule <- registrySpec ^. #frontmatter . #required,
+           rule ^. #field == "dependencies",
+           rules <- maybeToList (rule ^. #elementFields),
+           nestedRule <- rules ^. #optional
+         ] of
+      [Just policy] -> assertEqual False (policy ^. #allowLocal)
+      _ -> Left "expected registry decoding to preserve the nested reference policy"
+
+-- | Guidance is free-form authoring prose, so decoding and JSON must preserve
+-- line breaks rather than folding it into a single display line. The Dhall
+-- multiline syntax contributes a final newline; that byte is part of the value
+-- and therefore part of this compatibility contract too.
+testLoadGuidanceFixture :: IO (Either Text ())
+testLoadGuidanceFixture = do
+  path <- fixtureFilePath "profiles/guidance.dhall"
+  loaded <- loadProfileFile path
+  pure $ do
+    spec <- first ("failed to load guidance profile: " <>) loaded
+    let expectedProfileGuidance =
+          "Record the setup, cleanup, and evidence for every run.\n\nKeep supporting checks in source control and make the observed result reproducible.\n"
+        expectedTypeGuidance =
+          [ "Add a source-controlled Hurl file that exercises the successful response and important failure responses.\n\nRun the Hurl file and retain the useful output as evidence.\n",
+            "Exercise the public behavior, then inspect the generated domain-event stream.\n\nVerify event types, payloads, ordering, and stream identity, then verify the externally observable result.\n"
+          ]
+    assertEqual (Just expectedProfileGuidance) (spec ^. #guidance)
+    assertEqual (map Just expectedTypeGuidance) (map (^. #guidance) (spec ^. #types))
+    assertJsonGuidance expectedProfileGuidance (toJSON spec)
+    for_ (zip expectedTypeGuidance (spec ^. #types)) $ \(expected, rule) ->
+      assertJsonGuidance expected (toJSON rule)
+  where
+    assertJsonGuidance expected = \case
+      Aeson.Object fields ->
+        assertEqual (Just (Aeson.String expected)) (KeyMap.lookup "guidance" fields)
+      _ -> Left "expected profile JSON to be an object"
+
+-- | Guidance is deliberately outside compilation and validation. Removing all
+-- guidance from a descriptor must not change either permissive or strict
+-- diagnostics for the same concepts.
+testGuidanceDoesNotAffectValidation :: IO (Either Text ())
+testGuidanceDoesNotAffectValidation = do
+  path <- fixtureFilePath "profiles/guidance.dhall"
+  loaded <- loadProfileFile path
+  let conceptResult = profileConcept "guidance-inert" [] "# Guidance inertness\n"
+  pure $ do
+    spec <- first ("failed to load guidance profile: " <>) loaded
+    concept <- conceptResult
+    guided <- firstShow (compileProfile spec)
+    let unguidedSpec =
+          spec
+            & #guidance
+            .~ Nothing
+            & #types
+            %~ map clearTypeGuidance
+    unguided <- firstShow (compileProfile unguidedSpec)
+    assertEqual
+      (validateProfile PermissiveConformance unguided [concept])
+      (validateProfile PermissiveConformance guided [concept])
+    assertEqual
+      (validateProfile StrictAuthoring unguided [concept])
+      (validateProfile StrictAuthoring guided [concept])
+  where
+    clearTypeGuidance :: TypeRule -> TypeRule
+    clearTypeGuidance rule = rule & #guidance .~ Nothing
 
 testLoadPreNestedReferenceCompatibilityFixture :: IO (Either Text ())
 testLoadPreNestedReferenceCompatibilityFixture = do
@@ -2930,10 +3053,12 @@ testLoadLegacyProfileFixture = do
     Right spec -> do
       assertEqual "legacy" (spec ^. #name)
       assertEqual Nothing (spec ^. #description)
+      assertEqual Nothing (spec ^. #guidance)
       assertEqual ["type", "title"] (map (^. #field) (spec ^. #frontmatter . #required))
       assertEqual [Nothing, Nothing] (map (^. #description) (spec ^. #frontmatter . #required))
       assertEqual ["Legacy Concept"] (map (^. #type_) (spec ^. #types))
       assertEqual [Nothing] (map (^. #description) (spec ^. #types))
+      assertEqual [Nothing] (map (^. #guidance) (spec ^. #types))
       assertEqual True (spec ^. #allowUnknownFields)
       assertEqual [[], []] (map (^. #allowedValues) (spec ^. #frontmatter . #required))
       assertEqual [Any, Any] (map (^. #cardinality) (spec ^. #frontmatter . #required))
@@ -2982,6 +3107,7 @@ testProfileJsonShape = do
         ( object
             [ "name" .= ("decisions" :: Text),
               "description" .= ("How this team records architectural decisions." :: Text),
+              "guidance" .= (Nothing :: Maybe Text),
               "okfVersion" .= ("0.1" :: Text),
               -- Encoded even when absent, so a consumer reads one shape rather
               -- than having to distinguish a missing key from a null one.
@@ -3058,6 +3184,7 @@ testProfileJsonShape = do
                        [ "type" .= ("Decision Record" :: Text),
                          "description"
                            .= ("One accepted decision, never edited after acceptance." :: Text),
+                         "guidance" .= (Nothing :: Maybe Text),
                          "frontmatter"
                            .= object
                              [ "required" .= ([] :: [FieldRule]),
@@ -3575,6 +3702,7 @@ testProfileSpec =
   ProfileSpec
     { name = "test-postgresql",
       description = Nothing,
+      guidance = Nothing,
       okfVersion = "0.1",
       frontmatter =
         FrontmatterRules
@@ -3590,6 +3718,7 @@ testProfileSpec =
         [ TypeRule
             { type_ = "PostgreSQL Table",
               description = Nothing,
+              guidance = Nothing,
               frontmatter = emptyTestFrontmatterRules,
               pathPattern = Just "schemas/*/tables/*",
               resourceScheme = Just "postgresql",
@@ -3605,6 +3734,7 @@ testDocumentIdProfileSpec =
   ProfileSpec
     { name = "test-decisions",
       description = Nothing,
+      guidance = Nothing,
       okfVersion = "0.1",
       frontmatter =
         FrontmatterRules
@@ -3620,6 +3750,7 @@ testDocumentIdProfileSpec =
         [ TypeRule
             { type_ = "Decision Record",
               description = Nothing,
+              guidance = Nothing,
               frontmatter = emptyTestFrontmatterRules,
               pathPattern = Just "decisions/*",
               resourceScheme = Nothing,
@@ -3638,6 +3769,7 @@ typeAwareProfileSpec =
   ProfileSpec
     { name = "type-aware",
       description = Nothing,
+      guidance = Nothing,
       okfVersion = "0.1",
       frontmatter =
         FrontmatterRules
@@ -3653,6 +3785,7 @@ typeAwareProfileSpec =
         [ TypeRule
             { type_ = "Owned Concept",
               description = Nothing,
+              guidance = Nothing,
               frontmatter =
                 FrontmatterRules
                   { required = [fieldRule "owner" (Just "Responsible person.") [] Any Nothing Nothing Nothing Nothing],
@@ -4243,6 +4376,7 @@ nestedProfileWithRules outerCardinality profileNested typeNested =
   ProfileSpec
     { name = "nested-merge",
       description = Nothing,
+      guidance = Nothing,
       okfVersion = "0.1",
       frontmatter =
         FrontmatterRules
@@ -4261,6 +4395,7 @@ nestedProfileWithRules outerCardinality profileNested typeNested =
         [ TypeRule
             { type_ = "Reviewed Concept",
               description = Nothing,
+              guidance = Nothing,
               frontmatter =
                 FrontmatterRules
                   { required = maybe [] (\rules -> [fieldRule "reviews" Nothing [] Any Nothing (Just rules) Nothing Nothing]) typeNested,
@@ -4308,6 +4443,7 @@ objectProfileWithRules key declaredCardinality objectRules elementRules =
   ProfileSpec
     { name = "object-rules",
       description = Nothing,
+      guidance = Nothing,
       okfVersion = "0.1",
       frontmatter =
         FrontmatterRules
@@ -4405,6 +4541,7 @@ pathProfileWith profilePath declaredFormat handlePolicy typePath =
   ProfileSpec
     { name = "path-rules",
       description = Nothing,
+      guidance = Nothing,
       okfVersion = "0.1",
       frontmatter =
         FrontmatterRules
@@ -4430,6 +4567,7 @@ pathProfileWith profilePath declaredFormat handlePolicy typePath =
         [ TypeRule
             { type_ = "Metric",
               description = Nothing,
+              guidance = Nothing,
               frontmatter =
                 FrontmatterRules
                   { required = [],
@@ -4454,6 +4592,7 @@ sourcesPathProfile permittedSchemes =
   ProfileSpec
     { name = "sources-paths",
       description = Nothing,
+      guidance = Nothing,
       okfVersion = "0.1",
       frontmatter =
         FrontmatterRules
@@ -4790,6 +4929,7 @@ versionProfileWith declaredVersion listName rules =
   ProfileSpec
     { name = "versioned",
       description = Nothing,
+      guidance = Nothing,
       okfVersion = declaredVersion,
       frontmatter =
         FrontmatterRules
@@ -5909,6 +6049,7 @@ withTypeFrontmatter
   TypeRule
     { type_,
       description,
+      guidance,
       pathPattern,
       resourceScheme,
       requireSchemaSection,
@@ -5918,6 +6059,7 @@ withTypeFrontmatter
     TypeRule
       { type_,
         description,
+        guidance,
         frontmatter = replacement,
         pathPattern,
         resourceScheme,
@@ -5931,6 +6073,7 @@ withTypeName
   replacement
   TypeRule
     { description,
+      guidance,
       frontmatter,
       pathPattern,
       resourceScheme,
@@ -5941,6 +6084,7 @@ withTypeName
     TypeRule
       { type_ = replacement,
         description,
+        guidance,
         frontmatter,
         pathPattern,
         resourceScheme,
@@ -6339,6 +6483,7 @@ plainDocumentationTypeRule typeName =
   TypeRule
     { type_ = typeName,
       description = Nothing,
+      guidance = Nothing,
       frontmatter = FrontmatterRules {required = [], recommended = [], optional = []},
       pathPattern = Nothing,
       resourceScheme = Nothing,
@@ -6355,6 +6500,7 @@ duplicateSlugProfileSpec =
   ProfileSpec
     { name = "duplicate-slugs",
       description = Nothing,
+      guidance = Nothing,
       okfVersion = "0.1",
       frontmatter =
         FrontmatterRules
@@ -6531,6 +6677,112 @@ testProfileDocumentationInheritedRules =
         assertHasLine "### Recommended" openBody
         assertHasLine "(none)" openBody
     )
+
+-- | Root documentation carries profile guidance once, while type pages expose
+-- the effective authoring procedure in profile-wide then type-specific order.
+-- Blank values behave like absence, and guidance stays in Markdown body text
+-- rather than leaking into generated frontmatter.
+testProfileDocumentationGuidance :: IO (Either Text ())
+testProfileDocumentationGuidance = do
+  descriptorPath <- fixtureFilePath "profiles/guidance.dhall"
+  loaded <- loadProfileFile descriptorPath
+  pure $ do
+    spec <- first ("failed to load guidance profile: " <>) loaded
+    combined <- render spec
+    combinedRoot <- conceptAt 0 combined
+    combinedApi <- conceptAt 1 combined
+    combinedFeature <- conceptAt 2 combined
+    assertContains
+      "root guidance follows description and precedes settings"
+      ( "Authoring conventions for executable QA runbooks.\n\n"
+          <> "## Guidance\n\n"
+          <> profileProse
+          <> "\n\n## Settings"
+      )
+      (conceptBody combinedRoot)
+    assertContains
+      "API guidance renders profile-wide before type-specific prose"
+      ( "## Guidance\n\n"
+          <> "### Profile-wide\n\n"
+          <> profileProse
+          <> "\n\n### Type-specific\n\n"
+          <> apiProse
+          <> "\n\n## Type settings"
+      )
+      (conceptBody combinedApi)
+    assertContains
+      "Feature guidance renders profile-wide before the event-stream procedure"
+      ( "## Guidance\n\n"
+          <> "### Profile-wide\n\n"
+          <> profileProse
+          <> "\n\n### Type-specific\n\n"
+          <> featureProse
+          <> "\n\n## Type settings"
+      )
+      (conceptBody combinedFeature)
+    for_ combined $ \concept ->
+      assertEqual
+        Nothing
+        (frontmatterLookup "guidance" (conceptDocument concept ^. #frontmatter))
+
+    profileOnly <- render (spec & #types %~ map clearGuidance)
+    profileOnlyApi <- conceptAt 1 profileOnly
+    assertContains
+      "profile-only type page labels its one effective scope"
+      ("## Guidance\n\n### Profile-wide\n\n" <> profileProse <> "\n\n## Type settings")
+      (conceptBody profileOnlyApi)
+    assertOmits "profile-only type page omits the absent type scope" "### Type-specific" (conceptBody profileOnlyApi)
+
+    typeOnly <- render (spec & #guidance .~ Nothing)
+    typeOnlyRoot <- conceptAt 0 typeOnly
+    typeOnlyApi <- conceptAt 1 typeOnly
+    assertOmits "type-only profile page omits guidance" "## Guidance" (conceptBody typeOnlyRoot)
+    assertContains
+      "type-only type page labels its one effective scope"
+      ("## Guidance\n\n### Type-specific\n\n" <> apiProse <> "\n\n## Type settings")
+      (conceptBody typeOnlyApi)
+    assertOmits "type-only type page omits the absent profile scope" "### Profile-wide" (conceptBody typeOnlyApi)
+
+    blank <-
+      render
+        ( spec
+            & #guidance
+            .~ Just " \n\t\n"
+            & #types
+            %~ map (setGuidance (Just "\n  \n"))
+        )
+    for_ blank $ \concept ->
+      assertOmits "blank guidance omits the section" "## Guidance" (conceptBody concept)
+
+    absent <-
+      render
+        ( spec
+            & #guidance
+            .~ Nothing
+            & #types
+            %~ map clearGuidance
+        )
+    for_ absent $ \concept ->
+      assertOmits "absent guidance omits the section" "## Guidance" (conceptBody concept)
+  where
+    profileProse =
+      "Record the setup, cleanup, and evidence for every run.\n\nKeep supporting checks in source control and make the observed result reproducible."
+    apiProse =
+      "Add a source-controlled Hurl file that exercises the successful response and important failure responses.\n\nRun the Hurl file and retain the useful output as evidence."
+    featureProse =
+      "Exercise the public behavior, then inspect the generated domain-event stream.\n\nVerify event types, payloads, ordering, and stream identity, then verify the externally observable result."
+    clearGuidance :: TypeRule -> TypeRule
+    clearGuidance rule = rule & #guidance .~ Nothing
+    setGuidance :: Maybe Text -> TypeRule -> TypeRule
+    setGuidance value rule = rule & #guidance .~ value
+    render spec = do
+      compiled <- firstShow (compileProfile spec)
+      firstShow (renderProfileDocumentation defaultDocumentationOptions compiled)
+    conceptBody concept = conceptDocument concept ^. #body
+    assertContains label needle haystack =
+      assertBool label (needle `Text.isInfixOf` haystack)
+    assertOmits label needle haystack =
+      assertBool label (not (needle `Text.isInfixOf` haystack))
 
 testProfileDocumentationRoundTrip :: IO (Either Text ())
 testProfileDocumentationRoundTrip =

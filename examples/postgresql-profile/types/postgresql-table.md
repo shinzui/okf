@@ -12,6 +12,20 @@ One physical table in a schema, including its column list.
 
 Declared by the [shinzui-postgresql](/profile.md) profile.
 
+## Guidance
+
+### Profile-wide
+
+Inspect the live PostgreSQL object and its relevant DDL before documenting it. Record what exists now, not an intended design.
+
+Write enough operational context that another reader can locate the object and verify the description against the database.
+
+### Type-specific
+
+Inspect the live columns, types, nullability, keys, constraints, and indexes before writing the schema table.
+
+Explain each column's business meaning and note defaults, generated values, or operational behavior that readers need to use the table safely.
+
 ## Type settings
 
 - Path pattern: `schemas/*/tables/*`

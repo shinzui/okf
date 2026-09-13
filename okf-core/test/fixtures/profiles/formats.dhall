@@ -12,6 +12,7 @@ let field = ../../../dhall/mk/FieldRule.dhall
 
 in    { name = "formats"
       , description = Some "Exercises named textual field formats."
+      , guidance = None Text
       , okfVersion = "0.1"
       , frontmatter =
         { required =

@@ -104,6 +104,8 @@ import Data.Void (Void)
 import Dhall (FromDhall (..), auto, genericAutoWith)
 import Dhall qualified
 import Dhall.Core (Expr)
+import Dhall.Core qualified as Dhall.Core
+import Dhall.Map qualified as Dhall.Map
 import Dhall.Src (Src)
 import Network.URI (parseURI, uriScheme)
 import Numeric.Natural (Natural)
@@ -148,9 +150,10 @@ import Text.Regex.TDFA (Regex, defaultCompOpt, defaultExecOpt)
 import Text.Regex.TDFA.Text qualified as Regex.Text
 import "generic-lens" Data.Generics.Labels ()
 
--- | A complete house profile. @description@ is prose documenting the profile as
--- a whole; like every description in this module it is never checked against a
--- bundle and can never produce a 'ProfileViolation'.
+-- | A complete house profile. @description@ concisely documents the profile's
+-- identity. @guidance@ is multiline Markdown prescribing how authors should do
+-- the work. Neither is checked against a bundle or executed, and neither can
+-- produce a 'ProfileViolation'.
 --
 -- @requireBundleVersion@ and @okfVersion@ are easy to confuse and answer
 -- different questions. @okfVersion@ says which version's rules /this profile
@@ -161,6 +164,7 @@ import "generic-lens" Data.Generics.Labels ()
 data ProfileSpec = ProfileSpec
   { name :: !Text,
     description :: !(Maybe Text),
+    guidance :: !(Maybe Text),
     okfVersion :: !Text,
     frontmatter :: !FrontmatterRules,
     allowUnknownTypes :: !Bool,
@@ -333,10 +337,12 @@ data FieldFormat
   deriving stock (Generic, Eq, Ord, Show)
   deriving anyclass (FromDhall)
 
--- | One rule per allowed concept @type@ string.
+-- | One rule per allowed concept @type@ string. @guidance@ adds authoring
+-- procedure specific to this type; it is documentary and never executed.
 data TypeRule = TypeRule
   { type_ :: !Text,
     description :: !(Maybe Text),
+    guidance :: !(Maybe Text),
     frontmatter :: !FrontmatterRules,
     pathPattern :: !(Maybe Text),
     resourceScheme :: !(Maybe Text),
@@ -362,10 +368,11 @@ instance FromDhall TypeRule where
 -- importantly, so 'TypeRule' emits @type@ rather than the Haskell field name
 -- @type_@ — matching the Dhall field and how 'Okf.Graph.Node' already encodes.
 instance ToJSON ProfileSpec where
-  toJSON ProfileSpec {name, description, okfVersion, frontmatter, allowUnknownTypes, allowUnknownFields, idField, requireBundleVersion, types = typeRules} =
+  toJSON ProfileSpec {name, description, guidance, okfVersion, frontmatter, allowUnknownTypes, allowUnknownFields, idField, requireBundleVersion, types = typeRules} =
     object
       [ "name" .= name,
         "description" .= description,
+        "guidance" .= guidance,
         "okfVersion" .= okfVersion,
         "requireBundleVersion" .= requireBundleVersion,
         "allowUnknownTypes" .= allowUnknownTypes,
@@ -476,6 +483,7 @@ instance ToJSON TypeRule where
     TypeRule
       { type_ = ruleType,
         description,
+        guidance,
         frontmatter,
         pathPattern,
         resourceScheme,
@@ -486,6 +494,7 @@ instance ToJSON TypeRule where
       object
         [ "type" .= ruleType,
           "description" .= description,
+          "guidance" .= guidance,
           "frontmatter" .= frontmatter,
           "pathPattern" .= pathPattern,
           "resourceScheme" .= resourceScheme,
@@ -493,6 +502,156 @@ instance ToJSON TypeRule where
           "schemaColumns" .= schemaColumns,
           "idPrefix" .= idPrefix
         ]
+
+-- | The complete descriptor generation published by okf-core 0.8.0.0, frozen
+-- immediately before profile and type guidance were added. Every reachable
+-- record and union is copied here so future schema additions cannot change the
+-- Dhall type this decoder accepts. Exercised by
+-- @okf-core/test/fixtures/profiles/pre-guidance-0.8.0.0.dhall@.
+data PreGuidanceCardinality
+  = PreGuidanceAny
+  | PreGuidanceScalar
+  | PreGuidanceList
+  deriving stock (Generic, Eq, Ord, Show)
+
+instance FromDhall PreGuidanceCardinality where
+  autoWith _normalizer =
+    Dhall.union
+      ( (PreGuidanceAny <$ Dhall.constructor "Any" Dhall.unit)
+          <> (PreGuidanceScalar <$ Dhall.constructor "Scalar" Dhall.unit)
+          <> (PreGuidanceList <$ Dhall.constructor "List" Dhall.unit)
+      )
+
+data PreGuidanceFieldFormat
+  = PreGuidanceRfc3339Utc
+  | PreGuidanceDate
+  | PreGuidanceUri
+  | PreGuidanceUriWithScheme Text
+  | PreGuidanceDocumentHandle Text
+  | PreGuidanceActor
+  | PreGuidanceHumanActor
+  | PreGuidanceInteger
+  | PreGuidanceNonNegativeInteger
+  | PreGuidanceBoolean
+  deriving stock (Generic, Eq, Ord, Show)
+
+instance FromDhall PreGuidanceFieldFormat where
+  autoWith _normalizer =
+    Dhall.union
+      ( (PreGuidanceRfc3339Utc <$ Dhall.constructor "Rfc3339Utc" Dhall.unit)
+          <> (PreGuidanceDate <$ Dhall.constructor "Date" Dhall.unit)
+          <> (PreGuidanceUri <$ Dhall.constructor "Uri" Dhall.unit)
+          <> (PreGuidanceUriWithScheme <$> Dhall.constructor "UriWithScheme" Dhall.auto)
+          <> (PreGuidanceDocumentHandle <$> Dhall.constructor "DocumentHandle" Dhall.auto)
+          <> (PreGuidanceActor <$ Dhall.constructor "Actor" Dhall.unit)
+          <> (PreGuidanceHumanActor <$ Dhall.constructor "HumanActor" Dhall.unit)
+          <> (PreGuidanceInteger <$ Dhall.constructor "Integer" Dhall.unit)
+          <> (PreGuidanceNonNegativeInteger <$ Dhall.constructor "NonNegativeInteger" Dhall.unit)
+          <> (PreGuidanceBoolean <$ Dhall.constructor "Boolean" Dhall.unit)
+      )
+
+data PreGuidanceFieldCondition = PreGuidanceFieldCondition
+  { field :: !Text,
+    hasValue :: ![Text]
+  }
+  deriving stock (Generic, Eq, Ord, Show)
+  deriving anyclass (FromDhall)
+
+data PreGuidanceHandleReferenceRule = PreGuidanceHandleReferenceRule
+  { localPrefix :: !Text,
+    externalUriSchemes :: ![Text],
+    allowSelf :: !Bool,
+    allowLocal :: !Bool,
+    externalUriPattern :: !(Maybe Text)
+  }
+  deriving stock (Generic, Eq, Ord, Show)
+  deriving anyclass (FromDhall)
+
+data PreGuidancePathReferenceRule = PreGuidancePathReferenceRule
+  { externalUriSchemes :: ![Text],
+    allowSelf :: !Bool
+  }
+  deriving stock (Generic, Eq, Ord, Show)
+  deriving anyclass (FromDhall)
+
+data PreGuidanceFieldRule = PreGuidanceFieldRule
+  { field :: !Text,
+    description :: !(Maybe Text),
+    allowedValues :: ![Text],
+    cardinality :: !PreGuidanceCardinality,
+    format :: !(Maybe PreGuidanceFieldFormat),
+    elementFields :: !(Maybe PreGuidanceNestedRules),
+    objectFields :: !(Maybe PreGuidanceNestedRules),
+    reference :: !(Maybe PreGuidanceHandleReferenceRule),
+    path :: !(Maybe PreGuidancePathReferenceRule),
+    when :: !(Maybe PreGuidanceFieldCondition),
+    uniqueBy :: !(Maybe Text)
+  }
+  deriving stock (Generic, Eq, Show)
+  deriving anyclass (FromDhall)
+
+data PreGuidanceNestedRules = PreGuidanceNestedRules
+  { required :: ![PreGuidanceNestedFieldRule],
+    recommended :: ![PreGuidanceNestedFieldRule],
+    optional :: ![PreGuidanceNestedFieldRule]
+  }
+  deriving stock (Generic, Eq, Show)
+  deriving anyclass (FromDhall)
+
+data PreGuidanceNestedFieldRule = PreGuidanceNestedFieldRule
+  { field :: !Text,
+    description :: !(Maybe Text),
+    allowedValues :: ![Text],
+    cardinality :: !PreGuidanceCardinality,
+    format :: !(Maybe PreGuidanceFieldFormat),
+    path :: !(Maybe PreGuidancePathReferenceRule),
+    when :: !(Maybe PreGuidanceFieldCondition),
+    reference :: !(Maybe PreGuidanceHandleReferenceRule)
+  }
+  deriving stock (Generic, Eq, Show)
+  deriving anyclass (FromDhall)
+
+data PreGuidanceFrontmatterRules = PreGuidanceFrontmatterRules
+  { required :: ![PreGuidanceFieldRule],
+    recommended :: ![PreGuidanceFieldRule],
+    optional :: ![PreGuidanceFieldRule]
+  }
+  deriving stock (Generic, Eq, Show)
+  deriving anyclass (FromDhall)
+
+data PreGuidanceTypeRule = PreGuidanceTypeRule
+  { type_ :: !Text,
+    description :: !(Maybe Text),
+    frontmatter :: !PreGuidanceFrontmatterRules,
+    pathPattern :: !(Maybe Text),
+    resourceScheme :: !(Maybe Text),
+    requireSchemaSection :: !Bool,
+    schemaColumns :: ![Text],
+    idPrefix :: !(Maybe Text)
+  }
+  deriving stock (Generic, Eq, Show)
+
+instance FromDhall PreGuidanceTypeRule where
+  autoWith _normalizer =
+    genericAutoWith
+      (Dhall.defaultInterpretOptions {Dhall.fieldModifier = stripTrailingUnderscore})
+    where
+      stripTrailingUnderscore fieldName =
+        fromMaybe fieldName (Text.stripSuffix "_" fieldName)
+
+data PreGuidanceProfileSpec = PreGuidanceProfileSpec
+  { name :: !Text,
+    description :: !(Maybe Text),
+    okfVersion :: !Text,
+    frontmatter :: !PreGuidanceFrontmatterRules,
+    allowUnknownTypes :: !Bool,
+    allowUnknownFields :: !Bool,
+    idField :: !(Maybe Text),
+    requireBundleVersion :: !(Maybe Text),
+    types :: ![PreGuidanceTypeRule]
+  }
+  deriving stock (Generic, Eq, Show)
+  deriving anyclass (FromDhall)
 
 -- | The okf 0.2.x profile record: frontmatter keys were bare strings and
 -- nothing carried a description. Decoded only as a fallback, so descriptors
@@ -1393,6 +1552,118 @@ instance FromDhall DescribedTypeRule where
 emptyFrontmatterRules :: FrontmatterRules
 emptyFrontmatterRules = FrontmatterRules {required = [], recommended = [], optional = []}
 
+upgradePreGuidanceCardinality :: PreGuidanceCardinality -> Cardinality
+upgradePreGuidanceCardinality = \case
+  PreGuidanceAny -> Any
+  PreGuidanceScalar -> Scalar
+  PreGuidanceList -> List
+
+upgradePreGuidanceFieldFormat :: PreGuidanceFieldFormat -> FieldFormat
+upgradePreGuidanceFieldFormat = \case
+  PreGuidanceRfc3339Utc -> Rfc3339Utc
+  PreGuidanceDate -> Date
+  PreGuidanceUri -> Uri
+  PreGuidanceUriWithScheme scheme -> UriWithScheme scheme
+  PreGuidanceDocumentHandle prefix -> DocumentHandle prefix
+  PreGuidanceActor -> Actor
+  PreGuidanceHumanActor -> HumanActor
+  PreGuidanceInteger -> Integer
+  PreGuidanceNonNegativeInteger -> NonNegativeInteger
+  PreGuidanceBoolean -> Boolean
+
+upgradePreGuidanceCondition :: PreGuidanceFieldCondition -> FieldCondition
+upgradePreGuidanceCondition previous =
+  FieldCondition
+    { field = previous ^. #field,
+      hasValue = previous ^. #hasValue
+    }
+
+upgradePreGuidanceHandleRule :: PreGuidanceHandleReferenceRule -> HandleReferenceRule
+upgradePreGuidanceHandleRule previous =
+  HandleReferenceRule
+    { localPrefix = previous ^. #localPrefix,
+      externalUriSchemes = previous ^. #externalUriSchemes,
+      allowSelf = previous ^. #allowSelf,
+      allowLocal = previous ^. #allowLocal,
+      externalUriPattern = previous ^. #externalUriPattern
+    }
+
+upgradePreGuidancePathRule :: PreGuidancePathReferenceRule -> PathReferenceRule
+upgradePreGuidancePathRule previous =
+  PathReferenceRule
+    { externalUriSchemes = previous ^. #externalUriSchemes,
+      allowSelf = previous ^. #allowSelf
+    }
+
+upgradePreGuidanceFrontmatter :: PreGuidanceFrontmatterRules -> FrontmatterRules
+upgradePreGuidanceFrontmatter previous =
+  FrontmatterRules
+    { required = map upgradeField (previous ^. #required),
+      recommended = map upgradeField (previous ^. #recommended),
+      optional = map upgradeField (previous ^. #optional)
+    }
+  where
+    upgradeField rule =
+      FieldRule
+        { field = rule ^. #field,
+          description = rule ^. #description,
+          allowedValues = rule ^. #allowedValues,
+          cardinality = upgradePreGuidanceCardinality (rule ^. #cardinality),
+          format = upgradePreGuidanceFieldFormat <$> rule ^. #format,
+          elementFields = upgradeNestedRules <$> rule ^. #elementFields,
+          objectFields = upgradeNestedRules <$> rule ^. #objectFields,
+          reference = upgradePreGuidanceHandleRule <$> rule ^. #reference,
+          path = upgradePreGuidancePathRule <$> rule ^. #path,
+          when = upgradePreGuidanceCondition <$> rule ^. #when,
+          uniqueBy = rule ^. #uniqueBy
+        }
+    upgradeNestedRules rules =
+      NestedRules
+        { required = map upgradeNestedField (rules ^. #required),
+          recommended = map upgradeNestedField (rules ^. #recommended),
+          optional = map upgradeNestedField (rules ^. #optional)
+        }
+    upgradeNestedField rule =
+      NestedFieldRule
+        { field = rule ^. #field,
+          description = rule ^. #description,
+          allowedValues = rule ^. #allowedValues,
+          cardinality = upgradePreGuidanceCardinality (rule ^. #cardinality),
+          format = upgradePreGuidanceFieldFormat <$> rule ^. #format,
+          path = upgradePreGuidancePathRule <$> rule ^. #path,
+          when = upgradePreGuidanceCondition <$> rule ^. #when,
+          reference = upgradePreGuidanceHandleRule <$> rule ^. #reference
+        }
+
+upgradePreGuidanceTypeRule :: PreGuidanceTypeRule -> TypeRule
+upgradePreGuidanceTypeRule rule =
+  TypeRule
+    { type_ = rule ^. #type_,
+      description = rule ^. #description,
+      guidance = Nothing,
+      frontmatter = upgradePreGuidanceFrontmatter (rule ^. #frontmatter),
+      pathPattern = rule ^. #pathPattern,
+      resourceScheme = rule ^. #resourceScheme,
+      requireSchemaSection = rule ^. #requireSchemaSection,
+      schemaColumns = rule ^. #schemaColumns,
+      idPrefix = rule ^. #idPrefix
+    }
+
+upgradePreGuidanceProfile :: PreGuidanceProfileSpec -> ProfileSpec
+upgradePreGuidanceProfile previous =
+  ProfileSpec
+    { name = previous ^. #name,
+      description = previous ^. #description,
+      guidance = Nothing,
+      okfVersion = previous ^. #okfVersion,
+      frontmatter = upgradePreGuidanceFrontmatter (previous ^. #frontmatter),
+      allowUnknownTypes = previous ^. #allowUnknownTypes,
+      allowUnknownFields = previous ^. #allowUnknownFields,
+      idField = previous ^. #idField,
+      requireBundleVersion = previous ^. #requireBundleVersion,
+      types = map upgradePreGuidanceTypeRule (previous ^. #types)
+    }
+
 upgradePreNestedReferenceHandleRule :: PreNestedReferenceHandleReferenceRule -> HandleReferenceRule
 upgradePreNestedReferenceHandleRule previous =
   HandleReferenceRule
@@ -1448,6 +1719,7 @@ upgradePreNestedReferenceTypeRule rule =
   TypeRule
     { type_ = rule ^. #type_,
       description = rule ^. #description,
+      guidance = Nothing,
       frontmatter = upgradePreNestedReferenceFrontmatter (rule ^. #frontmatter),
       pathPattern = rule ^. #pathPattern,
       resourceScheme = rule ^. #resourceScheme,
@@ -1461,6 +1733,7 @@ upgradePreNestedReferenceProfile previous =
   ProfileSpec
     { name = previous ^. #name,
       description = previous ^. #description,
+      guidance = Nothing,
       okfVersion = previous ^. #okfVersion,
       frontmatter = upgradePreNestedReferenceFrontmatter (previous ^. #frontmatter),
       allowUnknownTypes = previous ^. #allowUnknownTypes,
@@ -1810,6 +2083,7 @@ upgradePreBundleVersionProfile previous =
   ProfileSpec
     { name = previous ^. #name,
       description = previous ^. #description,
+      guidance = Nothing,
       okfVersion = previous ^. #okfVersion,
       frontmatter = upgradePreNestedReferenceFrontmatter (previous ^. #frontmatter),
       allowUnknownTypes = previous ^. #allowUnknownTypes,
@@ -1824,6 +2098,7 @@ upgradePrePathProfile previous =
   ProfileSpec
     { name = previous ^. #name,
       description = previous ^. #description,
+      guidance = Nothing,
       okfVersion = previous ^. #okfVersion,
       frontmatter = upgradePrePathProfileFrontmatter (previous ^. #frontmatter),
       allowUnknownTypes = previous ^. #allowUnknownTypes,
@@ -1837,6 +2112,7 @@ upgradePrePathProfile previous =
       TypeRule
         { type_ = rule ^. #type_,
           description = rule ^. #description,
+          guidance = Nothing,
           frontmatter = upgradePrePathProfileFrontmatter (rule ^. #frontmatter),
           pathPattern = rule ^. #pathPattern,
           resourceScheme = rule ^. #resourceScheme,
@@ -1850,6 +2126,7 @@ upgradePreActorProfile previous =
   ProfileSpec
     { name = previous ^. #name,
       description = previous ^. #description,
+      guidance = Nothing,
       okfVersion = previous ^. #okfVersion,
       frontmatter = upgradePreActorProfileFrontmatter (previous ^. #frontmatter),
       allowUnknownTypes = previous ^. #allowUnknownTypes,
@@ -1863,6 +2140,7 @@ upgradePreActorProfile previous =
       TypeRule
         { type_ = rule ^. #type_,
           description = rule ^. #description,
+          guidance = Nothing,
           frontmatter = upgradePreActorProfileFrontmatter (rule ^. #frontmatter),
           pathPattern = rule ^. #pathPattern,
           resourceScheme = rule ^. #resourceScheme,
@@ -1876,6 +2154,7 @@ upgradePreObjectProfile previous =
   ProfileSpec
     { name = previous ^. #name,
       description = previous ^. #description,
+      guidance = Nothing,
       okfVersion = previous ^. #okfVersion,
       frontmatter = upgradePreObjectProfileFrontmatter (previous ^. #frontmatter),
       allowUnknownTypes = previous ^. #allowUnknownTypes,
@@ -1889,6 +2168,7 @@ upgradePreObjectProfile previous =
       TypeRule
         { type_ = rule ^. #type_,
           description = rule ^. #description,
+          guidance = Nothing,
           frontmatter = upgradePreObjectProfileFrontmatter (rule ^. #frontmatter),
           pathPattern = rule ^. #pathPattern,
           resourceScheme = rule ^. #resourceScheme,
@@ -1902,6 +2182,7 @@ upgradeReferenceProfile previous =
   ProfileSpec
     { name = previous ^. #name,
       description = previous ^. #description,
+      guidance = Nothing,
       okfVersion = previous ^. #okfVersion,
       frontmatter = upgradeReferenceProfileFrontmatter (previous ^. #frontmatter),
       allowUnknownTypes = previous ^. #allowUnknownTypes,
@@ -1915,6 +2196,7 @@ upgradeReferenceProfile previous =
       TypeRule
         { type_ = rule ^. #type_,
           description = rule ^. #description,
+          guidance = Nothing,
           frontmatter = upgradeReferenceProfileFrontmatter (rule ^. #frontmatter),
           pathPattern = rule ^. #pathPattern,
           resourceScheme = rule ^. #resourceScheme,
@@ -1928,6 +2210,7 @@ upgradeConditionalProfile previous =
   ProfileSpec
     { name = previous ^. #name,
       description = previous ^. #description,
+      guidance = Nothing,
       okfVersion = previous ^. #okfVersion,
       frontmatter = upgradeConditionalProfileFrontmatter (previous ^. #frontmatter),
       allowUnknownTypes = previous ^. #allowUnknownTypes,
@@ -1941,6 +2224,7 @@ upgradeConditionalProfile previous =
       TypeRule
         { type_ = rule ^. #type_,
           description = rule ^. #description,
+          guidance = Nothing,
           frontmatter = upgradeConditionalProfileFrontmatter (rule ^. #frontmatter),
           pathPattern = rule ^. #pathPattern,
           resourceScheme = rule ^. #resourceScheme,
@@ -1954,6 +2238,7 @@ upgradeNestedProfile previous =
   ProfileSpec
     { name = previous ^. #name,
       description = previous ^. #description,
+      guidance = Nothing,
       okfVersion = previous ^. #okfVersion,
       frontmatter = upgradeNestedProfileFrontmatter (previous ^. #frontmatter),
       allowUnknownTypes = previous ^. #allowUnknownTypes,
@@ -1967,6 +2252,7 @@ upgradeNestedProfile previous =
       TypeRule
         { type_ = rule ^. #type_,
           description = rule ^. #description,
+          guidance = Nothing,
           frontmatter = upgradeNestedProfileFrontmatter (rule ^. #frontmatter),
           pathPattern = rule ^. #pathPattern,
           resourceScheme = rule ^. #resourceScheme,
@@ -1980,6 +2266,7 @@ upgradeFormatProfile previous =
   ProfileSpec
     { name = previous ^. #name,
       description = previous ^. #description,
+      guidance = Nothing,
       okfVersion = previous ^. #okfVersion,
       frontmatter = upgradeFormatFrontmatter (previous ^. #frontmatter),
       allowUnknownTypes = previous ^. #allowUnknownTypes,
@@ -1993,6 +2280,7 @@ upgradeFormatProfile previous =
       TypeRule
         { type_ = rule ^. #type_,
           description = rule ^. #description,
+          guidance = Nothing,
           frontmatter = upgradeFormatFrontmatter (rule ^. #frontmatter),
           pathPattern = rule ^. #pathPattern,
           resourceScheme = rule ^. #resourceScheme,
@@ -2006,6 +2294,7 @@ upgradeCardinalityProfile previous =
   ProfileSpec
     { name = previous ^. #name,
       description = previous ^. #description,
+      guidance = Nothing,
       okfVersion = previous ^. #okfVersion,
       frontmatter = upgradeCardinalityFrontmatter (previous ^. #frontmatter),
       allowUnknownTypes = previous ^. #allowUnknownTypes,
@@ -2019,6 +2308,7 @@ upgradeCardinalityProfile previous =
       TypeRule
         { type_ = rule ^. #type_,
           description = rule ^. #description,
+          guidance = Nothing,
           frontmatter = upgradeCardinalityFrontmatter (rule ^. #frontmatter),
           pathPattern = rule ^. #pathPattern,
           resourceScheme = rule ^. #resourceScheme,
@@ -2032,6 +2322,7 @@ upgradeVocabularyProfile previous =
   ProfileSpec
     { name = previous ^. #name,
       description = previous ^. #description,
+      guidance = Nothing,
       okfVersion = previous ^. #okfVersion,
       frontmatter = upgradeVocabularyFrontmatter (previous ^. #frontmatter),
       allowUnknownTypes = previous ^. #allowUnknownTypes,
@@ -2045,6 +2336,7 @@ upgradeVocabularyProfile previous =
       TypeRule
         { type_ = rule ^. #type_,
           description = rule ^. #description,
+          guidance = Nothing,
           frontmatter = upgradeVocabularyFrontmatter (rule ^. #frontmatter),
           pathPattern = rule ^. #pathPattern,
           resourceScheme = rule ^. #resourceScheme,
@@ -2058,6 +2350,7 @@ upgradeTypeAwareProfile previous =
   ProfileSpec
     { name = previous ^. #name,
       description = previous ^. #description,
+      guidance = Nothing,
       okfVersion = previous ^. #okfVersion,
       frontmatter = upgradePreviousFrontmatter (previous ^. #frontmatter),
       allowUnknownTypes = previous ^. #allowUnknownTypes,
@@ -2071,6 +2364,7 @@ upgradeTypeAwareProfile previous =
       TypeRule
         { type_ = rule ^. #type_,
           description = rule ^. #description,
+          guidance = Nothing,
           frontmatter = upgradePreviousFrontmatter (rule ^. #frontmatter),
           pathPattern = rule ^. #pathPattern,
           resourceScheme = rule ^. #resourceScheme,
@@ -2084,6 +2378,7 @@ upgradeDescribedProfile described =
   ProfileSpec
     { name = described ^. #name,
       description = described ^. #description,
+      guidance = Nothing,
       okfVersion = described ^. #okfVersion,
       frontmatter = upgradePreviousFrontmatter (described ^. #frontmatter),
       allowUnknownTypes = described ^. #allowUnknownTypes,
@@ -2097,6 +2392,7 @@ upgradeDescribedProfile described =
       TypeRule
         { type_ = rule ^. #type_,
           description = rule ^. #description,
+          guidance = Nothing,
           frontmatter = emptyFrontmatterRules,
           pathPattern = rule ^. #pathPattern,
           resourceScheme = rule ^. #resourceScheme,
@@ -2112,6 +2408,7 @@ upgradeLegacyProfile legacy =
   ProfileSpec
     { name = legacy ^. #name,
       description = Nothing,
+      guidance = Nothing,
       okfVersion = legacy ^. #okfVersion,
       frontmatter =
         FrontmatterRules
@@ -2131,6 +2428,7 @@ upgradeLegacyProfile legacy =
       TypeRule
         { type_ = rule ^. #type_,
           description = Nothing,
+          guidance = Nothing,
           frontmatter = emptyFrontmatterRules,
           pathPattern = rule ^. #pathPattern,
           resourceScheme = rule ^. #resourceScheme,
@@ -2142,7 +2440,8 @@ upgradeLegacyProfile legacy =
 -- | Load and decode a Dhall profile descriptor from a file path. Any evaluation
 -- or decoding failure is captured as a human-readable 'Left'.
 --
--- The pre-nested-reference shape, pre-bundle-version shape, pre-path shape, pre-actor shape, pre-object
+-- The pre-guidance shape, pre-nested-reference shape, pre-bundle-version shape,
+-- pre-path shape, pre-actor shape, pre-object
 -- shape, reference-aware shape,
 -- condition-aware shape, bounded-nested shape, EP-4
 -- format shape, EP-3 cardinality shape, EP-2 vocabulary shape, type-aware EP-1
@@ -2164,7 +2463,8 @@ loadProfileFile path = do
     -- picks that generation's decoder. Adding a generation is one line here.
     frozenDecoders :: [IO (Maybe ProfileSpec)]
     frozenDecoders =
-      [ attempt upgradePreNestedReferenceProfile,
+      [ attempt upgradePreGuidanceProfile,
+        attempt upgradePreNestedReferenceProfile,
         attempt upgradePreBundleVersionProfile,
         attempt upgradePrePathProfile,
         attempt upgradePreActorProfile,
@@ -2198,7 +2498,8 @@ loadProfileFile path = do
         `catch` \(exception :: SomeException) -> pure (Left (Text.pack (show exception)))
 
 -- | Does an already-evaluated Dhall expression decode as a profile? Tries the
--- current schema, then the pre-nested-reference, pre-bundle-version, pre-path, pre-actor, pre-object,
+-- current schema, then the pre-guidance, pre-nested-reference,
+-- pre-bundle-version, pre-path, pre-actor, pre-object,
 -- reference-aware,
 -- condition-aware, bounded-nested, EP-4, EP-3, EP-2, EP-1, self-documenting, and
 -- okf 0.2.x schemas, so the published @okf-profiles@ package still enumerates.
@@ -2207,20 +2508,39 @@ loadProfileFile path = do
 decodeProfileExpr :: Expr Src Void -> Maybe ProfileSpec
 decodeProfileExpr expression =
   Dhall.rawInput Dhall.auto expression
-    <|> fmap upgradePreNestedReferenceProfile (Dhall.rawInput Dhall.auto expression)
-    <|> fmap upgradePreBundleVersionProfile (Dhall.rawInput Dhall.auto expression)
-    <|> fmap upgradePrePathProfile (Dhall.rawInput Dhall.auto expression)
-    <|> fmap upgradePreActorProfile (Dhall.rawInput Dhall.auto expression)
-    <|> fmap upgradePreObjectProfile (Dhall.rawInput Dhall.auto expression)
-    <|> fmap upgradeReferenceProfile (Dhall.rawInput Dhall.auto expression)
-    <|> fmap upgradeConditionalProfile (Dhall.rawInput Dhall.auto expression)
-    <|> fmap upgradeNestedProfile (Dhall.rawInput Dhall.auto expression)
-    <|> fmap upgradeFormatProfile (Dhall.rawInput Dhall.auto expression)
-    <|> fmap upgradeCardinalityProfile (Dhall.rawInput Dhall.auto expression)
-    <|> fmap upgradeVocabularyProfile (Dhall.rawInput Dhall.auto expression)
-    <|> fmap upgradeTypeAwareProfile (Dhall.rawInput Dhall.auto expression)
-    <|> fmap upgradeDescribedProfile (Dhall.rawInput Dhall.auto expression)
-    <|> fmap upgradeLegacyProfile (Dhall.rawInput Dhall.auto expression)
+    <|> fmap upgradePreGuidanceProfile (Dhall.rawInput Dhall.auto expression)
+    <|> decodeProfilesBeforeGuidance expression
+
+-- | The generic Dhall record extractor deliberately ignores extra record
+-- members. Without this guard, a value from the 0.8.0.0 generation can fall
+-- through to an older decoder and silently lose nested-reference or uniqueness
+-- declarations. Every non-empty 0.8.0.0 field-rule value carries at least one
+-- of these post-0.7 record members, even when its value is @None@.
+decodeProfilesBeforeGuidance :: Expr Src Void -> Maybe ProfileSpec
+decodeProfilesBeforeGuidance expression
+  | containsPost07DescriptorField expression = Nothing
+  | otherwise =
+      fmap upgradePreNestedReferenceProfile (Dhall.rawInput Dhall.auto expression)
+        <|> fmap upgradePreBundleVersionProfile (Dhall.rawInput Dhall.auto expression)
+        <|> fmap upgradePrePathProfile (Dhall.rawInput Dhall.auto expression)
+        <|> fmap upgradePreActorProfile (Dhall.rawInput Dhall.auto expression)
+        <|> fmap upgradePreObjectProfile (Dhall.rawInput Dhall.auto expression)
+        <|> fmap upgradeReferenceProfile (Dhall.rawInput Dhall.auto expression)
+        <|> fmap upgradeConditionalProfile (Dhall.rawInput Dhall.auto expression)
+        <|> fmap upgradeNestedProfile (Dhall.rawInput Dhall.auto expression)
+        <|> fmap upgradeFormatProfile (Dhall.rawInput Dhall.auto expression)
+        <|> fmap upgradeCardinalityProfile (Dhall.rawInput Dhall.auto expression)
+        <|> fmap upgradeVocabularyProfile (Dhall.rawInput Dhall.auto expression)
+        <|> fmap upgradeTypeAwareProfile (Dhall.rawInput Dhall.auto expression)
+        <|> fmap upgradeDescribedProfile (Dhall.rawInput Dhall.auto expression)
+        <|> fmap upgradeLegacyProfile (Dhall.rawInput Dhall.auto expression)
+
+containsPost07DescriptorField :: Expr Src Void -> Bool
+containsPost07DescriptorField =
+  anyOf (cosmosOf Dhall.Core.subExpressions) $ \case
+    Dhall.Core.RecordLit fields ->
+      any (`Dhall.Map.member` fields) ["uniqueBy", "allowLocal", "externalUriPattern"]
+    _ -> False
 
 -- | The description a profile attaches to a frontmatter key, looking in
 -- @required@ first, then @recommended@, then @optional@. 'Nothing' when the key

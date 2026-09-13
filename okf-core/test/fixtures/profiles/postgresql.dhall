@@ -13,6 +13,7 @@ let FieldFormat = ../../../dhall/FieldFormat.dhall
 in    { name = "shinzui-postgresql"
       , description = Some
           "Conventions for documenting a PostgreSQL database as an OKF bundle."
+      , guidance = None Text
       , okfVersion = "0.1"
       , frontmatter =
         { required =
@@ -52,6 +53,7 @@ in    { name = "shinzui-postgresql"
       , types =
         [ { type = "PostgreSQL Schema"
           , description = Some "One namespace grouping tables and views."
+          , guidance = None Text
           , frontmatter =
             { required = [] : List FieldRule.Type
             , recommended = [] : List FieldRule.Type
@@ -66,6 +68,7 @@ in    { name = "shinzui-postgresql"
         , { type = "PostgreSQL Table"
           , description = Some
               "One physical table in a schema, including its column list."
+          , guidance = None Text
           , frontmatter =
             { required = [] : List FieldRule.Type
             , recommended = [] : List FieldRule.Type
@@ -79,6 +82,7 @@ in    { name = "shinzui-postgresql"
           }
         , { type = "PostgreSQL View"
           , description = Some "One view, including the columns it projects."
+          , guidance = None Text
           , frontmatter =
             { required = [] : List FieldRule.Type
             , recommended = [] : List FieldRule.Type

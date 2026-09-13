@@ -12,6 +12,20 @@ One namespace: the tables and views under it, and why they belong together.
 
 Declared by the [shinzui-postgresql](/profile.md) profile.
 
+## Guidance
+
+### Profile-wide
+
+Inspect the live PostgreSQL object and its relevant DDL before documenting it. Record what exists now, not an intended design.
+
+Write enough operational context that another reader can locate the object and verify the description against the database.
+
+### Type-specific
+
+Inspect the namespace's current contents and privileges.
+
+Explain its responsibility and naming boundary, then identify important tables and views and how callers should choose among them.
+
 ## Type settings
 
 - Path pattern: `schemas/*`

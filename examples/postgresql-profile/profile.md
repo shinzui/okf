@@ -10,6 +10,12 @@ generated:
 
 Conventions for documenting a PostgreSQL database as an OKF bundle.
 
+## Guidance
+
+Inspect the live PostgreSQL object and its relevant DDL before documenting it. Record what exists now, not an intended design.
+
+Write enough operational context that another reader can locate the object and verify the description against the database.
+
 ## Settings
 
 - OKF version: `0.2`

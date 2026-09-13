@@ -42,6 +42,10 @@
 --   @resource@ and no @tags@.
 -- * @title@ on a type concept is the profile's @type@ string verbatim, not the
 --   slug: the title is what a reader must write in their own frontmatter.
+-- * Non-blank profile guidance is rendered in a root @Guidance@ section. Type
+--   pages render effective guidance in profile-wide then type-specific order,
+--   with both scopes labeled. Guidance is body Markdown only and never becomes
+--   generated frontmatter.
 -- * Every cross-link is bundle-absolute and produced by
 --   'Okf.ConceptId.renderConceptLink', so 'Okf.Graph.buildGraph' resolves it and
 --   'Okf.Validation.validateBundle' finds no dangling reference.
@@ -64,6 +68,7 @@ where
 
 import Data.Char qualified as Char
 import Data.Map.Strict qualified as Map
+import Data.Maybe (catMaybes)
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Text qualified as Text
@@ -245,6 +250,7 @@ renderRootConcept options compiled rootId typeLayout =
     spec = compiledProfileSpec compiled
     profileName = spec ^. #name
     declaredDescription = nonBlank (spec ^. #description)
+    declaredGuidance = nonBlank (spec ^. #guidance)
     frontmatter =
       withGenerated options $
         okfCommon
@@ -261,6 +267,7 @@ renderRootConcept options compiled rootId typeLayout =
           -- fallback exists to keep the frontmatter strict-clean; repeating it
           -- here would tell the reader nothing they cannot see in the heading.
           <> maybe [] (\prose -> [prose, ""]) declaredDescription
+          <> maybe [] (\prose -> ["## Guidance", "", prose, ""]) declaredGuidance
           <> [ "## Settings",
                "",
                "- OKF version: " <> code (spec ^. #okfVersion),
@@ -342,6 +349,8 @@ renderTypeConcept options compiled rootId typeName typeConceptId =
               commonTimestamp = options ^. #timestamp
             }
     rules = compiledProfileRulesForType compiled typeName
+    profileGuidance = nonBlank (spec ^. #guidance)
+    typeGuidance = typeRule >>= (nonBlank . (^. #guidance))
     body =
       unlinesText $
         ["# " <> typeName, ""]
@@ -349,8 +358,10 @@ renderTypeConcept options compiled rootId typeName typeConceptId =
           -- in the body; the synthesized fallback is frontmatter-only.
           <> maybe [] (\prose -> [prose, ""]) (typeRule >>= (nonBlank . (^. #description)))
           <> [ "Declared by the " <> renderConceptLink rootId profileName <> " profile.",
-               "",
-               "## Type settings",
+               ""
+             ]
+          <> guidanceLines
+          <> [ "## Type settings",
                "",
                "- Path pattern: " <> maybe "none" code (typeRule >>= (^. #pathPattern)),
                "- Resource URI scheme: " <> maybe "none" code (typeRule >>= (^. #resourceScheme)),
@@ -369,6 +380,13 @@ renderTypeConcept options compiled rootId typeName typeConceptId =
           <> group "Required" (Map.toAscList (Map.filter ((== PresenceRequired) . presenceClassOf) rules))
           <> group "Recommended" (Map.toAscList (Map.filter ((== PresenceRecommended) . presenceClassOf) rules))
           <> group "Optional" (Map.toAscList (Map.filter ((== PresenceOptional) . presenceClassOf) rules))
+
+    guidanceLines =
+      case catMaybes [("Profile-wide",) <$> profileGuidance, ("Type-specific",) <$> typeGuidance] of
+        [] -> []
+        sections ->
+          ["## Guidance", ""]
+            <> concatMap (\(heading, prose) -> ["### " <> heading, "", prose, ""]) sections
 
     group heading [] = ["### " <> heading, "", "(none)", ""]
     group heading members =

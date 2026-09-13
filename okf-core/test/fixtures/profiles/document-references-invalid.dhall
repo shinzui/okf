@@ -23,6 +23,7 @@ let rule =
 
 in    { name = "invalid-document-references"
       , description = None Text
+      , guidance = None Text
       , okfVersion = "0.1"
       , frontmatter =
         { required =

@@ -86,6 +86,7 @@ let attesterMembers =
 in    { name = "attested-computation-house"
       , description = Some
           "A house convention for the OKF v0.2 attested computation contract."
+      , guidance = None Text
       , okfVersion = "0.2"
       , frontmatter =
         { required = [ field.plain "type" ]

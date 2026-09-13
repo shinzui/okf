@@ -8,6 +8,7 @@ let field = ../../../dhall/mk/FieldRule.dhall
 
 in    { name = "closed-fields"
       , description = Some "Exercises closed field names and value vocabularies."
+      , guidance = None Text
       , okfVersion = "0.1"
       , frontmatter =
         { required =

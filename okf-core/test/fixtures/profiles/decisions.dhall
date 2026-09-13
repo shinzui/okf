@@ -11,6 +11,7 @@ let field = ../../../dhall/mk/FieldRule.dhall
 
 in    { name = "decisions"
       , description = Some "How this team records architectural decisions."
+      , guidance = None Text
       , okfVersion = "0.1"
       , frontmatter =
         { required =

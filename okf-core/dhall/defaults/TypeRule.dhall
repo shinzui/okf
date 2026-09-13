@@ -6,6 +6,7 @@ let FrontmatterRules = ./FrontmatterRules.dhall
 in  { Type = TypeRuleType
     , default =
       { description = None Text
+      , guidance = None Text
       , frontmatter = FrontmatterRules.default
       , pathPattern = None Text
       , resourceScheme = None Text

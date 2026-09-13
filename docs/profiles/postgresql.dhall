@@ -3,9 +3,9 @@
 -- worked example shipped with the tool; the authoritative, versioned profiles live
 -- in the separate okf-profiles repository, which projects import by pinned URL.
 --
--- Every `description` here is documentation for whoever reads or adopts the
--- profile: okf never checks a description against a bundle, and no description can
--- produce a profile violation.
+-- Every `description` here identifies the profile or type. `guidance` tells an
+-- author how to document it. okf renders both, but never treats either prose field
+-- as a checked rule or executable instruction.
 --
 -- Frontmatter keys are built with the `mk/FieldRule.dhall` constructors, which is
 -- the form to reach for: `field.documented "key" "prose"` and `field.plain "key"`
@@ -26,6 +26,12 @@ let nested = ../../okf-core/dhall/mk/NestedFieldRule.dhall
 in    { name = "shinzui-postgresql"
       , description = Some
           "Conventions for documenting a PostgreSQL database as an OKF bundle."
+      , guidance = Some
+          ''
+          Inspect the live PostgreSQL object and its relevant DDL before documenting it. Record what exists now, not an intended design.
+
+          Write enough operational context that another reader can locate the object and verify the description against the database.
+          ''
       , okfVersion = "0.2"
       , frontmatter =
         { required =
@@ -85,6 +91,12 @@ in    { name = "shinzui-postgresql"
         [ { type = "PostgreSQL Schema"
           , description = Some
               "One namespace: the tables and views under it, and why they belong together."
+          , guidance = Some
+              ''
+              Inspect the namespace's current contents and privileges.
+
+              Explain its responsibility and naming boundary, then identify important tables and views and how callers should choose among them.
+              ''
           , frontmatter =
             { required = [] : List FieldRule.Type
             , recommended = [] : List FieldRule.Type
@@ -99,6 +111,12 @@ in    { name = "shinzui-postgresql"
         , { type = "PostgreSQL Table"
           , description = Some
               "One physical table in a schema, including its column list."
+          , guidance = Some
+              ''
+              Inspect the live columns, types, nullability, keys, constraints, and indexes before writing the schema table.
+
+              Explain each column's business meaning and note defaults, generated values, or operational behavior that readers need to use the table safely.
+              ''
           , frontmatter =
             { required = [] : List FieldRule.Type
             , recommended = [] : List FieldRule.Type
@@ -113,6 +131,12 @@ in    { name = "shinzui-postgresql"
         , { type = "PostgreSQL View"
           , description = Some
               "One view: the columns it projects and the question it answers."
+          , guidance = Some
+              ''
+              Inspect the live view definition and result columns before documenting it.
+
+              Explain the question it answers, its source relations, important filters or aggregations, and any refresh, security, or performance behavior readers must know.
+              ''
           , frontmatter =
             { required = [] : List FieldRule.Type
             , recommended = [] : List FieldRule.Type

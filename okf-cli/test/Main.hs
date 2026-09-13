@@ -1081,6 +1081,7 @@ samplePostgresqlProfile =
   ProfileSpec
     { name = "shinzui-postgresql",
       description = Nothing,
+      guidance = Nothing,
       okfVersion = "0.1",
       frontmatter =
         FrontmatterRules
@@ -1096,6 +1097,7 @@ samplePostgresqlProfile =
         [ TypeRule
             { type_ = "PostgreSQL Table",
               description = Nothing,
+              guidance = Nothing,
               frontmatter = FrontmatterRules {required = [], recommended = [], optional = []},
               pathPattern = Just "schemas/*/tables/*",
               resourceScheme = Just "postgresql",
@@ -1111,6 +1113,9 @@ sampleDecisionsProfile =
   ProfileSpec
     { name = "decisions",
       description = Just "How this team records architectural decisions.",
+      guidance =
+        Just
+          "\nCapture the context and evidence for every decision.\n\nLink the implementation plan when one exists.\n",
       okfVersion = "0.1",
       frontmatter =
         FrontmatterRules
@@ -1155,6 +1160,7 @@ sampleDecisionsProfile =
         [ TypeRule
             { type_ = "Decision Record",
               description = Just "One accepted decision, never edited after acceptance.",
+              guidance = Just "Explain the trade-offs.\n\nRecord follow-up work.",
               frontmatter =
                 FrontmatterRules
                   { required = [FieldRule "owner" (Just "Person responsible for the decision.") [] Scalar (Just (DocumentHandle "USR")) Nothing Nothing Nothing Nothing Nothing Nothing],
@@ -1186,6 +1192,7 @@ sampleNestedProfile =
   ProfileSpec
     { name = "nested",
       description = Nothing,
+      guidance = Nothing,
       okfVersion = "0.1",
       frontmatter =
         FrontmatterRules
@@ -1253,6 +1260,7 @@ sampleNestedProfileDetail =
   [ "export: (root)",
     "name: nested",
     "description: (none)",
+    "guidance: (none)",
     "okfVersion: 0.1",
     "requireBundleVersion: (none)",
     "allowUnknownTypes: true",
@@ -1332,6 +1340,10 @@ sampleProfileDetail =
   [ "export: nested.decisions",
     "name: decisions",
     "description: How this team records architectural decisions.",
+    "guidance:",
+    "  Capture the context and evidence for every decision.",
+    "  ",
+    "  Link the implementation plan when one exists.",
     "okfVersion: 0.1",
     "requireBundleVersion: (none)",
     "allowUnknownTypes: false",
@@ -1373,6 +1385,10 @@ sampleProfileDetail =
     "",
     "type: Decision Record",
     "  description: One accepted decision, never edited after acceptance.",
+    "  guidance:",
+    "    Explain the trade-offs.",
+    "    ",
+    "    Record follow-up work.",
     "  frontmatter.required:",
     "    - owner: Person responsible for the decision.",
     "      allowedValues: (any)",
@@ -1421,6 +1437,7 @@ sampleUndocumentedProfileDetail =
   [ "export: (root)",
     "name: shinzui-postgresql",
     "description: (none)",
+    "guidance: (none)",
     "okfVersion: 0.1",
     "requireBundleVersion: (none)",
     "allowUnknownTypes: false",
@@ -1452,6 +1469,7 @@ sampleUndocumentedProfileDetail =
     "",
     "type: PostgreSQL Table",
     "  description: (none)",
+    "  guidance: (none)",
     "  frontmatter.required: (none)",
     "  frontmatter.recommended: (none)",
     "  frontmatter.optional: (none)",

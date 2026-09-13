@@ -33,6 +33,7 @@ let field = ../../../dhall/mk/FieldRule.dhall
 in    { name = "concept-filters"
       , description = Some
           "Fixture profile for listing and filtering the concepts in a bundle."
+      , guidance = None Text
       , okfVersion = "0.2"
       , frontmatter = FrontmatterRules::{
         , required = [ field.plain "type", field.plain "title" ]

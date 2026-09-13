@@ -48,6 +48,7 @@ let acceptanceCriteriaRules =
 in    { name = "nested-references-and-uniqueness"
       , description = Some
           "Exercises external-only nested Mori references and list-local acceptance criterion IDs."
+      , guidance = None Text
       , okfVersion = "0.2"
       , frontmatter =
         { required =

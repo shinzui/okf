@@ -12,6 +12,20 @@ One view: the columns it projects and the question it answers.
 
 Declared by the [shinzui-postgresql](/profile.md) profile.
 
+## Guidance
+
+### Profile-wide
+
+Inspect the live PostgreSQL object and its relevant DDL before documenting it. Record what exists now, not an intended design.
+
+Write enough operational context that another reader can locate the object and verify the description against the database.
+
+### Type-specific
+
+Inspect the live view definition and result columns before documenting it.
+
+Explain the question it answers, its source relations, important filters or aggregations, and any refresh, security, or performance behavior readers must know.
+
 ## Type settings
 
 - Path pattern: `schemas/*/views/*`

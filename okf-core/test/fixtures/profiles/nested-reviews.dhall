@@ -14,6 +14,7 @@ let field = ../../../dhall/mk/FieldRule.dhall
 
 in    { name = "nested-reviews"
       , description = Some "Validates one level of structured review records."
+      , guidance = None Text
       , okfVersion = "0.1"
       , frontmatter =
         { required =

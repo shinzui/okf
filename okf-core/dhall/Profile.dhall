@@ -12,8 +12,9 @@
 -- `idField = Some "docId"` names the frontmatter key that holds stable document
 -- handles.  `None Text` disables every document-ID check.
 --
--- `description` documents the profile as a whole, in prose, for whoever has to
--- read or adopt it. Like every description in this schema it is documentary only.
+-- `description` concisely documents the profile's identity. `guidance` is
+-- multiline Markdown prescribing how authors should do the work. Neither is
+-- checked against a bundle, and guidance is never executed by okf.
 -- `allowUnknownFields = False` closes top-level frontmatter to core OKF keys,
 -- the configured `idField`, and the effective profile/type field rules.
 --
@@ -29,6 +30,7 @@ let FrontmatterRules = ./FrontmatterRules.dhall
 
 in  { name : Text
     , description : Optional Text
+    , guidance : Optional Text
     , okfVersion : Text
     , frontmatter : FrontmatterRules
     , allowUnknownTypes : Bool

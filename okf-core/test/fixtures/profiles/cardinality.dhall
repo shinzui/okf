@@ -8,6 +8,7 @@ let field = ../../../dhall/mk/FieldRule.dhall
 
 in    { name = "cardinality"
       , description = Some "Exercises scalar and list field cardinality."
+      , guidance = None Text
       , okfVersion = "0.1"
       , frontmatter =
         { required =

@@ -26,6 +26,7 @@ let selfReference =
 in    { name = "document-references"
       , description = Some
           "Architecture decisions with bundle-local or explicitly external references."
+      , guidance = None Text
       , okfVersion = "0.1"
       , frontmatter =
         { required = [ field.plain "type", field.plain "title" ]
