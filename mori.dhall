@@ -301,6 +301,13 @@ in  Schema.Project::{
       [ Schema.MoriRef::{ namespace = "shinzui", name = "haskell-jitsurei" } ]
     , okfBundles =
       [ Schema.OkfBundle::{
+        , name = "research"
+        , path = "docs/research"
+        , profile = Some "docs/research/profile.dhall"
+        , okfVersion = "0.2"
+        , description = Some "Research evidence, alternatives, and open questions for later decisions"
+        }
+      , Schema.OkfBundle::{
         , name = "capabilities"
         , path = "docs/capabilities"
         , profile = Some "docs/capabilities/profile.dhall"
