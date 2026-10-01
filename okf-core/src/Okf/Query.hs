@@ -46,6 +46,9 @@ module Okf.Query
     renderWhereCondition,
     renderConceptPredicate,
     renderWhereParseError,
+    matchesPredicate,
+    filterConceptsWhere,
+    checkPredicateAgainstProfile,
   )
 where
 
@@ -548,6 +551,75 @@ renderWhereParseError = \case
       caret
         | Text.any (== '\n') input = " in: " <> input
         | otherwise = "\n  " <> input <> "\n  " <> Text.replicate offset " " <> "^"
+
+-- | Whether one concept satisfies one predicate.
+--
+-- Positive and negative value questions both need something to compare: a
+-- comparable scalar is a string, number, or boolean, as 'scalarText' reads it,
+-- whether it is the value itself or an element of a list. A concept with no
+-- such scalar for the key — the key absent, null, an empty list, or only
+-- records — fails @status!=completed@ just as it fails @status=completed@,
+-- because \"its status is not completed\" is not something the concept says.
+-- A negative question is __universal over a list__: @tags!=cli@ rejects a
+-- concept tagged @[profiles, cli]@, because hiding a tag means hiding every
+-- concept that carries it. Explicit @not@ is different: it is plain boolean
+-- negation of its whole operand, absence included.
+matchesPredicate :: ConceptPredicate -> Concept -> Bool
+matchesPredicate predicate concept =
+  case predicate of
+    PredicateAtom conceptFilter -> matchesFilter conceptFilter concept
+    PredicateNotEquals selector forbidden -> holdsNoneOf selector (== forbidden)
+    PredicateIn selector wanted -> any (`elem` wanted) (comparable selector)
+    PredicateNotIn selector forbidden -> holdsNoneOf selector (`elem` forbidden)
+    PredicateAnd left right -> matchesPredicate left concept && matchesPredicate right concept
+    PredicateOr left right -> matchesPredicate left concept || matchesPredicate right concept
+    PredicateNot operand -> not (matchesPredicate operand concept)
+  where
+    comparable selector = mapMaybe scalarText (conceptFieldValues selector concept)
+    holdsNoneOf selector isForbidden =
+      case comparable selector of
+        [] -> False
+        values -> not (any isForbidden values)
+
+-- | Keep the concepts that satisfy the given legacy filters together with
+-- every condition, in the order they arrived.
+--
+-- Legacy equalities join the supplied filters and are answered by
+-- 'filterConcepts', so repeating a legacy key still means \"either\". Every
+-- predicate must then hold on its own: repeating one is an \"and\", even on the
+-- same key, so two @--where status!=...@ flags exclude both values.
+filterConceptsWhere :: [ConceptFilter] -> [WhereCondition] -> [Concept] -> [Concept]
+filterConceptsWhere filters conditions concepts =
+  filter satisfiesPredicates (filterConcepts (filters <> legacyFilters) concepts)
+  where
+    legacyFilters = [conceptFilter | LegacyWhere conceptFilter <- conditions]
+    predicates = [predicate | PredicateWhere predicate <- conditions]
+    satisfiesPredicates concept = all (`matchesPredicate` concept) predicates
+
+-- | Check every field and value a predicate mentions against a profile, as
+-- 'checkFiltersAgainstProfile' checks a legacy filter.
+--
+-- Every operand counts, including those under @not@ and on either side of
+-- @or@: a misspelled exclusion is otherwise silently ineffective, which is
+-- worse than a misspelled inclusion because the listing still looks right.
+-- Each excluded value or set member is checked as the equality it names, so
+-- scopes, nested vocabularies, the core-key fallback, and @type@ checking are
+-- exactly the legacy ones. Requested types come from the caller; a @type@
+-- equality inside an expression does not narrow anything, and a contradiction
+-- is not an error, only an empty result. Errors are reported once each, in the
+-- order the predicate mentions them.
+checkPredicateAgainstProfile :: CompiledProfile -> [Text] -> ConceptPredicate -> [FilterProfileError]
+checkPredicateAgainstProfile compiled requestedTypes =
+  List.nub . checkFiltersAgainstProfile compiled requestedTypes . operandFilters
+  where
+    operandFilters = \case
+      PredicateAtom conceptFilter -> [conceptFilter]
+      PredicateNotEquals selector value -> [FieldEquals selector value]
+      PredicateIn selector values -> FieldEquals selector <$> NonEmpty.toList values
+      PredicateNotIn selector values -> FieldEquals selector <$> NonEmpty.toList values
+      PredicateAnd left right -> operandFilters left <> operandFilters right
+      PredicateOr left right -> operandFilters left <> operandFilters right
+      PredicateNot operand -> operandFilters operand
 
 -- Reading ---------------------------------------------------------------------
 

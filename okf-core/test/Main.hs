@@ -310,7 +310,10 @@ main = do
         test "parseWhereCondition reads legacy, standalone, and expression conditions" testParseWhereConditions,
         test "scalarText compares numbers and booleans as JSON, containers as nothing" testQueryScalarText,
         testIO "filterConcepts selects over lists, nested records, presence, and absence" testFilterConceptsOverFixture,
-        testIO "checkFiltersAgainstProfile rejects undeclared keys and out-of-vocabulary values" testCheckFiltersAgainstProfile
+        testIO "checkFiltersAgainstProfile rejects undeclared keys and out-of-vocabulary values" testCheckFiltersAgainstProfile,
+        testIO "filterConceptsWhere selects with inclusion, exclusion, and composition" testFilterConceptsWhereOverFixture,
+        test "matchesPredicate needs a comparable scalar for every value question" testMatchesPredicateEdgeCases,
+        testIO "checkPredicateAgainstProfile checks every operand with legacy scope rules" testCheckPredicateAgainstProfile
       ]
   unless (and results) exitFailure
 
@@ -7533,6 +7536,227 @@ testCheckFiltersAgainstProfile = do
             FieldEquals (TopLevelField "statuz") "x"
           ]
       )
+
+-- | 'filterConceptsWhere' over the concept-filter fixture: inclusion,
+-- exclusion, explicit composition, and how they meet legacy grouping.
+testFilterConceptsWhereOverFixture :: IO (Either Text ())
+testFilterConceptsWhereOverFixture = do
+  root <- fixturePath "concept-filters"
+  concepts <- readBundle root
+  pure $ do
+    let status = TopLevelField "status"
+        tags = TopLevelField "tags"
+        outcome = NestedField "reviews" "outcome"
+        equals selector value = PredicateAtom (FieldEquals selector value)
+        selectedWith legacy conditions =
+          renderConceptId . conceptIdOf <$> filterConceptsWhere legacy conditions concepts
+        selected = selectedWith []
+        predicates = map PredicateWhere
+        parsedConditions raws = traverse (first renderWhereParseError . parseWhereCondition) raws
+        selectedParsed raws = selected <$> parsedConditions raws
+
+    assertEqual
+      ["requests/alpha", "requests/beta"]
+      (selected (predicates [PredicateIn status ("accepted" :| ["proposed"])]))
+    -- Scratch has no status and Gamma is completed.
+    assertEqual
+      ["requests/alpha", "requests/beta"]
+      (selected (predicates [PredicateNotIn status ("completed" :| ["rejected"])]))
+    -- Repeated explicit conditions are a conjunction, even on one key.
+    assertEqual
+      ["requests/alpha", "requests/beta"]
+      (selected (predicates [PredicateNotEquals status "completed", PredicateNotEquals status "rejected"]))
+    assertEqual
+      ["requests/beta"]
+      ( selected
+          ( predicates
+              [ PredicateIn status ("accepted" :| ["proposed"]),
+                PredicateIn status ("proposed" :| ["completed"])
+              ]
+          )
+      )
+    assertEqual [] (selected (predicates [PredicateAnd (equals status "accepted") (equals status "proposed")]))
+    -- A negative value question is universal over a list: Alpha's other tag
+    -- does not save it, nor does Gamma's approving review.
+    assertEqual [] (selected (predicates [PredicateNotEquals tags "cli"]))
+    assertEqual ["requests/beta"] (selected (predicates [PredicateNotEquals tags "profiles"]))
+    assertEqual
+      ["requests/alpha"]
+      (selected (predicates [PredicateNotIn outcome ("changes-requested" :| [])]))
+    -- Boolean not negates its whole operand, absence included.
+    assertEqual
+      ["notes/scratch", "requests/alpha", "requests/beta"]
+      (selected (predicates [PredicateNot (equals status "completed")]))
+    assertEqual
+      ["notes/scratch", "requests/beta"]
+      (selected (predicates [PredicateNot (PredicateAtom (FieldPresent (TopLevelField "reviews")))]))
+    assertEqual
+      ["requests/gamma"]
+      (selected (predicates [PredicateAtom (FieldPresent (TopLevelField "completedAt"))]))
+    -- Absence is spelled out when it should be included.
+    assertEqual
+      ["notes/scratch", "requests/alpha"]
+      (selected (predicates [PredicateOr (equals status "accepted") (PredicateAtom (FieldAbsent status))]))
+    -- A disjunction across keys.
+    assertEqual
+      ["requests/alpha", "requests/gamma"]
+      (selected (predicates [PredicateOr (equals status "completed") (equals tags "profiles")]))
+    assertEqual
+      ["requests/alpha", "requests/beta"]
+      (selected (predicates [PredicateAnd (PredicateIn status ("accepted" :| ["proposed"])) (equals tags "cli")]))
+
+    -- Legacy repetition stays an "or", and a predicate then narrows it.
+    assertEqual
+      ["requests/alpha", "requests/beta"]
+      (selected [LegacyWhere (FieldEquals status "accepted"), LegacyWhere (FieldEquals status "proposed")])
+    assertEqual
+      ["requests/alpha"]
+      ( selected
+          [ LegacyWhere (FieldEquals status "accepted"),
+            LegacyWhere (FieldEquals status "proposed"),
+            PredicateWhere (PredicateNotEquals status "proposed")
+          ]
+      )
+    -- A supplied --type filter and a legacy type= still share one group.
+    assertEqual
+      ["notes/scratch", "requests/alpha", "requests/beta", "requests/gamma"]
+      ( selectedWith
+          [FieldEquals (TopLevelField "type") "Note"]
+          [LegacyWhere (FieldEquals (TopLevelField "type") "Improvement Request")]
+      )
+    -- Stored frontmatter only: no default status is invented for Scratch.
+    assertEqual [] (selected [LegacyWhere (FieldEquals status "stable")])
+    assertEqual [] (selected (predicates [PredicateIn status ("stable" :| [])]))
+
+    -- The same selections, read from the strings a user types.
+    assertEqual
+      (Right ["requests/alpha", "requests/beta"])
+      (selectedParsed ["status not in [\"completed\",\"rejected\"]"])
+    assertEqual (Right ["requests/alpha"]) (selectedParsed ["reviews.outcome not in [\"changes-requested\"]"])
+    assertEqual
+      (Right ["notes/scratch", "requests/alpha", "requests/beta"])
+      (selectedParsed ["(not (status=\"completed\"))"])
+    assertEqual
+      (Right ["notes/scratch", "requests/alpha", "requests/beta"])
+      (selectedParsed ["(missing(status) or status!=\"completed\")"])
+
+-- | Value predicates over the shapes the fixture does not hold: null, empty
+-- lists, records, lists of records, non-textual scalars, escaped strings, and
+-- lists mixing scalars with records.
+testMatchesPredicateEdgeCases :: Either Text ()
+testMatchesPredicateEdgeCases = do
+  let key = TopLevelField
+      conceptWith rawId pairs = profileConcept rawId pairs ""
+      matches predicate concept = matchesPredicate predicate concept
+  nullStatus <- conceptWith "edge/null" [("status", Null)]
+  emptyList <- conceptWith "edge/empty" [("status", toJSON ([] :: [Text]))]
+  record <- conceptWith "edge/record" [("status", object ["a" .= (1 :: Int)])]
+  records <- conceptWith "edge/records" [("status", toJSON [object ["a" .= (1 :: Int)]])]
+  emptyText <- conceptWith "edge/empty-text" [("status", String "")]
+  scalars <- conceptWith "edge/scalars" [("flag", Bool True), ("count", Number 12), ("title", String "say \"hi\"")]
+  mixed <- conceptWith "edge/mixed" [("tags", toJSON [String "cli", object ["a" .= (1 :: Int)]])]
+
+  -- No comparable scalar: every direct value question fails, positive or
+  -- negative, while presence still sees the key and boolean not inverts.
+  for_ [nullStatus, emptyList, record, records] $ \concept -> do
+    assertBool "!= needs a comparable scalar" (not (matches (PredicateNotEquals (key "status") "x") concept))
+    assertBool "not in needs a comparable scalar" (not (matches (PredicateNotIn (key "status") ("x" :| [])) concept))
+    assertBool "in needs a comparable scalar" (not (matches (PredicateIn (key "status") ("x" :| [])) concept))
+    assertBool "not inverts a failed equality" (matches (PredicateNot (PredicateAtom (FieldEquals (key "status") "x"))) concept)
+  assertBool "a stored null is present" (matches (PredicateAtom (FieldPresent (key "status"))) nullStatus)
+  assertBool "an empty list is absent" (matches (PredicateAtom (FieldAbsent (key "status"))) emptyList)
+  assertBool "a record is present" (matches (PredicateAtom (FieldPresent (key "status"))) record)
+
+  -- An empty string is a comparable string.
+  assertBool "empty string != x" (matches (PredicateNotEquals (key "status") "x") emptyText)
+  assertBool "empty string in [\"\"]" (matches (PredicateIn (key "status") ("" :| [])) emptyText)
+  assertBool "empty string != \"\" fails" (not (matches (PredicateNotEquals (key "status") "") emptyText))
+
+  -- Numbers and booleans compare as their JSON text.
+  assertBool "true in [true]" (matches (PredicateIn (key "flag") ("true" :| [])) scalars)
+  assertBool "true != false" (matches (PredicateNotEquals (key "flag") "false") scalars)
+  assertBool "12 not in [12]" (not (matches (PredicateNotIn (key "count") ("12" :| [])) scalars))
+  assertBool "12 != 13" (matches (PredicateNotEquals (key "count") "13") scalars)
+  -- An escaped expression string reaches the stored text.
+  quoted <- first renderWhereParseError (parseWhereCondition "(title=\"say \\\"hi\\\"\")")
+  assertBool
+    "escaped quotes match"
+    (case quoted of PredicateWhere predicate -> matches predicate scalars; LegacyWhere _ -> False)
+
+  -- A record inside a list is ignored; its scalar siblings still count.
+  assertBool "cli is forbidden" (not (matches (PredicateNotEquals (key "tags") "cli") mixed))
+  assertBool "other is not present" (matches (PredicateNotIn (key "tags") ("other" :| [])) mixed)
+  assertBool "cli is included" (matches (PredicateIn (key "tags") ("cli" :| [])) mixed)
+
+-- | Every operand of a predicate is checked, with the legacy checker's scope
+-- rules, below @not@ and on both sides of @or@.
+testCheckPredicateAgainstProfile :: IO (Either Text ())
+testCheckPredicateAgainstProfile = do
+  descriptorPath <- fixtureFilePath "profiles/concept-filters.dhall"
+  loaded <- loadProfileFile descriptorPath
+  pure $ do
+    spec <- first ("failed to load concept-filter profile: " <>) loaded
+    compiled <- firstShow (compileProfile spec)
+    openTypes <- firstShow (compileProfile (spec & #allowUnknownTypes .~ True))
+    let status = TopLevelField "status"
+        statusError value = FilterValueNotInVocabulary status value ["proposed", "accepted", "completed", "rejected"]
+        equals selector value = PredicateAtom (FieldEquals selector value)
+        checkAll = checkPredicateAgainstProfile compiled []
+        checkFor = checkPredicateAgainstProfile compiled
+
+    -- Negative values and set members outside a closed vocabulary. 'status'
+    -- is also a core key, so this guards the declaration-before-core order.
+    assertEqual [statusError "acepted"] (checkAll (PredicateNotEquals status "acepted"))
+    assertEqual [] (checkAll (PredicateNotEquals status "accepted"))
+    assertEqual [statusError "acepted"] (checkAll (PredicateNotIn status ("completed" :| ["acepted"])))
+    assertEqual [statusError "proposd"] (checkAll (PredicateIn status ("accepted" :| ["proposd"])))
+    -- Below not and on a branch of or that would match everything.
+    assertEqual [statusError "acepted"] (checkAll (PredicateNot (equals status "acepted")))
+    assertEqual
+      [statusError "acepted"]
+      (checkAll (PredicateOr (PredicateAtom (FieldAbsent status)) (PredicateNot (equals status "acepted"))))
+    -- Once each, in written order, undeclared keys included.
+    assertEqual
+      [statusError "acepted"]
+      (checkAll (PredicateAnd (PredicateNotEquals status "acepted") (PredicateNotEquals status "acepted")))
+    assertEqual
+      [FilterFieldNotDeclared (TopLevelField "statuz"), statusError "acepted"]
+      ( checkAll
+          ( PredicateOr
+              (PredicateIn (TopLevelField "statuz") ("x" :| ["y"]))
+              (PredicateNotEquals status "acepted")
+          )
+      )
+    assertEqual
+      [FilterFieldNotDeclared (TopLevelField "statuz")]
+      (checkAll (PredicateNot (PredicateAtom (FieldPresent (TopLevelField "statuz")))))
+    -- The core-key fallback and an open nested vocabulary accept anything.
+    assertEqual [] (checkAll (PredicateNotEquals (TopLevelField "timestamp") "anything"))
+    assertEqual [] (checkAll (PredicateNotIn (NestedField "reviews" "reviewer") ("anyone" :| [])))
+    -- A closed nested vocabulary.
+    assertEqual
+      [FilterValueNotInVocabulary (NestedField "reviews" "outcome") "approvd" ["approved", "changes-requested", "commented"]]
+      (checkAll (PredicateNotIn (NestedField "reviews" "outcome") ("approvd" :| [])))
+    -- The scope trap: noteKind is closed on Note alone.
+    assertEqual
+      [FilterValueNotInVocabulary (TopLevelField "noteKind") "bogus" ["scratch", "reference"]]
+      (checkFor ["Note"] (PredicateNotEquals (TopLevelField "noteKind") "bogus"))
+    assertEqual [] (checkAll (PredicateNotEquals (TopLevelField "noteKind") "bogus"))
+    -- A type equality inside an expression narrows nothing.
+    assertEqual
+      []
+      (checkAll (PredicateAnd (equals (TopLevelField "type") "Note") (equals (TopLevelField "noteKind") "bogus")))
+    -- Requested types restrict declarations.
+    assertEqual
+      [FilterFieldNotDeclared (TopLevelField "targetPlan")]
+      (checkFor ["Note"] (PredicateNot (PredicateAtom (FieldPresent (TopLevelField "targetPlan")))))
+    -- Type names are the vocabulary of type unless unknown types are allowed.
+    assertEqual
+      [FilterValueNotInVocabulary (TopLevelField "type") "Ghost" ["Improvement Request", "Note"]]
+      (checkAll (PredicateNotEquals (TopLevelField "type") "Ghost"))
+    assertEqual [] (checkPredicateAgainstProfile openTypes [] (PredicateNotEquals (TopLevelField "type") "Ghost"))
+    -- A contradiction is not an error.
+    assertEqual [] (checkAll (PredicateAnd (equals status "accepted") (equals status "proposed")))
 
 fixturePath :: FilePath -> IO FilePath
 fixturePath name = do

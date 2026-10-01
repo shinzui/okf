@@ -50,7 +50,7 @@ The first and third examples require an actual stored scalar status. A concept w
 ## Progress
 
 - [x] Milestone 1: add the condition model, deterministic parsing, rendering, and parser regressions in okf-core. (2026-10-01T19:40Z; `testParseWhereConditions` in `okf-core/test/Main.hs` passes with every earlier parser assertion intact.)
-- [ ] Milestone 2: implement selection and profile preflight with list, absence, scope, and compatibility regressions.
+- [x] Milestone 2: implement selection and profile preflight with list, absence, scope, and compatibility regressions. (2026-10-01T19:55Z; `testFilterConceptsWhereOverFixture`, `testMatchesPredicateEdgeCases`, and `testCheckPredicateAgainstProfile` pass; the fixture gives Alpha and Beta for `status not in ["completed","rejected"]`, Alpha for `reviews.outcome not in ["changes-requested"]`, and Scratch, Alpha, Beta for `(not (status="completed"))`.)
 - [ ] Milestone 3: wire the existing CLI flag, document it, demonstrate text and JSON behavior, and update durable query context.
 
 
