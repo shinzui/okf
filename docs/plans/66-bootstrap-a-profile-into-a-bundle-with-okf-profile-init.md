@@ -57,15 +57,15 @@ To see it working, run the command against the checked-in fixture registry in th
 ## Progress
 
 
-- [x] (2026-09-21) Review the plan against source, fixtures, Dhall APIs, and ADRs; correct the implementation contract and acceptance checks. Implementation remains pending.
+- [x] (2026-09-21) Review the plan against source, fixtures, Dhall APIs, and ADRs; correct the implementation contract and acceptance checks. Implementation was pending at the review.
 - [x] (2026-10-01) Milestone 1: add `okf-core/src/Okf/Profile/Bootstrap.hs` with descriptor rendering, import freezing, relative-path computation, and version selection; register it in `okf-core/okf-core.cabal`.
 - [x] (2026-10-01) Milestone 1: add unit tests to `okf-core/test/Main.hs` (round-trip load of a rendered descriptor, hash-preserving expression, refusal of cwd-relative imports, label escaping, version selection) and see them pass.
 - [x] (2026-10-01) Milestone 2: add `ProfileInit ProfileInitOptions`, its parser, and `runProfileInit` to `okf-cli/src/Okf/Cli.hs`.
 - [x] (2026-10-01) Milestone 2: add CLI tests to `okf-cli/test/Main.hs` (parser, greenfield write, existing-bundle write, refusal when a descriptor exists, preview writes nothing) and see them pass.
 - [x] (2026-10-01) Milestone 2: run the end-to-end transcript in Concrete Steps against the fixture registry and the built-in default registry.
-- [ ] Milestone 3: document the command in `okf-cli/help/profiles.md`, `docs/user/cli.md`, `docs/user/profiles.md`, and `README.md`; add changelog entries to `okf-core/CHANGELOG.md` and `okf-cli/CHANGELOG.md`.
-- [ ] Milestone 3: record the bootstrap contract in a new ADR under `docs/adr/` and validate the ADR bundle strictly.
-- [ ] Final: fill in Outcomes & Retrospective and run the ADR distillation pass.
+- [x] (2026-10-01) Milestone 3: document the command in `okf-cli/help/profiles.md`, `docs/user/cli.md`, `docs/user/profiles.md`, and `README.md`; add changelog entries to `okf-core/CHANGELOG.md` and `okf-cli/CHANGELOG.md`.
+- [x] (2026-10-01) Milestone 3: record the bootstrap contract in a new ADR under `docs/adr/` and validate the ADR bundle strictly.
+- [x] (2026-10-01) Final: fill in Outcomes & Retrospective and run the ADR distillation pass.
 
 
 ## Surprises & Discoveries
@@ -131,9 +131,17 @@ The completion scripts in `okf-cli/src/Okf/Cli/Completions.hs` are static callba
 ## Outcomes & Retrospective
 
 
-Milestone 1 is implemented. `nix develop -c cabal build all` and `nix develop -c cabal test okf-core` passed, including physical-path round trips, nested/root/direct imports, hash preservation without network, HTTP-header relative-import refusal, quoted labels, multiline metadata, Location-mode imports, and version selection. CLI integration and end-to-end acceptance now pass; documentation and ADR validation remain in progress.
+All three milestones are complete (2026-10-01). `okf profile init` previews by default and, with `--write`, installs and verifies the selected descriptor, regenerates indexes without lowering the root version, appends one Adoption, and validates. Existing concepts are preserved. Occupied descriptors, malformed dates, invalid profile definitions, and unparseable declarations are refused. Later write failures retain the verified descriptor and provide phase-specific recovery.
 
-The 2026-09-21 review corrected the fixture version, Dhall construction and quoting, declaration conversion, date validation, failure boundaries, recovery, and completion acceptance. No feature implementation has been performed; all three implementation milestones remain pending. The proposed bootstrap ADR must be written when the feature is implemented, not treated as an already accepted implementation decision.
+Final validation used GHC 9.12.4 inside `nix develop`: `cabal build all` passed; `cabal test okf-core okf-cli` passed both suites without fixture skips. The end-to-end acceptance transcript passed against the local registry and existing valid-bundle fixture. Both the hashed default registry and the explicitly unhashed v0.14.0 URL produced the expected integrity hash and strictly valid empty v0.2 bundles. The offline PostgreSQL bundle strictly validated at 0.1. Completion and embedded help both expose `init`.
+
+ADR distillation is complete in [ADR-20](../adr/20-profile-bootstrap-writes-a-frozen-pin-and-never-upgrades.md). It records fixed-path refusal, import freezing and relocation, descriptor equality verification, maximum-version selection, date preflight, non-transactional recovery, no placeholder concepts, and the migration boundary. The handle was allocated with `okf id list` and `okf id next`; indexes and the Decision log were updated through the CLI. Strict profile/log enforcement returned:
+
+```text
+OK: 20 concepts (okf_version 0.2)
+```
+
+No implementation work remains. The main lesson is that source selection alone cannot guarantee a relocated descriptor's meaning: physical path resolution and read-back equality are both necessary. Failures after verification need repair instructions instead of deleting a trustworthy descriptor. Adoption-blueprint simplification in `mori://shinzui/okf-profiles` remains a separately scoped follow-up.
 
 
 ## Context and Orientation
@@ -160,7 +168,7 @@ The CLI lives in `okf-cli/src/Okf/Cli.hs`. The `profile` command group is the su
 
 Tests are plain `IO Bool` functions collected in `main` of `okf-core/test/Main.hs` and `okf-cli/test/Main.hs`. There is no test framework. Each function returns `True` on success and prints a reason on failure. CLI tests call `runCommand` with a constructed `Command` value. `withRepositoryPath` skips a test gracefully when a repository fixture cannot be found. `try @ExitCode` captures an expected `exitFailure` (see around line 2291 of `okf-cli/test/Main.hs`). The fixture registry `okf-core/test/fixtures/registry/package.dhall` publishes the exports `legacy`, `nested.decisions`, and `postgresql`. It imports its profiles through relative paths, so it evaluates fully offline.
 
-Relevant ADRs. [docs/adr/3-profile-registries.md](../adr/3-profile-registries.md) defines registries and the named-lookup rule that a failed or duplicate source makes a lookup fail rather than guess; `init` inherits that behavior by reusing the lookup helpers. [docs/adr/18-local-profile-descriptor-discovery.md](../adr/18-local-profile-descriptor-discovery.md) says automatic discovery never fetches and explicitly named inputs keep ordinary Dhall behavior, so it is acceptable for `init` to reach the network while freezing a registry the user selected. [docs/adr/6-generated-profile-documentation.md](../adr/6-generated-profile-documentation.md) sets the write discipline this command copies: preview first, overwrite only the files the command owns, and never delete. [docs/adr/10-okf-version-declaration-and-best-effort-reading.md](../adr/10-okf-version-declaration-and-best-effort-reading.md) says the version declaration lives in the reserved root `index.md` and is read by path. [docs/adr/19-profile-guidance-is-prescriptive-and-never-executed.md](../adr/19-profile-guidance-is-prescriptive-and-never-executed.md) is why `init` prints no guidance and points to `okf profile document` instead: guidance is prose for authors, not something a bootstrap acts on. No existing ADR covers bootstrapping, which Milestone 3 records.
+Relevant ADRs. [docs/adr/3-profile-registries.md](../adr/3-profile-registries.md) defines registries and the named-lookup rule that a failed or duplicate source makes a lookup fail rather than guess; `init` inherits that behavior by reusing the lookup helpers. [docs/adr/18-local-profile-descriptor-discovery.md](../adr/18-local-profile-descriptor-discovery.md) says automatic discovery never fetches and explicitly named inputs keep ordinary Dhall behavior, so it is acceptable for `init` to reach the network while freezing a registry the user selected. [docs/adr/6-generated-profile-documentation.md](../adr/6-generated-profile-documentation.md) sets the write discipline this command copies: preview first, overwrite only the files the command owns, and never delete. [docs/adr/10-okf-version-declaration-and-best-effort-reading.md](../adr/10-okf-version-declaration-and-best-effort-reading.md) says the version declaration lives in the reserved root `index.md` and is read by path. [docs/adr/19-profile-guidance-is-prescriptive-and-never-executed.md](../adr/19-profile-guidance-is-prescriptive-and-never-executed.md) is why `init` prints no guidance and points to `okf profile document` instead: guidance is prose for authors, not something a bootstrap acts on. At planning time no ADR covered bootstrapping. [ADR-20](../adr/20-profile-bootstrap-writes-a-frozen-pin-and-never-upgrades.md) now records the implemented bootstrap contract.
 
 
 ## Plan of Work
@@ -321,8 +329,9 @@ Expected output, approximately (exact wording is fixed during implementation and
 Wrote $okf_init_tmp/demo/profile.dhall (postgresql from registry)
 Declared okf_version "0.1" in $okf_init_tmp/demo/index.md
 Wrote log.md for 2026-09-19
-Enforce in CI: okf validate $okf_init_tmp/demo --strict --profile $okf_init_tmp/demo/profile.dhall --profile-enforce --log-enforce
-Read the conventions: okf profile document --profile $okf_init_tmp/demo/profile.dhall
+Bootstrap files have been written; validation follows.
+Enforce in CI: okf validate '$okf_init_tmp/demo' --strict --profile '$okf_init_tmp/demo/profile.dhall' --profile-enforce --log-enforce
+Read the conventions: okf profile document --profile '$okf_init_tmp/demo/profile.dhall'
 OK: 0 concepts (okf_version 0.1)
 ```
 
@@ -445,3 +454,5 @@ Revision note (2026-09-21): Reviewed against the current source and local ADRs, 
 Revision note (2026-10-01): Implemented and validated the reusable descriptor renderer and version selection; started CLI integration. Runtime session metadata identifies the implementing model as gpt-6-astra.
 
 Revision note (2026-10-01): Completed CLI integration and offline/remote acceptance, including actual unhashed import freezing, partial-write recovery, and descriptor equality checks. Added a pre-canonicalization root-entry check and shell-quoted recovery hints.
+
+Revision note (2026-10-01): Completed documentation, changelogs, ADR-20 and reserved bundle updates; final build, both suites, offline and remote acceptance, shell completion, help, and strict ADR validation pass. All progress items are complete and durable decisions are distilled.

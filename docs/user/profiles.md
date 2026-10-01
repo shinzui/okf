@@ -935,6 +935,38 @@ to check it, and a profile can demand that the means be named and be findable â€
 neither can say a run succeeded.
 
 
+## Adopting a profile in a bundle
+
+Use `profile init` to preview adoption, then add `--write`:
+
+```bash
+okf profile init documentation.architectureDecisions --bundle docs/adr
+okf profile init documentation.architectureDecisions --bundle docs/adr --write
+```
+
+The command writes `profile.dhall`, regenerates all bundle indexes with a sufficient
+root `okf_version`, appends an `Adoption` to `log.md`, and validates. It works on
+missing and existing directories, preserves concept files, and creates no example
+concepts. Use `--date YYYY-MM-DD` for a fixed date, repeat `--registry REF` for
+explicit sources, and pass `--no-local` to suppress descriptor discovery.
+
+A remote import keeps its integrity hash or acquires one through Dhall freezing.
+Local files remain live relative imports; they are not portable snapshots. Preview
+leaves the bundle untouched but may load remote imports into Dhall's cache. The
+root version is never lowered, and an unparseable existing declaration must be
+repaired before adoption.
+
+Init refuses every existing `profile.dhall` entry and never upgrades a descriptor.
+Use the migration blueprints in [okf-profiles](mori://shinzui/okf-profiles) for pin
+changes. After writes, profile deviations are advisory while structural errors
+fail. The printed hints show how to enforce the profile in CI and read its
+conventions with `okf profile document`.
+
+Writes are not transactional. A descriptor that fails verification is removed;
+a verified descriptor survives later failures. Repair indexes using the reported
+version, inspect the log before adding a missing Adoption, and rerun validation.
+See [profile init](./cli.md#profile-init) for options, exit codes, and recovery.
+
 ## Local profile discovery
 
 `okf profiles` answers which descriptor files are available in the current

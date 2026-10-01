@@ -100,6 +100,7 @@ cabal run okf -- config show
 cabal run okf -- profile list [--registry <registry>] [--no-local] [--wide]
 cabal run okf -- profile sources [--registry <registry>] [--no-local] [--check-latest]
 cabal run okf -- profile show [<export>]
+cabal run okf -- profile init [EXPORT] --bundle DIR [--write]
 cabal run okf -- profile document [--profile <descriptor>.dhall]
 cabal run okf -- kit list
 cabal run okf -- assist --print-command "PROMPT"
@@ -190,6 +191,11 @@ You do not have to write a descriptor from scratch. `okf profile list` shows wha
 registries and locally discovered descriptor files publish, and `okf profile
 show` prints one profile's complete rule set. `okf profiles` lists only the
 local descriptor paths, which is useful when you do not yet know their names.
+
+Run `okf profile init documentation.architectureDecisions --bundle docs/adr --write`
+to write a descriptor, declare the bundle version, log adoption, and validate.
+Omit `--write` to preview; init refuses an existing descriptor, so upgrades remain
+a separate migration.
 
 ```bash
 cabal run okf -- profile list

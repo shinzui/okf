@@ -7,6 +7,7 @@ columns. Profiles are written as Dhall descriptors.
 
 USAGE
 
+  okf profile init [EXPORT] --bundle DIR [--write]
   okf profiles
   okf profiles --json
   okf validate BUNDLE --profile PROFILE.dhall
@@ -73,6 +74,28 @@ DOCUMENT IDS
   ADR-7. Use `okf id next BUNDLE ADR --profile PROFILE.dhall` to print the next
   handle, `okf id list BUNDLE --profile PROFILE.dhall` to list allocations, and
   `okf show BUNDLE ADR-7` to resolve one.
+
+ADOPTING A PROFILE
+
+  okf profile init documentation.architectureDecisions --bundle docs/adr
+  okf profile init documentation.architectureDecisions --bundle docs/adr --write
+
+  Preview is the default. --write creates profile.dhall, regenerates every
+  index.md with a sufficient root okf_version, appends an Adoption to log.md,
+  and validates. Existing concepts are preserved; no examples are added.
+  Repeat --registry and pass --no-local to choose sources just as with show.
+  --date YYYY-MM-DD overrides today's UTC date and must be a valid date.
+
+  Existing profile.dhall entries (including dangling symlinks) are refused.
+  Remote imports without hashes are frozen; existing hashes are preserved.
+  Local sources remain relative, live file imports. Init never upgrades a pin.
+  Use the migration blueprints in mori://shinzui/okf-profiles for upgrades.
+
+  Writes are not transactional. After a verified descriptor is written, keep
+  it on failure: repair indexes with okf index --write --okf-version VERSION,
+  inspect log.md before adding a missing Adoption, then rerun validation.
+  Profile deviations are advisory; structural errors fail after files are
+  written. The summary prints CI validation and convention-reading commands.
 
 LOCAL DISCOVERY
 

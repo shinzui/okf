@@ -9,6 +9,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- `okf profile init [EXPORT] --bundle DIR [--write]` previews or adopts a profile with a verified descriptor, versioned indexes, Adoption log entry, and validation. Existing descriptors are refused; concept files are preserved.
+
 - `okf concepts --where` accepts `KEY!=VALUE`, `KEY in ["A","B"]`,
   `KEY not in ["A","B"]`, and parenthesized expressions such as
   `(status in ["accepted","proposed"] and not (tags="archived"))`, alongside

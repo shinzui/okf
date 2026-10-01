@@ -956,11 +956,12 @@ no `idField` is a hard error.
 ## profile
 
 List and inspect profiles from effective registry and local-descriptor sources,
-and generate documentation for one. A registry is any Dhall expression that
-evaluates to a record of profile values; the
+bootstrap a bundle, and generate documentation for one. A registry is any Dhall
+expression that evaluates to a record of profile values; the
 [okf-profiles](mori://shinzui/okf-profiles) repository is one. `list` and `show`
 are always non-interactive. Input-free `document` opens the local descriptor
-picker, and only `profile document --write` touches the filesystem.
+picker. `profile document --write` and `profile init --write` write bundle files;
+preview can still populate the Dhall import cache.
 
 ```bash
 cabal run okf -- profile list \
@@ -1110,6 +1111,76 @@ but does not execute them or treat their prose as profile validation.
 See [profiles.md](./profiles.md) for what a registry is in more detail, and its
 [Generating profile documentation](./profiles.md#generating-profile-documentation)
 section for what the generated pages contain.
+
+
+### profile init
+
+```text
+okf profile init [EXPORT] --bundle DIR [--registry REF]… [--no-local]
+                 [--date YYYY-MM-DD] [--write]
+```
+
+Adopt a profile in an empty, missing, or existing bundle. `--bundle` is required;
+`EXPORT`, repeatable `--registry`, and `--no-local` use the same source selection
+and ambiguity checks as `profile show`. With no export, selection succeeds only
+when exactly one profile is available. `--date` supplies a real calendar date;
+otherwise the Adoption uses today's UTC date.
+
+Without `--write`, the command prints the descriptor, root version, and Adoption
+entry it would write. It does not create the destination. Loading and freezing
+imports can fetch remote sources and populate Dhall's cache even during preview.
+With `--write`, it performs these operations in order:
+
+1. Write `profile.dhall` and load it back to verify it equals the selected profile.
+2. Regenerate **every** `index.md` in the bundle, declaring the highest of the
+   existing version, the profile's `okfVersion`, and its `requireBundleVersion`.
+3. Append one `Adoption` to `log.md`, creating the log when missing.
+4. Print the written-files summary and suggested commands, then validate.
+
+Concept files are preserved and no placeholder concepts are created. Unhashed
+remote value imports acquire integrity hashes; existing hashes are preserved.
+Local registry and descriptor files are imported relative to the destination and
+remain live. Expressions containing cwd-relative imports are refused: pass an
+existing registry file or directory path so okf can relocate its import.
+
+An existing `profile.dhall`, including a directory or dangling symlink, is an
+error in preview and write modes. There is no `--force`; migration blueprints in
+[mori://shinzui/okf-profiles](mori://shinzui/okf-profiles) handle upgrades. Invalid
+dates, invalid profile definitions, unreadable bundles, and unparseable existing
+version declarations fail before mutation. Repair the declaration explicitly.
+
+Preview succeeds with exit 0. Writes return validation's result: profile
+deviations are advisory (exit 0); structural document/log errors and IO/load
+failures exit 1. A validation failure can therefore leave a successfully
+bootstrapped bundle that needs document repairs.
+
+Writes are not transactional. Failed descriptor verification removes the new
+descriptor before indexes or logs are touched. Later failures retain the verified
+descriptor. Follow the phase-specific error: repair and regenerate indexes with
+`okf index DIR --write --okf-version VERSION`; inspect `log.md` and add the Adoption
+only if absent; then rerun validation. Do not retry init or blindly append another
+Adoption. Keep a snapshot of existing indexes/log if exact rollback is needed.
+
+From the repository root, this example uses only local fixtures:
+
+```bash
+okf_init_tmp=$(mktemp -d)
+okf profile init postgresql --no-local --registry okf-core/test/fixtures/registry \
+  --bundle "$okf_init_tmp/demo"
+# Preview; $okf_init_tmp/demo still does not exist.
+okf profile init postgresql --no-local --registry okf-core/test/fixtures/registry \
+  --bundle "$okf_init_tmp/demo" --write --date 2026-09-19
+# Wrote .../profile.dhall, declared okf_version "0.1", and wrote log.md.
+# OK: 0 concepts (okf_version 0.1)
+okf validate "$okf_init_tmp/demo" --strict \
+  --profile "$okf_init_tmp/demo/profile.dhall" --profile-enforce --log-enforce
+# OK: 0 concepts (okf_version 0.1)
+```
+
+Repeating init refuses the existing descriptor with exit 1. To adopt the default
+architecture-decisions profile, use `documentation.architectureDecisions` and
+omit `--registry`; its bundle declares 0.2. Read its conventions with
+`okf profile document --profile DIR/profile.dhall`.
 
 
 ## assist

@@ -9,6 +9,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- `Okf.Profile.Bootstrap` renders adoption descriptors with Dhall path/label escaping, remote import freezing, local relative imports, and maximum-version selection.
+
 - `Okf.Query` gains flexible concept conditions: `WhereCondition`,
   `ConceptPredicate`, `WhereParseError`, `parseWhereCondition`,
   `renderWhereCondition`, `renderConceptPredicate`, `renderWhereParseError`,
