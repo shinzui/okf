@@ -34,6 +34,9 @@ module Okf.Cli
     computationReport,
     conceptReport,
     conceptReportJson,
+    conceptsProfileDiagnostics,
+    renderFilterProfileError,
+    renderPredicateProfileError,
     observedIdPrefixes,
     parserInfo,
     parseProfileRegistriesEnv,
@@ -203,14 +206,17 @@ import Okf.Query
   ( ConceptFilter (..),
     FieldSelector (..),
     FilterProfileError (..),
+    WhereCondition (..),
     checkFiltersAgainstProfile,
+    checkPredicateAgainstProfile,
     conceptFieldValues,
-    filterConcepts,
-    parseFieldEquals,
+    filterConceptsWhere,
     parseFieldSelector,
+    parseWhereCondition,
     renderFieldSelector,
     renderFilter,
     renderFilterParseError,
+    renderWhereParseError,
     scalarText,
   )
 import Okf.Trust
@@ -336,7 +342,7 @@ data ComputationsOptions = ComputationsOptions
 data ConceptsOptions = ConceptsOptions
   { bundlePath :: !(Maybe FilePath),
     conceptTypes :: ![Text],
-    fieldFilters :: ![ConceptFilter],
+    fieldFilters :: ![WhereCondition],
     presentFields :: ![FieldSelector],
     absentFields :: ![FieldSelector],
     showFields :: ![Text],
@@ -869,11 +875,11 @@ conceptsOptionsParser =
       )
     <*> many
       ( option
-          (eitherReader (first (Text.unpack . renderFilterParseError) . parseFieldEquals . Text.pack))
+          (eitherReader (first (Text.unpack . renderWhereParseError) . parseWhereCondition . Text.pack))
           ( long "where"
-              <> metavar "KEY=VALUE"
+              <> metavar "CONDITION"
               <> help
-                "Keep concepts whose frontmatter KEY holds VALUE; KEY may be nested one level (reviews.outcome). Repeat the same key for any-of, different keys for all-of"
+                "Keep concepts matching CONDITION: KEY=VALUE (repeat a key for any-of), KEY!=VALUE, KEY in [\"A\",\"B\"], KEY not in [\"A\",\"B\"], or a parenthesized expression such as '(status in [\"accepted\"] and not (tags=\"archived\"))' with and, or, not, has(KEY), missing(KEY). KEY may be nested one level (reviews.outcome). Separate --where flags are all required"
           )
       )
     <*> many (option fieldSelectorReader (long "has" <> metavar "KEY" <> help "Keep concepts that carry KEY at all"))
@@ -2478,7 +2484,7 @@ runConcepts
     resolvedBundle <- resolveBundlePath bundlePath
     traverse_ checkFiltersWithProfile profilePath
     concepts <- loadBundleOrExit resolvedBundle
-    let selected = filterConcepts allFilters concepts
+    let selected = filterConceptsWhere optionFilters fieldFilters concepts
     if json
       then LazyByteString.putStrLn (Aeson.encode (conceptReportJson selected))
       else mapM_ Text.IO.putStrLn (conceptReport showFields selected)
@@ -2487,12 +2493,11 @@ runConcepts
       -- mechanism, so there is one matching path to reason about and to test,
       -- and so that @--type Policy --type Metric@ means "either" for free.
       typeFilters = [FieldEquals (TopLevelField "type") wanted | wanted <- conceptTypes]
-      -- Order does not affect the result -- 'filterConcepts' groups by selector
-      -- and by question -- but is kept stable so that profile diagnostics report
-      -- in a predictable order.
-      allFilters =
+      -- The filters every flag but @--where@ contributes. Legacy @--where@
+      -- equalities join them inside 'filterConceptsWhere', so @--type Note
+      -- --where type=Policy@ is still one any-of group.
+      optionFilters =
         typeFilters
-          <> fieldFilters
           <> (FieldPresent <$> presentFields)
           <> (FieldAbsent <$> absentFields)
 
@@ -2505,12 +2510,42 @@ runConcepts
       checkFiltersWithProfile path = do
         spec <- loadProfileOrExit path
         compiled <- compileProfileOrExit (Text.pack path) spec
-        case checkFiltersAgainstProfile compiled conceptTypes allFilters of
+        case conceptsProfileDiagnostics compiled conceptTypes fieldFilters presentFields absentFields of
           [] -> pure ()
-          profileErrors -> do
+          diagnostics -> do
             -- Every error, not only the first, so one run fixes one command line.
-            mapM_ (Text.IO.hPutStrLn stderr . renderFilterProfileError) profileErrors
+            mapM_ (Text.IO.hPutStrLn stderr) diagnostics
             exitWith (ExitFailure 1)
+
+-- | Every profile diagnostic for an @okf concepts@ command line, in a stable
+-- order: the legacy filters first — @--type@, legacy @--where@ equalities,
+-- @--has@, @--missing@, as they always have been — then each explicit
+-- condition in flag order. A predicate error repeated across flags is
+-- reported once.
+--
+-- The two kinds render differently on purpose. A legacy equality outside a
+-- vocabulary really can match nothing, and its message has always said so. A
+-- predicate's out-of-vocabulary value may sit under @!=@ or @not@, where the
+-- condition can still match plenty; it is still a typo worth stopping for, but
+-- \"no concept can match\" would be false.
+conceptsProfileDiagnostics ::
+  CompiledProfile -> [Text] -> [WhereCondition] -> [FieldSelector] -> [FieldSelector] -> [Text]
+conceptsProfileDiagnostics compiled conceptTypes conditions presentFields absentFields =
+  (renderFilterProfileError <$> legacyErrors)
+    <> (renderPredicateProfileError <$> predicateErrors)
+  where
+    legacyFilters =
+      [FieldEquals (TopLevelField "type") wanted | wanted <- conceptTypes]
+        <> [conceptFilter | LegacyWhere conceptFilter <- conditions]
+        <> (FieldPresent <$> presentFields)
+        <> (FieldAbsent <$> absentFields)
+    legacyErrors = checkFiltersAgainstProfile compiled conceptTypes legacyFilters
+    predicateErrors =
+      List.nub
+        [ profileError
+        | PredicateWhere predicate <- conditions,
+          profileError <- checkPredicateAgainstProfile compiled conceptTypes predicate
+        ]
 
 -- | Why a profile says a filter can never select anything.
 --
@@ -2525,6 +2560,21 @@ renderFilterProfileError = \case
   FilterValueNotInVocabulary selector wanted vocabulary ->
     "okf concepts: no concept can match "
       <> renderFilter (FieldEquals selector wanted)
+      <> "\n"
+      <> renderFieldSelector selector
+      <> " accepts: "
+      <> Text.intercalate ", " vocabulary
+
+-- | Why a profile rejects an explicit @--where@ condition. Neutral about
+-- matching, since the offending value may be one the condition excludes.
+renderPredicateProfileError :: FilterProfileError -> Text
+renderPredicateProfileError = \case
+  profileError@(FilterFieldNotDeclared _) -> renderFilterProfileError profileError
+  FilterValueNotInVocabulary selector outsideValue vocabulary ->
+    "okf concepts: filter value "
+      <> outsideValue
+      <> " is outside the vocabulary for "
+      <> renderFieldSelector selector
       <> "\n"
       <> renderFieldSelector selector
       <> " accepts: "

@@ -4,7 +4,9 @@ import Control.Exception (bracket, try)
 import Control.Monad (unless)
 import Data.Aeson (Value (..), toJSON)
 import Data.Aeson qualified as Aeson
-import Data.Foldable (traverse_)
+import Data.Aeson.KeyMap qualified as KeyMap
+import Data.Bifunctor (first)
+import Data.Foldable (toList, traverse_)
 import Data.List qualified as List
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Text qualified as Text
@@ -26,7 +28,7 @@ import Okf.Document (Attester (..), Executor (..), Parameter (..), parseDocument
 import Okf.Index (OkfVersion (..), VersionDeclaration (..), parseOkfVersion, readBundleVersion)
 import Okf.Profile (Cardinality (..), CompiledProfile, FieldCondition (..), FieldFormat (..), FieldPath (..), FieldPathSegment (..), FieldRule (..), FrontmatterRules (..), HandleReferenceRule (..), NestedFieldRule (..), NestedRules (..), PathReferenceRule (..), ProfileSpec (..), ProfileViolation (..), TypeRule (..), compileProfile, loadProfileFile, validateProfile, validateProfileVersion)
 import Okf.Profile.Registry (ProfileSource (..), ProfileSourceLoadError (..), RegistryEntry (..), RegistryLoadError (..), RegistryRef (..), SourcedProfile (..), defaultRegistryReference)
-import Okf.Query (ConceptFilter (..), FieldSelector (..), filterConcepts)
+import Okf.Query (ConceptFilter (..), ConceptPredicate (..), FieldSelector (..), WhereCondition (..), filterConcepts, filterConceptsWhere, parseWhereCondition)
 import Okf.Validation (ValidationProfile (..), validateBundle)
 import Options.Applicative
 import System.Directory (Permissions (..), createDirectoryIfMissing, doesDirectoryExist, doesFileExist, getCurrentDirectory, getPermissions, getTemporaryDirectory, listDirectory, makeAbsolute, removeDirectoryRecursive, setModificationTime, setPermissions, withCurrentDirectory)
@@ -71,6 +73,9 @@ main = do
   conceptsReportsFixtures <- testConceptsReportsFixtureBundle
   conceptsShowsFilteredColumns <- testConceptsShowsFilteredColumns
   conceptsReportJson <- testConceptReportJson
+  conceptsWhereConditions <- testConceptsWhereConditions
+  conceptsWhereJson <- testConceptsWhereJson
+  conceptsPredicateDiagnostics <- testConceptsPredicateDiagnostics
   conceptsReportsExample <- testConceptsReportsExampleBundle
   conceptsKeepsStatusDefaultOut <- testConceptsDoesNotApplyStatusDefault
   profileDocStrictWithTimestamp <- testProfileDocumentationStrictWithTimestamp
@@ -518,7 +523,7 @@ main = do
             ConceptsOptions
               { bundlePath = Just "b",
                 conceptTypes = ["Policy"],
-                fieldFilters = [FieldEquals (TopLevelField "status") "accepted"],
+                fieldFilters = [LegacyWhere (FieldEquals (TopLevelField "status") "accepted")],
                 presentFields = [],
                 absentFields = [],
                 showFields = ["requestId"],
@@ -541,6 +546,49 @@ main = do
           -- a key nesting deeper than one level.
           parseFails ["concepts", "b", "--where", "status"],
           parseFails ["concepts", "b", "--where", "a.b.c=x"],
+          -- Inclusion, exclusion, and grouped expressions, each kept in flag
+          -- order beside a legacy equality.
+          parseConceptsMatches
+            [ "concepts",
+              "b",
+              "--where",
+              "status=accepted",
+              "--where",
+              "status!=completed",
+              "--where",
+              "status in [\"accepted\",\"proposed\"]",
+              "--where",
+              "status not in [\"completed\",\"rejected\"]",
+              "--where",
+              "(missing(status) or not (tags=\"archived\"))"
+            ]
+            ConceptsOptions
+              { bundlePath = Just "b",
+                conceptTypes = [],
+                fieldFilters =
+                  [ LegacyWhere (FieldEquals (TopLevelField "status") "accepted"),
+                    PredicateWhere (PredicateNotEquals (TopLevelField "status") "completed"),
+                    PredicateWhere (PredicateIn (TopLevelField "status") ("accepted" :| ["proposed"])),
+                    PredicateWhere (PredicateNotIn (TopLevelField "status") ("completed" :| ["rejected"])),
+                    PredicateWhere
+                      ( PredicateOr
+                          (PredicateAtom (FieldAbsent (TopLevelField "status")))
+                          (PredicateNot (PredicateAtom (FieldEquals (TopLevelField "tags") "archived")))
+                      )
+                  ],
+                presentFields = [],
+                absentFields = [],
+                showFields = [],
+                profilePath = Nothing,
+                json = False
+              },
+          -- Malformed extended input is rejected rather than read as equality.
+          parseFails ["concepts", "b", "--where", "status in []"],
+          parseFails ["concepts", "b", "--where", "status in [\"a\""],
+          parseFails ["concepts", "b", "--where", "status not in accepted"],
+          parseFails ["concepts", "b", "--where", "(status=\"accepted\" and)"],
+          parseFails ["concepts", "b", "--where", "(status=accepted)"],
+          parseFails ["concepts", "b", "--where", "(a=\"1\") or (b=\"2\")"],
           parseFails ["concepts", "b", "--has", "a.b.c"],
           renderRegistryTable CompactTable sampleRegistryEntries == sampleRegistryTable,
           renderRegistryTable WideTable sampleRegistryEntries == sampleRegistryWideTable,
@@ -575,6 +623,9 @@ main = do
           computationsReportsExample,
           conceptsReportsFixtures,
           conceptsShowsFilteredColumns,
+          conceptsWhereConditions,
+          conceptsWhereJson,
+          conceptsPredicateDiagnostics,
           conceptsReportJson,
           conceptsReportsExample,
           conceptsKeepsStatusDefaultOut,
@@ -1958,6 +2009,146 @@ testConceptsDoesNotApplyStatusDefault =
       "computations/order-total   Attested Computation  stable  Order total for a placed order",
       "metrics/order-total-value  Metric                stable  Order total value"
     ]
+
+-- | @okf concepts --where@ with inclusion, exclusion, and grouped conditions
+-- over the fixture bundle, read from the strings a user types.
+testConceptsWhereConditions :: IO Bool
+testConceptsWhereConditions = do
+  let fixture = "okf-core" </> "test" </> "fixtures" </> "concept-filters"
+      selectWhere raws = filterConceptsWhere [] (whereConditions raws)
+      alphaAndBeta =
+        [ "requests/alpha  Improvement Request  accepted  Alpha",
+          "requests/beta   Improvement Request  proposed  Beta"
+        ]
+  inclusion <-
+    assertConceptReport
+      "okf concepts --where 'status in [\"accepted\",\"proposed\"]' --show status"
+      fixture
+      ["status"]
+      (selectWhere ["status in [\"accepted\",\"proposed\"]"])
+      alphaAndBeta
+  exclusion <-
+    assertConceptReport
+      "okf concepts --where 'status not in [\"completed\",\"rejected\"]' --show status"
+      fixture
+      ["status"]
+      (selectWhere ["status not in [\"completed\",\"rejected\"]"])
+      alphaAndBeta
+  repeatedExclusion <-
+    assertConceptReport
+      "okf concepts --where status!=completed --where status!=rejected --show status"
+      fixture
+      ["status"]
+      (selectWhere ["status!=completed", "status!=rejected"])
+      alphaAndBeta
+  legacyThenExclusion <-
+    assertConceptReport
+      "okf concepts --where status=accepted --where status=proposed --where status!=proposed"
+      fixture
+      []
+      (selectWhere ["status=accepted", "status=proposed", "status!=proposed"])
+      ["requests/alpha  Improvement Request  Alpha"]
+  negation <-
+    assertConceptReport
+      "okf concepts --where '(not (status=\"completed\"))'"
+      fixture
+      []
+      (selectWhere ["(not (status=\"completed\"))"])
+      [ "notes/scratch   Note                 Scratch",
+        "requests/alpha  Improvement Request  Alpha",
+        "requests/beta   Improvement Request  Beta"
+      ]
+  reviews <-
+    assertConceptReport
+      "okf concepts --where 'reviews.outcome not in [\"changes-requested\"]'"
+      fixture
+      []
+      (selectWhere ["reviews.outcome not in [\"changes-requested\"]"])
+      ["requests/alpha  Improvement Request  Alpha"]
+  contradiction <-
+    assertConceptReport
+      "okf concepts --where '(status=\"accepted\" and status=\"proposed\")'"
+      fixture
+      []
+      (selectWhere ["(status=\"accepted\" and status=\"proposed\")"])
+      []
+  pure (and [inclusion, exclusion, repeatedExclusion, legacyThenExclusion, negation, reviews, contradiction])
+
+-- | JSON rows for an expression selection are the complete stored frontmatter,
+-- in walk order, with no status synthesized for a concept that has none.
+testConceptsWhereJson :: IO Bool
+testConceptsWhereJson =
+  withRepositoryPath
+    "okf concepts --where '(status=\"accepted\" or missing(status))' --json"
+    ("okf-core" </> "test" </> "fixtures" </> "concept-filters")
+    $ \bundleRoot -> do
+      walked <- walkBundle bundleRoot
+      case walked of
+        Left bundleError -> do
+          putStrLn ("failed to walk the concept-filter fixture: " <> show bundleError)
+          pure False
+        Right concepts -> do
+          let selected = filterConceptsWhere [] (whereConditions ["(status=\"accepted\" or missing(status))"]) concepts
+              rows = case conceptReportJson selected of
+                Aeson.Array items -> toList items
+                _ -> []
+              field key = \case
+                Aeson.Object fields -> KeyMap.lookup key fields
+                _ -> Nothing
+              titles = map (field "title") rows
+              statuses = map (field "status") rows
+              ok =
+                titles == [Just (Aeson.String "Scratch"), Just (Aeson.String "Alpha")]
+                  && statuses == [Nothing, Just (Aeson.String "accepted")]
+                  && map (field "reviews") rows /= [Nothing, Nothing]
+          unless ok $ putStrLn ("unexpected okf concepts --where JSON rows: " <> show rows)
+          pure ok
+
+-- | Profile preflight for a whole command line: legacy diagnostics keep their
+-- wording and come first, then explicit conditions in flag order, each error
+-- once, with a neutral message for a value that may be an exclusion.
+testConceptsPredicateDiagnostics :: IO Bool
+testConceptsPredicateDiagnostics =
+  withRepositoryPath
+    "okf concepts --profile concept-filters.dhall diagnostics"
+    ("okf-core" </> "test" </> "fixtures" </> "profiles" </> "concept-filters.dhall")
+    $ \descriptorPath -> do
+      loaded <- loadProfileFile descriptorPath
+      case loaded >>= first (Text.pack . show) . compileProfile of
+        Left message -> do
+          Text.IO.putStrLn ("failed to load the concept-filter profile: " <> message)
+          pure False
+        Right compiled -> do
+          let diagnostics raws = conceptsProfileDiagnostics compiled [] (whereConditions raws) [] []
+              statusAccepts = "status accepts: proposed, accepted, completed, rejected"
+              checks =
+                [ ( diagnostics ["status!=acepted"],
+                    ["okf concepts: filter value acepted is outside the vocabulary for status\n" <> statusAccepts]
+                  ),
+                  ( diagnostics ["(missing(status) or not (status=\"acepted\"))"],
+                    ["okf concepts: filter value acepted is outside the vocabulary for status\n" <> statusAccepts]
+                  ),
+                  ( diagnostics
+                      [ "status=acepted",
+                        "(statuz=\"x\" or status!=\"rejectd\")",
+                        "status not in [\"rejectd\"]"
+                      ],
+                    [ "okf concepts: no concept can match status=acepted\n" <> statusAccepts,
+                      "okf concepts: profile declares no frontmatter key named statuz",
+                      "okf concepts: filter value rejectd is outside the vocabulary for status\n" <> statusAccepts
+                    ]
+                  ),
+                  (diagnostics ["status in [\"accepted\",\"proposed\"]", "status!=completed"], [])
+                ]
+              failures = [(actual, expected) | (actual, expected) <- checks, actual /= expected]
+          unless (null failures) $
+            putStrLn ("unexpected okf concepts profile diagnostics: " <> show failures)
+          pure (null failures)
+
+-- | Read @--where@ arguments the way the parser does, failing loudly on a typo
+-- in the test itself.
+whereConditions :: [Text.Text] -> [WhereCondition]
+whereConditions = map (either (error . show) id . parseWhereCondition)
 
 -- | Assert the exact lines @okf concepts@ prints for a repository bundle, after
 -- an optional selection over the walked concepts.
