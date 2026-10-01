@@ -31,10 +31,10 @@ import Okf.Profile.Registry (ProfileSource (..), ProfileSourceLoadError (..), Re
 import Okf.Query (ConceptFilter (..), ConceptPredicate (..), FieldSelector (..), WhereCondition (..), filterConcepts, filterConceptsWhere, parseWhereCondition)
 import Okf.Validation (ValidationProfile (..), validateBundle)
 import Options.Applicative
-import System.Directory (Permissions (..), createDirectoryIfMissing, doesDirectoryExist, doesFileExist, getCurrentDirectory, getPermissions, getTemporaryDirectory, listDirectory, makeAbsolute, removeDirectoryRecursive, setModificationTime, setPermissions, withCurrentDirectory)
+import System.Directory (Permissions (..), createDirectoryIfMissing, createFileLink, doesDirectoryExist, doesFileExist, getCurrentDirectory, getPermissions, getTemporaryDirectory, listDirectory, makeAbsolute, removeDirectoryRecursive, setModificationTime, setPermissions, withCurrentDirectory)
 import System.Environment (lookupEnv, setEnv, unsetEnv)
 import System.Exit (ExitCode (..), exitFailure)
-import System.FilePath (normalise, (</>))
+import System.FilePath (normalise, takeDirectory, (</>))
 import System.IO.Temp (createTempDirectory)
 
 main :: IO ()
@@ -60,6 +60,7 @@ main = do
   assistCommandBuilder <- testAssistCommandBuilder
   assistModelOverride <- testAssistModelOverride
   assistCodexCommandBuilder <- testAssistCodexCommandBuilder
+  profileBootstrap <- testProfileBootstrap
   profileDocumentWrites <- testProfileDocumentWritesBundle
   profileDocumentDeclaresVersion <- testProfileDocumentDeclaresOkfVersion
   profileDocMatchesExample <- testProfileDocumentationMatchesCommittedExample
@@ -371,6 +372,10 @@ main = do
           sampleConceptDisplays
             == ["tables/orders\tTable\tOrders", "x            \t     \t"],
           parseSucceeds ["profile"],
+          parseSucceeds ["profile", "init", "--bundle", "d"],
+          parseSucceeds ["profile", "init", "postgresql", "--bundle", "d", "--write"],
+          parseSucceeds ["profile", "init", "--registry", "./r", "x", "--bundle", "d", "--date", "2026-09-19"],
+          parseFails ["profile", "init"],
           parseSucceeds ["profile", "list"],
           parseSucceeds ["profile", "list", "--json"],
           parseSucceeds ["profile", "list", "--registry", "./r.dhall"],
@@ -611,6 +616,7 @@ main = do
           profileDiscoveryListing,
           profilePickerExitCodes,
           effectiveProfileSources,
+          profileBootstrap,
           profileDocumentWrites,
           profileDocumentDeclaresVersion,
           profileDocMatchesExample,
@@ -3181,3 +3187,103 @@ parseShowsInfo args =
     Failure _ -> True
     CompletionInvoked _ -> True
     Success _ -> False
+
+-- Exercise both the no-write preflight boundary and recovery after mutation.
+testProfileBootstrap :: IO Bool
+testProfileBootstrap =
+  withRepositoryPath "profile init" ("okf-core" </> "test" </> "fixtures" </> "registry" </> "package.dhall") $ \registry -> do
+    absoluteRegistry <- makeAbsolute registry
+    temp <- getTemporaryDirectory
+    bracket (createTempDirectory temp "okf-cli-bootstrap") removeDirectoryRecursive $ \root -> do
+      let options destination = ProfileInitOptions [Text.pack absoluteRegistry] (Just "postgresql") destination True (Just "2026-09-19") True
+          run opts = try @ExitCode (runCommand (Profile (ProfileInit opts)))
+          success label passed = do
+            unless passed (putStrLn ("profile init failed: " <> label))
+            pure passed
+          untouched :: String -> (FilePath -> IO ()) -> (ProfileInitOptions -> ProfileInitOptions) -> IO Bool
+          untouched label prepare modify = do
+            let destination = root </> label
+            prepare destination
+            outcome <- run (modify (options destination))
+            descriptorExists <- doesFileExist (destination </> "profile.dhall")
+            indexExists <- doesFileExist (destination </> "index.md")
+            logExists <- doesFileExist (destination </> "log.md")
+            success label (outcome == Left (ExitFailure 1) && not descriptorExists && not indexExists && not logExists)
+      preview <- run ((options (root </> "preview")) {write = False})
+      previewExists <- doesDirectoryExist (root </> "preview")
+      previewOk <- success "preview" (preview == Right () && not previewExists)
+      let green = root </> "green"
+      written <- run (options green)
+      actual <- loadProfileFile (green </> "profile.dhall")
+      -- Select the source profile independently of the renderer.
+      expected <- loadProfileFile ((takeDirectory (takeDirectory absoluteRegistry) </> "profiles" </> "postgresql.dhall"))
+      version <- readBundleVersion green
+      logText <- Text.IO.readFile (green </> "log.md")
+      before <- Text.IO.readFile (green </> "profile.dhall")
+      again <- run (options green)
+      after <- Text.IO.readFile (green </> "profile.dhall")
+      greenOk <- success "greenfield and refusal" (written == Right () && actual == expected && either (const False) (const True) actual && version == Right (VersionDeclared (OkfVersion 0 1)) && "## 2026-09-19" `Text.isInfixOf` logText && Text.count "**Adoption**" logText == 1 && again == Left (ExitFailure 1) && before == after)
+      dateOk <- untouched "bad-date" (const (pure ())) (\opts -> opts {date = Just "2026-02-30"})
+      dateSyntaxOk <- untouched "bad-date-syntax" (const (pure ())) (\opts -> opts {date = Just "yesterday"})
+      directoryOk <- untouched "occupied-directory" (\d -> createDirectoryIfMissing True (d </> "profile.dhall")) id
+      danglingOk <-
+        untouched
+          "dangling-descriptor"
+          ( \d -> do
+              createDirectoryIfMissing True d
+              createFileLink (root </> "absent") (d </> "profile.dhall")
+          )
+          id
+      danglingBundleOk <- untouched "dangling-bundle" (\d -> createFileLink (root </> "absent-bundle") d) id
+      fileTargetOk <- untouched "file-target" (\d -> Text.IO.writeFile d "keep") id
+      let badVersion = root </> "bad-version"
+          oldIndex = "---\nokf_version: nope\n---\n# Index\n"
+      createDirectoryIfMissing True badVersion
+      Text.IO.writeFile (badVersion </> "index.md") oldIndex
+      rejectedVersion <- run (options badVersion)
+      indexAfter <- Text.IO.readFile (badVersion </> "index.md")
+      descriptorAfter <- doesFileExist (badVersion </> "profile.dhall")
+      versionOk <- success "unparseable version" (rejectedVersion == Left (ExitFailure 1) && indexAfter == oldIndex && not descriptorAfter)
+      let existing = root </> "existing"
+          conceptText = "---\ntype: Note\ntitle: Keep me\n---\nOriginal bytes.\n"
+      createDirectoryIfMissing True (existing </> "nested")
+      Text.IO.writeFile (existing </> "nested" </> "concept.md") conceptText
+      Text.IO.writeFile (existing </> "index.md") "---\nokf_version: \"0.3\"\n---\n"
+      Text.IO.writeFile (existing </> "log.md") "# Bundle Update Log\n\n## 2026-09-18\n* **Update**: Preserve this entry.\n"
+      existingResult <- run (options existing)
+      preserved <- Text.IO.readFile (existing </> "nested" </> "concept.md")
+      higher <- readBundleVersion existing
+      appended <- Text.IO.readFile (existing </> "log.md")
+      nestedIndex <- doesFileExist (existing </> "nested" </> "index.md")
+      existingOk <- success "existing bundle" (existingResult == Right () && preserved == conceptText && higher == Right (VersionDeclared (OkfVersion 0 3)) && "Preserve this entry." `Text.isInfixOf` appended && Text.count "**Adoption**" appended == 1 && nestedIndex)
+      -- Invalid definitions load but must fail compilation before mutation.
+      let invalidRegistry = root </> "invalid.dhall"
+      Text.IO.writeFile invalidRegistry ("let registry = " <> Text.pack absoluteRegistry <> " in registry.postgresql with okfVersion = \"invalid\"")
+      invalidOk <- untouched "invalid-profile" (const (pure ())) (\opts -> opts {registryRefs = [Text.pack invalidRegistry], export = Nothing})
+      -- A literal dotted label is ambiguous in the registry's dotted export API.
+      let mismatchRegistry = root </> "mismatch.dhall"
+      Text.IO.writeFile mismatchRegistry ("let registry = " <> Text.pack absoluteRegistry <> " in { `a.b` = registry.postgresql, a = registry.postgresql // { b = registry.nested.decisions } }")
+      mismatchOk <- untouched "mismatch" (const (pure ())) (\opts -> opts {registryRefs = [Text.pack mismatchRegistry], export = Just "a.b"})
+      -- A reserved index directory in a nested directory passes the concept
+      -- walk, then fails during index writing after descriptor verification.
+      let indexFailure = root </> "index-failure"
+      createDirectoryIfMissing True (indexFailure </> "nested" </> "index.md")
+      Text.IO.writeFile (indexFailure </> "nested" </> "concept.md") conceptText
+      indexResult <- run (options indexFailure)
+      indexDescriptor <- doesFileExist (indexFailure </> "profile.dhall")
+      indexLog <- doesFileExist (indexFailure </> "log.md")
+      indexFailureOk <- success "index write recovery" (indexResult == Left (ExitFailure 1) && indexDescriptor && not indexLog)
+      let logFailure = root </> "log-failure"
+      createDirectoryIfMissing True (logFailure </> "log.md")
+      logResult <- run (options logFailure)
+      logDescriptor <- doesFileExist (logFailure </> "profile.dhall")
+      logIndex <- doesFileExist (logFailure </> "index.md")
+      logFailureOk <- success "log write recovery" (logResult == Left (ExitFailure 1) && logDescriptor && logIndex)
+      let invalidBundle = root </> "invalid-bundle"
+      createDirectoryIfMissing True invalidBundle
+      Text.IO.writeFile (invalidBundle </> "concept.md") "---\ntitle: Missing type\n---\nBody\n"
+      invalidResult <- run (options invalidBundle)
+      invalidLog <- doesFileExist (invalidBundle </> "log.md")
+      invalidDescriptor <- doesFileExist (invalidBundle </> "profile.dhall")
+      structuralOk <- success "post-write validation" (invalidResult == Left (ExitFailure 1) && invalidLog && invalidDescriptor)
+      pure (and [previewOk, greenOk, dateOk, dateSyntaxOk, directoryOk, danglingOk, danglingBundleOk, fileTargetOk, versionOk, existingOk, invalidOk, mismatchOk, indexFailureOk, logFailureOk, structuralOk])

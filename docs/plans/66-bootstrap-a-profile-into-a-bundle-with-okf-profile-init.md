@@ -60,9 +60,9 @@ To see it working, run the command against the checked-in fixture registry in th
 - [x] (2026-09-21) Review the plan against source, fixtures, Dhall APIs, and ADRs; correct the implementation contract and acceptance checks. Implementation remains pending.
 - [x] (2026-10-01) Milestone 1: add `okf-core/src/Okf/Profile/Bootstrap.hs` with descriptor rendering, import freezing, relative-path computation, and version selection; register it in `okf-core/okf-core.cabal`.
 - [x] (2026-10-01) Milestone 1: add unit tests to `okf-core/test/Main.hs` (round-trip load of a rendered descriptor, hash-preserving expression, refusal of cwd-relative imports, label escaping, version selection) and see them pass.
-- [ ] Milestone 2: add `ProfileInit ProfileInitOptions`, its parser, and `runProfileInit` to `okf-cli/src/Okf/Cli.hs`.
-- [ ] Milestone 2: add CLI tests to `okf-cli/test/Main.hs` (parser, greenfield write, existing-bundle write, refusal when a descriptor exists, preview writes nothing) and see them pass.
-- [ ] Milestone 2: run the end-to-end transcript in Concrete Steps against the fixture registry and the built-in default registry.
+- [x] (2026-10-01) Milestone 2: add `ProfileInit ProfileInitOptions`, its parser, and `runProfileInit` to `okf-cli/src/Okf/Cli.hs`.
+- [x] (2026-10-01) Milestone 2: add CLI tests to `okf-cli/test/Main.hs` (parser, greenfield write, existing-bundle write, refusal when a descriptor exists, preview writes nothing) and see them pass.
+- [x] (2026-10-01) Milestone 2: run the end-to-end transcript in Concrete Steps against the fixture registry and the built-in default registry.
 - [ ] Milestone 3: document the command in `okf-cli/help/profiles.md`, `docs/user/cli.md`, `docs/user/profiles.md`, and `README.md`; add changelog entries to `okf-core/CHANGELOG.md` and `okf-cli/CHANGELOG.md`.
 - [ ] Milestone 3: record the bootstrap contract in a new ADR under `docs/adr/` and validate the ADR bundle strictly.
 - [ ] Final: fill in Outcomes & Retrospective and run the ADR distillation pass.
@@ -70,6 +70,12 @@ To see it working, run the command against the checked-in fixture registry in th
 
 ## Surprises & Discoveries
 
+
+Implementation on 2026-10-01 verified that Dhall's dotted registry export representation can select a different nested profile when a literal label contains a dot. A fixture with a literal `a.b` profile and a profile-valued `a` carrying an extra `b` field reaches the read-back equality guard and fails with `rendered descriptor differs from selected profile`; the new descriptor is removed and indexes/log remain untouched.
+
+Physical path resolution is necessary on macOS: the temporary directory can be exposed through a symlink. Round trips cover a symlinked destination ancestor, `..`, spaces, and Japanese filename components. A dangling bundle-root link is checked before canonicalization so it cannot become an apparently missing target. Printed recovery and validation commands shell-quote paths.
+
+Both suites passed after CLI integration (`nix develop -c cabal test okf-core okf-cli`), with no fixture skips. The command-line acceptance run covered offline preview/write, strict greenfield validation (`OK: 0 concepts (okf_version 0.1)`), repeat refusal with byte-identical descriptor, the real existing valid-bundle fixture with unchanged concepts, phase-specific index/log failures, and hints visible on post-write validation failure. Default and explicitly unhashed v0.14.0 remote imports both produced `sha256:87d2e4076b2491ee608ac1c7a28b24156ba2634f2b09de49ad4ba79f039acf50` and passed strict validation at 0.2. Completion returned `init`, and embedded help included the command.
 
 Review on 2026-09-21 found that the PostgreSQL fixture declares `okfVersion = "0.1"` and `requireBundleVersion = None Text`. The offline acceptance transcript must therefore declare 0.1, while the default architecture-decisions profile still requires 0.2. Verified with `okf profile show postgresql --no-local --registry okf-core/test/fixtures/registry --json`.
 
@@ -125,7 +131,7 @@ The completion scripts in `okf-cli/src/Okf/Cli/Completions.hs` are static callba
 ## Outcomes & Retrospective
 
 
-Milestone 1 is implemented. `nix develop -c cabal build all` and `nix develop -c cabal test okf-core` passed, including physical-path round trips, nested/root/direct imports, hash preservation without network, HTTP-header relative-import refusal, quoted labels, multiline metadata, Location-mode imports, and version selection. CLI integration and documentation remain in progress.
+Milestone 1 is implemented. `nix develop -c cabal build all` and `nix develop -c cabal test okf-core` passed, including physical-path round trips, nested/root/direct imports, hash preservation without network, HTTP-header relative-import refusal, quoted labels, multiline metadata, Location-mode imports, and version selection. CLI integration and end-to-end acceptance now pass; documentation and ADR validation remain in progress.
 
 The 2026-09-21 review corrected the fixture version, Dhall construction and quoting, declaration conversion, date validation, failure boundaries, recovery, and completion acceptance. No feature implementation has been performed; all three implementation milestones remain pending. The proposed bootstrap ADR must be written when the feature is implemented, not treated as an already accepted implementation decision.
 
@@ -437,3 +443,5 @@ A later, separate change in `mori://shinzui/okf-profiles` can simplify its `adop
 Revision note (2026-09-21): Reviewed against the current source and local ADRs, with Dhall source located through Mori. Corrected the offline fixture version, constructor/API details, path and metadata quoting, date/declaration preflight, partial-write recovery, completion protocol, and acceptance coverage. The three implementation milestones remain unstarted.
 
 Revision note (2026-10-01): Implemented and validated the reusable descriptor renderer and version selection; started CLI integration. Runtime session metadata identifies the implementing model as gpt-6-astra.
+
+Revision note (2026-10-01): Completed CLI integration and offline/remote acceptance, including actual unhashed import freezing, partial-write recovery, and descriptor equality checks. Added a pre-canonicalization root-entry check and shell-quoted recovery hints.

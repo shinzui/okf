@@ -15,6 +15,7 @@ module Okf.Cli
     Options (..),
     ProfileCommand (..),
     ProfileDocumentOptions (..),
+    ProfileInitOptions (..),
     ProfileListOptions (..),
     ProfileSourcesOptions (..),
     ProfileSourceResolution (..),
@@ -98,7 +99,7 @@ import Okf.Cli.Assist (AssistOptions, assistAgentOverrides, assistOptionsParser,
 import Okf.Cli.BundleDiscovery (BundleDiscovery (..), discoverAvailableBundles)
 import Okf.Cli.Completions (CompletionsShell, completionsParser, handleCompletions)
 import Okf.Cli.Config
-import Okf.Cli.Fzf (FzfConfig, detectFzfConfig)
+import Okf.Cli.Fzf (FzfConfig, detectFzfConfig, shellQuote)
 import Okf.Cli.Fzf.Selector
   ( BundleSelection (..),
     ConceptOrder (..),
@@ -175,6 +176,7 @@ import Okf.Profile
     validateProfileVersion,
     validateProfileWith,
   )
+import Okf.Profile.Bootstrap
 import Okf.Profile.Discovery (loadProfileDescriptorWithoutNetwork)
 import Okf.Profile.Documentation
   ( DocumentationError (..),
@@ -229,7 +231,7 @@ import Okf.Trust
   )
 import Okf.Validation
 import Options.Applicative
-import System.Directory (createDirectoryIfMissing, doesFileExist)
+import System.Directory (canonicalizePath, createDirectoryIfMissing, doesDirectoryExist, doesFileExist, doesPathExist, pathIsSymbolicLink, removeFile)
 import System.Environment (lookupEnv)
 import System.Exit (ExitCode (..), exitFailure, exitWith)
 import System.FilePath ((</>))
@@ -375,6 +377,7 @@ data ProfileCommand
   | ProfileSources ProfileSourcesOptions
   | ProfileShow ProfileShowOptions
   | ProfileDocument ProfileDocumentOptions
+  | ProfileInit ProfileInitOptions
   deriving stock (Show, Eq)
 
 data ProfileListOptions = ProfileListOptions
@@ -412,6 +415,16 @@ data ProfileDocumentOptions = ProfileDocumentOptions
     generatedBy :: !(Maybe Text),
     generatedAt :: !(Maybe Text),
     okfVersion :: !(Maybe Text)
+  }
+  deriving stock (Show, Eq)
+
+data ProfileInitOptions = ProfileInitOptions
+  { registryRefs :: ![Text],
+    export :: !(Maybe Text),
+    bundleDir :: !FilePath,
+    noLocal :: !Bool,
+    date :: !(Maybe Text),
+    write :: !Bool
   }
   deriving stock (Show, Eq)
 
@@ -723,6 +736,12 @@ profileCommandParser =
               (progDesc "Print one registry profile in full")
           )
         <> command
+          "init"
+          ( info
+              (ProfileInit <$> profileInitOptionsParser <**> helper)
+              (progDesc "Bootstrap a profile into a bundle: pinned descriptor, version declaration, and log")
+          )
+        <> command
           "document"
           ( info
               (ProfileDocument <$> profileDocumentOptionsParser <**> helper)
@@ -760,6 +779,16 @@ profileShowOptionsParser =
       )
     <*> noLocalSwitch
     <*> jsonSwitch
+
+profileInitOptionsParser :: Parser ProfileInitOptions
+profileInitOptionsParser =
+  ProfileInitOptions
+    <$> many registryOption
+    <*> optional (Text.pack <$> strArgument (metavar "EXPORT" <> help "Dotted export path from `okf profile list`"))
+    <*> strOption (long "bundle" <> metavar "DIR" <> help "Bundle directory to bootstrap; created if missing")
+    <*> noLocalSwitch
+    <*> optional (Text.pack <$> strOption (long "date" <> metavar "YYYY-MM-DD" <> help "Adoption date; defaults to today (UTC)"))
+    <*> switch (long "write" <> help "Write the descriptor, indexes, and adoption log instead of previewing")
 
 profileDocumentOptionsParser :: Parser ProfileDocumentOptions
 profileDocumentOptionsParser =
@@ -1102,6 +1131,7 @@ runProfile = \case
   ProfileSources options -> runProfileSources options
   ProfileShow options -> runProfileShow options
   ProfileDocument options -> runProfileDocument options
+  ProfileInit options -> runProfileInit options
 
 -- | Decode the plural environment value. Aeson decodes directly to @[Text]@,
 -- so a non-array or non-string member is rejected rather than coerced. Blank
@@ -1702,6 +1732,97 @@ selectSourcedProfile profiles = \case
 -- @docs\/adr\/6-generated-profile-documentation.md@: the command overwrites
 -- exactly the files it generates, never deletes, and reports concepts already
 -- in the destination that this run did not generate.
+-- | Preflight does not mutate the bundle. After verification, retain the
+-- descriptor on later failure so recovery cannot silently move its pin.
+runProfileInit :: ProfileInitOptions -> IO ()
+runProfileInit ProfileInitOptions {registryRefs, export = requestedExport, bundleDir, noLocal, date, write} = do
+  destination <- bootstrapPhase "preflight" "No bundle files were written." $ do
+    exists <- bootstrapEntryExists bundleDir
+    directory <- doesDirectoryExist bundleDir
+    when (exists && not directory) $ dieText (Text.pack bundleDir <> " is not a directory")
+    FilePath.normalise <$> canonicalizePath bundleDir
+  let descriptor = destination </> descriptorFileName
+  refuseBootstrapDescriptor descriptor
+  resolved <- resolveEffectiveProfileSources registryRefs noLocal
+  profiles <- loadProfileSourcesForNamedLookup resolved
+  SourcedProfile {source, entry = RegistryEntry {export = selectedExport, spec}} <- selectEntry profiles requestedExport
+  _ <- compileProfileOrExit (displayExport selectedExport) spec
+  entryDate <- maybe todayDate pure date
+  let dateCheck = Log.Log "Adoption" [Log.LogDay entryDate [Log.LogEntry (Just "Adoption") "Adopt profile"]]
+  when (Log.LogDateNotIso entryDate `elem` Log.validateLog dateCheck) $
+    dieText ("Invalid adoption date: " <> entryDate <> "; use a real calendar date in YYYY-MM-DD form.")
+  contents <- renderBootstrapDescriptor destination (descriptorImportFor source selectedExport) >>= either (dieText . renderBootstrapError) pure
+  existing <- bootstrapPhase "preflight" "No bundle files were written." $ do
+    exists <- bootstrapEntryExists destination
+    directory <- doesDirectoryExist destination
+    when (exists && not directory) $ dieText (Text.pack destination <> " is not a directory")
+    declaration <- readBundleVersion destination >>= either (dieText . renderBundleError) pure
+    version <- case declaration of
+      VersionDeclared declaredVersion -> pure (Just declaredVersion)
+      VersionUndeclared -> pure Nothing
+      VersionUnparseable raw -> dieText ("Unparseable okf_version " <> raw <> "; repair the root index.md declaration before bootstrapping.")
+    when directory $ void (walkBundle destination >>= either (dieText . renderBundleError) pure)
+    pure version
+  let targetVersion = bootstrapOkfVersion existing spec
+      versionText = maybe "(undeclared)" renderOkfVersion targetVersion
+      oneLine = Text.unwords . Text.words
+      message = "Adopt the `" <> oneLine (spec ^. #name) <> "` profile (`" <> oneLine (displayExport selectedExport) <> "`) from " <> oneLine (renderProfileSourceReference source) <> "."
+      destinationArg = shellQuote (Text.pack destination)
+      descriptorArg = shellQuote (Text.pack descriptor)
+      declarationText = "okf_version \"" <> versionText <> "\""
+  if not write
+    then do
+      renderIndexPreview (descriptor, contents)
+      Text.IO.putStrLn ("index.md: " <> declarationText <> " (all generated index.md files in the bundle will be regenerated)")
+      Text.IO.putStrLn ("log.md: ## " <> entryDate <> " / * **Adoption**: " <> message)
+      Text.IO.putStrLn ("(preview only; pass --write to bootstrap " <> Text.pack destination <> ")")
+    else do
+      refuseBootstrapDescriptor descriptor
+      bootstrapPhase "descriptor write" "The descriptor may be incomplete; indexes and log were not written." $ do
+        createDirectoryIfMissing True destination
+        Text.IO.writeFile descriptor contents
+      loaded <- loadProfileFile descriptor
+      case loaded of
+        Right actual | actual == spec -> pure ()
+        _ -> do
+          bootstrapPhase "descriptor cleanup" "Descriptor verification failed; indexes and log were not written." (removeFile descriptor)
+          dieText $ case loaded of
+            Left _ -> "descriptor verification failed: the written descriptor could not be loaded; removed it. Indexes and log were not written."
+            Right _ -> "descriptor verification failed: rendered descriptor differs from selected profile; removed it. Indexes and log were not written."
+      Text.IO.putStrLn ("Wrote " <> Text.pack descriptor <> " (" <> displayExport selectedExport <> " from " <> renderProfileSourceLabel source <> ")")
+      let indexRecovery = "The verified descriptor remains. Repair the problem, then run: okf index " <> destinationArg <> " --write --okf-version " <> versionText <> ". The adoption log was not written."
+      bootstrapPhase "index generation" indexRecovery $ do
+        indexResult <- writeBundleIndexesWith targetVersion destination
+        either (\err -> dieText ("profile init: index generation failed: " <> renderBundleError err <> "\n" <> indexRecovery)) pure indexResult
+      Text.IO.putStrLn ("Declared " <> declarationText <> " in " <> Text.pack (destination </> "index.md"))
+      bootstrapPhase "log write" "The verified descriptor and indexes remain. Inspect log.md before adding the Adoption entry; do not append it twice." $
+        runLogAdd destination (LogAddOptions Nothing "Adoption" message (Just entryDate))
+      Text.IO.putStrLn "Bootstrap files have been written; validation follows."
+      Text.IO.putStrLn ("Enforce in CI: okf validate " <> destinationArg <> " --strict --profile " <> descriptorArg <> " --profile-enforce --log-enforce")
+      Text.IO.putStrLn ("Read the conventions: okf profile document --profile " <> descriptorArg)
+      bootstrapPhase "validation" "Bootstrap files remain; repair the reported documents or log, then rerun validation." $
+        runValidate (ValidateOptions (Just destination) False (Just descriptor) False False False)
+
+bootstrapEntryExists :: FilePath -> IO Bool
+bootstrapEntryExists path = do
+  exists <- doesPathExist path
+  if exists
+    then pure True
+    else do
+      link <- try @IOException (pathIsSymbolicLink path)
+      pure (either (const False) id link)
+
+refuseBootstrapDescriptor :: FilePath -> IO ()
+refuseBootstrapDescriptor descriptor = do
+  occupied <- bootstrapEntryExists descriptor
+  when occupied $
+    dieText (Text.pack descriptor <> " already exists; this bundle has already adopted a profile. To move its pin, follow the okf-profiles migration blueprint (`seihou agent migrate`) or edit the tag and re-run `dhall freeze`.")
+
+bootstrapPhase :: Text -> Text -> IO a -> IO a
+bootstrapPhase phase recovery operation = do
+  result <- try @IOException operation
+  either (\err -> dieText ("profile init: " <> phase <> " failed: " <> Text.pack (show err) <> "\n" <> recovery)) pure result
+
 runProfileDocument :: ProfileDocumentOptions -> IO ()
 runProfileDocument
   ProfileDocumentOptions
