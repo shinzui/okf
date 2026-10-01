@@ -3,8 +3,8 @@ type: Architecture Decision Record
 title: Querying a bundle, and where filter semantics live
 description: Put concept-filter matching semantics in `okf-core`'s `Okf.Query` so every consumer shares one definition of a match.
 generated:
-  by: claude/sonnet-5
-  at: "2026-08-18T14:03:07Z"
+  by: claude/opus-5-5
+  at: "2026-10-01T19:30:15Z"
 docId: ADR-15
 status: Accepted
 date: 2026-08-09
@@ -52,6 +52,10 @@ row can mix stored frontmatter with identity derived from a file path, projected
 defaults, and fields requested for a human-readable table. That makes a consumer
 reverse the presentation layer before it can recover the document it wanted to
 query.
+
+The sixth, which arrived later, is how to exclude values and combine
+conditions without breaking the meaning of existing `KEY=VALUE` arguments,
+whose values are verbatim and may hold `=`, spaces, or words such as `and`.
 
 
 ## Decision
@@ -103,6 +107,43 @@ read every such key as unconstrained and silently disable per-type vocabularies
 everywhere. The base map is a scope only where it can actually govern a concept:
 when the profile declares no types at all, and when `allowUnknownTypes = True`,
 whose concepts of an undeclared type fall back to exactly those rules.
+
+**Exclusion and composition extend `--where` through a deterministic
+dispatch, never through fallback.** `Okf.Query.parseWhereCondition` reads an
+argument whose first non-space character is `(` as one parenthesized
+expression (`and`, `or`, `not`, `has(KEY)`, `missing(KEY)`, `=`, `!=`, `in`,
+`not in`, with JSON-quoted strings); an argument starting `KEY!=`, `KEY in`, or
+`KEY not in` as a standalone predicate; and everything else with the unchanged
+`parseFieldEquals`. Once a new form is recognized, a malformed operand is an
+error with a character offset, never reread as an equality. A
+`WhereCondition` keeps a `LegacyWhere` equality apart from a `PredicateWhere`
+so legacy any-of grouping by key never leaks into explicit conditions:
+repeated legacy equalities on one key remain alternatives, while every other
+condition must hold on its own, and `(status="accepted" and
+status="proposed")` selects nothing.
+
+**A negative value question needs a value and is universal over a list;
+boolean `not` is plain negation.** `KEY!=V` and `KEY not in [...]` hold only
+when the key has at least one comparable scalar (a string, number, or boolean
+as `scalarText` reads it) and none of them is excluded. A concept without the
+key, or with only null, an empty list, or records there, fails them exactly as
+it fails a positive equality, so absence never sneaks into a value filter;
+`(missing(status) or status!="completed")` includes it on request. Hiding a
+value is universal for the same reason inclusion is existential: hiding `cli`
+means hiding every concept that mentions it, so `tags!=cli` rejects `[profiles,
+cli]`. Explicit `not` negates its whole operand, so `(not
+(status="completed"))` includes a concept with no `status`.
+
+**Every operand of a condition is checked against the profile.**
+`checkPredicateAgainstProfile` turns each equality, excluded value, and set
+member into the equality it names and runs the existing checker, including
+operands under `not` and on both sides of `or`. A misspelled exclusion is
+worse than a misspelled inclusion because the listing still looks plausible.
+Scopes come only from `--type`; an expression's own `type="..."` does not
+narrow them, and a contradiction is an empty result rather than an error.
+Because such a value may sit under `!=` or `not`, the CLI's diagnostic is
+neutral (`filter value acepted is outside the vocabulary for status`) where the
+legacy one says no concept can match.
 
 **Machine-readable concept listings expose stored frontmatter directly.**
 `okf concepts --json` emits one complete parsed frontmatter object for each
@@ -161,6 +202,16 @@ for.
 Nothing here changes what `okf validate --profile` does. `okf concepts` never
 reports a bundle deviation, and duplicating that would give two commands that
 disagree about severity.
+
+The flexible conditions are deliberately not a query language. There are no
+ordering comparisons, regular expressions, arithmetic, or type coercion:
+`(usage_count="12")` compares text exactly as `usage_count=12` does. The
+dispatch costs a sliver of legacy syntax — a key such as `a!` or one containing
+` in ` before its `=` is now read as the new form — in exchange for keeping
+every realistic `KEY=VALUE` value verbatim. The exported
+`ConceptsOptions.fieldFilters` changed type to `[WhereCondition]`, while
+`ConceptFilter`, `filterConcepts`, and `checkFiltersAgainstProfile` keep their
+signatures and semantics for library consumers.
 
 The JSON contract means a consumer can inspect arbitrary producer-defined keys
 and nested values without first naming them with `--show`, and a missing key
