@@ -49,14 +49,32 @@ The first and third examples require an actual stored scalar status. A concept w
 
 ## Progress
 
-- [x] Milestone 1: add the condition model, deterministic parsing, rendering, and parser regressions in okf-core. (2026-10-01T19:40Z; `testParseWhereConditions` in `okf-core/test/Main.hs` passes with every earlier parser assertion intact.)
-- [x] Milestone 2: implement selection and profile preflight with list, absence, scope, and compatibility regressions. (2026-10-01T19:55Z; `testFilterConceptsWhereOverFixture`, `testMatchesPredicateEdgeCases`, and `testCheckPredicateAgainstProfile` pass; the fixture gives Alpha and Beta for `status not in ["completed","rejected"]`, Alpha for `reviews.outcome not in ["changes-requested"]`, and Scratch, Alpha, Beta for `(not (status="completed"))`.)
-- [ ] Milestone 3: wire the existing CLI flag, document it, demonstrate text and JSON behavior, and update durable query context.
+- [x] Milestone 1: add the condition model, deterministic parsing, rendering, and parser regressions in okf-core. (2026-10-01T19:22Z, commit d53c081; `testParseWhereConditions` in `okf-core/test/Main.hs` passes with every earlier parser assertion intact.)
+- [x] Milestone 2: implement selection and profile preflight with list, absence, scope, and compatibility regressions. (2026-10-01T19:25Z, commit 600d413; `testFilterConceptsWhereOverFixture`, `testMatchesPredicateEdgeCases`, and `testCheckPredicateAgainstProfile` pass; the fixture gives Alpha and Beta for `status not in ["completed","rejected"]`, Alpha for `reviews.outcome not in ["changes-requested"]`, and Scratch, Alpha, Beta for `(not (status="completed"))`.)
+- [x] Milestone 3: wire the existing CLI flag, document it, demonstrate text and JSON behavior, and update durable query context. (2026-10-01T19:35Z.)
+  - [x] CLI wiring, parser assertions, report/JSON/diagnostic tests (commit ca3ff0e); every executable command in Validation and Acceptance produced the stated output and exit code.
+  - [x] Help, `docs/user/cli.md`, `README.md`, and both changelogs (commit 2b1e3e9).
+  - [x] ADR-15 amendment, CAP-16 update, and log entries (commit b925fd8). `docs/adr` strict validation passes; `docs/capabilities` strict validation fails only on a pre-existing recommendation (see Surprises & Discoveries).
 
 
 ## Surprises & Discoveries
 
-(None yet.)
+`renderFilterProfileError` was not exported from `okf-cli/src/Okf/Cli.hs`, although Context and Orientation lists it among the exports. Diagnostics were therefore made testable through a new exported pure function, `conceptsProfileDiagnostics`, and both renderers are now exported (recorded in `okf-cli/CHANGELOG.md`).
+
+Strict validation of `docs/capabilities` exits 1 both before and after this work, because every one of its 17 capability documents lacks the profile-recommended `reviews` field. Evidence, against the unmodified tree (changes stashed) and then with this work applied:
+
+```text
+$ okf validate docs/capabilities --strict --profile docs/capabilities/profile.dhall --profile-enforce --log-enforce
+profile: agent-kit-management: missing profile-recommended field: reviews (...)
+... (one identical line per capability, 17 in total, and no other violation)
+baseline strict exit 1
+$ okf validate docs/capabilities --profile docs/capabilities/profile.dhall --profile-enforce --log-enforce
+OK: 17 concepts (okf_version 0.2)
+```
+
+This is not a regression, and enforcement was not weakened. Adding a `reviews` entry would require an actual review of the capability record, so none was invented. `docs/adr` strict validation reports `OK: 19 concepts (okf_version 0.2)`.
+
+The pre-existing profile actors in both bundles use `<producer>/<version>` spellings such as `claude/sonnet-5` and `codex/gpt-5`; this work's revisions use `claude/opus-5-5`, the runtime model ID `claude-opus-5-5` in that shape.
 
 
 ## Decision Log
@@ -64,6 +82,8 @@ The first and third examples require an actual stored scalar status. A concept w
 On 2026-10-01 (implementation), a standalone `in` or `not in` keyword must be preceded by whitespace and followed by whitespace, `[`, or the end of the argument; `!=` must follow the field directly. Inside an expression a keyword only needs a word boundary (any character that cannot continue a key). The stricter standalone rule keeps more legacy keys, such as `status index=1` or `status in=x`, on the legacy path, which is the plan's compatibility goal; inside parentheses there is no legacy reading to protect.
 
 On 2026-10-01 (implementation), set members are deduplicated keeping first occurrence (`["a","b","a"]` becomes `["a","b"]`), which is what "preserve first occurrence order" means once duplicates are harmless. Within an expression, `not` is read as a field named `not` when the next token is `=` or `!=`, and `has`/`missing` are functions only when followed by `(`; otherwise they are ordinary keys. These keep the few keys that collide with keywords usable with equality.
+
+On 2026-10-01 (implementation), the CLI's profile preflight lives in a new exported pure function, `conceptsProfileDiagnostics`, which returns the rendered lines in the required order (legacy filters first, then explicit predicates in flag order, predicate errors deduplicated across flags). `runConcepts` prints them; the CLI suite asserts them without spawning the executable.
 
 On 2026-10-01 (implementation), a syntax error's offset points at the character where reading stopped: for `status in []` that is the `]` (offset 11), for trailing text it is the first non-space character of that text. An unterminated or badly escaped string points at its opening quotation mark. `renderWhereParseError` prints `expected <what> at offset <n>` followed by the input and a caret line, omitting the caret when the input contains a newline.
 
@@ -80,7 +100,11 @@ On 2026-09-30, keep the existing `ConceptFilter` constructors and APIs intact an
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+Completed 2026-10-01. `okf concepts --where` now accepts `KEY!=VALUE`, `KEY in [...]`, `KEY not in [...]`, and parenthesized expressions with `and`, `or`, `not`, `has(KEY)`, and `missing(KEY)`, while every legacy `KEY=VALUE` argument keeps its meaning. All executable acceptance commands behaved as specified: the inclusion, exclusion, and repeated-`!=` commands select Alpha and Beta; `(status="accepted" or missing(status))` selects Scratch and Alpha (JSON without a synthesized status); `(not (status="completed"))` selects Scratch, Alpha, Beta; the reviews exclusion selects Alpha; the contradiction prints `[]` with exit 0; the profile typo commands exit 1 with only the stderr diagnostic; malformed sets and expressions exit 1 with `option --where:` and an offset with a caret. `cabal test all` passes.
+
+The core library carries the whole design (`Okf.Query`): the CLI change was a type change, a reader swap, and a diagnostics function. The decision that most simplified things was keeping `LegacyWhere` and `PredicateWhere` separate and letting `filterConceptsWhere` hand legacy equalities to the unchanged `filterConcepts`: no existing assertion had to change semantics. Deliberately out of scope, and still absent: ordering comparisons, regular expressions, type coercion, and narrowing profile scopes from an expression's own `type` equality. The `ConceptsOptions.fieldFilters` type change is recorded as breaking for library consumers in `okf-cli/CHANGELOG.md`; the version bump is left to release time per the plan.
+
+ADR distillation: the durable syntax, absence, negative-list, conjunction, and profile-preflight decisions were promoted into [ADR-15](docs/adr/15-querying-a-bundle-and-where-filter-semantics-live.md). The parser-level details (offset placement, keyword boundary rules) remain in this plan's Decision Log because they are implementation detail, not project-level judgment. No new ADR was needed.
 
 
 ## Context and Orientation
@@ -304,5 +328,7 @@ checkPredicateAgainstProfile :: CompiledProfile -> [Text] -> ConceptPredicate ->
 Milestone 1 establishes the model and parsing/rendering interfaces; Milestone 2 establishes evaluation and preflight. Export these from the existing `Okf.Query` module, which is already in `okf-core/okf-core.cabal`; no additional exposed module is needed. In `okf-cli/src/Okf/Cli.hs`, Milestone 3 changes `ConceptsOptions.fieldFilters` from `[ConceptFilter]` to `[WhereCondition]` and adds a predicate-profile diagnostic renderer while retaining the existing legacy renderer.
 
 Use existing `text`, `containers`, `base`'s non-empty list type, Aeson, and optparse-applicative. Aeson decodes quoted JSON strings and string arrays; optparse-applicative's `eitherReader` bridges the core parser into argument errors. Dependency APIs were checked in local sources found via Mori: `mori://haskell/aeson/packages/aeson` provides decoding, and `mori://pcapriotti/optparse-applicative/packages/optparse-applicative` provides the reader. Neither project had curated registry docs. No dependency bound, pin, new library, profile schema, or network service is needed. If implementation changes that choice, locate the dependency with Mori and verify its current registry release and upstream tags before selecting compatibility bounds; local corpus versions alone are insufficient.
+
+Implementation note, 2026-10-01: all three milestones implemented by claude-opus-5-5; Progress, Surprises & Discoveries, Decision Log, and Outcomes & Retrospective updated to match. The Context and Orientation claim that `renderFilterProfileError` is exported was inaccurate before this work and is now true.
 
 Creation note, 2026-09-30: this plan extends the existing equality-only CLI after inspecting its core matcher, profile checker, parser, test fixtures, help, relevant ADRs, and local dependency source. Implementation has not begun.
