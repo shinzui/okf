@@ -2,6 +2,7 @@
 
 module Main (main) where
 
+import Control.Exception (bracket)
 import Data.Aeson (object, toJSON, (.=))
 import Data.Aeson qualified as Aeson
 import Data.Aeson.KeyMap qualified as KeyMap
@@ -14,6 +15,7 @@ import Data.Set qualified as Set
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text.IO
 import Data.Time (fromGregorian)
+import Dhall.Parser qualified as Dhall
 import Okf.Actor
 import Okf.Bundle
 import Okf.ConceptId
@@ -32,6 +34,7 @@ import Okf.Prelude hiding (List, Object, setField, (.=))
 -- reached as 'Profile.HumanActor'.
 import Okf.Profile hiding (HumanActor)
 import Okf.Profile qualified as Profile
+import Okf.Profile.Bootstrap
 import Okf.Profile.Discovery qualified as ProfileDiscovery
 import Okf.Profile.Documentation
 import Okf.Profile.Registry
@@ -40,6 +43,7 @@ import Okf.Trust
 import Okf.Validation
 import System.Directory
   ( createDirectoryIfMissing,
+    createDirectoryLink,
     createFileLink,
     doesDirectoryExist,
     doesFileExist,
@@ -56,7 +60,10 @@ main :: IO ()
 main = do
   results <-
     sequence
-      [ test "parseActor classifies the three specification section 7 shapes" testParseActorShapes,
+      [ testIO "bootstrap descriptors round-trip from local sources and physical paths" testBootstrapRoundTrip,
+        testIO "bootstrap expressions preserve hashes and reject relative imports" testBootstrapExpressions,
+        test "bootstrap paths and versions" testBootstrapPure,
+        test "parseActor classifies the three specification section 7 shapes" testParseActorShapes,
         test "renderActor inverts parseActor on every input" testActorRoundTrip,
         test "parse valid document with YAML frontmatter" testParseValidDocument,
         test "parse document with no frontmatter as empty-frontmatter body" testParseNoFrontmatter,
@@ -7834,3 +7841,76 @@ fixtureDocument typeName titleText descriptionText documentBody =
       "",
       documentBody
     ]
+
+-- These imports must continue to mean the selected profile after relocation.
+testBootstrapRoundTrip :: IO (Either Text ())
+testBootstrapRoundTrip = do
+  registry <- fixtureFilePath "registry/package.dhall" >>= makeAbsolute
+  descriptor <- fixtureFilePath "profiles/decisions.dhall" >>= makeAbsolute
+  temp <- getTemporaryDirectory
+  bracket (createTempDirectory temp "okf-bootstrap") removeDirectoryRecursive $ \root -> do
+    createDirectoryIfMissing True (root </> "physical" </> "unused")
+    createDirectoryLink (root </> "physical") (root </> "alias")
+    let destination = root </> "alias" </> "unused" </> ".." </> "bundle space 日本語"
+        localSource = root </> "source space 日本語.dhall"
+    -- A source filename also needs Dhall component quoting.
+    sourceText <- renderBootstrapDescriptor root (ImportDescriptorFile descriptor)
+    case sourceText of
+      Left err -> pure (Left (renderBootstrapError err))
+      Right contents -> do
+        Text.IO.writeFile localSource contents
+        results <- for
+          [ (ImportRegistryFile registry "postgresql", RegistryFile registry, "postgresql"),
+            (ImportRegistryFile registry "nested.decisions", RegistryFile registry, "nested.decisions"),
+            (ImportRegistryFile descriptor "", RegistryFile descriptor, ""),
+            (ImportDescriptorFile localSource, RegistryFile descriptor, "")
+          ]
+          $ \(source, ref, selected) -> do
+            rendered <- renderBootstrapDescriptor destination source
+            case rendered of
+              Left err -> pure (Left (renderBootstrapError err))
+              Right contents' -> do
+                createDirectoryIfMissing True destination
+                Text.IO.writeFile (destination </> "profile.dhall") contents'
+                actual <- loadProfileFile (destination </> "profile.dhall")
+                expected <- loadRegistry ref
+                pure $ do
+                  entries <- expected
+                  entry <- maybe (Left "missing export") Right (findRegistryEntry selected entries)
+                  assertEqual (Right (entry ^. #spec)) actual
+        pure (sequence_ results)
+
+testBootstrapExpressions :: IO (Either Text ())
+testBootstrapExpressions = do
+  let hash = "sha256:" <> Text.replicate 64 "0"
+      reference = "https://example.invalid/package.dhall " <> hash
+      render expression selected = renderBootstrapDescriptor "/tmp" (ImportRegistryExpression expression selected)
+  hashed <- render reference "a.b"
+  escaped <- render reference "foo bar"
+  relative <- render "./registry/package.dhall" "x"
+  header <- render ("https://example.invalid/package.dhall using ./headers.dhall " <> hash) "x"
+  malformed <- render "let =" "x"
+  multiline <- render (reference <> "\n-- metadata\n") "x"
+  location <- render "https://example.invalid/package.dhall as Location" ""
+  pure $ do
+    contents <- first renderBootstrapError hashed
+    assertBool "hash preserved" (hash `Text.isInfixOf` contents)
+    assertBool "nested selection" ("registry.a.b" `Text.isSuffixOf` Text.stripEnd contents)
+    escapedText <- first renderBootstrapError escaped
+    assertBool "escaped label" ("registry.`foo bar`" `Text.isInfixOf` escapedText)
+    assertBool "relative import rejected" (case relative of Left RelativeExpressionImport {} -> True; _ -> False)
+    assertBool "relative header import rejected" (case header of Left RelativeExpressionImport {} -> True; _ -> False)
+    assertBool "parse failure classified" (case malformed of Left DescriptorParseError {} -> True; _ -> False)
+    multilineText <- first renderBootstrapError multiline
+    assertBool "multiline metadata remains a comment" (case Dhall.exprFromText "descriptor" multilineText of Right _ -> True; _ -> False)
+    void (first renderBootstrapError location)
+
+testBootstrapPure :: Either Text ()
+testBootstrapPure = do
+  assertEqual "../c/f.dhall" (relativeImportPath "/a/b" "/a/c/f.dhall")
+  assertEqual "./f.dhall" (relativeImportPath "/a/b" "/a/b/f.dhall")
+  assertEqual "./c/d/f.dhall" (relativeImportPath "/a/b" "/a/b/c/d/f.dhall")
+  let spec = testProfileSpec & #okfVersion .~ "0.1" & #requireBundleVersion .~ Just "0.2"
+  assertEqual (parseOkfVersion "0.2") (bootstrapOkfVersion Nothing spec)
+  assertEqual (parseOkfVersion "0.3") (bootstrapOkfVersion (parseOkfVersion "0.3") spec)
+  assertEqual (parseOkfVersion "0.1") (bootstrapOkfVersion Nothing (spec & #requireBundleVersion .~ Just "bad"))

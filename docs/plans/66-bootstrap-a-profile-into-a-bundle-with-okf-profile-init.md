@@ -16,6 +16,11 @@ provenance:
       at: 2026-09-22T03:27:04Z
       mode: "update"
       note: "Correct fixture expectations, Dhall/path handling, preflight, recovery, and acceptance checks after source review."
+    - model: "gpt-6-astra"
+      harness: "codex-cli"
+      at: 2026-10-01T19:40:44Z
+      mode: "implement"
+      note: "Implement descriptor bootstrap, CLI adoption, tests, and durable documentation."
   reviews:
     - model: "gpt-6-astra"
       harness: "codex-cli"
@@ -53,8 +58,8 @@ To see it working, run the command against the checked-in fixture registry in th
 
 
 - [x] (2026-09-21) Review the plan against source, fixtures, Dhall APIs, and ADRs; correct the implementation contract and acceptance checks. Implementation remains pending.
-- [ ] Milestone 1: add `okf-core/src/Okf/Profile/Bootstrap.hs` with descriptor rendering, import freezing, relative-path computation, and version selection; register it in `okf-core/okf-core.cabal`.
-- [ ] Milestone 1: add unit tests to `okf-core/test/Main.hs` (round-trip load of a rendered descriptor, hash-preserving expression, refusal of cwd-relative imports, label escaping, version selection) and see them pass.
+- [x] (2026-10-01) Milestone 1: add `okf-core/src/Okf/Profile/Bootstrap.hs` with descriptor rendering, import freezing, relative-path computation, and version selection; register it in `okf-core/okf-core.cabal`.
+- [x] (2026-10-01) Milestone 1: add unit tests to `okf-core/test/Main.hs` (round-trip load of a rendered descriptor, hash-preserving expression, refusal of cwd-relative imports, label escaping, version selection) and see them pass.
 - [ ] Milestone 2: add `ProfileInit ProfileInitOptions`, its parser, and `runProfileInit` to `okf-cli/src/Okf/Cli.hs`.
 - [ ] Milestone 2: add CLI tests to `okf-cli/test/Main.hs` (parser, greenfield write, existing-bundle write, refusal when a descriptor exists, preview writes nothing) and see them pass.
 - [ ] Milestone 2: run the end-to-end transcript in Concrete Steps against the fixture registry and the built-in default registry.
@@ -119,6 +124,8 @@ The completion scripts in `okf-cli/src/Okf/Cli/Completions.hs` are static callba
 
 ## Outcomes & Retrospective
 
+
+Milestone 1 is implemented. `nix develop -c cabal build all` and `nix develop -c cabal test okf-core` passed, including physical-path round trips, nested/root/direct imports, hash preservation without network, HTTP-header relative-import refusal, quoted labels, multiline metadata, Location-mode imports, and version selection. CLI integration and documentation remain in progress.
 
 The 2026-09-21 review corrected the fixture version, Dhall construction and quoting, declaration conversion, date validation, failure boundaries, recovery, and completion acceptance. No feature implementation has been performed; all three implementation milestones remain pending. The proposed bootstrap ADR must be written when the feature is implemented, not treated as an already accepted implementation decision.
 
@@ -428,3 +435,5 @@ A later, separate change in `mori://shinzui/okf-profiles` can simplify its `adop
 
 
 Revision note (2026-09-21): Reviewed against the current source and local ADRs, with Dhall source located through Mori. Corrected the offline fixture version, constructor/API details, path and metadata quoting, date/declaration preflight, partial-write recovery, completion protocol, and acceptance coverage. The three implementation milestones remain unstarted.
+
+Revision note (2026-10-01): Implemented and validated the reusable descriptor renderer and version selection; started CLI integration. Runtime session metadata identifies the implementing model as gpt-6-astra.
