@@ -879,7 +879,7 @@ conceptsOptionsParser =
           ( long "where"
               <> metavar "CONDITION"
               <> help
-                "Keep concepts matching CONDITION: KEY=VALUE (repeat a key for any-of), KEY!=VALUE, KEY in [\"A\",\"B\"], KEY not in [\"A\",\"B\"], or a parenthesized expression such as '(status in [\"accepted\"] and not (tags=\"archived\"))' with and, or, not, has(KEY), missing(KEY). KEY may be nested one level (reviews.outcome). Separate --where flags are all required"
+                "Keep concepts matching CONDITION: KEY=VALUE (repeat a key for any-of), KEY!=VALUE, KEY in [\"A\",\"B\"], KEY not in [\"A\",\"B\"], or a parenthesized expression such as '(status in [\"accepted\"] and not (tags=\"archived\"))' with and, or, not, has(KEY), missing(KEY). KEY may be nested one level (reviews.outcome). Other conditions given as separate flags must all hold"
           )
       )
     <*> many (option fieldSelectorReader (long "has" <> metavar "KEY" <> help "Keep concepts that carry KEY at all"))

@@ -7,6 +7,19 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- `Okf.Query` gains flexible concept conditions: `WhereCondition`,
+  `ConceptPredicate`, `WhereParseError`, `parseWhereCondition`,
+  `renderWhereCondition`, `renderConceptPredicate`, `renderWhereParseError`,
+  `matchesPredicate`, `filterConceptsWhere`, and
+  `checkPredicateAgainstProfile`. Conditions add `!=`, `in`, `not in`, and
+  parenthesized `and`/`or`/`not` expressions with `has(KEY)` and
+  `missing(KEY)`. Negative value predicates require a comparable scalar and
+  reject a list when any element is excluded; `not` negates its whole operand.
+  Profile checks cover every operand. Existing `ConceptFilter` APIs and their
+  semantics are unchanged.
+
 ## [0.9.0.0] - 2026-09-13
 
 ### Added

@@ -7,6 +7,25 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- `okf concepts --where` accepts `KEY!=VALUE`, `KEY in ["A","B"]`,
+  `KEY not in ["A","B"]`, and parenthesized expressions such as
+  `(status in ["accepted","proposed"] and not (tags="archived"))`, alongside
+  unchanged `KEY=VALUE`. Repeated legacy equalities on one key remain any-of;
+  other conditions are all required. With `--profile`, every key and value in a
+  condition, including excluded values and operands under `not` or `or`, is
+  checked before the bundle is walked, with a neutral
+  `filter value ... is outside the vocabulary for ...` diagnostic.
+
+### Changed
+
+- **Breaking (library):** the exported `ConceptsOptions.fieldFilters` field is
+  now `[WhereCondition]` instead of `[ConceptFilter]`; wrap existing equalities
+  in `LegacyWhere`. `Okf.Cli` additionally exports
+  `conceptsProfileDiagnostics`, `renderFilterProfileError`, and
+  `renderPredicateProfileError`.
+
 ## [0.9.0.0] - 2026-09-13
 
 ### Added

@@ -704,6 +704,10 @@ whole-bundle reports each answer a narrower question.
 cabal run okf -- concepts [BUNDLE]
 cabal run okf -- concepts [BUNDLE] --type TYPE
 cabal run okf -- concepts [BUNDLE] --where KEY=VALUE
+cabal run okf -- concepts [BUNDLE] --where 'KEY!=VALUE'
+cabal run okf -- concepts [BUNDLE] --where 'KEY in ["A","B"]'
+cabal run okf -- concepts [BUNDLE] --where 'KEY not in ["A","B"]'
+cabal run okf -- concepts [BUNDLE] --where '(EXPRESSION)'
 cabal run okf -- concepts [BUNDLE] --has KEY --missing KEY
 cabal run okf -- concepts [BUNDLE] --show KEY
 cabal run okf -- concepts [BUNDLE] --json
@@ -755,6 +759,83 @@ review was approved even though its first asked for changes.
 `--has KEY` keeps the concepts that carry the key at all, and `--missing KEY` the
 ones that do not.
 
+### Excluding values and combining conditions
+
+`--where` also accepts conditions that exclude values, name a set, or combine
+several questions. Which reading applies is decided by how the argument starts,
+so existing `KEY=VALUE` arguments keep their exact meaning even when the value
+contains `=`, spaces, or the word `and`:
+
+- An argument whose first non-space character is `(` is one parenthesized
+  expression.
+- An argument starting `KEY!=`, `KEY in`, or `KEY not in` is a standalone
+  inequality or set condition.
+- Anything else is a `KEY=VALUE` equality, exactly as before.
+
+```bash
+cabal run okf -- concepts BUNDLE --where 'status!=completed'
+cabal run okf -- concepts BUNDLE --where 'status in ["accepted","proposed"]'
+cabal run okf -- concepts BUNDLE --where 'status not in ["completed","rejected"]'
+cabal run okf -- concepts BUNDLE \
+  --where '(status in ["accepted","proposed"] and not (tags="archived"))'
+```
+
+A standalone `KEY!=VALUE` takes everything after `!=` verbatim, like `KEY=VALUE`.
+A set is a non-empty JSON array of strings. An expression is built from
+`KEY="VALUE"`, `KEY!="VALUE"`, `KEY in [...]`, `KEY not in [...]`, `has(KEY)`,
+`missing(KEY)`, `not`, `and`, `or`, and parentheses. Inside an expression every
+value is a JSON double-quoted string with JSON escapes, so `(status="accepted")`
+compares with `accepted`, while outside one `status="accepted"` compares with a
+value that includes the quotation marks. `not` binds tighter than `and`, which
+binds tighter than `or`. Operators are lowercase. Values are never coerced:
+`(usage_count="12")` matches a stored `12` exactly as `--where usage_count=12`
+does. A malformed condition is rejected before the bundle is walked, with the
+character offset where reading stopped:
+
+```text
+cabal run okf -- concepts okf-core/test/fixtures/concept-filters --where 'status in []'
+option --where: expected at least one string in the set; an empty set can never match at offset 11
+  status in []
+             ^
+```
+
+**Separate flags combine differently.** Repeated `KEY=VALUE` flags on one key
+still mean "or". Every other `--where` condition must hold on its own, so two
+`status!=` flags exclude both values and two `in` flags keep only what both sets
+share; spell a union as one larger set or with `or`. Legacy alternatives are
+chosen first and the other conditions then narrow them:
+
+```text
+cabal run okf -- concepts okf-core/test/fixtures/concept-filters \
+  --where status=accepted --where status=proposed --where 'status!=proposed'
+requests/alpha  Improvement Request  Alpha
+```
+
+**An exclusion needs a value to judge.** `status!=completed` and `status not in
+[...]` keep only concepts that actually store a string, number, or boolean
+status, and reject a list when *any* element is excluded: `tags!=cli` drops a
+concept tagged `[profiles, cli]`, and `reviews.outcome not in
+["changes-requested"]` drops a concept with one approving and one
+changes-requested review. Include absent keys explicitly when you want them:
+
+```text
+cabal run okf -- concepts okf-core/test/fixtures/concept-filters \
+  --where '(status="accepted" or missing(status))'
+notes/scratch   Note                 Scratch
+requests/alpha  Improvement Request  Alpha
+```
+
+`not` is different: it is ordinary negation of its whole operand, absence
+included, so `(not (status="completed"))` also keeps the concept with no status:
+
+```text
+cabal run okf -- concepts okf-core/test/fixtures/concept-filters \
+  --where '(not (status="completed"))'
+notes/scratch   Note                 Scratch
+requests/alpha  Improvement Request  Alpha
+requests/beta   Improvement Request  Beta
+```
+
 ### Two things that surprise people
 
 **A concept that omits a key never matches a value filter on it**, even where OKF
@@ -793,6 +874,25 @@ error rather than an advisory, unlike `okf validate --profile`, because the
 subject is the command line you just typed rather than the bundle: an advisory
 would print a warning and then the empty listing that caused the confusion in the
 first place.
+
+Every key and value in a `--where` condition is checked, including excluded
+values, set members, and operands under `not` or on either side of `or`, so a
+misspelled exclusion cannot silently exclude nothing. Because such a condition
+may still match plenty, its message does not claim otherwise:
+
+```text
+cabal run okf -- concepts okf-core/test/fixtures/concept-filters \
+  --profile okf-core/test/fixtures/profiles/concept-filters.dhall \
+  --where '(missing(status) or not (status="acepted"))'
+okf concepts: filter value acepted is outside the vocabulary for status
+status accepts: proposed, accepted, completed, rejected
+```
+
+Diagnostics for `--type`, `KEY=VALUE`, `--has`, and `--missing` come first, in
+their existing wording, followed by each other condition in flag order; an error
+repeated across conditions is reported once. A `type="..."` equality inside an
+expression does not narrow which types' rules apply; only `--type` does. A
+condition that contradicts itself is not an error and simply selects nothing.
 
 A `--type` value is checked against the profile's declared type names whenever
 the profile sets `allowUnknownTypes = False`, since that is how a profile spells
