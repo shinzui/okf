@@ -16,6 +16,11 @@ provenance:
       at: 2026-09-30T21:17:14Z
       mode: "other"
       note: "Complete creation research, condition semantics, three milestones, and observable acceptance"
+    - model: "claude-opus-5-5"
+      harness: "claude-code"
+      at: 2026-10-01T19:15:14Z
+      mode: "implement"
+      note: "Implement all three milestones"
 ---
 
 # Add flexible where conditions to concept queries
@@ -44,7 +49,7 @@ The first and third examples require an actual stored scalar status. A concept w
 
 ## Progress
 
-- [ ] Milestone 1: add the condition model, deterministic parsing, rendering, and parser regressions in okf-core.
+- [x] Milestone 1: add the condition model, deterministic parsing, rendering, and parser regressions in okf-core. (2026-10-01T19:40Z; `testParseWhereConditions` in `okf-core/test/Main.hs` passes with every earlier parser assertion intact.)
 - [ ] Milestone 2: implement selection and profile preflight with list, absence, scope, and compatibility regressions.
 - [ ] Milestone 3: wire the existing CLI flag, document it, demonstrate text and JSON behavior, and update durable query context.
 
@@ -55,6 +60,12 @@ The first and third examples require an actual stored scalar status. A concept w
 
 
 ## Decision Log
+
+On 2026-10-01 (implementation), a standalone `in` or `not in` keyword must be preceded by whitespace and followed by whitespace, `[`, or the end of the argument; `!=` must follow the field directly. Inside an expression a keyword only needs a word boundary (any character that cannot continue a key). The stricter standalone rule keeps more legacy keys, such as `status index=1` or `status in=x`, on the legacy path, which is the plan's compatibility goal; inside parentheses there is no legacy reading to protect.
+
+On 2026-10-01 (implementation), set members are deduplicated keeping first occurrence (`["a","b","a"]` becomes `["a","b"]`), which is what "preserve first occurrence order" means once duplicates are harmless. Within an expression, `not` is read as a field named `not` when the next token is `=` or `!=`, and `has`/`missing` are functions only when followed by `(`; otherwise they are ordinary keys. These keep the few keys that collide with keywords usable with equality.
+
+On 2026-10-01 (implementation), a syntax error's offset points at the character where reading stopped: for `status in []` that is the `]` (offset 11), for trailing text it is the first non-space character of that text. An unterminated or badly escaped string points at its opening quotation mark. `renderWhereParseError` prints `expected <what> at offset <n>` followed by the input and a caret line, omitting the caret when the input contains a newline.
 
 On 2026-09-30, choose an extension of `okf concepts --where`, with `!=`, `in`, `not in`, and parenthesized expressions containing `and`, `or`, `not`, `has`, and `missing`. Equality, vocabulary selections, and boolean composition cover the requested workflow without introducing regular expressions, ordering comparisons, arithmetic, or an external query engine.
 

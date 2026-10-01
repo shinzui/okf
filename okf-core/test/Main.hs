@@ -307,6 +307,7 @@ main = do
         testIO "document reference fixture covers local, external, self, and duplicate targets" testDocumentReferencesFixture,
         testIO "optional-field fixture reports only the recommendation and bad values" testOptionalFieldsFixture,
         test "parseFieldEquals and parseFieldSelector read the filter grammar" testParseConceptFilters,
+        test "parseWhereCondition reads legacy, standalone, and expression conditions" testParseWhereConditions,
         test "scalarText compares numbers and booleans as JSON, containers as nothing" testQueryScalarText,
         testIO "filterConcepts selects over lists, nested records, presence, and absence" testFilterConceptsOverFixture,
         testIO "checkFiltersAgainstProfile rejects undeclared keys and out-of-vocabulary values" testCheckFiltersAgainstProfile
@@ -7191,6 +7192,179 @@ testParseConceptFilters = do
   assertEqual "reviews.outcome" (renderFieldSelector (NestedField "reviews" "outcome"))
   assertEqual "completedAt" (renderFilter (FieldPresent (TopLevelField "completedAt")))
   assertEqual "!status" (renderFilter (FieldAbsent (TopLevelField "status")))
+
+-- | The @--where@ grammar: legacy @KEY=VALUE@ untouched, standalone @!=@ and
+-- set conditions, and parenthesized expressions with JSON strings.
+testParseWhereConditions :: Either Text ()
+testParseWhereConditions = do
+  let status = TopLevelField "status"
+      outcome = NestedField "reviews" "outcome"
+      parsed = parseWhereCondition
+      predicate = Right . PredicateWhere
+      equals selector value = PredicateAtom (FieldEquals selector value)
+      syntaxOffset = \case
+        Left (InvalidWhereSyntax _ offset _) -> Just offset
+        _ -> Nothing
+      isSyntaxError result = isJust (syntaxOffset result)
+      assertOffset expected raw =
+        first (\message -> raw <> ": " <> message) (assertEqual (Just expected) (syntaxOffset (parsed raw)))
+
+  -- Legacy arguments keep their exact meaning, however expression-like the
+  -- value looks.
+  assertEqual (Right (LegacyWhere (FieldEquals status "accepted"))) (parsed "status=accepted")
+  assertEqual
+    (Right (LegacyWhere (FieldEquals (TopLevelField "resource") "postgres://host/db?a=b")))
+    (parsed "resource=postgres://host/db?a=b")
+  assertEqual (Right (LegacyWhere (FieldEquals (TopLevelField "title") " "))) (parsed "title= ")
+  assertEqual (Right (LegacyWhere (FieldEquals (TopLevelField "title") ""))) (parsed "title=")
+  assertEqual
+    (Right (LegacyWhere (FieldEquals (TopLevelField "title") "research and development")))
+    (parsed "title=research and development")
+  assertEqual
+    (Right (LegacyWhere (FieldEquals (TopLevelField "title") "a in [\"b\"]")))
+    (parsed "title=a in [\"b\"]")
+  -- Quotes outside expression mode are part of the literal value.
+  assertEqual (Right (LegacyWhere (FieldEquals status "\"accepted\""))) (parsed "status=\"accepted\"")
+  -- A key that merely starts like a keyword is still a legacy key.
+  assertEqual (Right (LegacyWhere (FieldEquals (TopLevelField "status index") "1"))) (parsed "status index=1")
+  assertEqual (Left (LegacyWhereParseError (MissingFilterSeparator "status"))) (parsed "status")
+  assertEqual (Left (LegacyWhereParseError (FilterKeyTooDeep "a.b.c"))) (parsed "a.b.c=x")
+
+  -- Standalone inequality: the value is verbatim, like a legacy equality's.
+  assertEqual (predicate (PredicateNotEquals status "completed")) (parsed "status!=completed")
+  assertEqual (predicate (PredicateNotEquals status "")) (parsed "status!=")
+  assertEqual (predicate (PredicateNotEquals status " a=b ")) (parsed "status!= a=b ")
+  assertEqual (predicate (PredicateNotEquals outcome "approved")) (parsed "reviews.outcome!=approved")
+
+  -- Standalone sets are JSON, consume the whole argument, and keep the first
+  -- occurrence of a duplicate.
+  assertEqual
+    (predicate (PredicateIn status ("accepted" :| ["proposed"])))
+    (parsed "status in [\"accepted\",\"proposed\"]")
+  assertEqual
+    (predicate (PredicateNotIn status ("completed" :| ["rejected"])))
+    (parsed "status not in [ \"completed\" , \"rejected\" ]  ")
+  assertEqual
+    (predicate (PredicateIn status ("a" :| ["b"])))
+    (parsed "status in [\"a\",\"b\",\"a\"]")
+  assertEqual (predicate (PredicateIn status ("a" :| []))) (parsed "status in[\"a\"]")
+  assertEqual
+    (predicate (PredicateNotIn outcome ("changes-requested" :| [])))
+    (parsed "reviews.outcome not in [\"changes-requested\"]")
+  -- A recognized prefix commits: a malformed set is an error, never an
+  -- equality.
+  assertOffset 11 "status in []"
+  assertOffset 10 "status in "
+  assertOffset 11 "status in [1]"
+  assertOffset 21 "status in [\"accepted\""
+  assertOffset 23 "status in [\"accepted\"] x"
+  assertOffset 11 "status in [\"bad\\q\"]"
+  assertOffset 14 "status not in accepted"
+
+  -- Expressions.
+  assertEqual (predicate (equals status "accepted")) (parsed "(status=\"accepted\")")
+  assertEqual (predicate (equals status "accepted")) (parsed "  ( status = \"accepted\" )  ")
+  assertEqual (predicate (PredicateNotEquals status "completed")) (parsed "(status!=\"completed\")")
+  assertEqual
+    (predicate (PredicateAtom (FieldPresent (TopLevelField "completedAt"))))
+    (parsed "(has(completedAt))")
+  assertEqual (predicate (PredicateAtom (FieldAbsent status))) (parsed "(missing( status ))")
+  assertEqual
+    ( predicate
+        ( PredicateAnd
+            (PredicateIn status ("accepted" :| ["proposed"]))
+            (PredicateNot (equals (TopLevelField "tags") "archived"))
+        )
+    )
+    (parsed "(status in [\"accepted\",\"proposed\"] and not (tags=\"archived\"))")
+  -- not binds tighter than and, which binds tighter than or; both group left.
+  let a = equals (TopLevelField "a") "1"
+      b = equals (TopLevelField "b") "2"
+      c = equals (TopLevelField "c") "3"
+  assertEqual
+    (predicate (PredicateOr a (PredicateAnd b c)))
+    (parsed "(a=\"1\" or b=\"2\" and c=\"3\")")
+  assertEqual
+    (predicate (PredicateAnd (PredicateOr a b) c))
+    (parsed "((a=\"1\" or b=\"2\") and c=\"3\")")
+  assertEqual
+    (predicate (PredicateAnd (PredicateNot a) b))
+    (parsed "(not a=\"1\" and b=\"2\")")
+  assertEqual
+    (predicate (PredicateOr (PredicateOr a b) c))
+    (parsed "(a=\"1\" or b=\"2\" or c=\"3\")")
+  assertEqual
+    (predicate (PredicateNot (PredicateNot a)))
+    (parsed "(not not a=\"1\")")
+  -- Whitespace includes tabs and newlines.
+  assertEqual (predicate (PredicateAnd a b)) (parsed "(a=\"1\"\n\tand\tb=\"2\")")
+  -- Keywords need a word boundary: 'orphan' and 'notes' are keys.
+  assertEqual
+    (predicate (PredicateOr a (equals (TopLevelField "orphan") "x")))
+    (parsed "(a=\"1\" or orphan=\"x\")")
+  assertEqual (predicate (equals (TopLevelField "notes") "x")) (parsed "(notes=\"x\")")
+  assertEqual (predicate (equals (TopLevelField "not") "x")) (parsed "(not=\"x\")")
+  assertEqual
+    (predicate (equals (TopLevelField "has") "x"))
+    (parsed "(has=\"x\")")
+  -- Strings decode JSON escapes, Unicode included, and are never coerced.
+  assertEqual
+    (predicate (equals (TopLevelField "title") "say \"hi\"\\ é ✓"))
+    (parsed "(title=\"say \\\"hi\\\"\\\\ \\u00e9 ✓\")")
+  assertEqual (predicate (equals (TopLevelField "title") "")) (parsed "(title=\"\")")
+  assertEqual (predicate (equals (TopLevelField "usage_count") "12")) (parsed "(usage_count=\"12\")")
+  assertEqual
+    (predicate (PredicateIn outcome ("approved" :| [])))
+    (parsed "(reviews.outcome in [\"approved\"])")
+
+  -- Rejections, each at the offset where reading stopped. An invalid
+  -- parenthesized argument never falls back to a literal equality.
+  assertOffset 22 "(status=\"accepted\" and)"
+  assertOffset 8 "(status=accepted)"
+  assertOffset 18 "(status=\"accepted\""
+  assertOffset 8 "(status=\"accepted)"
+  assertOffset 20 "(status=\"accepted\") and (a=\"1\")"
+  assertOffset 8 "(status ~ \"x\")"
+  assertOffset 1 "()"
+  assertOffset 4 "(a.b.c=\"x\")"
+  assertOffset 12 "(status in [])"
+  assertOffset 12 "(status in [true])"
+  assertOffset 8 "(status=\"\\x\")"
+  assertOffset 12 "(status not [\"a\"])"
+  assertOffset 5 "(has status)"
+  assertBool "uppercase AND is not an operator" (isSyntaxError (parsed "(a=\"1\" AND b=\"2\")"))
+  assertBool
+    "a syntax error names what was expected"
+    ( case parsed "(status=\"accepted\" and)" of
+        Left parseError -> "expected a condition" `Text.isPrefixOf` renderWhereParseError parseError
+        Right _ -> False
+    )
+  assertEqual
+    "expected at least one string in the set; an empty set can never match at offset 11\n  status in []\n             ^"
+    (either renderWhereParseError (const "") (parsed "status in []"))
+
+  -- Rendering reads back as the same condition.
+  for_
+    [ "status=accepted",
+      "title=research and development",
+      "status!=completed",
+      "status in [\"accepted\",\"proposed\"]",
+      "status not in [\"completed\",\"rejected\"]",
+      "(status=\"accepted\")",
+      "(missing(status) or status!=\"completed\")",
+      "(status in [\"accepted\",\"proposed\"] and not (tags=\"archived\"))",
+      "(a=\"1\" or (b=\"2\" or c=\"3\"))",
+      "((a=\"1\" or b=\"2\") and c=\"3\")",
+      "(not has(x) and not not y=\"\\\"q\\\"\")",
+      "(title=\"say \\\"hi\\\" é\")"
+    ]
+    $ \raw -> do
+      condition <- first renderWhereParseError (parsed raw)
+      assertEqual (Right condition) (parsed (renderWhereCondition condition))
+  assertEqual "status!=completed" (either (const "") renderWhereCondition (parsed "status!=completed"))
+  assertEqual
+    "(status in [\"accepted\",\"proposed\"] and not (tags=\"archived\"))"
+    (either (const "") renderWhereCondition (parsed "(status in [\"accepted\",\"proposed\"] and not (tags=\"archived\"))"))
 
 -- | A filter compares against text, so every non-textual scalar needs a
 -- spelling. Aeson writes an integral number without a trailing @.0@, which is

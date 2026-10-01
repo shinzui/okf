@@ -1,3 +1,4 @@
+{-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE PackageImports #-}
 
 -- | Selecting concepts out of a bundle by what their frontmatter says.
@@ -36,6 +37,15 @@ module Okf.Query
     -- * Checking a filter against a profile
     FilterProfileError (..),
     checkFiltersAgainstProfile,
+
+    -- * Where conditions
+    WhereCondition (..),
+    ConceptPredicate (..),
+    WhereParseError (..),
+    parseWhereCondition,
+    renderWhereCondition,
+    renderConceptPredicate,
+    renderWhereParseError,
   )
 where
 
@@ -43,9 +53,12 @@ import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as AesonKey
 import Data.Aeson.KeyMap qualified as KeyMap
 import Data.ByteString.Lazy qualified as LazyByteString
+import Data.Char (isAsciiLower, isAsciiUpper, isDigit, isSpace)
 import Data.List qualified as List
+import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
+import Data.Maybe (mapMaybe)
 import Data.Set qualified as Set
 import Data.Text qualified as Text
 import Data.Text.Encoding qualified as Text.Encoding
@@ -397,3 +410,484 @@ checkFiltersAgainstProfile compiled requestedTypes = concatMap checkFilter
 
     profileSpec :: ProfileSpec
     profileSpec = compiledProfileSpec compiled
+
+-- | One @--where@ argument, as the user wrote it.
+--
+-- The two constructors keep apart two readings that must never mix. A
+-- 'LegacyWhere' equality joins 'filterConcepts' grouping, where repeating a
+-- key means \"either\" — @--where status=accepted --where status=proposed@ has
+-- selected both for as long as the flag has existed, and scripts depend on it.
+-- A 'PredicateWhere' is an explicit condition and stands on its own: repeating
+-- one means \"and\", and an @and@ written inside one means \"and\" even when
+-- both sides name the same key. Flattening a predicate's equalities into the
+-- legacy groups would quietly turn @(status=\"accepted\" and
+-- status=\"proposed\")@ into an \"or\".
+data WhereCondition
+  = LegacyWhere !ConceptFilter
+  | PredicateWhere !ConceptPredicate
+  deriving stock (Generic, Eq, Ord, Show)
+
+-- | A true-or-false question asked of one concept: atomic field questions
+-- composed with @and@, @or@, and @not@.
+data ConceptPredicate
+  = -- | An existing atomic question: equality, presence, or absence.
+    PredicateAtom !ConceptFilter
+  | -- | The field holds at least one comparable scalar and none equals this.
+    PredicateNotEquals !FieldSelector !Text
+  | -- | Some comparable scalar of the field is one of these.
+    PredicateIn !FieldSelector !(NonEmpty Text)
+  | -- | The field holds at least one comparable scalar and none is one of
+    -- these.
+    PredicateNotIn !FieldSelector !(NonEmpty Text)
+  | PredicateAnd !ConceptPredicate !ConceptPredicate
+  | PredicateOr !ConceptPredicate !ConceptPredicate
+  | -- | Ordinary boolean negation of the whole operand, absence included:
+    -- @not (status=\"completed\")@ selects a concept with no @status@.
+    PredicateNot !ConceptPredicate
+  deriving stock (Generic, Eq, Ord, Show)
+
+-- | Why a @--where@ argument could not be read.
+data WhereParseError
+  = -- | A @KEY=VALUE@ argument failed exactly as it always has.
+    LegacyWhereParseError !FilterParseError
+  | -- | New syntax went wrong: the original input, the zero-based character
+    -- offset where reading stopped, and what was expected there.
+    InvalidWhereSyntax !Text !Int !Text
+  deriving stock (Generic, Eq, Show)
+
+-- | Read one @--where@ argument.
+--
+-- Which grammar applies is decided up front from the argument's first
+-- characters, never by trying one grammar and falling back to another:
+--
+-- * An argument whose first non-whitespace character is @(@ is one fully
+--   parenthesized expression, with JSON-quoted strings.
+-- * An argument that starts with @FIELD!=@, @FIELD in@, or @FIELD not in@ is a
+--   standalone inequality or set condition. Once that prefix is seen, a
+--   malformed operand is an error; it is not reread as an equality.
+-- * Everything else goes to 'parseFieldEquals' untouched.
+--
+-- The dispatch is this narrow because legacy equality values are verbatim and
+-- may hold anything — another @=@, spaces, the word @and@ — and reinterpreting
+-- @title=research and development@ as an expression would change what existing
+-- scripts select. For the same reason a legacy argument is never trimmed.
+parseWhereCondition :: Text -> Either WhereParseError WhereCondition
+parseWhereCondition raw
+  | "(" `Text.isPrefixOf` Text.stripStart raw =
+      PredicateWhere <$> runWholeParser raw expressionArgumentParser
+  | Just (selector, operator, cursor) <- standalonePrefix raw =
+      PredicateWhere <$> standaloneOperand raw selector operator cursor
+  | otherwise =
+      first LegacyWhereParseError (LegacyWhere <$> parseFieldEquals raw)
+
+-- | The condition in a form 'parseWhereCondition' reads back with the same
+-- meaning. A standalone inequality or set is rendered standalone, so a
+-- diagnostic quotes back what was typed; anything else is a parenthesized
+-- expression.
+renderWhereCondition :: WhereCondition -> Text
+renderWhereCondition = \case
+  LegacyWhere conceptFilter@(FieldEquals _ _) -> renderFilter conceptFilter
+  LegacyWhere conceptFilter -> "(" <> renderConceptPredicate (PredicateAtom conceptFilter) <> ")"
+  PredicateWhere (PredicateNotEquals selector value) ->
+    renderFieldSelector selector <> "!=" <> value
+  PredicateWhere predicate@(PredicateIn _ _) -> renderConceptPredicate predicate
+  PredicateWhere predicate@(PredicateNotIn _ _) -> renderConceptPredicate predicate
+  PredicateWhere predicate -> "(" <> renderConceptPredicate predicate <> ")"
+
+-- | A predicate in expression syntax, without the outer parentheses an
+-- expression argument needs. Parentheses appear only where precedence
+-- requires them, plus around a negated compound so @not@ reads unambiguously.
+renderConceptPredicate :: ConceptPredicate -> Text
+renderConceptPredicate = renderAt 0
+  where
+    -- Precedence: or 1, and 2, not 3, atom 4. The right operand of a binary
+    -- operator is rendered one level tighter so a right-nested tree keeps its
+    -- shape when read back.
+    renderAt :: Int -> ConceptPredicate -> Text
+    renderAt context predicate
+      | precedence predicate < context = "(" <> render predicate <> ")"
+      | otherwise = render predicate
+
+    precedence = \case
+      PredicateOr _ _ -> 1
+      PredicateAnd _ _ -> 2
+      PredicateNot _ -> 3
+      _ -> 4 :: Int
+
+    render = \case
+      PredicateAtom (FieldEquals selector value) -> key selector <> "=" <> jsonString value
+      PredicateAtom (FieldPresent selector) -> "has(" <> key selector <> ")"
+      PredicateAtom (FieldAbsent selector) -> "missing(" <> key selector <> ")"
+      PredicateNotEquals selector value -> key selector <> "!=" <> jsonString value
+      PredicateIn selector values -> key selector <> " in " <> jsonSet values
+      PredicateNotIn selector values -> key selector <> " not in " <> jsonSet values
+      PredicateAnd left right -> renderAt 2 left <> " and " <> renderAt 3 right
+      PredicateOr left right -> renderAt 1 left <> " or " <> renderAt 2 right
+      PredicateNot operand@(PredicateAtom (FieldPresent _)) -> "not " <> render operand
+      PredicateNot operand@(PredicateAtom (FieldAbsent _)) -> "not " <> render operand
+      PredicateNot operand@(PredicateNot _) -> "not " <> render operand
+      PredicateNot operand -> "not (" <> render operand <> ")"
+
+    key = renderFieldSelector
+    jsonString = jsonText . String
+    jsonSet = jsonText . Aeson.toJSON . NonEmpty.toList
+    jsonText = Text.Encoding.decodeUtf8Lenient . LazyByteString.toStrict . Aeson.encode
+
+renderWhereParseError :: WhereParseError -> Text
+renderWhereParseError = \case
+  LegacyWhereParseError parseError -> renderFilterParseError parseError
+  InvalidWhereSyntax input offset expected ->
+    "expected "
+      <> expected
+      <> " at offset "
+      <> Text.pack (show offset)
+      <> caret
+    where
+      -- A caret under the offending character, unless a newline in the input
+      -- would make the column meaningless.
+      caret
+        | Text.any (== '\n') input = " in: " <> input
+        | otherwise = "\n  " <> input <> "\n  " <> Text.replicate offset " " <> "^"
+
+-- Reading ---------------------------------------------------------------------
+
+-- | Where a parser stands: the zero-based character offset into the original
+-- argument and the text still unread.
+data Cursor = Cursor !Int !Text
+
+-- | A small hand-written parser. It never backtracks across a committed
+-- choice, so the offset it reports is where the input really went wrong.
+newtype WhereParser value = WhereParser
+  {runWhereParser :: Cursor -> Either (Int, Text) (value, Cursor)}
+
+instance Functor WhereParser where
+  fmap f (WhereParser run) = WhereParser (fmap (first f) . run)
+
+instance Applicative WhereParser where
+  pure value = WhereParser (\cursor -> Right (value, cursor))
+  WhereParser runF <*> WhereParser runValue = WhereParser $ \cursor -> do
+    (f, afterF) <- runF cursor
+    (value, afterValue) <- runValue afterF
+    pure (f value, afterValue)
+
+instance Monad WhereParser where
+  WhereParser run >>= continue = WhereParser $ \cursor -> do
+    (value, next) <- run cursor
+    runWhereParser (continue value) next
+
+-- | Run a parser over a whole argument.
+runWholeParser :: Text -> WhereParser value -> Either WhereParseError value
+runWholeParser raw parser =
+  case runWhereParser parser (Cursor 0 raw) of
+    Left (offset, expected) -> Left (InvalidWhereSyntax raw offset expected)
+    Right (value, _) -> Right value
+
+remaining :: WhereParser Text
+remaining = WhereParser (\cursor@(Cursor _ rest) -> Right (rest, cursor))
+
+failHere :: Text -> WhereParser value
+failHere expected = WhereParser (\(Cursor offset _) -> Left (offset, expected))
+
+-- | Fail at an earlier offset, for an error best pointed at the start of the
+-- construct rather than wherever scanning gave up.
+failAt :: Int -> Text -> WhereParser value
+failAt offset expected = WhereParser (\_ -> Left (offset, expected))
+
+currentOffset :: WhereParser Int
+currentOffset = WhereParser (\cursor@(Cursor offset _) -> Right (offset, cursor))
+
+skipChars :: Int -> WhereParser ()
+skipChars count =
+  WhereParser (\(Cursor offset rest) -> Right ((), Cursor (offset + count) (Text.drop count rest)))
+
+peekChar :: WhereParser (Maybe Char)
+peekChar = fmap fst . Text.uncons <$> remaining
+
+skipSpaces :: WhereParser ()
+skipSpaces = do
+  rest <- remaining
+  skipChars (Text.length (Text.takeWhile isSpace rest))
+
+expectChar :: Char -> Text -> WhereParser ()
+expectChar wanted expected = do
+  next <- peekChar
+  if next == Just wanted then skipChars 1 else failHere expected
+
+expectEnd :: Text -> WhereParser ()
+expectEnd expected = do
+  skipSpaces
+  rest <- remaining
+  unless (Text.null rest) (failHere expected)
+
+-- | Consume a lowercase keyword if the input continues with it as a whole
+-- word, so @orphan@ is never read as @or@.
+keyword :: Text -> WhereParser Bool
+keyword word = do
+  rest <- remaining
+  if word `Text.isPrefixOf` rest && wordBoundary (Text.drop (Text.length word) rest)
+    then True <$ skipChars (Text.length word)
+    else pure False
+
+wordBoundary :: Text -> Bool
+wordBoundary rest =
+  case Text.uncons rest of
+    Nothing -> True
+    Just (next, _) -> not (isSegmentChar next || next == '.')
+
+-- | A key segment starts with a letter or underscore and continues with
+-- letters, digits, underscores, or hyphens.
+isSegmentStart :: Char -> Bool
+isSegmentStart c = isAsciiLower c || isAsciiUpper c || c == '_'
+
+isSegmentChar :: Char -> Bool
+isSegmentChar c = isSegmentStart c || isDigit c || c == '-'
+
+segmentParser :: WhereParser Text
+segmentParser = do
+  rest <- remaining
+  case Text.uncons rest of
+    Just (next, _)
+      | isSegmentStart next -> do
+          let segment = Text.takeWhile isSegmentChar rest
+          segment <$ skipChars (Text.length segment)
+    _ -> failHere "a frontmatter key such as status or reviews.outcome"
+
+-- | @KEY@ or @PARENT.MEMBER@, with the same one-level limit as
+-- 'parseFieldSelector' and for the same reason.
+selectorParser :: WhereParser FieldSelector
+selectorParser = do
+  parentKey <- segmentParser
+  next <- peekChar
+  if next /= Just '.'
+    then pure (TopLevelField parentKey)
+    else do
+      skipChars 1
+      memberKey <- segmentParser
+      deeper <- peekChar
+      when (deeper == Just '.') $
+        failHere "an operator; a frontmatter key nests at most one level (KEY or PARENT.MEMBER)"
+      pure (NestedField parentKey memberKey)
+
+-- | A JSON double-quoted string, decoded by aeson so escapes mean exactly what
+-- they mean in JSON. The scan only finds where the string ends.
+jsonStringParser :: Text -> WhereParser Text
+jsonStringParser expected = do
+  start <- currentOffset
+  rest <- remaining
+  case Text.uncons rest of
+    Just ('"', body) ->
+      case closingQuote 1 body of
+        Nothing -> failAt start "a closing quotation mark for the string that starts here"
+        Just width ->
+          case Aeson.eitherDecodeStrict (Text.Encoding.encodeUtf8 (Text.take width rest)) of
+            Left _ -> failAt start "a valid JSON string; check its escape sequences"
+            Right decoded -> decoded <$ skipChars width
+    _ -> failHere expected
+  where
+    -- The width of the whole string literal, quotes included.
+    closingQuote :: Int -> Text -> Maybe Int
+    closingQuote consumed body =
+      case Text.uncons body of
+        Nothing -> Nothing
+        Just ('"', _) -> Just (consumed + 1)
+        Just ('\\', escaped) ->
+          if Text.null escaped then Nothing else closingQuote (consumed + 2) (Text.drop 1 escaped)
+        Just (_, next) -> closingQuote (consumed + 1) next
+
+-- | A non-empty JSON array of strings. Duplicates are dropped, keeping the
+-- first occurrence, since a set mentioning a value twice means the same as
+-- mentioning it once.
+jsonStringSetParser :: WhereParser (NonEmpty Text)
+jsonStringSetParser = do
+  expectChar '[' "a non-empty JSON array of strings such as [\"accepted\",\"proposed\"]"
+  skipSpaces
+  next <- peekChar
+  when (next == Just ']') $
+    failHere "at least one string in the set; an empty set can never match"
+  firstMember <- member
+  NonEmpty.nub . (firstMember :|) <$> moreMembers
+  where
+    member = jsonStringParser "a JSON double-quoted string as a set member"
+    moreMembers = do
+      skipSpaces
+      next <- peekChar
+      case next of
+        Just ',' -> do
+          skipChars 1
+          skipSpaces
+          value <- member
+          (value :) <$> moreMembers
+        Just ']' -> [] <$ skipChars 1
+        _ -> failHere "a comma or a closing bracket to continue the set"
+
+-- | The standalone operators recognized after a leading field.
+data StandaloneOperator
+  = StandaloneNotEquals
+  | StandaloneIn
+  | StandaloneNotIn
+
+-- | Recognize @FIELD!=@, @FIELD in@, or @FIELD not in@ at the very start of an
+-- argument, without judging what follows. A keyword here must be followed by
+-- whitespace, @[@, or the end, which is stricter than inside an expression so
+-- that fewer legacy keys can ever be mistaken for one.
+standalonePrefix :: Text -> Maybe (FieldSelector, StandaloneOperator, Cursor)
+standalonePrefix raw = do
+  (selector, Cursor offset rest) <- either (const Nothing) Just (runWhereParser selectorParser (Cursor 0 raw))
+  let (spaces, afterSpaces) = Text.span isSpace rest
+      afterSpacesOffset = offset + Text.length spaces
+  if
+    | "!=" `Text.isPrefixOf` rest ->
+        Just (selector, StandaloneNotEquals, Cursor (offset + 2) (Text.drop 2 rest))
+    | Text.null spaces -> Nothing
+    | Just afterIn <- standaloneKeyword "in" afterSpaces ->
+        Just (selector, StandaloneIn, Cursor (afterSpacesOffset + 2) afterIn)
+    | Just afterNot <- standaloneKeyword "not" afterSpaces,
+      (notSpaces, afterNotSpaces) <- Text.span isSpace afterNot,
+      not (Text.null notSpaces),
+      Just afterIn <- standaloneKeyword "in" afterNotSpaces ->
+        Just
+          ( selector,
+            StandaloneNotIn,
+            Cursor (afterSpacesOffset + 3 + Text.length notSpaces + 2) afterIn
+          )
+    | otherwise -> Nothing
+  where
+    standaloneKeyword word text = do
+      afterWord <- Text.stripPrefix word text
+      case Text.uncons afterWord of
+        Nothing -> Just afterWord
+        Just (next, _)
+          | isSpace next || next == '[' -> Just afterWord
+          | otherwise -> Nothing
+
+-- | The operand of a recognized standalone operator. An inequality's value is
+-- the rest of the argument verbatim, exactly like a legacy equality's; a set
+-- is JSON and must be all that is left.
+standaloneOperand :: Text -> FieldSelector -> StandaloneOperator -> Cursor -> Either WhereParseError ConceptPredicate
+standaloneOperand raw selector operator cursor@(Cursor _ rest) =
+  case operator of
+    StandaloneNotEquals -> Right (PredicateNotEquals selector rest)
+    StandaloneIn -> PredicateIn selector <$> setOperand
+    StandaloneNotIn -> PredicateNotIn selector <$> setOperand
+  where
+    setOperand =
+      case runWhereParser (skipSpaces *> jsonStringSetParser <* expectEnd "the end of the condition after the set") cursor of
+        Left (offset, expected) -> Left (InvalidWhereSyntax raw offset expected)
+        Right (values, _) -> Right values
+
+-- | @( expression )@, followed by nothing but whitespace.
+expressionArgumentParser :: WhereParser ConceptPredicate
+expressionArgumentParser = do
+  skipSpaces
+  expectChar '(' "an opening parenthesis"
+  predicate <- expressionParser
+  skipSpaces
+  expectChar ')' "and, or, or a closing parenthesis"
+  expectEnd "the end of the condition after its closing parenthesis; wrap the whole condition in one pair of parentheses"
+  pure predicate
+
+-- | @or@ binds loosest, then @and@, then @not@; both binary operators group
+-- to the left.
+expressionParser :: WhereParser ConceptPredicate
+expressionParser = conjunctionParser >>= alternatives
+  where
+    alternatives left = do
+      skipSpaces
+      isOr <- keyword "or"
+      if isOr
+        then conjunctionParser >>= alternatives . PredicateOr left
+        else pure left
+
+conjunctionParser :: WhereParser ConceptPredicate
+conjunctionParser = unaryParser >>= conjunctions
+  where
+    conjunctions left = do
+      skipSpaces
+      isAnd <- keyword "and"
+      if isAnd
+        then unaryParser >>= conjunctions . PredicateAnd left
+        else pure left
+
+unaryParser :: WhereParser ConceptPredicate
+unaryParser = do
+  skipSpaces
+  next <- peekChar
+  case next of
+    Just '(' -> do
+      skipChars 1
+      predicate <- expressionParser
+      skipSpaces
+      expectChar ')' "and, or, or a closing parenthesis"
+      pure predicate
+    _ -> do
+      isNot <- negationKeyword
+      if isNot then PredicateNot <$> unaryParser else atomParser
+
+-- | @not@ as an operator, unless it is plainly a key named @not@ being
+-- compared: @(not="x")@.
+negationKeyword :: WhereParser Bool
+negationKeyword = do
+  rest <- remaining
+  case Text.stripPrefix "not" rest of
+    Just afterNot
+      | wordBoundary afterNot,
+        not (any (`Text.isPrefixOf` Text.stripStart afterNot) ["=", "!="]) ->
+          True <$ skipChars 3
+    _ -> pure False
+
+atomParser :: WhereParser ConceptPredicate
+atomParser = do
+  rest <- remaining
+  case Text.uncons rest of
+    Just (next, _) | isSegmentStart next -> pure ()
+    _ ->
+      failHere
+        "a condition: KEY=\"VALUE\", KEY!=\"VALUE\", KEY in [...], KEY not in [...], has(KEY), missing(KEY), not CONDITION, or a parenthesized condition"
+  if
+    | isFunctionCall "has" rest -> PredicateAtom . FieldPresent <$> functionCall "has"
+    | isFunctionCall "missing" rest -> PredicateAtom . FieldAbsent <$> functionCall "missing"
+    | otherwise -> do
+        selector <- selectorParser
+        skipSpaces
+        operatorParser selector
+  where
+    isFunctionCall name text =
+      case Text.stripPrefix name text of
+        Just afterName -> "(" `Text.isPrefixOf` Text.stripStart afterName
+        Nothing -> False
+    functionCall name = do
+      skipChars (Text.length name)
+      skipSpaces
+      expectChar '(' "an opening parenthesis"
+      skipSpaces
+      selector <- selectorParser
+      skipSpaces
+      expectChar ')' "a closing parenthesis after the key"
+      pure selector
+
+operatorParser :: FieldSelector -> WhereParser ConceptPredicate
+operatorParser selector = do
+  rest <- remaining
+  if
+    | "!=" `Text.isPrefixOf` rest -> do
+        skipChars 2
+        skipSpaces
+        PredicateNotEquals selector <$> stringOperand
+    | "=" `Text.isPrefixOf` rest -> do
+        skipChars 1
+        skipSpaces
+        PredicateAtom . FieldEquals selector <$> stringOperand
+    | otherwise -> do
+        isIn <- keyword "in"
+        if isIn
+          then skipSpaces *> (PredicateIn selector <$> jsonStringSetParser)
+          else do
+            isNot <- keyword "not"
+            unless isNot (failHere "an operator: =, !=, in, or not in")
+            skipSpaces
+            isNotIn <- keyword "in"
+            unless isNotIn (failHere "in after not")
+            skipSpaces
+            PredicateNotIn selector <$> jsonStringSetParser
+  where
+    stringOperand = jsonStringParser "a JSON double-quoted string such as \"accepted\""
