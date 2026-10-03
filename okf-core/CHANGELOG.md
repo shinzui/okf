@@ -22,6 +22,14 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   Profile checks cover every operand. Existing `ConceptFilter` APIs and their
   semantics are unchanged.
 
+- `Okf.Query` gains concept ordering: `SortDirection`, `SortKey`,
+  `SortKeyParseError`, `parseSortKey`, `renderSortKey`,
+  `renderSortKeyParseError`, `compareNatural`, and `sortConcepts`. Text
+  compares in natural order (`IR-2` before `IR-10`), numbers numerically and
+  before text, concepts without a comparable value last in both directions,
+  lists by their smallest or largest element, and ties in input order.
+  `okf-core` now depends on `scientific` directly.
+
 ## [0.9.0.0] - 2026-09-13
 
 ### Added

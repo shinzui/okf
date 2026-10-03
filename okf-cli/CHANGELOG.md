@@ -20,6 +20,12 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   checked before the bundle is walked, with a neutral
   `filter value ... is outside the vocabulary for ...` diagnostic.
 
+- `okf concepts --sort KEY[:desc]` orders the selected concepts, in text and
+  JSON output, by one or more frontmatter keys: natural order for text, so
+  `IR-2` precedes `IR-10`; numeric order for numbers; concepts without the key
+  last in both directions; ties in concept-ID order. With `--profile`, an
+  undeclared sort key is reported before the bundle is walked.
+
 - `okf help where` is a reference topic for the `--where` condition language:
   how the form is chosen, the expression grammar and precedence, list and
   absence semantics, how repeated flags combine, and profile checking.
@@ -31,6 +37,9 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   in `LegacyWhere`. `Okf.Cli` additionally exports
   `conceptsProfileDiagnostics`, `renderFilterProfileError`, and
   `renderPredicateProfileError`.
+- **Breaking (library):** `ConceptsOptions` gains a `sortKeys :: [SortKey]`
+  field after `showFields`, and `conceptsProfileDiagnostics` takes a trailing
+  `[SortKey]` argument.
 
 ## [0.9.0.0] - 2026-09-13
 

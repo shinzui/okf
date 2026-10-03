@@ -711,6 +711,7 @@ cabal run okf -- concepts [BUNDLE] --where 'KEY not in ["A","B"]'
 cabal run okf -- concepts [BUNDLE] --where '(EXPRESSION)'
 cabal run okf -- concepts [BUNDLE] --has KEY --missing KEY
 cabal run okf -- concepts [BUNDLE] --show KEY
+cabal run okf -- concepts [BUNDLE] --sort KEY[:desc]
 cabal run okf -- concepts [BUNDLE] --json
 cabal run okf -- concepts [BUNDLE] --profile PROFILE
 ```
@@ -735,9 +736,28 @@ concept does not carry or holds something a table cell cannot show. `--show
 generated` naming a whole mapping is that second case; `--show generated.by` is
 how you ask for what is inside it.
 
-Concepts are ordered by ID, so the output is stable and diffable in a pipeline,
-and column widths are computed over the rows actually printed, so one long
-concept ID elsewhere in the bundle cannot pad a filtered listing.
+Concepts are ordered by ID unless `--sort` is given, so the output is stable
+and diffable in a pipeline, and column widths are computed over the rows
+actually printed, so one long concept ID elsewhere in the bundle cannot pad a
+filtered listing.
+
+`--sort KEY` orders the rows by a frontmatter key instead, and repeats: the
+first key decides and later keys break its ties. Append `:desc` to reverse a
+key. Text compares in natural order, so `IR-2` sorts before `IR-10`; a YAML
+number compares numerically and before any text; a concept with no value for
+the key sorts last in both directions; a list sorts by its smallest element
+(largest with `:desc`); and ties keep concept-ID order. `--sort` orders
+`--json` output as well, and `--profile` reports a sort key the profile does
+not declare.
+
+```text
+cabal run okf -- concepts okf-core/test/fixtures/concept-sorting --show requestId --sort requestId
+requests/e-one   Improvement Request  IR-1   One
+requests/b-two   Improvement Request  IR-2   Two
+requests/c-nine  Improvement Request  IR-9   Nine
+requests/a-ten   Improvement Request  IR-10  Ten
+requests/d-none  Improvement Request  -      None
+```
 
 ### The filter grammar
 

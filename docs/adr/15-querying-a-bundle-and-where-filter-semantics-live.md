@@ -4,7 +4,7 @@ title: Querying a bundle, and where filter semantics live
 description: Put concept-filter matching semantics in `okf-core`'s `Okf.Query` so every consumer shares one definition of a match.
 generated:
   by: claude/opus-5-5
-  at: "2026-10-01T19:30:15Z"
+  at: "2026-10-03T15:33:55Z"
 docId: ADR-15
 status: Accepted
 date: 2026-08-09
@@ -56,6 +56,11 @@ query.
 The sixth, which arrived later, is how to exclude values and combine
 conditions without breaking the meaning of existing `KEY=VALUE` arguments,
 whose values are verbatim and may hold `=`, spaces, or words such as `and`.
+
+The seventh, which arrived later still, is order. Concept-ID order is stable
+but is the order files happen to be named, so a listing of improvement requests
+shows `IR-12` before `IR-2`, and the only remedy was a shell `sort` that
+depended on how many words the type has and could not reorder JSON.
 
 
 ## Decision
@@ -148,10 +153,28 @@ legacy one says no concept can match.
 **Machine-readable concept listings expose stored frontmatter directly.**
 `okf concepts --json` emits one complete parsed frontmatter object for each
 selected concept. `filterConcepts` selects concepts before rendering and
-preserves their core-provided order, so the JSON array follows concept-ID order
-without adding the concept ID to each value. File-derived identity and paths,
+preserves their core-provided order, so the JSON array follows concept-ID order,
+or the `--sort` order when one is given, without adding the concept ID to each
+value. File-derived identity and paths,
 Markdown bodies, derived trust or staleness readings, and CLI-owned envelopes
 are absent. `--show` is a text-column option and has no effect on JSON.
+
+**Ordering is part of the query and lives in `Okf.Query`.** `sortConcepts`
+orders selected concepts by one or more `SortKey`s (`--sort KEY[:desc]`, where
+any `:` must introduce `asc` or `desc`); the first key decides and later keys
+break its ties. Text compares in natural order (`compareNatural`): runs of
+ASCII digits by value, then shorter spelling first, everything else by code
+point, so `IR-2` precedes `IR-10` the same way on every machine. A stored
+number compares numerically and before every text value, which keeps the order
+total. A concept with no comparable scalar for the key sorts after every
+concept that has one in both directions, the ordering counterpart of absence
+never sneaking into a value filter. A list sorts by its smallest element
+ascending and its largest descending, so authoring order does not matter, and
+concepts equal on every key keep concept-ID order through a stable sort. The
+order applies to text and JSON alike, unlike `--show`, because it is a property
+of the selected list rather than of a column. With `--profile`, each sort key
+is checked for declaration as `has(KEY)` would be, since a misspelled key
+leaves an entirely plausible concept-ID listing.
 
 
 ## Consequences
@@ -212,6 +235,13 @@ every realistic `KEY=VALUE` value verbatim. The exported
 `ConceptsOptions.fieldFilters` changed type to `[WhereCondition]`, while
 `ConceptFilter`, `filterConcepts`, and `checkFiltersAgainstProfile` keep their
 signatures and semantics for library consumers.
+
+Sorting does not make the filters a query language: `--where` still has no
+ordering comparisons. Natural order is a reading convention, not a type
+system — a key that mixes numbers and text sorts every number first, and a key
+containing `:` cannot be sorted on. `ConceptsOptions` gained `sortKeys` and
+`conceptsProfileDiagnostics` a `[SortKey]` argument, a library-breaking change
+recorded in the changelog.
 
 The JSON contract means a consumer can inspect arbitrary producer-defined keys
 and nested values without first naming them with `--show`, and a missing key

@@ -1,5 +1,8 @@
 # Bundle Update Log
 
+## 2026-10-03
+* **Update**: Record concept sorting capability
+
 ## 2026-10-01
 * **Update**: Record flexible concept filtering capability
 

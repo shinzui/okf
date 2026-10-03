@@ -106,17 +106,39 @@ SHOWING MORE COLUMNS
   for what is inside it.
 
   A profile-declared document ID is ordinary frontmatter, so --show prints it
-  too. This lists the open improvement requests with their IDs:
+  too, and --sort puts the rows in ID order. This lists the open improvement
+  requests by ID:
 
-    okf concepts BUNDLE --where 'status!=completed' --show requestId --show status
-    first-class-unknowns    Improvement Request  IR-2  proposed  Model work-scoped ...
-    typed-decision-records  Improvement Request  IR-3  proposed  Make work-scoped ...
+    okf concepts BUNDLE --where 'status!=completed' --show requestId --sort requestId
+    publish-rei-v1-integration-events  Improvement Request  IR-1  Publish rei.v1 ...
+    first-class-unknowns               Improvement Request  IR-2  Model work-scoped ...
+    ...
 
-  Rows stay in concept-ID order. To read them in ID order, sort the column
-  yourself, counting the words of the type: here the ID is the fourth field
-  because "Improvement Request" is two.
+SORTING
 
-    okf concepts BUNDLE --where 'status!=completed' --show requestId | sort -k4,4V
+  Rows are in concept-ID order unless you ask for another. --sort KEY orders
+  them by a frontmatter key, and repeats: the first key decides, and each later
+  one breaks the ties left by those before it. Append :desc to reverse one key
+  (:asc, the default, is accepted too):
+
+    okf concepts BUNDLE --sort priority:desc --sort requestId
+
+  Text compares in natural order, so IR-2 comes before IR-10 and v0.9 before
+  v0.13: runs of digits compare as numbers and everything else character by
+  character, the same on every machine. A value stored as a YAML number
+  compares numerically, so 1.5 comes before 10, and numbers come before text.
+
+  A concept with no value for the key sorts after every concept that has one,
+  in both directions, so --sort KEY:desc still leads with the concepts that say
+  something. A list sorts by its smallest element, or its largest with :desc.
+  Concepts equal on every key keep concept-ID order, so the listing is still
+  the same on every run.
+
+  --sort orders JSON output too, unlike --show. With --profile, a sort key the
+  profile does not declare is reported before the bundle is walked, because a
+  misspelled key would otherwise leave a listing in concept-ID order that looks
+  entirely plausible. Any ':' in a --sort argument starts a direction, so a key
+  containing a colon cannot be sorted on.
 
 TWO THINGS THAT SURPRISE PEOPLE
 
