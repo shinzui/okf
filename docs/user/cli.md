@@ -47,14 +47,15 @@ cabal run okf -- help format   # bundle layout, concept IDs, frontmatter, links
 ```
 
 Available topics: `okf`, `bundles`, `format`, `validation`, `profiles`, `computations`,
-`concepts`, `trust`, `index`, `log`, `graph`, `ids`, `interactive`, `config`,
-`kit`, `agents`. Topic lookup is case-insensitive. An unknown topic name prints
+`concepts`, `where`, `trust`, `index`, `log`, `graph`, `ids`, `interactive`,
+`config`, `kit`, `agents`. Topic lookup is case-insensitive. An unknown topic name prints
 the list of valid topics, and the command still succeeds (exit 0).
 
 The `okf`, `format`, `validation`, and `profiles` topics cover the format and
 how a bundle is checked; `computations`,
 `concepts`, `trust`, `index`, `log`, `graph`, and `ids` are the command-level
-guides for the reports and generators documented below.
+guides for the reports and generators documented below. `where` is the full
+reference for the `okf concepts --where` condition language.
 
 
 ## bundles

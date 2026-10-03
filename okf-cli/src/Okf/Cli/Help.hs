@@ -51,6 +51,7 @@ helpTopics =
     HelpTopic "profiles" "Checking a bundle against house conventions" profilesTopicContent,
     HelpTopic "computations" "Listing and printing attested computations" computationsTopicContent,
     HelpTopic "concepts" "Listing and filtering the concepts in a bundle" conceptsTopicContent,
+    HelpTopic "where" "The okf concepts --where condition language" whereTopicContent,
     HelpTopic "trust" "Trust tiers, staleness, and recorded provenance" trustTopicContent,
     HelpTopic "index" "Generated index.md files and the version declaration" indexTopicContent,
     HelpTopic "log" "log.md upkeep and the two staleness checks" logTopicContent,
@@ -82,6 +83,9 @@ computationsTopicContent = $(embedStringFile "help/computations.md")
 
 conceptsTopicContent :: Text
 conceptsTopicContent = $(embedStringFile "help/concepts.md")
+
+whereTopicContent :: Text
+whereTopicContent = $(embedStringFile "help/where.md")
 
 trustTopicContent :: Text
 trustTopicContent = $(embedStringFile "help/trust.md")

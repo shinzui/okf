@@ -87,6 +87,7 @@ SEE ALSO
   okf help trust         Trust tiers, staleness, and recorded provenance.
   okf help computations  Listing and printing attested computations.
   okf help concepts      Listing and filtering the concepts in a bundle.
+  okf help where         The --where condition language for okf concepts.
   okf help ids           Profile-declared document IDs such as ADR-7.
   okf help interactive   Picking a bundle and concept with fzf.
   okf help config        Config files, precedence, and agent settings.

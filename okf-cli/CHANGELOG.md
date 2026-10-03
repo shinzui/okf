@@ -20,6 +20,10 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   checked before the bundle is walked, with a neutral
   `filter value ... is outside the vocabulary for ...` diagnostic.
 
+- `okf help where` is a reference topic for the `--where` condition language:
+  how the form is chosen, the expression grammar and precedence, list and
+  absence semantics, how repeated flags combine, and profile checking.
+
 ### Changed
 
 - **Breaking (library):** the exported `ConceptsOptions.fieldFilters` field is

@@ -90,6 +90,9 @@ EXCLUDING AND COMBINING
   "not" is different: it negates its whole operand, absence included, so
   '(not (status="completed"))' also keeps concepts with no status at all.
 
+  "okf help where" is the full reference for these conditions, with more
+  examples.
+
 SHOWING MORE COLUMNS
 
   --show KEY adds a column between the type and the title, and repeats:
@@ -172,6 +175,7 @@ JSON OUTPUT
 
 SEE ALSO
 
+  okf help where          The full --where condition language reference.
   okf help format         Bundle layout, concept IDs, and frontmatter.
   okf help profiles       Checking a bundle against house conventions.
   okf help trust          The report whose status column applies the default.
