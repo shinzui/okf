@@ -40,6 +40,7 @@ module Okf.Cli
     renderPredicateProfileError,
     observedIdPrefixes,
     parserInfo,
+    builtinCommands,
     parseProfileRegistriesEnv,
     parseReleaseVersionTag,
     latestReleaseTag,
@@ -95,6 +96,7 @@ import Okf.Cli.Agent.Config
     renderAgentResolution,
     resolveAgent,
   )
+import Okf.Cli.Aliases (expandAlias, isAliasCandidate)
 import Okf.Cli.Assist (AssistOptions, assistAgentOverrides, assistOptionsParser, handleAssistCommand)
 import Okf.Cli.BundleDiscovery (BundleDiscovery (..), discoverAvailableBundles)
 import Okf.Cli.Completions (CompletionsShell, completionsParser, handleCompletions)
@@ -236,7 +238,7 @@ import Okf.Trust
 import Okf.Validation
 import Options.Applicative
 import System.Directory (canonicalizePath, createDirectoryIfMissing, doesDirectoryExist, doesFileExist, doesPathExist, pathIsSymbolicLink, removeFile)
-import System.Environment (lookupEnv)
+import System.Environment (getArgs, lookupEnv)
 import System.Exit (ExitCode (..), exitFailure, exitWith)
 import System.FilePath ((</>))
 import System.FilePath qualified as FilePath
@@ -481,7 +483,10 @@ data Options = Options
 
 runCli :: IO ()
 runCli = do
-  Options {cmd} <- execParser parserInfo
+  rawArgs <- getArgs
+  aliases <- if isAliasCandidate builtinCommands rawArgs then loadAliasesForExpansion else pure Map.empty
+  let expandedArgs = expandAlias builtinCommands aliases rawArgs
+  Options {cmd} <- handleParseResult (execParserPure defaultPrefs parserInfo expandedArgs)
   runCommand cmd
 
 parserInfo :: ParserInfo Options
@@ -502,28 +507,34 @@ versionOption =
 optionsParser :: Parser Options
 optionsParser = Options <$> commandParser
 
+-- | One registry owns parser registration, help order, and alias protection.
+commandDefinitions :: [(String, ParserInfo Command)]
+commandDefinitions =
+  [ ("bundles", (info (Bundles <$> bundlesOptionsParser <**> helper) (progDesc "List discovered OKF bundles"))),
+    ("profiles", (info (Profiles <$> profilesOptionsParser <**> helper) (progDesc "List local profile descriptor paths; use `okf profile list` for all effective sources"))),
+    ("validate", (info (Validate <$> validateOptionsParser <**> helper) (progDesc "Validate an OKF bundle"))),
+    ("index", (info (Index <$> indexOptionsParser <**> helper) (progDesc "Preview or write generated index.md files"))),
+    ("log", (info (Log <$> logOptionsParser <**> helper) (progDesc "Preview and check log.md files"))),
+    ("graph", (info (GraphCommand <$> graphOptionsParser <**> helper) (progDesc "Print a bundle graph"))),
+    ("show", (info (ShowConcept <$> showOptionsParser <**> helper) (progDesc "Show one concept"))),
+    ("trust", (info (Trust <$> trustOptionsParser <**> helper) (progDesc "Report trust tiers, status, and staleness for every concept"))),
+    ("sources", (info (Sources <$> sourcesOptionsParser <**> helper) (progDesc "List the provenance recorded by each concept"))),
+    ("computations", (info (Computations <$> computationsOptionsParser <**> helper) (progDesc "List the attested computations a bundle declares"))),
+    ("concepts", (info (Concepts <$> conceptsOptionsParser <**> helper) (progDesc "List the concepts a bundle holds, with optional filters"))),
+    ("id", (info (Id <$> idOptionsParser <**> helper) (progDesc "Allocate and list document IDs"))),
+    ("config", (info (Config <$> configCommandParser <**> helper) (progDesc "Show and manage okf configuration"))),
+    ("profile", (info (Profile <$> profileCommandParser <**> helper) (progDesc "List and inspect profiles from registries and local descriptors"))),
+    ("kit", (info (Kit <$> kitCommandParser <**> helper) (progDesc "Install and manage agent skills and subagents"))),
+    ("assist", (info (Assist <$> assistOptionsParser <**> helper) (progDesc "Launch an interactive agent session with installed okf skills"))),
+    ("completions", (info (Completions <$> completionsParser <**> helper) (progDesc "Generate a shell completion script (bash, zsh, fish)"))),
+    ("help", (info (Help <$> helpCommandParser <**> helper) (progDesc "Show conceptual help topics")))
+  ]
+
+builtinCommands :: [Text]
+builtinCommands = map (Text.pack . fst) commandDefinitions
+
 commandParser :: Parser Command
-commandParser =
-  hsubparser
-    ( command "bundles" (info (Bundles <$> bundlesOptionsParser <**> helper) (progDesc "List discovered OKF bundles"))
-        <> command "profiles" (info (Profiles <$> profilesOptionsParser <**> helper) (progDesc "List local profile descriptor paths; use `okf profile list` for all effective sources"))
-        <> command "validate" (info (Validate <$> validateOptionsParser <**> helper) (progDesc "Validate an OKF bundle"))
-        <> command "index" (info (Index <$> indexOptionsParser <**> helper) (progDesc "Preview or write generated index.md files"))
-        <> command "log" (info (Log <$> logOptionsParser <**> helper) (progDesc "Preview and check log.md files"))
-        <> command "graph" (info (GraphCommand <$> graphOptionsParser <**> helper) (progDesc "Print a bundle graph"))
-        <> command "show" (info (ShowConcept <$> showOptionsParser <**> helper) (progDesc "Show one concept"))
-        <> command "trust" (info (Trust <$> trustOptionsParser <**> helper) (progDesc "Report trust tiers, status, and staleness for every concept"))
-        <> command "sources" (info (Sources <$> sourcesOptionsParser <**> helper) (progDesc "List the provenance recorded by each concept"))
-        <> command "computations" (info (Computations <$> computationsOptionsParser <**> helper) (progDesc "List the attested computations a bundle declares"))
-        <> command "concepts" (info (Concepts <$> conceptsOptionsParser <**> helper) (progDesc "List the concepts a bundle holds, with optional filters"))
-        <> command "id" (info (Id <$> idOptionsParser <**> helper) (progDesc "Allocate and list document IDs"))
-        <> command "config" (info (Config <$> configCommandParser <**> helper) (progDesc "Show and manage okf configuration"))
-        <> command "profile" (info (Profile <$> profileCommandParser <**> helper) (progDesc "List and inspect profiles from registries and local descriptors"))
-        <> command "kit" (info (Kit <$> kitCommandParser <**> helper) (progDesc "Install and manage agent skills and subagents"))
-        <> command "assist" (info (Assist <$> assistOptionsParser <**> helper) (progDesc "Launch an interactive agent session with installed okf skills"))
-        <> command "completions" (info (Completions <$> completionsParser <**> helper) (progDesc "Generate a shell completion script (bash, zsh, fish)"))
-        <> command "help" (info (Help <$> helpCommandParser <**> helper) (progDesc "Show conceptual help topics"))
-    )
+commandParser = hsubparser (foldMap (uncurry command) commandDefinitions)
 
 bundlesOptionsParser :: Parser BundlesOptions
 bundlesOptionsParser = BundlesOptions <$> jsonSwitch

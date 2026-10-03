@@ -2,6 +2,8 @@
 module Okf.Cli.Aliases
   ( validateAliases,
     renderAliases,
+    isAliasCandidate,
+    expandAlias,
   )
 where
 
@@ -35,3 +37,20 @@ renderAliases aliases
         ]
   where
     width = maximum (map Text.length (Map.keys aliases))
+
+-- | Only the first argument can be an alias. Protected paths avoid config IO.
+isAliasCandidate :: [Text] -> [String] -> Bool
+isAliasCandidate _ [] = False
+isAliasCandidate builtins (firstArg : _) =
+  not (Text.isPrefixOf "-" name) && name `notElem` builtins
+  where
+    name = Text.pack firstArg
+
+-- | Expand once using whitespace splitting, preserving every trailing argument.
+-- Quotes are literal text; no shell or second alias lookup is involved.
+expandAlias :: [Text] -> Map Text Text -> [String] -> [String]
+expandAlias builtins aliases args@(firstArg : rest)
+  | isAliasCandidate builtins args,
+    Just expansion <- Map.lookup (Text.pack firstArg) aliases =
+      map Text.unpack (Text.words expansion) <> rest
+expandAlias _ _ args = args

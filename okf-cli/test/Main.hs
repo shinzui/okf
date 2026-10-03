@@ -17,7 +17,7 @@ import Data.Time.Clock (UTCTime (..))
 import Okf.Bundle (Concept, bundleInventoryOfConcepts, conceptAttester, conceptExecutor, conceptFromDocument, conceptIdOf, conceptParameters, conceptRuntime, conceptType, walkBundle, walkBundleInventory)
 import Okf.Cli
 import Okf.Cli.Agent.Config (AgentCommandName (..), AgentConfigSource (..), AgentField (..), AgentOverrides (..), ResolvedAgent (..), ResolvedField (..), agentSourceLabel, noAgentOverrides, parseOkfEffort, parseOkfProvider, renderAgentResolution, resolveAgent)
-import Okf.Cli.Aliases (renderAliases, validateAliases)
+import Okf.Cli.Aliases (expandAlias, isAliasCandidate, renderAliases, validateAliases)
 import Okf.Cli.Assist (AssistOptions (..), buildAgentCommand)
 import Okf.Cli.BundleDiscovery (BundleDiscovery (..), bundleSearchRootsEnvVar, discoverAvailableBundles)
 import Okf.Cli.Config (AgentFieldSettings (..), AgentSettings (..), ConfigSource (..), OkfConfig (..), OkfEffort (..), OkfProvider (..), ProfileSettings (..), agentSharedDefaults, defaultOkfConfig, exampleConfigText, findConfigSource, loadAgentScopes, loadAliasesForExpansion, loadOkfConfig, okfConfigEnvVar, projectConfigPath, renderConfig)
@@ -34,7 +34,7 @@ import Okf.Query (ConceptFilter (..), ConceptPredicate (..), FieldSelector (..),
 import Okf.Validation (ValidationProfile (..), validateBundle)
 import Options.Applicative
 import System.Directory (Permissions (..), createDirectoryIfMissing, createFileLink, doesDirectoryExist, doesFileExist, getCurrentDirectory, getPermissions, getTemporaryDirectory, listDirectory, makeAbsolute, removeDirectoryRecursive, setModificationTime, setPermissions, withCurrentDirectory)
-import System.Environment (lookupEnv, setEnv, unsetEnv)
+import System.Environment (lookupEnv, setEnv, unsetEnv, withArgs)
 import System.Exit (ExitCode (..), exitFailure)
 import System.FilePath (normalise, takeDirectory, (</>))
 import System.IO.Temp (createTempDirectory)
@@ -46,6 +46,7 @@ main = do
   profilePickerExitCodes <- testProfilePickerExitCodes
   effectiveProfileSources <- testEffectiveProfileSources
   logAddWrites <- testLogAddWritesFile
+  aliasStartup <- testAliasStartup
   aliasConfiguration <- testAliasConfiguration
   configDefaults <- testConfigDefaults
   configProjectPrecedence <- testConfigProjectPrecedence
@@ -678,6 +679,8 @@ main = do
           conceptMenuOrdering,
           nonAsciiDiagnostics,
           testNestedReferenceDiagnosticRendering,
+          testAliasExpansion,
+          aliasStartup,
           testAliasValidationAndRendering,
           aliasConfiguration,
           configDefaults,
@@ -2997,6 +3000,77 @@ agentSettingsWithSharedModel modelName =
           }
     }
 
+testAliasExpansion :: Bool
+testAliasExpansion =
+  and
+    [ expand [] == [],
+      expand ["unknown", "c"] == ["unknown", "c"],
+      expand ["concepts", "c"] == ["concepts", "c"],
+      expand ["c", "bundle with spaces", "--json"] == ["concepts", "bundle with spaces", "--json"],
+      expand ["ws", "tail"] == ["help", "okf", "tail"],
+      expand ["a"] == ["b"],
+      expand ["b"] == ["a"],
+      expand ["C"] == ["C"],
+      expand ["quoted"] == ["help", "\"two", "words\""],
+      expand ["literal"] == ["help", "$(echo", "okf)", ";", "graph"],
+      not (isAliasCandidate builtinCommands []),
+      isAliasCandidate builtinCommands ["unknown"],
+      all
+        ( \name ->
+            not (isAliasCandidate builtinCommands [Text.unpack name])
+              && expandAlias builtinCommands (Map.singleton name "graph") [Text.unpack name, "--help"] == [Text.unpack name, "--help"]
+        )
+        builtinCommands,
+      all
+        (\arg -> not (isAliasCandidate builtinCommands [arg]) && expand [arg, "c"] == [arg, "c"])
+        ["--help", "--version", "-h", "--", "--bash-completion-index", "-c"]
+    ]
+  where
+    expand =
+      expandAlias
+        builtinCommands
+        ( Map.fromList
+            [ ("c", "concepts"),
+              ("a", "b"),
+              ("b", "a"),
+              ("ws", " \t help \n okf "),
+              ("quoted", "help \"two words\""),
+              ("literal", "help $(echo okf) ; graph"),
+              ("--help", "graph")
+            ]
+        )
+
+-- Exercise actual startup with process arguments: parser-only tests cannot
+-- establish that the executable loads and expands aliases before parsing.
+testAliasStartup :: IO Bool
+testAliasStartup =
+  withIsolatedConfigEnv "okf-cli-alias-startup" $ do
+    path <- projectConfigPath
+    Text.IO.writeFile path (configWithAliases "toMap { h = \"help okf\", help = \"graph\", a = \"b\", b = \"help\" }")
+    aliasRun <- run ["h"]
+    protected <- run ["help", "okf"]
+    singlePass <- run ["a"]
+    Text.IO.writeFile path "this is not Dhall"
+    topHelp <- run ["--help"]
+    version <- run ["--version"]
+    topic <- run ["help", "okf"]
+    completion <- run ["--bash-completion-index", "1", "--bash-completion-word", "okf", "--bash-completion-word", ""]
+    unknown <- run ["h"]
+    strict <- run ["config", "show"]
+    pure
+      ( aliasRun == Right ()
+          && protected == Right ()
+          && singlePass == Left (ExitFailure 1)
+          && topHelp == Left ExitSuccess
+          && version == Left ExitSuccess
+          && topic == Right ()
+          && completion == Left ExitSuccess
+          && unknown == Left (ExitFailure 1)
+          && strict == Left (ExitFailure 1)
+      )
+  where
+    run args = try (withArgs args runCli) :: IO (Either ExitCode ())
+
 -- Keep the old whole-record fixtures unchanged: this also tests the new frozen
 -- pre-alias decoder while preserving kit, agent, and registry settings.
 testAliasConfiguration :: IO Bool
@@ -3054,7 +3128,7 @@ testAliasConfiguration =
         [ Map.null defaults,
           current == Right expected,
           case config of
-            Right (value, _) -> "aliases.c = concepts\naliases.h = help\n" `Text.isInfixOf` renderConfig value
+            Right (loadedConfig, _) -> "aliases.c = concepts\naliases.h = help\n" `Text.isInfixOf` renderConfig loadedConfig
             Left _ -> False,
           old == Right (defaultOkfConfig {agent = agentSettingsWithSharedModel "pre-alias-model"}, SourceProject projectPath),
           emptyProject == Right Map.empty,
