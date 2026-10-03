@@ -208,18 +208,22 @@ import Okf.Query
   ( ConceptFilter (..),
     FieldSelector (..),
     FilterProfileError (..),
+    SortKey (..),
     WhereCondition (..),
     checkFiltersAgainstProfile,
     checkPredicateAgainstProfile,
     conceptFieldValues,
     filterConceptsWhere,
     parseFieldSelector,
+    parseSortKey,
     parseWhereCondition,
     renderFieldSelector,
     renderFilter,
     renderFilterParseError,
+    renderSortKeyParseError,
     renderWhereParseError,
     scalarText,
+    sortConcepts,
   )
 import Okf.Trust
   ( Staleness (..),
@@ -348,6 +352,7 @@ data ConceptsOptions = ConceptsOptions
     presentFields :: ![FieldSelector],
     absentFields :: ![FieldSelector],
     showFields :: ![Text],
+    sortKeys :: ![SortKey],
     profilePath :: !(Maybe FilePath),
     json :: !Bool
   }
@@ -920,6 +925,14 @@ conceptsOptionsParser =
                 <> metavar "KEY"
                 <> help "Add a column displaying KEY; repeat for more columns"
             )
+      )
+    <*> many
+      ( option
+          (eitherReader (first (Text.unpack . renderSortKeyParseError) . parseSortKey . Text.pack))
+          ( long "sort"
+              <> metavar "KEY[:desc]"
+              <> help "Order concepts by KEY in natural order (IR-2 before IR-10; numbers numerically; concepts without KEY last); append :desc to reverse; repeat to break ties"
+          )
       )
     <*> optional
       ( strOption
@@ -2590,6 +2603,8 @@ computationReport concepts =
 -- In text mode, @--show@ adds frontmatter columns to the aligned report. In
 -- JSON mode, every selected row is instead the concept's complete stored
 -- frontmatter object; @--show@ does not project or otherwise change it.
+-- @--sort@ orders the selected rows of both outputs; without it they are in
+-- concept-ID order.
 runConcepts :: ConceptsOptions -> IO ()
 runConcepts
   ConceptsOptions
@@ -2599,13 +2614,14 @@ runConcepts
       presentFields,
       absentFields,
       showFields,
+      sortKeys,
       profilePath,
       json
     } = do
     resolvedBundle <- resolveBundlePath bundlePath
     traverse_ checkFiltersWithProfile profilePath
     concepts <- loadBundleOrExit resolvedBundle
-    let selected = filterConceptsWhere optionFilters fieldFilters concepts
+    let selected = sortConcepts sortKeys (filterConceptsWhere optionFilters fieldFilters concepts)
     if json
       then LazyByteString.putStrLn (Aeson.encode (conceptReportJson selected))
       else mapM_ Text.IO.putStrLn (conceptReport showFields selected)
@@ -2631,7 +2647,7 @@ runConcepts
       checkFiltersWithProfile path = do
         spec <- loadProfileOrExit path
         compiled <- compileProfileOrExit (Text.pack path) spec
-        case conceptsProfileDiagnostics compiled conceptTypes fieldFilters presentFields absentFields of
+        case conceptsProfileDiagnostics compiled conceptTypes fieldFilters presentFields absentFields sortKeys of
           [] -> pure ()
           diagnostics -> do
             -- Every error, not only the first, so one run fixes one command line.
@@ -2641,8 +2657,12 @@ runConcepts
 -- | Every profile diagnostic for an @okf concepts@ command line, in a stable
 -- order: the legacy filters first — @--type@, legacy @--where@ equalities,
 -- @--has@, @--missing@, as they always have been — then each explicit
--- condition in flag order. A predicate error repeated across flags is
--- reported once.
+-- condition in flag order, then each @--sort@ key. A predicate or sort-key
+-- error repeated across flags is reported once.
+--
+-- A sort key is checked for declaration only, as @has(KEY)@ would be: there is
+-- no value to check. It is worth checking at all because a misspelled sort key
+-- leaves the listing in concept-ID order, which looks entirely plausible.
 --
 -- The two kinds render differently on purpose. A legacy equality outside a
 -- vocabulary really can match nothing, and its message has always said so. A
@@ -2650,10 +2670,11 @@ runConcepts
 -- condition can still match plenty; it is still a typo worth stopping for, but
 -- \"no concept can match\" would be false.
 conceptsProfileDiagnostics ::
-  CompiledProfile -> [Text] -> [WhereCondition] -> [FieldSelector] -> [FieldSelector] -> [Text]
-conceptsProfileDiagnostics compiled conceptTypes conditions presentFields absentFields =
+  CompiledProfile -> [Text] -> [WhereCondition] -> [FieldSelector] -> [FieldSelector] -> [SortKey] -> [Text]
+conceptsProfileDiagnostics compiled conceptTypes conditions presentFields absentFields sortKeys =
   (renderFilterProfileError <$> legacyErrors)
     <> (renderPredicateProfileError <$> predicateErrors)
+    <> (renderFilterProfileError <$> sortKeyErrors)
   where
     legacyFilters =
       [FieldEquals (TopLevelField "type") wanted | wanted <- conceptTypes]
@@ -2666,6 +2687,12 @@ conceptsProfileDiagnostics compiled conceptTypes conditions presentFields absent
         [ profileError
         | PredicateWhere predicate <- conditions,
           profileError <- checkPredicateAgainstProfile compiled conceptTypes predicate
+        ]
+    sortKeyErrors =
+      List.nub
+        [ profileError
+        | SortKey {sortSelector} <- sortKeys,
+          profileError <- checkFiltersAgainstProfile compiled conceptTypes [FieldPresent sortSelector]
         ]
 
 -- | Why a profile says a filter can never select anything.

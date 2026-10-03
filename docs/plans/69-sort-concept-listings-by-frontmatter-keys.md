@@ -59,9 +59,9 @@ before the bundle is walked, exactly as a misspelled filter key already is.
 - [x] Milestone 1: add natural ordering, sort keys, and `sortConcepts` to `okf-core/src/Okf/Query.hs`. (2026-10-03T15:27Z)
 - [x] Milestone 1: add the `okf-core/test/fixtures/concept-sorting` bundle and generate its `index.md` files. (2026-10-03T15:30Z)
 - [x] Milestone 1: add core tests for `compareNatural`, `parseSortKey`, and `sortConcepts`; `cabal test okf-core-test` passes. (2026-10-03T15:34Z)
-- [ ] Milestone 2: add `sortKeys` to `ConceptsOptions`, parse `--sort`, and sort in `runConcepts` for text and JSON.
-- [ ] Milestone 2: check sort keys against `--profile` in `conceptsProfileDiagnostics`.
-- [ ] Milestone 2: add CLI parser, report, JSON, and profile-diagnostic tests; `cabal test okf-cli-test` passes.
+- [x] Milestone 2: add `sortKeys` to `ConceptsOptions`, parse `--sort`, and sort in `runConcepts` for text and JSON. (2026-10-03T15:38Z)
+- [x] Milestone 2: check sort keys against `--profile` in `conceptsProfileDiagnostics`. (2026-10-03T15:38Z)
+- [x] Milestone 2: add CLI parser, report, JSON, and profile-diagnostic tests; `cabal test okf-cli-test` passes. (2026-10-03T15:44Z)
 - [ ] Milestone 3: update `okf-cli/help/concepts.md`, `okf-cli/help/where.md`, `docs/user/cli.md`, `README.md` if it lists the flags, and both changelogs.
 - [ ] Milestone 3: amend ADR-15 and CAP-16, append log entries, and pass strict validation of `docs/adr` and `docs/capabilities`.
 - [ ] Milestone 3: `cabal test all` passes and the acceptance transcripts below are reproduced.

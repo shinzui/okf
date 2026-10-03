@@ -28,7 +28,7 @@ import Okf.Document (Attester (..), Executor (..), Parameter (..), parseDocument
 import Okf.Index (OkfVersion (..), VersionDeclaration (..), parseOkfVersion, readBundleVersion)
 import Okf.Profile (Cardinality (..), CompiledProfile, FieldCondition (..), FieldFormat (..), FieldPath (..), FieldPathSegment (..), FieldRule (..), FrontmatterRules (..), HandleReferenceRule (..), NestedFieldRule (..), NestedRules (..), PathReferenceRule (..), ProfileSpec (..), ProfileViolation (..), TypeRule (..), compileProfile, loadProfileFile, validateProfile, validateProfileVersion)
 import Okf.Profile.Registry (ProfileSource (..), ProfileSourceLoadError (..), RegistryEntry (..), RegistryLoadError (..), RegistryRef (..), SourcedProfile (..), defaultRegistryReference)
-import Okf.Query (ConceptFilter (..), ConceptPredicate (..), FieldSelector (..), WhereCondition (..), filterConcepts, filterConceptsWhere, parseWhereCondition)
+import Okf.Query (ConceptFilter (..), ConceptPredicate (..), FieldSelector (..), SortDirection (..), SortKey (..), WhereCondition (..), filterConcepts, filterConceptsWhere, parseSortKey, parseWhereCondition, sortConcepts)
 import Okf.Validation (ValidationProfile (..), validateBundle)
 import Options.Applicative
 import System.Directory (Permissions (..), createDirectoryIfMissing, createFileLink, doesDirectoryExist, doesFileExist, getCurrentDirectory, getPermissions, getTemporaryDirectory, listDirectory, makeAbsolute, removeDirectoryRecursive, setModificationTime, setPermissions, withCurrentDirectory)
@@ -77,6 +77,9 @@ main = do
   conceptsWhereConditions <- testConceptsWhereConditions
   conceptsWhereJson <- testConceptsWhereJson
   conceptsPredicateDiagnostics <- testConceptsPredicateDiagnostics
+  conceptsSortsRows <- testConceptsSortsRows
+  conceptsSortsJson <- testConceptsSortsJson
+  conceptsSortKeyDiagnostics <- testConceptsSortKeyDiagnostics
   conceptsReportsExample <- testConceptsReportsExampleBundle
   conceptsKeepsStatusDefaultOut <- testConceptsDoesNotApplyStatusDefault
   profileDocStrictWithTimestamp <- testProfileDocumentationStrictWithTimestamp
@@ -139,7 +142,7 @@ main = do
             (Computations (ComputationsOptions Nothing)),
           parseCommandMatches
             ["concepts"]
-            (Concepts (ConceptsOptions Nothing [] [] [] [] [] Nothing False)),
+            (Concepts (ConceptsOptions Nothing [] [] [] [] [] [] Nothing False)),
           parseIdMatches
             ["id", "next", "ADR", "--profile", "p.dhall"]
             (IdOptions Nothing "p.dhall" (IdNext "ADR")),
@@ -510,6 +513,7 @@ main = do
                 presentFields = [],
                 absentFields = [],
                 showFields = [],
+                sortKeys = [],
                 profilePath = Nothing,
                 json = False
               },
@@ -522,6 +526,7 @@ main = do
                 presentFields = [],
                 absentFields = [],
                 showFields = [],
+                sortKeys = [],
                 profilePath = Nothing,
                 json = True
               },
@@ -534,6 +539,7 @@ main = do
                 presentFields = [],
                 absentFields = [],
                 showFields = ["requestId"],
+                sortKeys = [],
                 profilePath = Nothing,
                 json = False
               },
@@ -546,6 +552,7 @@ main = do
                 presentFields = [TopLevelField "completedAt"],
                 absentFields = [NestedField "reviews" "outcome"],
                 showFields = [],
+                sortKeys = [],
                 profilePath = Nothing,
                 json = False
               },
@@ -586,6 +593,7 @@ main = do
                 presentFields = [],
                 absentFields = [],
                 showFields = [],
+                sortKeys = [],
                 profilePath = Nothing,
                 json = False
               },
@@ -597,6 +605,29 @@ main = do
           parseFails ["concepts", "b", "--where", "(status=accepted)"],
           parseFails ["concepts", "b", "--where", "(a=\"1\") or (b=\"2\")"],
           parseFails ["concepts", "b", "--has", "a.b.c"],
+          -- Sort keys keep flag order and their own direction; anything but
+          -- asc or desc after a colon is rejected rather than read as a key.
+          parseConceptsMatches
+            ["concepts", "b", "--sort", "priority:desc", "--sort", "requestId", "--sort", "title:asc"]
+            ConceptsOptions
+              { bundlePath = Just "b",
+                conceptTypes = [],
+                fieldFilters = [],
+                presentFields = [],
+                absentFields = [],
+                showFields = [],
+                sortKeys =
+                  [ SortKey (TopLevelField "priority") Descending,
+                    SortKey (TopLevelField "requestId") Ascending,
+                    SortKey (TopLevelField "title") Ascending
+                  ],
+                profilePath = Nothing,
+                json = False
+              },
+          parseSucceeds ["concepts", "b", "--sort", "reviews.outcome:desc"],
+          parseFails ["concepts", "b", "--sort", "status:up"],
+          parseFails ["concepts", "b", "--sort", "a.b.c"],
+          parseFails ["concepts", "b", "--sort", ":desc"],
           renderRegistryTable CompactTable sampleRegistryEntries == sampleRegistryTable,
           renderRegistryTable WideTable sampleRegistryEntries == sampleRegistryWideTable,
           testRegistryTableCapsEveryTextField,
@@ -634,6 +665,9 @@ main = do
           conceptsWhereConditions,
           conceptsWhereJson,
           conceptsPredicateDiagnostics,
+          conceptsSortsRows,
+          conceptsSortsJson,
+          conceptsSortKeyDiagnostics,
           conceptsReportJson,
           conceptsReportsExample,
           conceptsKeepsStatusDefaultOut,
@@ -2127,7 +2161,7 @@ testConceptsPredicateDiagnostics =
           Text.IO.putStrLn ("failed to load the concept-filter profile: " <> message)
           pure False
         Right compiled -> do
-          let diagnostics raws = conceptsProfileDiagnostics compiled [] (whereConditions raws) [] []
+          let diagnostics raws = conceptsProfileDiagnostics compiled [] (whereConditions raws) [] [] []
               statusAccepts = "status accepts: proposed, accepted, completed, rejected"
               checks =
                 [ ( diagnostics ["status!=acepted"],
@@ -2152,6 +2186,100 @@ testConceptsPredicateDiagnostics =
           unless (null failures) $
             putStrLn ("unexpected okf concepts profile diagnostics: " <> show failures)
           pure (null failures)
+
+-- | @okf concepts --show requestId --sort requestId@ over the concept-sorting
+-- fixture: natural order puts IR-10 after IR-9, the concept with no ID comes
+-- last, and the column widths are those of the rows in their new order.
+testConceptsSortsRows :: IO Bool
+testConceptsSortsRows = do
+  let fixture = "okf-core" </> "test" </> "fixtures" </> "concept-sorting"
+  ascending <-
+    assertConceptReport
+      "okf concepts --show requestId --sort requestId"
+      fixture
+      ["requestId"]
+      (sortConcepts (parsedSortKeys ["requestId"]))
+      [ "requests/e-one   Improvement Request  IR-1   One",
+        "requests/b-two   Improvement Request  IR-2   Two",
+        "requests/c-nine  Improvement Request  IR-9   Nine",
+        "requests/a-ten   Improvement Request  IR-10  Ten",
+        "requests/d-none  Improvement Request  -      None"
+      ]
+  tieBroken <-
+    assertConceptReport
+      "okf concepts --show priority --sort priority:desc --sort requestId"
+      fixture
+      ["priority"]
+      (sortConcepts (parsedSortKeys ["priority:desc", "requestId"]))
+      [ "requests/b-two   Improvement Request  10   Two",
+        "requests/e-one   Improvement Request  2    One",
+        "requests/a-ten   Improvement Request  2    Ten",
+        "requests/c-nine  Improvement Request  1.5  Nine",
+        "requests/d-none  Improvement Request  -    None"
+      ]
+  pure (ascending && tieBroken)
+
+-- | JSON rows follow the sort too, and stay complete stored frontmatter: the
+-- concept with no ID is last and still has no @requestId@ key.
+testConceptsSortsJson :: IO Bool
+testConceptsSortsJson =
+  withRepositoryPath
+    "okf concepts --sort requestId:desc --json"
+    ("okf-core" </> "test" </> "fixtures" </> "concept-sorting")
+    $ \bundleRoot -> do
+      walked <- walkBundle bundleRoot
+      case walked of
+        Left bundleError -> do
+          putStrLn ("failed to walk the concept-sorting fixture: " <> show bundleError)
+          pure False
+        Right concepts -> do
+          let rows = case conceptReportJson (sortConcepts (parsedSortKeys ["requestId:desc"]) concepts) of
+                Aeson.Array items -> toList items
+                _ -> []
+              field key = \case
+                Aeson.Object fields -> KeyMap.lookup key fields
+                _ -> Nothing
+              ok =
+                map (field "requestId") rows
+                  == (Just . Aeson.String <$> ["IR-10", "IR-9", "IR-2", "IR-1"]) <> [Nothing]
+                  && map (field "title") rows
+                    == (Just . Aeson.String <$> ["Ten", "Nine", "Two", "One", "None"])
+          unless ok $ putStrLn ("unexpected okf concepts --sort JSON rows: " <> show rows)
+          pure ok
+
+-- | A sort key the profile does not declare is reported after every filter
+-- diagnostic, once; declared and OKF-owned keys pass.
+testConceptsSortKeyDiagnostics :: IO Bool
+testConceptsSortKeyDiagnostics =
+  withRepositoryPath
+    "okf concepts --profile concept-filters.dhall --sort diagnostics"
+    ("okf-core" </> "test" </> "fixtures" </> "profiles" </> "concept-filters.dhall")
+    $ \descriptorPath -> do
+      loaded <- loadProfileFile descriptorPath
+      case loaded >>= first (Text.pack . show) . compileProfile of
+        Left message -> do
+          Text.IO.putStrLn ("failed to load the concept-filter profile: " <> message)
+          pure False
+        Right compiled -> do
+          let diagnostics conditions keys = conceptsProfileDiagnostics compiled [] (whereConditions conditions) [] [] (parsedSortKeys keys)
+              checks =
+                [ (diagnostics [] ["statuz"], ["okf concepts: profile declares no frontmatter key named statuz"]),
+                  (diagnostics [] ["statuz", "statuz:desc"], ["okf concepts: profile declares no frontmatter key named statuz"]),
+                  ( diagnostics ["status!=acepted"] ["statuz"],
+                    [ "okf concepts: filter value acepted is outside the vocabulary for status\nstatus accepts: proposed, accepted, completed, rejected",
+                      "okf concepts: profile declares no frontmatter key named statuz"
+                    ]
+                  ),
+                  (diagnostics [] ["requestId:desc", "title", "reviews.outcome"], [])
+                ]
+              failures = [(actual, expected) | (actual, expected) <- checks, actual /= expected]
+          unless (null failures) $
+            putStrLn ("unexpected okf concepts sort-key diagnostics: " <> show failures)
+          pure (null failures)
+
+-- | Read @--sort@ arguments the way the parser does.
+parsedSortKeys :: [Text.Text] -> [SortKey]
+parsedSortKeys = map (either (error . show) id . parseSortKey)
 
 -- | Read @--where@ arguments the way the parser does, failing loudly on a typo
 -- in the test itself.
