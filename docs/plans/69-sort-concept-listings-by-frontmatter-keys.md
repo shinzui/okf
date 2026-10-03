@@ -56,20 +56,25 @@ before the bundle is walked, exactly as a misspelled filter key already is.
 
 ## Progress
 
-- [x] Milestone 1: add natural ordering, sort keys, and `sortConcepts` to `okf-core/src/Okf/Query.hs`. (2026-10-03T15:27Z)
-- [x] Milestone 1: add the `okf-core/test/fixtures/concept-sorting` bundle and generate its `index.md` files. (2026-10-03T15:30Z)
-- [x] Milestone 1: add core tests for `compareNatural`, `parseSortKey`, and `sortConcepts`; `cabal test okf-core-test` passes. (2026-10-03T15:34Z)
-- [x] Milestone 2: add `sortKeys` to `ConceptsOptions`, parse `--sort`, and sort in `runConcepts` for text and JSON. (2026-10-03T15:38Z)
-- [x] Milestone 2: check sort keys against `--profile` in `conceptsProfileDiagnostics`. (2026-10-03T15:38Z)
-- [x] Milestone 2: add CLI parser, report, JSON, and profile-diagnostic tests; `cabal test okf-cli-test` passes. (2026-10-03T15:44Z)
-- [ ] Milestone 3: update `okf-cli/help/concepts.md`, `okf-cli/help/where.md`, `docs/user/cli.md`, `README.md` if it lists the flags, and both changelogs.
-- [ ] Milestone 3: amend ADR-15 and CAP-16, append log entries, and pass strict validation of `docs/adr` and `docs/capabilities`.
-- [ ] Milestone 3: `cabal test all` passes and the acceptance transcripts below are reproduced.
+- [x] Milestone 1: add natural ordering, sort keys, and `sortConcepts` to `okf-core/src/Okf/Query.hs`. (2026-10-03)
+- [x] Milestone 1: add the `okf-core/test/fixtures/concept-sorting` bundle and generate its `index.md` files. (2026-10-03)
+- [x] Milestone 1: add core tests for `compareNatural`, `parseSortKey`, and `sortConcepts`; `cabal test okf-core-test` passes. (2026-10-03)
+- [x] Milestone 2: add `sortKeys` to `ConceptsOptions`, parse `--sort`, and sort in `runConcepts` for text and JSON. (2026-10-03)
+- [x] Milestone 2: check sort keys against `--profile` in `conceptsProfileDiagnostics`. (2026-10-03)
+- [x] Milestone 2: add CLI parser, report, JSON, and profile-diagnostic tests; `cabal test okf-cli-test` passes. (2026-10-03)
+- [x] Milestone 3: update `okf-cli/help/concepts.md`, `okf-cli/help/where.md`, `docs/user/cli.md`, `README.md` (its synopsis lists the flags), and both changelogs. (2026-10-03)
+- [x] Milestone 3: amend ADR-15 and CAP-16 and append log entries; `docs/adr` strict validation passes. (2026-10-03)
+- [x] Milestone 3: `docs/capabilities` strict validation fails only on the pre-existing `reviews` recommendation, identically at HEAD (see Surprises & Discoveries); not fixed here. (2026-10-03)
+- [x] Milestone 3: `cabal test all` passes and the acceptance transcripts below are reproduced. (2026-10-03)
 
 
 ## Surprises & Discoveries
 
 - The first run of the core sorting check failed on an expectation written by hand in the test, not on the code: titles Nine, None, One, Ten, Two sort as `c-nine, d-none, e-one, a-ten, b-two`. Evidence: `FAIL sortConcepts orders by frontmatter keys: expected ["e-one","c-nine","d-none","a-ten","b-two"], got ["c-nine","d-none","e-one","a-ten","b-two"]`. The expectation was corrected.
+- The CLI suite's JSON and report checks run in process over `conceptReport` and `conceptReportJson` rather than spawning the built `okf` executable, so the new `--sort` JSON check follows that pattern. The end-to-end behavior was confirmed by hand with `cabal run okf -- concepts okf-core/test/fixtures/concept-sorting --sort requestId:desc --json`, whose `requestId` values were `['IR-10', 'IR-9', 'IR-2', 'IR-1', None]`.
+- A test helper named `sortKeys` clashed with the new `ConceptsOptions` field of the same name (GHC "Ambiguous occurrence"); the helper is `parsedSortKeys`.
+- Strict validation of `docs/capabilities` exits 1 before and after this work, because all 17 capability documents lack the profile-recommended `reviews` field; plan 67 recorded the same failure. Evidence: validating a `git archive HEAD` copy of the bundle printed the same 17 `missing profile-recommended field: reviews` lines and exited 1, and with this work applied the output is identical with no other diagnostic. `docs/adr` validation printed `OK: 20 concepts (okf_version 0.2)`.
+- `cabal test all` does not rebuild the `okf` executable, and help text is embedded at compile time, so `cabal list-bin okf` kept printing the old `okf help concepts` until `cabal build okf-cli:exe:okf` was run. Rebuild the executable before checking help output.
 
 
 ## Decision Log
@@ -117,7 +122,30 @@ before the bundle is walked, exactly as a misspelled filter key already is.
 
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+All three milestones are complete. `okf concepts --sort KEY[:desc]` orders text
+and JSON listings by frontmatter keys under the rules in the Decision Log, and
+`--profile` reports an undeclared sort key. The original goal is met: in the rei
+repository,
+
+```bash
+okf concepts docs/improvement-requests --profile docs/improvement-requests/profile.dhall \
+  --where 'status!=completed' --show requestId --sort requestId
+```
+
+lists `IR-1` through `IR-12` in order with no shell pipeline, and the
+`sort -k4,4V` workaround is gone from `okf help concepts`.
+
+The semantics live in `Okf.Query.sortConcepts`, beside the filters, and are
+pinned by core tests over the new `concept-sorting` fixture; the CLI tests pin
+the rendered rows, the JSON order, parsing, and diagnostics. The ordering
+decision was distilled into ADR-15 (a Context item, a Decision paragraph, and a
+Consequences paragraph) and into CAP-16. Nothing remains open for this plan; the
+capability bundle's missing `reviews` recommendation is pre-existing and
+separate work.
+
+Lesson: writing every expected order as an explicit list in the plan made the
+tests mechanical to write, and the one hand-computed order that was wrong
+(titles) failed immediately rather than hiding.
 
 
 ## Context and Orientation
@@ -645,3 +673,8 @@ conceptsProfileDiagnostics ::
 ```
 
 No other module, command, or the interactive concept picker changes.
+
+
+## Revision Notes
+
+- 2026-10-03: Implemented all three milestones. Recorded the in-process CLI test pattern, the `sortKeys` name clash, the pre-existing `docs/capabilities` validation failure, and the stale-executable gotcha in Surprises & Discoveries, and filled in Outcomes & Retrospective.
