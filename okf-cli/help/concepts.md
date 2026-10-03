@@ -105,6 +105,19 @@ SHOWING MORE COLUMNS
   naming a whole mapping is that second case; --show generated.by is how you ask
   for what is inside it.
 
+  A profile-declared document ID is ordinary frontmatter, so --show prints it
+  too. This lists the open improvement requests with their IDs:
+
+    okf concepts BUNDLE --where 'status!=completed' --show requestId --show status
+    first-class-unknowns    Improvement Request  IR-2  proposed  Model work-scoped ...
+    typed-decision-records  Improvement Request  IR-3  proposed  Make work-scoped ...
+
+  Rows stay in concept-ID order. To read them in ID order, sort the column
+  yourself, counting the words of the type: here the ID is the fourth field
+  because "Improvement Request" is two.
+
+    okf concepts BUNDLE --where 'status!=completed' --show requestId | sort -k4,4V
+
 TWO THINGS THAT SURPRISE PEOPLE
 
   A CONCEPT THAT OMITS A KEY NEVER MATCHES A VALUE FILTER ON IT, even where OKF

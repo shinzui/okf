@@ -183,6 +183,10 @@ EXAMPLES
 
     okf concepts BUNDLE --type Policy --where '(status="draft" or missing(owner))'
 
+  Improvement requests not yet completed, with their IDs as a column:
+
+    okf concepts BUNDLE --where 'status!=completed' --show requestId --show status
+
   Concepts whose provenance was not written by a given agent:
 
     okf concepts BUNDLE --where 'generated.by!=claude/sonnet-5'
