@@ -25,6 +25,7 @@ sources
 computations
 concepts
 id
+alias
 config
 profile
 kit
@@ -48,7 +49,7 @@ cabal run okf -- help format   # bundle layout, concept IDs, frontmatter, links
 
 Available topics: `okf`, `bundles`, `format`, `validation`, `profiles`, `computations`,
 `concepts`, `where`, `trust`, `index`, `log`, `graph`, `ids`, `interactive`,
-`config`, `kit`, `agents`. Topic lookup is case-insensitive. An unknown topic name prints
+`config`, `aliases`, `kit`, `agents`. Topic lookup is case-insensitive. An unknown topic name prints
 the list of valid topics, and the command still succeeds (exit 0).
 
 The `okf`, `format`, `validation`, and `profiles` topics cover the format and
@@ -56,6 +57,62 @@ how a bundle is checked; `computations`,
 `concepts`, `trust`, `index`, `log`, `graph`, and `ids` are the command-level
 guides for the reports and generators documented below. `where` is the full
 reference for the `okf concepts --where` condition language.
+
+
+## alias
+
+Define shortcuts in the current whole Dhall record used by `okf config init`.
+Replace its empty `aliases` field with:
+
+```dhall
+, aliases = toMap { c = "concepts", h = "help" }
+```
+
+Keep the existing `kit`, `agent`, and `profiles` fields. Earlier config formats
+still load unchanged with an empty alias map; to add aliases to an older file,
+use the current record shown by `okf help config`. An empty map needs a type:
+
+```dhall
+, aliases = [] : List { mapKey : Text, mapValue : Text }
+```
+
+```bash
+okf c BUNDLE --json    # same as okf concepts BUNDLE --json
+okf h aliases         # same as okf help aliases
+okf alias             # list configured aliases
+okf alias list        # identical sorted, aligned output
+okf help aliases      # full guide
+```
+
+Only the first argument is looked up, case-sensitively, exactly once. The
+expansion is split on whitespace and the remaining arguments are appended
+unchanged. `a = "b"` and `b = "help"` makes `okf a` try command `b`; it does
+not recurse. There is no shell evaluation, quote grouping, or placeholder
+substitution. Quotes inside the expansion remain literal. Use shell aliases
+for expansions that need arguments containing spaces. Arguments appended when
+invoking okf retain the shell's existing grouping.
+
+Names must be non-empty, have no whitespace, and not start with `-`.
+Expansions must contain a word. When a Dhall list repeats a `mapKey`, the last
+`mapValue` wins. Built-in commands always win over configured aliases with the
+same name; those entries remain visible in the list. Empty configuration prints
+exactly `No aliases configured.` followed by a newline. Unknown subcommands of
+`alias` fail with the ordinary parser error.
+
+Alias maps use the first existing config file: `OKF_CONFIG`, then
+`./okf-config.dhall`, `~/.config/okf/config.dhall`, and `~/.okf/config.dhall`,
+otherwise built-in defaults. The whole map is selected; an empty project map
+suppresses global aliases. Agent settings remain the only block merged across
+project and global scopes.
+
+Possible alias invocations treat config errors as no aliases and leave unknown
+names to the command parser. They never fall back to another config file.
+`okf alias list` and `okf config show` load strictly and report errors, so use
+them to diagnose a missing shortcut. Built-in commands, no arguments, and a
+first argument beginning with `-` bypass startup alias loading, preserving
+help, version, and completion with broken config. Commands that require config
+still use their own strict loaders. Completion includes canonical commands
+(including `alias`); configured shortcuts are not added dynamically.
 
 
 ## bundles

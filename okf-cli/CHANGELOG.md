@@ -9,6 +9,12 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- User-defined command aliases in Dhall configuration, such as
+  `aliases = toMap { c = "concepts" }`. Expansion applies to the first argument
+  once, preserving trailing arguments and built-in commands. `okf alias` and
+  `okf alias list` inspect the sorted map; `okf help aliases` explains precedence,
+  whitespace splitting, and strict inspection. Older config files keep loading.
+
 - `okf profile init [EXPORT] --bundle DIR [--write]` previews or adopts a profile with a verified descriptor, versioned indexes, Adoption log entry, and validation. Existing descriptors are refused; concept files are preserved.
 
 - `okf concepts --where` accepts `KEY!=VALUE`, `KEY in ["A","B"]`,
@@ -31,6 +37,11 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   absence semantics, how repeated flags combine, and profile checking.
 
 ### Changed
+
+- **Breaking (library):** `OkfConfig` gains `aliases :: Map Text Text`; callers
+  constructing the record must supply it. On-disk Dhall configurations remain
+  compatible through a frozen pre-alias decoder. `Command` gains `Alias`, and
+  `Okf.Cli` exports `builtinCommands` from its parser registry.
 
 - **Breaking (library):** the exported `ConceptsOptions.fieldFilters` field is
   now `[WhereCondition]` instead of `[ConceptFilter]`; wrap existing equalities

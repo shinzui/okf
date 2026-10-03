@@ -1,8 +1,8 @@
 CONFIG
 
-okf config controls the optional agent-assistance features: where okf kit fetches
-skills and subagents from, which providers to install for, and how okf assist
-launches an interactive agent session.
+okf config controls command aliases, profile registries, and optional agent
+assistance: where okf kit fetches skills and subagents from, which providers to
+install for, and how okf assist launches an interactive agent session.
 
 COMMANDS
 
@@ -18,7 +18,7 @@ SEARCH ORDER
 
   Two rules apply, because agent settings layer and nothing else does.
 
-  For kit.* and profiles.*, the first existing source wins and the others are
+  For aliases, kit.*, and profiles.*, the first existing source wins and the others are
   never read:
 
     1. OKF_CONFIG, when it points at an existing file
@@ -59,6 +59,8 @@ SEARCH ORDER
 
 FIELDS
 
+  aliases                           Text map of first-argument command shortcuts.
+                                    See 'okf help aliases' for expansion rules.
   kit.repoUrl                       Git URL used by okf kit.
   kit.providers                     Providers to install kit items for.
   agent.provider                    Agent CLI okf assist launches. Defaults to
@@ -83,7 +85,8 @@ FIELDS
   A configuration file written for an earlier okf, with an 'assist' block instead
   of 'agent', still loads; its values are read as agent.assist.* .
   The older singular profiles.registry field also still loads and becomes a
-  one-element profiles.registries list.
+  one-element profiles.registries list. Files without aliases receive an empty
+  map. Empty maps suppress lower-priority aliases; maps are never scope-merged.
 
 EXAMPLE
 
@@ -112,4 +115,14 @@ EXAMPLE
         , profiles =
             { registries = [ "..." ]
             }
+        , aliases = [] : List { mapKey : Text, mapValue : Text }
         }
+
+  To enable shortcuts, replace the empty list with:
+
+    , aliases = toMap { c = "concepts", h = "help" }
+
+  Possible alias invocations ignore configuration errors and use the ordinary
+  command parser. 'okf alias list' and 'okf config show' report errors strictly.
+  Built-in commands and dash-prefixed startup arguments bypass alias loading.
+  See 'okf help aliases' for duplicate handling and expansion boundaries.

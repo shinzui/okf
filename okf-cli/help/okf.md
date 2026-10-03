@@ -60,6 +60,7 @@ WHAT THE okf TOOL DOES
   profile       List and inspect profiles from registries and local
                 descriptors.
   profiles      List local profile descriptor paths without opening a menu.
+  alias         List configured command shortcuts.
   config        Show and manage okf configuration.
   kit           Install and manage agent skills and subagents.
   assist        Launch an interactive agent session with installed okf skills.
@@ -90,6 +91,7 @@ SEE ALSO
   okf help where         The --where condition language for okf concepts.
   okf help ids           Profile-declared document IDs such as ADR-7.
   okf help interactive   Picking a bundle and concept with fzf.
+  okf help aliases      Command shortcuts and expansion rules.
   okf help config        Config files, precedence, and agent settings.
   okf help kit           Installing and publishing agent skills and subagents.
   okf help agents        Installing agent skills and launching assist.

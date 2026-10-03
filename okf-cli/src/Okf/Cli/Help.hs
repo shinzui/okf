@@ -58,6 +58,7 @@ helpTopics =
     HelpTopic "graph" "The concept graph and what becomes an edge" graphTopicContent,
     HelpTopic "ids" "Profile-declared document IDs such as ADR-7" idsTopicContent,
     HelpTopic "interactive" "Picking a bundle and concept with fzf" interactiveTopicContent,
+    HelpTopic "aliases" "Command shortcuts and expansion rules" aliasesTopicContent,
     HelpTopic "config" "Config files, defaults, and agent settings" configTopicContent,
     HelpTopic "kit" "Installing and publishing agent skills and subagents" kitTopicContent,
     HelpTopic "agents" "Installing agent skills and launching assist" agentsTopicContent
@@ -104,6 +105,9 @@ idsTopicContent = $(embedStringFile "help/ids.md")
 
 interactiveTopicContent :: Text
 interactiveTopicContent = $(embedStringFile "help/interactive.md")
+
+aliasesTopicContent :: Text
+aliasesTopicContent = $(embedStringFile "help/aliases.md")
 
 configTopicContent :: Text
 configTopicContent = $(embedStringFile "help/config.md")

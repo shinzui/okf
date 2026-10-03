@@ -4,6 +4,8 @@ module Okf.Cli.Aliases
     renderAliases,
     isAliasCandidate,
     expandAlias,
+    AliasCommand (..),
+    aliasCommandParser,
   )
 where
 
@@ -13,6 +15,16 @@ import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as Text
 import Okf.Prelude
+import Options.Applicative
+
+data AliasCommand = AliasList
+  deriving stock (Show, Eq)
+
+-- | Bare @alias@ defaults to listing; unknown subcommands remain parse errors.
+aliasCommandParser :: Parser AliasCommand
+aliasCommandParser =
+  hsubparser (command "list" (info (pure AliasList <**> helper) (progDesc "List configured command aliases")))
+    <|> pure AliasList
 
 validateAliases :: Map Text Text -> Either Text ()
 validateAliases = traverse_ validate . Map.toAscList

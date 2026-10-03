@@ -17,7 +17,7 @@ import Data.Time.Clock (UTCTime (..))
 import Okf.Bundle (Concept, bundleInventoryOfConcepts, conceptAttester, conceptExecutor, conceptFromDocument, conceptIdOf, conceptParameters, conceptRuntime, conceptType, walkBundle, walkBundleInventory)
 import Okf.Cli
 import Okf.Cli.Agent.Config (AgentCommandName (..), AgentConfigSource (..), AgentField (..), AgentOverrides (..), ResolvedAgent (..), ResolvedField (..), agentSourceLabel, noAgentOverrides, parseOkfEffort, parseOkfProvider, renderAgentResolution, resolveAgent)
-import Okf.Cli.Aliases (expandAlias, isAliasCandidate, renderAliases, validateAliases)
+import Okf.Cli.Aliases (AliasCommand (..), expandAlias, isAliasCandidate, renderAliases, validateAliases)
 import Okf.Cli.Assist (AssistOptions (..), buildAgentCommand)
 import Okf.Cli.BundleDiscovery (BundleDiscovery (..), bundleSearchRootsEnvVar, discoverAvailableBundles)
 import Okf.Cli.Config (AgentFieldSettings (..), AgentSettings (..), ConfigSource (..), OkfConfig (..), OkfEffort (..), OkfProvider (..), ProfileSettings (..), agentSharedDefaults, defaultOkfConfig, exampleConfigText, findConfigSource, loadAgentScopes, loadAliasesForExpansion, loadOkfConfig, okfConfigEnvVar, projectConfigPath, renderConfig)
@@ -679,6 +679,11 @@ main = do
           conceptMenuOrdering,
           nonAsciiDiagnostics,
           testNestedReferenceDiagnosticRendering,
+          parseCommandMatches ["alias"] (Alias AliasList),
+          parseCommandMatches ["alias", "list"] (Alias AliasList),
+          parseFails ["alias", "unknown"],
+          testBuiltinHelp,
+          any (\topic -> topicName topic == "aliases" && "toMap" `Text.isInfixOf` topicContent topic) helpTopics,
           testAliasExpansion,
           aliasStartup,
           testAliasValidationAndRendering,
@@ -3000,6 +3005,20 @@ agentSettingsWithSharedModel modelName =
           }
     }
 
+testBuiltinHelp :: Bool
+testBuiltinHelp =
+  all (helpSucceeds . (\name -> [Text.unpack name, "--help"])) builtinCommands
+    && helpSucceeds ["alias", "list", "--help"]
+    && case execParserPure defaultPrefs parserInfo ["--help"] of
+      Failure failure ->
+        let (message, code) = renderFailure failure "okf"
+         in code == ExitSuccess && "alias" `List.isInfixOf` message
+      _ -> False
+  where
+    helpSucceeds args = case execParserPure defaultPrefs parserInfo args of
+      Failure failure -> snd (renderFailure failure "okf") == ExitSuccess
+      _ -> False
+
 testAliasExpansion :: Bool
 testAliasExpansion =
   and
@@ -3047,6 +3066,8 @@ testAliasStartup =
   withIsolatedConfigEnv "okf-cli-alias-startup" $ do
     path <- projectConfigPath
     Text.IO.writeFile path (configWithAliases "toMap { h = \"help okf\", help = \"graph\", a = \"b\", b = \"help\" }")
+    aliasList <- run ["alias", "list"]
+    bareAlias <- run ["alias"]
     aliasRun <- run ["h"]
     protected <- run ["help", "okf"]
     singlePass <- run ["a"]
@@ -3056,9 +3077,15 @@ testAliasStartup =
     topic <- run ["help", "okf"]
     completion <- run ["--bash-completion-index", "1", "--bash-completion-word", "okf", "--bash-completion-word", ""]
     unknown <- run ["h"]
+    strictAliases <- run ["alias", "list"]
+    aliasesHelp <- run ["help", "aliases"]
     strict <- run ["config", "show"]
     pure
-      ( aliasRun == Right ()
+      ( aliasList == Right ()
+          && bareAlias == Right ()
+          && strictAliases == Left (ExitFailure 1)
+          && aliasesHelp == Right ()
+          && aliasRun == Right ()
           && protected == Right ()
           && singlePass == Left (ExitFailure 1)
           && topHelp == Left ExitSuccess
