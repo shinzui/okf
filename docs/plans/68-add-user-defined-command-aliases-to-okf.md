@@ -32,23 +32,27 @@ If durable project context changes, update or create ADRs in docs/adr/ in the sa
 
 ## Purpose / Big Picture
 
-Users will be able to put shortcuts in their existing okf Dhall configuration and invoke them as commands. For example, an alias `c = "concepts"` will make `okf c BUNDLE --json` behave exactly like `okf concepts BUNDLE --json`. `okf alias` and `okf alias list` will print the configured shortcuts. Existing commands, help, version output, and shell completion will retain their behavior.
+Users can now put shortcuts in their existing okf Dhall configuration and invoke them as commands. For example, an alias `c = "concepts"` makes `okf c BUNDLE --json` behave exactly like `okf concepts BUNDLE --json`. `okf alias` and `okf alias list` print the configured shortcuts. Existing commands, help, version output, and shell completion retain their behavior.
 
-Follow the command-alias pattern: expand only the first argument, exactly once, append the remaining arguments, and protect built-in command names. The CLI already has a configuration format, so extend Dhall rather than introducing KDL. Existing configuration files must continue to work without edits. Aliases are executable through single-pass startup expansion, and `alias`, `alias list`, and `help aliases` are implemented. Final regression and ADR validation remain.
+Follow the command-alias pattern: expand only the first argument, exactly once, append the remaining arguments, and protect built-in command names. The CLI already has a configuration format, so extend Dhall rather than introducing KDL. Existing configuration files must continue to work without edits. Aliases are executable through single-pass startup expansion, and `alias`, `alias list`, and `help aliases` are implemented. All four milestones, regression checks, and strict ADR validation are complete.
 
 
 ## Progress
 
 - [x] (2026-10-03) Read the plan, skill contract, dependency sources, and ADR-16; confirmed clean working tree and inherited intention.
-- [x] (2026-10-03T15:51Z) Milestone 1: compatible Dhall alias field, frozen pre-alias decoder, validation, rendering, and forgiving loader; `cabal test okf-cli-test` and `cabal build all` passed.
-- [x] (2026-10-03T16:00Z) Milestone 2: first-argument expansion and shared built-in registry; CLI suite and actual executable smoke passed, including matching JSON and invalid-option diagnostics.
-- [x] (2026-10-03T16:07Z) Milestone 3: strict alias inspection, embedded help, user guide, and changelog; CLI suite and complete executable smoke passed.
-- [ ] Milestone 4: durable ADR and final regression validation.
+- [x] (2026-10-03T15:46:58Z) Milestone 1: compatible Dhall alias field, frozen pre-alias decoder, validation, rendering, and forgiving loader; `cabal test okf-cli-test` and `cabal build all` passed.
+- [x] (2026-10-03T15:51:20Z) Milestone 2: first-argument expansion and shared built-in registry; CLI suite and actual executable smoke passed, including matching JSON and invalid-option diagnostics.
+- [x] (2026-10-03T15:54:00Z) Milestone 3: strict alias inspection, embedded help, user guide, and changelog; CLI suite and complete executable smoke passed.
+- [x] (2026-10-03T15:58:01Z) Milestone 4: allocated ADR-21, recorded durable alias decisions, regenerated the ADR index and log, and passed full build, both test suites, executable smoke, formatting, and strict ADR validation.
 
 
 ## Surprises & Discoveries
 
-Baseline and milestone 1 CLI tests passed. Existing test warnings concern ambiguous record updates and a shadowed `first` binding; neither prevented the build. Mori registry metadata has older dependency constraints than the working tree, confirming that it is discovery evidence rather than release authority. No dependency bounds were changed.
+Baseline and milestone 1 CLI tests passed. Existing test warnings concern ambiguous record updates and a shadowed `first` binding; neither prevented the build. Mori registry metadata has older dependency constraints than the working tree, confirming that it is discovery evidence rather than release authority. Existing library dependency bounds were retained; the test suite now directly declares `containers` using the same bound as the library.
+
+The final smoke also removed its own freshly created empty working directory before starting the binary. The candidate invocation still reported `Invalid argument` rather than a `getCurrentDirectory` exception, proving startup-only recovery from discovery IO errors. Every canonical registry command returned help with ExitSuccess in the CLI tests, including the new `alias` command.
+
+At implementation start the working tree was clean, despite the planning-time note about unrelated edits; those help/filter changes were already part of the checkout and were preserved. Progress completion times for the first three milestones are recorded from their commits in UTC.
 
 
 ## Decision Log
@@ -66,22 +70,36 @@ Decision (2026-10-03): create and link an intention using the installed Mina spe
 Decision (2026-10-03): after the user requested investigation and repair, retain the configured parent `intention_01kvg65w58e9wbjv1hxth0hgq8` and add its missing direct scope association to the existing Rei project `mori://shinzui/okf`. The parent is the active intention titled "Build Open Knowledge Format (okf) package in haskell" and already owns the OKF feature intentions. `mina rei project --sync` failed because `MORI_API_URL` was unset, so the association was added with `rei project scope add mori://shinzui/okf intention_01kvg65w58e9wbjv1hxth0hgq8 --entity-type intention --json`. Verification through `mina rei project --json` reported `inScope: true` and direct provenance; Rei's scope listing showed this plan's intention inheriting scope from the parent at depth 1. A subsequent `mina rei project --sync --dry-run` reported "nothing to do". No edit to `mina.kdl` was necessary. This association is stored in Rei rather than in Git.
 
 
+Decision (2026-10-03): distill the format, first-found map policy, compatibility chain, registry ownership, startup recovery, and expansion boundaries into [ADR-21](../adr/21-command-aliases-in-dhall-with-single-pass-expansion.md). `okf id next` allocated ADR-21, and the type-checked shared descriptor permits the optional `originatingPlan` scalar. Keep ADR-16 unchanged because aliases follow its existing first-found policy.
+
+
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+Implemented all four milestones. Users can define Dhall shortcuts, invoke them with unchanged trailing arguments, inspect the sorted configured map, and read the embedded alias guide. Old whole-record fixtures retain kit, profile, and agent values with an empty alias map. Alias invocation remains case-sensitive and single-pass; built-ins and dash-prefixed startup paths bypass alias loading. Strict inspection gives actionable Dhall or alias-validation errors.
+
+`cabal build all` and `cabal test all` passed. Both `okf-cli-test` and `okf-core-test` reported PASS. The executable smoke verified identical alias/canonical JSON and invalid-option stderr/status, sorted default/list output, exact empty output, help-topic syntax, protected commands, non-recursion, completion, malformed config recovery, and strict inspection errors. A separate deleted-working-directory smoke verified forgiving discovery IO handling. `nix fmt -- --fail-on-change` on the six changed Haskell/Cabal files reported zero changed files, and `git diff --check` passed.
+
+`dhall type --file docs/adr/profile.dhall` succeeded. The allocated ADR-21 records durable decisions and links this plan; `okf log add` and `okf index --write` updated reserved bundle files. Validation with the built executable passed:
+
+```text
+cabal run okf -- validate docs/adr --strict --profile docs/adr/profile.dhall --profile-enforce --log-enforce
+OK: 21 concepts (okf_version 0.2)
+```
+
+No feature work remains. The main lesson is to freeze the previous whole-record Dhall shape before extending it, and to keep successful decoding separate from alias validation so invalid shortcuts cannot disappear through compatibility fallback. Library callers must supply the new `OkfConfig.aliases` field and handle the new `Command.Alias` constructor; the changelog records those interface changes. Config files themselves require no migration. Alias names are deliberately absent from dynamic completion, and expansion deliberately has no shell quoting or recursive lookup.
 
 
 ## Context and Orientation
 
-The project has two Haskell packages, `okf-core` and `okf-cli`, listed in `cabal.project`. The core package owns bundle semantics; command aliases belong entirely in `okf-cli`. `okf-cli/app/Main.hs` delegates to `Okf.Cli.runCli` in `okf-cli/src/Okf/Cli.hs`. Today `runCli` calls `execParser parserInfo`, which reads the process arguments internally, then calls `runCommand`. The exported `parserInfo` is also used by tests. `commandParser` registers eighteen top-level command names: bundles, profiles, validate, index, log, graph, show, trust, sources, computations, concepts, id, config, profile, kit, assist, completions, and help. There is no `alias` command yet. `--version` is a root option, not a command.
+The project has two Haskell packages, `okf-core` and `okf-cli`, listed in `cabal.project`. The core package owns bundle semantics; command aliases belong entirely in `okf-cli`. `okf-cli/app/Main.hs` delegates to `Okf.Cli.runCli` in `okf-cli/src/Okf/Cli.hs`. Before this implementation, `runCli` called `execParser parserInfo`, which read process arguments internally. It now reads `getArgs`, expands aliases, uses `execParserPure defaultPrefs` and `handleParseResult`, then calls `runCommand`. The exported `parserInfo` is also used by tests. The original parser registered eighteen top-level command names: bundles, profiles, validate, index, log, graph, show, trust, sources, computations, concepts, id, config, profile, kit, assist, completions, and help. The shared `commandDefinitions` registry now also registers `alias`, yielding nineteen protected names. `--version` is a root option, not a command.
 
 Here, an argument vector means the list of strings the operating system supplies to the process after shell quoting has already been handled. An alias maps one first argument to expansion text. Single-pass expansion means a replacement is never looked up again. Built-in protection means real command names always reach their existing parser even if the config defines aliases with those names.
 
-`okf-cli/src/Okf/Cli/Config.hs` defines `OkfConfig`, `defaultOkfConfig`, `findConfigSource`, `loadOkfConfig`, `decodeConfigFile`, `renderConfig`, and `exampleConfigText`. The current whole record has `kit`, `agent`, and `profiles`, with `profiles.registries` an ordered list. Discovery selects the first existing file among `OKF_CONFIG`, `./okf-config.dhall`, `~/.config/okf/config.dhall`, and `~/.okf/config.dhall`; missing files yield defaults. The existing XDG-named path function specifically uses the home directory's `.config` directory. Do not add a new path convention in this work.
+`okf-cli/src/Okf/Cli/Config.hs` defines `OkfConfig`, `defaultOkfConfig`, `findConfigSource`, `loadOkfConfig`, `decodeConfigFile`, `renderConfig`, and `exampleConfigText`. The current whole record has `kit`, `agent`, `aliases`, and `profiles`, with `profiles.registries` an ordered list. Discovery selects the first existing file among `OKF_CONFIG`, `./okf-config.dhall`, `~/.config/okf/config.dhall`, and `~/.okf/config.dhall`; missing files yield defaults. The existing XDG-named path function specifically uses the home directory's `.config` directory. Do not add a new path convention in this work.
 
-`decodeConfigFile` tries the current record and three older shapes: `ConfigShapeWithLegacyProfiles` with singular `profiles.registry`, `ConfigShapeWithoutAgent` with legacy `assist`, and `ConfigShapeV020` without profiles. Dhall requires every field in a decoded record, even when the field's value is optional. Adding `aliases` therefore needs a frozen copy of today's record as another fallback. All successful legacy conversions must fill aliases with an empty map and preserve their existing kit, profile, and agent values. A frozen shape is a private type describing an earlier public file format, kept so old files still decode.
+`decodeConfigFile` now tries the current record, the frozen pre-alias `ConfigShapeWithoutAliases`, and three older shapes: `ConfigShapeWithLegacyProfiles` with singular `profiles.registry`, `ConfigShapeWithoutAgent` with legacy `assist`, and `ConfigShapeV020` without profiles. Dhall requires every field in a decoded record, even when the field's value is optional. The implementation freezes the previous record as another fallback. All successful legacy conversions fill aliases with an empty map and preserve their existing kit, profile, and agent values. A frozen shape is a private type describing an earlier public file format, kept so old files still decode.
 
-The relevant local architecture decision is [docs/adr/16-per-command-agent-configuration-and-config-scopes.md](../adr/16-per-command-agent-configuration-and-config-scopes.md). It makes agent settings the only scope-merged block, keeps the other settings first-found-wins, and requires every written Dhall shape to remain supported. No existing ADR specifically defines command aliases. During implementation, add a durable alias ADR preserving these rules. `mori show --full` declares `docs/adr` as a profile-governed bundle, its descriptor is `docs/adr/profile.dhall`, and `docs/adr/index.md` declares OKF 0.2. New ADR metadata must follow that descriptor and existing records, including `generated.by`, `generated.at`, a stable allocated `docId`, and the reserved update log.
+The relevant local architecture decision is [docs/adr/16-per-command-agent-configuration-and-config-scopes.md](../adr/16-per-command-agent-configuration-and-config-scopes.md). It makes agent settings the only scope-merged block, keeps the other settings first-found-wins, and requires every written Dhall shape to remain supported. [ADR-21](../adr/21-command-aliases-in-dhall-with-single-pass-expansion.md) now defines command aliases and preserves these scope rules. `mori show --full` declares `docs/adr` as a profile-governed bundle, its descriptor is `docs/adr/profile.dhall`, and `docs/adr/index.md` declares OKF 0.2. New ADR metadata must follow that descriptor and existing records, including `generated.by`, `generated.at`, a stable allocated `docId`, and the reserved update log.
 
 The requested patterns were discovered and resolved with Mori as `mori://shinzui/haskell-jitsurei/docs/cli-command-aliases` and `mori://shinzui/haskell-jitsurei/docs/cli-command-aliases-kdl`. Both prescribe first-argument, single-pass expansion and built-in protection. The KDL variant additionally explains dash bypass, forgiving startup loading, and an inspection command. This plan embeds those behaviors, adapted to the existing Dhall format, so implementation does not require another checkout.
 
@@ -89,7 +107,7 @@ Dependency source inspection used `mori://pcapriotti/optparse-applicative/packag
 
 `okf-cli/test/Main.hs` is an exit-code test executable using Boolean assertions plus filesystem tests. Extend both its IO setup and its final `results` list; defining a test without registering it does not run it. `withIsolatedConfigEnv` isolates configuration, environment variables, and current directory using temporary directories. `okf-cli/src/Okf/Cli/Help.hs` embeds terminal-oriented help from `okf-cli/help/*.md`; the Cabal package already ships that wildcard in source distributions. `okf-cli/src/Okf/Cli/Completions.hs` emits scripts that call the binary's optparse completion protocol, beginning with dash-prefixed arguments.
 
-The working tree at creation already has unrelated edits in `docs/user/cli.md`, `okf-cli/CHANGELOG.md`, several help files, `okf-cli/src/Okf/Cli/Help.hs`, and `okf-cli/test/Main.hs`, plus a new `okf-cli/help/where.md`. Preserve those edits and work with their current contents. The build uses GHC 9.12.4 through `flake.nix` and `nix/haskell.nix`; `nix/treefmt.nix` enables Fourmolu and cabal-gild.
+The planning-time working tree had unrelated edits in `docs/user/cli.md`, `okf-cli/CHANGELOG.md`, several help files, `okf-cli/src/Okf/Cli/Help.hs`, and `okf-cli/test/Main.hs`, plus a new `okf-cli/help/where.md`. The implementation started from a clean working tree containing those changes and preserved them. The build uses GHC 9.12.4 through `flake.nix` and `nix/haskell.nix`; `nix/treefmt.nix` enables Fourmolu and cabal-gild.
 
 
 ## Plan of Work
@@ -281,3 +299,5 @@ Implementation note (2026-10-03): completed milestone 1, preserved all verbatim 
 Implementation note (2026-10-03): completed milestone 2. `cabal test okf-cli-test` and `cabal build exe:okf` passed. An isolated executable smoke compared alias/canonical JSON, appended-invalid-option stderr and status, protected help output, non-recursion, and malformed-config help/version/completion/canonical commands. All checks passed; temporary smoke data lives outside the repository.
 
 Implementation note (2026-10-03): completed milestone 3. `cabal test okf-cli-test` passed, including help with ExitSuccess for every protected registry command and `alias list --help`. The complete executable smoke passed sorted/aligned listing, exact empty output, alias topic help, canonical completion, strict malformed/invalid config errors, and unknown subcommand rejection. Existing `where` help remains registered.
+
+Completion note (2026-10-03T15:58:01Z): all milestones and acceptance checks passed. Promoted durable context to ADR-21, updated reserved ADR files, recorded outcomes and validation evidence, and aligned Context and Orientation with the completed implementation.

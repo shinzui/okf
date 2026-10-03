@@ -1,6 +1,7 @@
 # Bundle Update Log
 
 ## 2026-10-03
+* **Update**: Document command alias behavior and configuration compatibility
 * **Update**: Record concept sorting semantics
 
 ## 2026-10-01
