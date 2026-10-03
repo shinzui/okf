@@ -16,6 +16,11 @@ provenance:
       at: 2026-10-03T15:15:01Z
       mode: "other"
       note: "Complete alias design, Dhall compatibility, four milestones, and acceptance checks"
+    - model: "gpt-6.1-sol"
+      harness: "codex-cli"
+      at: 2026-10-03T15:43:19Z
+      mode: "implement"
+      note: "Implement compatible Dhall aliases, startup expansion, inspection, help, and ADR"
 ---
 
 # Add user-defined command aliases to okf
@@ -29,17 +34,21 @@ If durable project context changes, update or create ADRs in docs/adr/ in the sa
 
 Users will be able to put shortcuts in their existing okf Dhall configuration and invoke them as commands. For example, an alias `c = "concepts"` will make `okf c BUNDLE --json` behave exactly like `okf concepts BUNDLE --json`. `okf alias` and `okf alias list` will print the configured shortcuts. Existing commands, help, version output, and shell completion will retain their behavior.
 
-Follow the command-alias pattern: expand only the first argument, exactly once, append the remaining arguments, and protect built-in command names. The CLI already has a configuration format, so extend Dhall rather than introducing KDL. Existing configuration files must continue to work without edits. This plan creates implementation instructions; no alias support has been implemented yet.
+Follow the command-alias pattern: expand only the first argument, exactly once, append the remaining arguments, and protect built-in command names. The CLI already has a configuration format, so extend Dhall rather than introducing KDL. Existing configuration files must continue to work without edits. Milestone 1 now supports reading and inspecting alias configuration; executable expansion follows in milestone 2.
 
 
 ## Progress
 
-(Implementation has not started. Add timestamped checklist entries as work begins.)
+- [x] (2026-10-03) Read the plan, skill contract, dependency sources, and ADR-16; confirmed clean working tree and inherited intention.
+- [x] (2026-10-03T15:51Z) Milestone 1: compatible Dhall alias field, frozen pre-alias decoder, validation, rendering, and forgiving loader; `cabal test okf-cli-test` and `cabal build all` passed.
+- [ ] Milestone 2: first-argument expansion and shared built-in registry.
+- [ ] Milestone 3: alias inspection, help, and user documentation.
+- [ ] Milestone 4: durable ADR and final regression validation.
 
 
 ## Surprises & Discoveries
 
-(None yet.)
+Baseline and milestone 1 CLI tests passed. Existing test warnings concern ambiguous record updates and a shadowed `first` binding; neither prevented the build. Mori registry metadata has older dependency constraints than the working tree, confirming that it is discovery evidence rather than release authority. No dependency bounds were changed.
 
 
 ## Decision Log
@@ -266,3 +275,5 @@ Use existing `dhall`, `containers`, `text`, `optparse-applicative`, and `base` d
 Creation note (2026-10-03): researched the CLI, config fallback chain, dependency APIs, tests, completion, help, and ADR contract; created the linked intention and a four-milestone implementation plan. Only planning artifacts were written in the repository.
 
 Update note (2026-10-03): recorded the user-authorized correction and verification of the default parent's Rei project scope. The alias implementation remains unstarted; the plan and intention now have a verified project association.
+
+Implementation note (2026-10-03): completed milestone 1, preserved all verbatim legacy fixtures, and verified current aliases, empty-map precedence, environment precedence, strict invalid-alias rejection, forgiving malformed config, and last-duplicate-wins decoding. Both the CLI suite and full build passed.

@@ -26,6 +26,7 @@ module Okf.Cli.Config
     emptyAgentFieldSettings,
     agentSharedDefaults,
     loadOkfConfig,
+    loadAliasesForExpansion,
     loadAgentScopes,
     findConfigSource,
     findConfigScopes,
@@ -41,10 +42,13 @@ module Okf.Cli.Config
   )
 where
 
-import Control.Exception (SomeException, catch)
+import Control.Exception (IOException, SomeException, catch)
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
 import Data.Text qualified as Text
 import Dhall (FromDhall (..), auto, genericAutoWith)
 import Dhall qualified
+import Okf.Cli.Aliases (validateAliases)
 import Okf.Prelude
 import Okf.Profile.Registry (defaultRegistryReference)
 import System.Directory (doesFileExist, getCurrentDirectory, getHomeDirectory)
@@ -186,6 +190,16 @@ defaultAgentSettings =
 data OkfConfig = OkfConfig
   { kit :: !KitSettings,
     agent :: !AgentSettings,
+    profiles :: !ProfileSettings,
+    aliases :: !(Map Text Text)
+  }
+  deriving stock (Generic, Eq, Show)
+  deriving anyclass (FromDhall)
+
+-- | Frozen pre-alias record, retaining the ordered profile registry list.
+data ConfigShapeWithoutAliases = ConfigShapeWithoutAliases
+  { kit :: !KitSettings,
+    agent :: !AgentSettings,
     profiles :: !ProfileSettings
   }
   deriving stock (Generic, Eq, Show)
@@ -252,7 +266,8 @@ defaultOkfConfig =
             providers = [ProviderClaude]
           },
       agent = defaultAgentSettings,
-      profiles = defaultProfileSettings
+      profiles = defaultProfileSettings,
+      aliases = Map.empty
     }
 
 -- | The profile settings a config file that predates @profiles@ is given.
@@ -332,6 +347,18 @@ loadOkfConfig = do
     Nothing -> pure (Right (defaultOkfConfig, configSource))
     Just path -> fmap (,configSource) <$> decodeConfigFile path
 
+-- | Startup-only best effort. Inspection and command handlers keep using the
+-- strict loader; a broken selected file must never fall through to another file.
+loadAliasesForExpansion :: IO (Map Text Text)
+loadAliasesForExpansion =
+  ( do
+      result <- loadOkfConfig
+      pure $ case result of
+        Left _ -> Map.empty
+        Right (OkfConfig {aliases}, _) -> aliases
+  )
+    `catch` \(_exception :: IOException) -> pure Map.empty
+
 -- | Load the @agent@ block from each scope. 'Nothing' for a scope means that
 -- scope has no configuration file, not that its file set nothing.
 loadAgentScopes :: IO (Either Text (Maybe AgentSettings, Maybe AgentSettings))
@@ -367,23 +394,33 @@ loadAgentScopes = do
 -- be writing against.
 decodeConfigFile :: FilePath -> IO (Either Text OkfConfig)
 decodeConfigFile path = do
-  current <- tryDecode (Dhall.inputFile auto path)
-  case current of
-    Right config -> pure (Right (normalizeProfileConfig config))
-    Left currentError -> do
-      withLegacyProfiles <- tryDecode (Dhall.inputFile auto path)
-      case withLegacyProfiles of
-        Right shape -> pure (Right (fromShapeWithLegacyProfiles shape))
-        Left _withLegacyProfilesError -> do
-          withoutAgent <- tryDecode (Dhall.inputFile auto path)
-          case withoutAgent of
-            Right shape -> pure (Right (fromShapeWithoutAgent shape))
-            Left _withoutAgentError -> do
-              v020 <- tryDecode (Dhall.inputFile auto path)
-              pure $ case v020 of
-                Right shape -> Right (fromShapeV020 shape)
-                Left _v020Error -> Left currentError
+  decoded <- decodeShapes
+  pure $ do
+    config <- decoded
+    validateAliases (config ^. #aliases)
+    pure (normalizeProfileConfig config)
   where
+    decodeShapes = do
+      current <- tryDecode (Dhall.inputFile auto path)
+      case current of
+        Right config -> pure (Right config)
+        Left currentError -> do
+          withoutAliases <- tryDecode (Dhall.inputFile auto path)
+          case withoutAliases of
+            Right shape -> pure (Right (fromShapeWithoutAliases shape))
+            Left _ -> do
+              withLegacyProfiles <- tryDecode (Dhall.inputFile auto path)
+              case withLegacyProfiles of
+                Right shape -> pure (Right (fromShapeWithLegacyProfiles shape))
+                Left _ -> do
+                  withoutAgent <- tryDecode (Dhall.inputFile auto path)
+                  case withoutAgent of
+                    Right shape -> pure (Right (fromShapeWithoutAgent shape))
+                    Left _ -> do
+                      v020 <- tryDecode (Dhall.inputFile auto path)
+                      pure $ case v020 of
+                        Right shape -> Right (fromShapeV020 shape)
+                        Left _ -> Left currentError
     tryDecode :: IO a -> IO (Either Text a)
     tryDecode action =
       (Right <$> action)
@@ -391,8 +428,8 @@ decodeConfigFile path = do
           pure (Left (Text.pack (show exception)))
 
 normalizeProfileConfig :: OkfConfig -> OkfConfig
-normalizeProfileConfig OkfConfig {kit, agent, profiles} =
-  OkfConfig {kit, agent, profiles = normalizeProfileSettings profiles}
+normalizeProfileConfig OkfConfig {kit, agent, profiles, aliases} =
+  OkfConfig {kit, agent, profiles = normalizeProfileSettings profiles, aliases}
 
 normalizeProfileSettings :: ProfileSettings -> ProfileSettings
 normalizeProfileSettings ProfileSettings {registries} =
@@ -402,16 +439,21 @@ profileSettingsFromLegacy :: LegacyProfileSettings -> ProfileSettings
 profileSettingsFromLegacy LegacyProfileSettings {registry} =
   normalizeProfileSettings (ProfileSettings {registries = [registry]})
 
+fromShapeWithoutAliases :: ConfigShapeWithoutAliases -> OkfConfig
+fromShapeWithoutAliases ConfigShapeWithoutAliases {kit, agent, profiles} =
+  OkfConfig {kit, agent, profiles, aliases = Map.empty}
+
 fromShapeWithLegacyProfiles :: ConfigShapeWithLegacyProfiles -> OkfConfig
 fromShapeWithLegacyProfiles ConfigShapeWithLegacyProfiles {kit, agent, profiles} =
-  OkfConfig {kit, agent, profiles = profileSettingsFromLegacy profiles}
+  OkfConfig {kit, agent, profiles = profileSettingsFromLegacy profiles, aliases = Map.empty}
 
 fromShapeWithoutAgent :: ConfigShapeWithoutAgent -> OkfConfig
 fromShapeWithoutAgent ConfigShapeWithoutAgent {kit, assist, profiles} =
   OkfConfig
     { kit,
       agent = agentSettingsFromAssist assist,
-      profiles = profileSettingsFromLegacy profiles
+      profiles = profileSettingsFromLegacy profiles,
+      aliases = Map.empty
     }
 
 fromShapeV020 :: ConfigShapeV020 -> OkfConfig
@@ -419,7 +461,8 @@ fromShapeV020 ConfigShapeV020 {kit, assist} =
   OkfConfig
     { kit,
       agent = agentSettingsFromAssist assist,
-      profiles = defaultProfileSettings
+      profiles = defaultProfileSettings,
+      aliases = Map.empty
     }
 
 -- | Carry a pre-@agent@ @assist@ block onto the per-command keys that replaced
@@ -468,7 +511,8 @@ renderConfig
   OkfConfig
     { kit = KitSettings {repoUrl, providers},
       agent = agentSettings@AgentSettings {assist = agentAssist},
-      profiles = ProfileSettings {registries}
+      profiles = ProfileSettings {registries},
+      aliases
     } =
     Text.unlines
       ( [ "kit.repoUrl     = " <> repoUrl,
@@ -477,7 +521,13 @@ renderConfig
           <> renderAgentFields "agent." (agentSharedDefaults agentSettings)
           <> renderAgentFields "agent.assist." agentAssist
           <> renderProfileRegistries registries
+          <> renderConfigAliases aliases
       )
+
+renderConfigAliases :: Map Text Text -> [Text]
+renderConfigAliases aliases
+  | Map.null aliases = ["aliases = []"]
+  | otherwise = ["aliases." <> name <> " = " <> expansion | (name, expansion) <- Map.toAscList aliases]
 
 renderProfileRegistries :: [Text] -> [Text]
 renderProfileRegistries [] = ["profiles.registries = []"]
@@ -532,5 +582,7 @@ exampleConfigText =
       "            [ \"" <> defaultRegistryReference <> "\"",
       "            ]",
       "        }",
+      "    -- Shortcuts: replace this list with toMap { c = \"concepts\", h = \"help\" }.",
+      "    , aliases = [] : List { mapKey : Text, mapValue : Text }",
       "    }"
     ]

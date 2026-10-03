@@ -9,6 +9,7 @@ import Data.Bifunctor (first)
 import Data.Foldable (toList, traverse_)
 import Data.List qualified as List
 import Data.List.NonEmpty (NonEmpty (..))
+import Data.Map.Strict qualified as Map
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text.IO
 import Data.Time.Calendar (fromGregorian)
@@ -16,9 +17,10 @@ import Data.Time.Clock (UTCTime (..))
 import Okf.Bundle (Concept, bundleInventoryOfConcepts, conceptAttester, conceptExecutor, conceptFromDocument, conceptIdOf, conceptParameters, conceptRuntime, conceptType, walkBundle, walkBundleInventory)
 import Okf.Cli
 import Okf.Cli.Agent.Config (AgentCommandName (..), AgentConfigSource (..), AgentField (..), AgentOverrides (..), ResolvedAgent (..), ResolvedField (..), agentSourceLabel, noAgentOverrides, parseOkfEffort, parseOkfProvider, renderAgentResolution, resolveAgent)
+import Okf.Cli.Aliases (renderAliases, validateAliases)
 import Okf.Cli.Assist (AssistOptions (..), buildAgentCommand)
 import Okf.Cli.BundleDiscovery (BundleDiscovery (..), bundleSearchRootsEnvVar, discoverAvailableBundles)
-import Okf.Cli.Config (AgentFieldSettings (..), AgentSettings (..), ConfigSource (..), OkfConfig (..), OkfEffort (..), OkfProvider (..), ProfileSettings (..), agentSharedDefaults, defaultOkfConfig, exampleConfigText, findConfigSource, loadAgentScopes, loadOkfConfig, okfConfigEnvVar, projectConfigPath)
+import Okf.Cli.Config (AgentFieldSettings (..), AgentSettings (..), ConfigSource (..), OkfConfig (..), OkfEffort (..), OkfProvider (..), ProfileSettings (..), agentSharedDefaults, defaultOkfConfig, exampleConfigText, findConfigSource, loadAgentScopes, loadAliasesForExpansion, loadOkfConfig, okfConfigEnvVar, projectConfigPath, renderConfig)
 import Okf.Cli.Fzf (Candidate (..), FzfConfig (..), FzfOpts (..), optsToArgs, parseSelectionIndex, renderCandidateLines, shellQuote, withAnsi, withHeight, withNoSort, withPrompt)
 import Okf.Cli.Fzf.Selector (ConceptOrder (..), conceptCandidates, conceptPreviewCommand, orderConcepts, parseBundleSearchRoots, profileCandidates, profilePreviewCommand)
 import Okf.Cli.Help (HelpTopic (..), helpTopics)
@@ -44,6 +46,7 @@ main = do
   profilePickerExitCodes <- testProfilePickerExitCodes
   effectiveProfileSources <- testEffectiveProfileSources
   logAddWrites <- testLogAddWritesFile
+  aliasConfiguration <- testAliasConfiguration
   configDefaults <- testConfigDefaults
   configProjectPrecedence <- testConfigProjectPrecedence
   configEnvPrecedence <- testConfigEnvPrecedence
@@ -675,6 +678,8 @@ main = do
           conceptMenuOrdering,
           nonAsciiDiagnostics,
           testNestedReferenceDiagnosticRendering,
+          testAliasValidationAndRendering,
+          aliasConfiguration,
           configDefaults,
           configProjectPrecedence,
           configEnvPrecedence,
@@ -2991,6 +2996,96 @@ agentSettingsWithSharedModel modelName =
             systemPrompt = Nothing
           }
     }
+
+-- Keep the old whole-record fixtures unchanged: this also tests the new frozen
+-- pre-alias decoder while preserving kit, agent, and registry settings.
+testAliasConfiguration :: IO Bool
+testAliasConfiguration =
+  withIsolatedConfigEnv "okf-cli-alias-config" $ do
+    projectPath <- projectConfigPath
+    root <- getCurrentDirectory
+    let globalPath = root </> ".config" </> "okf" </> "config.dhall"
+        envPath = root </> "env.dhall"
+        expected = Map.fromList [("c", "concepts"), ("h", "help")]
+        loadMap = fmap (fmap (\(config, _) -> configAliases config)) loadOkfConfig
+    defaults <- loadAliasesForExpansion
+    Text.IO.writeFile projectPath (configWithAliases "toMap { c = \"concepts\", h = \"help\" }")
+    current <- loadMap
+    config <- loadOkfConfig
+    Text.IO.writeFile projectPath (agentModelConfigText "pre-alias-model")
+    old <- loadOkfConfig
+    createDirectoryIfMissing True (takeDirectory globalPath)
+    Text.IO.writeFile globalPath (configWithAliases "toMap { g = \"graph\" }")
+    Text.IO.writeFile projectPath exampleConfigText
+    emptyProject <- loadMap
+    Text.IO.writeFile envPath (configWithAliases "toMap { e = \"help\" }")
+    setEnv okfConfigEnvVar envPath
+    envWinner <- loadMap
+    unsetEnv okfConfigEnvVar
+    Text.IO.writeFile projectPath "this is not Dhall"
+    malformed <- loadOkfConfig
+    forgiving <- loadAliasesForExpansion
+    invalid <-
+      traverse
+        ( \(expr, diagnostic) -> do
+            Text.IO.writeFile projectPath (configWithAliases expr)
+            strict <- loadOkfConfig
+            startup <- loadAliasesForExpansion
+            pure
+              ( case strict of
+                  Left message -> diagnostic `Text.isInfixOf` message && Map.null startup
+                  Right _ -> False
+              )
+        )
+        [ ("[ { mapKey = \"c\", mapValue = \"  \" } ]", "alias \"c\" has empty expansion"),
+          ("[ { mapKey = \"\", mapValue = \"help\" } ]", "has empty name"),
+          ("[ { mapKey = \"two words\", mapValue = \"help\" } ]", "has whitespace in name"),
+          ("[ { mapKey = \"--help\", mapValue = \"help\" } ]", "has dash-prefixed name"),
+          ("[ { mapKey = \"c\", mapValue = 1 } ]", "")
+        ]
+    Text.IO.writeFile
+      projectPath
+      ( configWithAliases
+          "[ { mapKey = \"c\", mapValue = \"graph\" }, { mapKey = \"c\", mapValue = \"concepts\" } ]"
+      )
+    duplicate <- loadMap
+    pure $
+      and
+        [ Map.null defaults,
+          current == Right expected,
+          case config of
+            Right (value, _) -> "aliases.c = concepts\naliases.h = help\n" `Text.isInfixOf` renderConfig value
+            Left _ -> False,
+          old == Right (defaultOkfConfig {agent = agentSettingsWithSharedModel "pre-alias-model"}, SourceProject projectPath),
+          emptyProject == Right Map.empty,
+          envWinner == Right (Map.singleton "e" "help"),
+          case malformed of Left _ -> True; Right _ -> False,
+          Map.null forgiving,
+          and invalid,
+          duplicate == Right (Map.singleton "c" "concepts"),
+          "aliases = []\n" `Text.isInfixOf` renderConfig defaultOkfConfig
+        ]
+  where
+    configAliases OkfConfig {aliases} = aliases
+
+configWithAliases :: Text.Text -> Text.Text
+configWithAliases expression =
+  "let base = (" <> exampleConfigText <> ") in base // { aliases = " <> expression <> " }"
+
+testAliasValidationAndRendering :: Bool
+testAliasValidationAndRendering =
+  and
+    [ validateAliases Map.empty == Right (),
+      validateAliases (Map.fromList [("日本語", "help"), ("help", "graph")]) == Right (),
+      all
+        (\name -> case validateAliases (Map.singleton name "help") of Left _ -> True; Right _ -> False)
+        ["", " ", "two words", "tab\tname", "line\nname", "-c", "--help", "unicode\x2003space"],
+      all
+        (\expansion -> case validateAliases (Map.singleton "c" expansion) of Left _ -> True; Right _ -> False)
+        ["", " ", "\t\n"],
+      renderAliases Map.empty == "No aliases configured.\n",
+      renderAliases (Map.fromList [("help", "graph"), ("c", "concepts")]) == "c     = concepts\nhelp  = graph\n"
+    ]
 
 testConfigInvalidDhall :: IO Bool
 testConfigInvalidDhall =
