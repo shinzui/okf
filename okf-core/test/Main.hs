@@ -320,7 +320,10 @@ main = do
         testIO "checkFiltersAgainstProfile rejects undeclared keys and out-of-vocabulary values" testCheckFiltersAgainstProfile,
         testIO "filterConceptsWhere selects with inclusion, exclusion, and composition" testFilterConceptsWhereOverFixture,
         test "matchesPredicate needs a comparable scalar for every value question" testMatchesPredicateEdgeCases,
-        testIO "checkPredicateAgainstProfile checks every operand with legacy scope rules" testCheckPredicateAgainstProfile
+        testIO "checkPredicateAgainstProfile checks every operand with legacy scope rules" testCheckPredicateAgainstProfile,
+        test "compareNatural orders digit runs by value" testCompareNatural,
+        test "parseSortKey reads keys and directions" testParseSortKey,
+        testIO "sortConcepts orders by frontmatter keys" testSortConceptsOverFixture
       ]
   unless (and results) exitFailure
 
@@ -7131,6 +7134,78 @@ sampleDocument =
       "",
       "Body text."
     ]
+
+-- | Natural order: digit runs by value, then by spelling length, everything
+-- else by code point, and only identical texts equal.
+testCompareNatural :: Either Text ()
+testCompareNatural = do
+  let ordered smaller larger = do
+        assertEqual (smaller, larger, LT) (smaller, larger, compareNatural smaller larger)
+        assertEqual (larger, smaller, GT) (larger, smaller, compareNatural larger smaller)
+  ordered "IR-2" "IR-10"
+  ordered "IR-9" "IR-10"
+  ordered "IR-2" "IR-02"
+  ordered "v0.9" "v0.13"
+  ordered "a" "b"
+  ordered "B" "a"
+  ordered "2026-08-08" "2026-10-01"
+  ordered "IR-10" "IR-10a"
+  ordered "7" "x"
+  assertEqual EQ (compareNatural "IR-10" "IR-10")
+  assertEqual EQ (compareNatural "" "")
+
+-- | @--sort@ arguments: a selector, an optional @:asc@ or @:desc@, and errors
+-- for anything else after a colon.
+testParseSortKey :: Either Text ()
+testParseSortKey = do
+  let status = TopLevelField "status"
+  assertEqual (Right (SortKey status Ascending)) (parseSortKey "status")
+  assertEqual (Right (SortKey status Ascending)) (parseSortKey "status:asc")
+  assertEqual (Right (SortKey status Descending)) (parseSortKey "status:desc")
+  assertEqual
+    (Right (SortKey (NestedField "reviews" "outcome") Descending))
+    (parseSortKey "reviews.outcome:desc")
+  assertEqual (Left (InvalidSortDirection "status:up" "up")) (parseSortKey "status:up")
+  assertEqual (Left (InvalidSortDirection "status:DESC" "DESC")) (parseSortKey "status:DESC")
+  assertEqual (Left (InvalidSortDirection "a:b:c" "c")) (parseSortKey "a:b:c")
+  assertEqual (Left (SortKeySelectorError EmptyFilterKey)) (parseSortKey ":desc")
+  assertEqual (Left (SortKeySelectorError EmptyFilterKey)) (parseSortKey "")
+  assertEqual (Left (SortKeySelectorError (FilterKeyTooDeep "a.b.c"))) (parseSortKey "a.b.c")
+  assertEqual
+    "sort direction must be asc or desc, not up, in status:up"
+    (either renderSortKeyParseError (const "") (parseSortKey "status:up"))
+  for_ ["status", "status:desc", "reviews.outcome", "generated.by:desc"] $ \raw ->
+    assertEqual (Right raw) (renderSortKey <$> parseSortKey raw)
+  assertEqual (Right "status") (renderSortKey <$> parseSortKey "status:asc")
+
+-- | 'sortConcepts' over the concept-sorting fixture, whose concept-ID order
+-- (a-ten, b-two, c-nine, d-none, e-one) matches none of the orders asked for.
+testSortConceptsOverFixture :: IO (Either Text ())
+testSortConceptsOverFixture = do
+  root <- fixturePath "concept-sorting"
+  concepts <- readBundle root
+  pure $ do
+    let key name = SortKey (TopLevelField name)
+        sortedBy keys = Text.drop (Text.length "requests/") . renderConceptId . conceptIdOf <$> sortConcepts keys concepts
+
+    assertEqual ["a-ten", "b-two", "c-nine", "d-none", "e-one"] (sortedBy [])
+    -- Natural order puts IR-10 after IR-9; the concept with no ID is last.
+    assertEqual ["e-one", "b-two", "c-nine", "a-ten", "d-none"] (sortedBy [key "requestId" Ascending])
+    -- Descending reverses the present values only: absence stays last.
+    assertEqual ["a-ten", "c-nine", "b-two", "e-one", "d-none"] (sortedBy [key "requestId" Descending])
+    -- Numbers compare numerically, and the 2-2 tie keeps concept-ID order.
+    assertEqual ["c-nine", "a-ten", "e-one", "b-two", "d-none"] (sortedBy [key "priority" Ascending])
+    -- A second key breaks the tie instead.
+    assertEqual
+      ["b-two", "e-one", "a-ten", "c-nine", "d-none"]
+      (sortedBy [key "priority" Descending, key "requestId" Ascending])
+    -- A list sorts by its smallest element ascending and largest descending.
+    assertEqual ["a-ten", "d-none", "b-two", "c-nine", "e-one"] (sortedBy [key "tags" Ascending])
+    assertEqual ["a-ten", "b-two", "d-none", "c-nine", "e-one"] (sortedBy [key "tags" Descending])
+    -- A key no concept carries leaves the order alone.
+    assertEqual ["a-ten", "b-two", "c-nine", "d-none", "e-one"] (sortedBy [key "nothing" Descending])
+    -- Titles Nine, None, One, Ten, Two in code-point order.
+    assertEqual ["c-nine", "d-none", "e-one", "a-ten", "b-two"] (sortedBy [key "title" Ascending])
 
 assertEqual :: (Eq value, Show value) => value -> value -> Either Text ()
 assertEqual expected actual

@@ -10,6 +10,12 @@ provenance:
     model: "claude-opus-5-5"
     harness: "claude-code"
     at: 2026-10-03T15:19:23Z
+  revisions:
+    - model: "claude-opus-5-5"
+      harness: "claude-code"
+      at: 2026-10-03T15:28:00Z
+      mode: "implement"
+      note: "Implement all three milestones"
 ---
 
 # Sort concept listings by frontmatter keys
@@ -50,9 +56,9 @@ before the bundle is walked, exactly as a misspelled filter key already is.
 
 ## Progress
 
-- [ ] Milestone 1: add natural ordering, sort keys, and `sortConcepts` to `okf-core/src/Okf/Query.hs`.
-- [ ] Milestone 1: add the `okf-core/test/fixtures/concept-sorting` bundle and generate its `index.md` files.
-- [ ] Milestone 1: add core tests for `compareNatural`, `parseSortKey`, and `sortConcepts`; `cabal test okf-core-test` passes.
+- [x] Milestone 1: add natural ordering, sort keys, and `sortConcepts` to `okf-core/src/Okf/Query.hs`. (2026-10-03T15:27Z)
+- [x] Milestone 1: add the `okf-core/test/fixtures/concept-sorting` bundle and generate its `index.md` files. (2026-10-03T15:30Z)
+- [x] Milestone 1: add core tests for `compareNatural`, `parseSortKey`, and `sortConcepts`; `cabal test okf-core-test` passes. (2026-10-03T15:34Z)
 - [ ] Milestone 2: add `sortKeys` to `ConceptsOptions`, parse `--sort`, and sort in `runConcepts` for text and JSON.
 - [ ] Milestone 2: check sort keys against `--profile` in `conceptsProfileDiagnostics`.
 - [ ] Milestone 2: add CLI parser, report, JSON, and profile-diagnostic tests; `cabal test okf-cli-test` passes.
@@ -63,7 +69,7 @@ before the bundle is walked, exactly as a misspelled filter key already is.
 
 ## Surprises & Discoveries
 
-(None yet.)
+- The first run of the core sorting check failed on an expectation written by hand in the test, not on the code: titles Nine, None, One, Ten, Two sort as `c-nine, d-none, e-one, a-ten, b-two`. Evidence: `FAIL sortConcepts orders by frontmatter keys: expected ["e-one","c-nine","d-none","a-ten","b-two"], got ["c-nine","d-none","e-one","a-ten","b-two"]`. The expectation was corrected.
 
 
 ## Decision Log

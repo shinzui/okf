@@ -49,6 +49,16 @@ module Okf.Query
     matchesPredicate,
     filterConceptsWhere,
     checkPredicateAgainstProfile,
+
+    -- * Sorting concepts
+    SortDirection (..),
+    SortKey (..),
+    SortKeyParseError (..),
+    parseSortKey,
+    renderSortKey,
+    renderSortKeyParseError,
+    compareNatural,
+    sortConcepts,
   )
 where
 
@@ -62,6 +72,7 @@ import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (mapMaybe)
+import Data.Scientific (Scientific)
 import Data.Set qualified as Set
 import Data.Text qualified as Text
 import Data.Text.Encoding qualified as Text.Encoding
@@ -620,6 +631,145 @@ checkPredicateAgainstProfile compiled requestedTypes =
       PredicateAnd left right -> operandFilters left <> operandFilters right
       PredicateOr left right -> operandFilters left <> operandFilters right
       PredicateNot operand -> operandFilters operand
+
+-- Sorting ---------------------------------------------------------------------
+
+-- | Which way one sort key orders concepts.
+data SortDirection = Ascending | Descending
+  deriving stock (Generic, Eq, Ord, Show)
+
+-- | One @--sort@ argument: the frontmatter value to order by, and which way.
+data SortKey = SortKey
+  { sortSelector :: !FieldSelector,
+    sortDirection :: !SortDirection
+  }
+  deriving stock (Generic, Eq, Show)
+
+-- | Why a @--sort@ argument could not be read.
+data SortKeyParseError
+  = -- | The key itself was malformed, exactly as a filter key would be.
+    SortKeySelectorError !FilterParseError
+  | -- | A @:@ introduced something other than @asc@ or @desc@. Holds the whole
+    -- argument and the offending suffix.
+    InvalidSortDirection !Text !Text
+  deriving stock (Generic, Eq, Show)
+
+-- | Read @KEY@, @KEY:asc@, or @KEY:desc@.
+--
+-- Any @:@ introduces a direction, and the text after the last one must be
+-- exactly @asc@ or @desc@. Reading @status:up@ as a key named @status:up@
+-- would sort by nothing and look as though it had worked, so it is an error
+-- instead; the cost is that a key containing a colon cannot be sorted on.
+parseSortKey :: Text -> Either SortKeyParseError SortKey
+parseSortKey raw =
+  case Text.breakOnEnd ":" raw of
+    ("", _) -> SortKey <$> selector raw <*> pure Ascending
+    (beforeWithColon, suffix) -> do
+      direction <- case suffix of
+        "asc" -> Right Ascending
+        "desc" -> Right Descending
+        _ -> Left (InvalidSortDirection raw suffix)
+      SortKey <$> selector (Text.dropEnd 1 beforeWithColon) <*> pure direction
+  where
+    selector = first SortKeySelectorError . parseFieldSelector
+
+-- | The key in the form 'parseSortKey' reads back; ascending, the default, is
+-- not spelled out.
+renderSortKey :: SortKey -> Text
+renderSortKey SortKey {sortSelector, sortDirection} =
+  renderFieldSelector sortSelector <> case sortDirection of
+    Ascending -> ""
+    Descending -> ":desc"
+
+renderSortKeyParseError :: SortKeyParseError -> Text
+renderSortKeyParseError = \case
+  SortKeySelectorError parseError -> renderFilterParseError parseError
+  InvalidSortDirection raw suffix ->
+    "sort direction must be asc or desc, not " <> suffix <> ", in " <> raw
+
+-- | Compare two texts the way a person reads identifiers: @IR-2@ before
+-- @IR-10@, @v0.9@ before @v0.13@.
+--
+-- Each text is split into runs of ASCII digits and runs of everything else.
+-- Digit runs compare by numeric value, and on a tie the shorter spelling comes
+-- first, so @IR-2@ precedes @IR-02@. Other runs compare by Unicode code point,
+-- which keeps the order identical on every machine whatever its locale. A
+-- digit run sorts before a text run, as an ASCII digit sorts before a letter.
+-- Two texts whose runs are all equal fall back to plain comparison, so
+-- distinct texts never compare equal and the order is total.
+compareNatural :: Text -> Text -> Ordering
+compareNatural left right =
+  compare (naturalChunks left) (naturalChunks right) <> compare left right
+
+-- | One run of a text under 'compareNatural'. The derived 'Ord' is the rule:
+-- every 'DigitRun' before every 'TextRun', digit runs by value then length,
+-- text runs by code point.
+data NaturalChunk = DigitRun !Integer !Int | TextRun !Text
+  deriving stock (Eq, Ord)
+
+naturalChunks :: Text -> [NaturalChunk]
+naturalChunks = map chunk . Text.groupBy (\a b -> isDigit a == isDigit b)
+  where
+    chunk run
+      | Text.all isDigit run = DigitRun (read (Text.unpack run)) (Text.length run)
+      | otherwise = TextRun run
+
+-- | Text ordered by 'compareNatural'.
+newtype NaturalText = NaturalText Text
+
+instance Eq NaturalText where
+  left == right = compare left right == EQ
+
+instance Ord NaturalText where
+  compare (NaturalText left) (NaturalText right) = compareNatural left right
+
+-- | What a concept is sorted by for one key. Every number sorts before every
+-- text value, which keeps the order total even for a key that mixes them.
+data SortValue = SortNumber !Scientific | SortText !NaturalText
+  deriving stock (Eq, Ord)
+
+-- | A stored number compares numerically, because natural order on the text
+-- @1.5@ and @1.25@ would get them backwards. Strings and booleans compare as
+-- the text 'scalarText' gives them. A value with no scalar reading has no
+-- sort value.
+sortValue :: Value -> Maybe SortValue
+sortValue = \case
+  Number number -> Just (SortNumber number)
+  value -> SortText . NaturalText <$> scalarText value
+
+-- | Order concepts by frontmatter keys. The first key decides; later keys
+-- break its ties.
+--
+-- Text compares in natural order ('compareNatural'), numbers numerically, and
+-- every number before any text. A concept with no comparable value for a key
+-- — the key absent, null, an empty list, or only records — sorts after every
+-- concept that has one, in both directions: asking to sort by a key is asking
+-- to see the concepts that carry it, and @:desc@ should not lead with those
+-- that say nothing. A list sorts by its smallest value when ascending and its
+-- largest when descending, so the order does not depend on how an author
+-- happened to list the elements. Concepts equal on every key keep the order
+-- they arrived in, which for a walked bundle is concept-ID order, so the
+-- listing stays deterministic.
+sortConcepts :: [SortKey] -> [Concept] -> [Concept]
+sortConcepts [] concepts = concepts
+sortConcepts keys concepts =
+  map snd (List.sortBy (\(left, _) (right, _) -> mconcat (zipWith3 compareCell keys left right)) decorated)
+  where
+    -- Read each concept's values once per key rather than once per comparison.
+    decorated = [(map (cellFor concept) keys, concept) | concept <- concepts]
+    cellFor concept SortKey {sortSelector, sortDirection} =
+      representative sortDirection (mapMaybe sortValue (conceptFieldValues sortSelector concept))
+    representative _ [] = Nothing
+    representative Ascending values = Just (minimum values)
+    representative Descending values = Just (maximum values)
+    compareCell SortKey {sortDirection} left right =
+      case (left, right) of
+        (Just x, Just y) -> case sortDirection of
+          Ascending -> compare x y
+          Descending -> compare y x
+        (Just _, Nothing) -> LT
+        (Nothing, Just _) -> GT
+        (Nothing, Nothing) -> EQ
 
 -- Reading ---------------------------------------------------------------------
 
