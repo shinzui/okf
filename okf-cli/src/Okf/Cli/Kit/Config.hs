@@ -5,7 +5,8 @@ module Okf.Cli.Kit.Config
 where
 
 import Baikai.Interactive (InteractiveProvider (..))
-import Baikai.Kit.Config (KitConfig (..))
+import Baikai.Kit.Config (KitConfig)
+import Baikai.Kit.Config qualified as Engine
 import Okf.Cli.Config (KitSettings (..), OkfConfig (..), OkfProvider (..))
 
 -- | Build the baikai-kit configuration from okf's loaded configuration. The
@@ -13,11 +14,7 @@ import Okf.Cli.Config (KitSettings (..), OkfConfig (..), OkfProvider (..))
 -- sidecar files.
 kitConfig :: OkfConfig -> KitConfig
 kitConfig OkfConfig {kit = KitSettings {repoUrl = url, providers = providerList}} =
-  KitConfig
-    { toolName = "okf",
-      repoUrl = url,
-      providers = map toInteractive providerList
-    }
+  Engine.kitConfig "okf" url (map toInteractive providerList)
 
 toInteractive :: OkfProvider -> InteractiveProvider
 toInteractive = \case

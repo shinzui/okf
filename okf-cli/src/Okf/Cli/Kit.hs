@@ -1,73 +1,24 @@
 -- | The @okf kit@ command group: install and manage agent skills/subagents.
 module Okf.Cli.Kit
   ( KitCommand (..),
+    OutputFormat (..),
     kitCommandParser,
     handleKitCommand,
   )
 where
 
+import Baikai.Kit.Command (KitCommand (..), OutputFormat (..))
 import Baikai.Kit.Command qualified as Engine
-import Baikai.Kit.Config (KitScope (..))
-import Baikai.Kit.Install (OverwritePolicy (..))
-import Data.Text (Text)
-import Data.Text qualified as Text
-import Okf.Cli.Config (OkfConfig)
+import Okf.Cli.Config (OkfConfig, defaultOkfConfig)
 import Okf.Cli.Kit.Config (kitConfig)
 import Options.Applicative
 
--- | okf-local mirror of the engine's kit command. This derives 'Eq' so okf's
--- top-level command type can keep deriving 'Eq'.
-data KitCommand
-  = KitList
-  | KitInstall !Text !KitScope
-  | KitUpdate !(Maybe Text) !OverwritePolicy
-  | KitUninstall !Text !KitScope
-  | KitStatus
-  deriving stock (Show, Eq)
-
+-- | Use the engine's parser so JSON output and visibility flags stay aligned
+-- with the installed engine. Configuration only supplies the tool name in help.
 kitCommandParser :: Parser KitCommand
-kitCommandParser =
-  hsubparser
-    ( command "list" (info (pure KitList) (progDesc "List available skills and subagents"))
-        <> command "install" (info installParser (progDesc "Install a skill or subagent"))
-        <> command "update" (info updateParser (progDesc "Update installed skills and subagents"))
-        <> command "uninstall" (info uninstallParser (progDesc "Uninstall a skill or subagent"))
-        <> command "status" (info (pure KitStatus) (progDesc "Show installed skills and subagents"))
-    )
-    <|> pure KitList
-  where
-    installParser =
-      KitInstall
-        <$> textArgument (metavar "NAME" <> help "Name of the skill or subagent to install")
-        <*> scopeParser "Install to project scope (.okf/agents) instead of user scope"
+kitCommandParser = Engine.kitCommandParser (kitConfig defaultOkfConfig)
 
-    updateParser =
-      KitUpdate
-        <$> optional (textArgument (metavar "NAME" <> help "Name of a specific item to update (default: all)"))
-        <*> flag
-          KeepLocalEdits
-          OverwriteLocalEdits
-          (long "force" <> help "Reinstall items even if their installed files were modified locally")
-
-    uninstallParser =
-      KitUninstall
-        <$> textArgument (metavar "NAME" <> help "Name of the skill or subagent to uninstall")
-        <*> scopeParser "Uninstall from project scope (.okf/agents) instead of user scope"
-
-    scopeParser helpText = flag UserScope ProjectScope (long "project" <> help helpText)
-
-    textArgument modifiers = Text.pack <$> strArgument modifiers
-
--- | Translate the parsed okf command into the engine command and run it against
--- the kit configuration derived from the loaded okf config.
+-- | Run against the kit configuration derived from the loaded okf config.
 handleKitCommand :: OkfConfig -> KitCommand -> IO ()
 handleKitCommand config kitCommand =
-  Engine.runKit (kitConfig config) (toEngineCommand kitCommand)
-
-toEngineCommand :: KitCommand -> Engine.KitCommand
-toEngineCommand = \case
-  KitList -> Engine.KitList
-  KitInstall name scope -> Engine.KitInstall name scope
-  KitUpdate name policy -> Engine.KitUpdate name policy
-  KitUninstall name scope -> Engine.KitUninstall name scope
-  KitStatus -> Engine.KitStatus
+  Engine.runKit (kitConfig config) kitCommand

@@ -12,6 +12,13 @@ KIT COMMANDS
   okf kit update [NAME]             Refresh okf-kit and reinstall installed items.
   okf kit status                    Show what is installed and whether it is current.
 
+  list, status, and update accept --json for a versioned JSON document.
+  Installation defaults to the manifest's visibility (tool-only if omitted).
+  Use --shared to make an item available in every agent session, or --tool-only
+  to restrict it to sessions OKF launches. Codex custom agents require shared
+  visibility or --accept-shared-codex because Codex cannot isolate them.
+  Install requires NAME; OKF does not configure an interactive kit chooser.
+
 ASSIST
 
   okf assist "PROMPT"               Launch an interactive agent session with your
@@ -39,6 +46,11 @@ ASSIST
   '--effort minimal' reaches it as '--effort low', while Codex takes all six
   verbatim as '-c model_reasoning_effort=...'. Use --print-command to see what
   will run.
+
+  Codex sessions enable OKF's tool-only skills through session configuration
+  arguments. Ordinary Codex sessions keep those skills disabled. Existing
+  installations keep their legacy placement; 'okf kit status' reports requested
+  and effective visibility, including visibility-broken when repair is needed.
 
 CONFIGURATION
 

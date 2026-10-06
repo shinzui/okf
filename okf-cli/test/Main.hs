@@ -1,5 +1,8 @@
 module Main (main) where
 
+import Baikai.Kit.Config (KitScope (..))
+import Baikai.Kit.Install (InstallOptions (..), OverwritePolicy (..), defaultInstallOptions)
+import Baikai.Kit.Visibility (KitVisibility (..))
 import Control.Exception (bracket, try)
 import Control.Monad (unless)
 import Data.Aeson (Value (..), toJSON)
@@ -18,12 +21,13 @@ import Okf.Bundle (Concept, bundleInventoryOfConcepts, conceptAttester, conceptE
 import Okf.Cli
 import Okf.Cli.Agent.Config (AgentCommandName (..), AgentConfigSource (..), AgentField (..), AgentOverrides (..), ResolvedAgent (..), ResolvedField (..), agentSourceLabel, noAgentOverrides, parseOkfEffort, parseOkfProvider, renderAgentResolution, resolveAgent)
 import Okf.Cli.Aliases (AliasCommand (..), expandAlias, isAliasCandidate, renderAliases, validateAliases)
-import Okf.Cli.Assist (AssistOptions (..), buildAgentCommand)
+import Okf.Cli.Assist (AssistOptions (..), buildAgentCommand, buildSessionAgentCommand)
 import Okf.Cli.BundleDiscovery (BundleDiscovery (..), bundleSearchRootsEnvVar, discoverAvailableBundles)
-import Okf.Cli.Config (AgentFieldSettings (..), AgentSettings (..), ConfigSource (..), OkfConfig (..), OkfEffort (..), OkfProvider (..), ProfileSettings (..), agentSharedDefaults, defaultOkfConfig, exampleConfigText, findConfigSource, loadAgentScopes, loadAliasesForExpansion, loadOkfConfig, okfConfigEnvVar, projectConfigPath, renderConfig)
+import Okf.Cli.Config (AgentFieldSettings (..), AgentSettings (..), ConfigSource (..), KitSettings (..), OkfConfig (..), OkfEffort (..), OkfProvider (..), ProfileSettings (..), agentSharedDefaults, defaultOkfConfig, exampleConfigText, findConfigSource, loadAgentScopes, loadAliasesForExpansion, loadOkfConfig, okfConfigEnvVar, projectConfigPath, renderConfig)
 import Okf.Cli.Fzf (Candidate (..), FzfConfig (..), FzfOpts (..), optsToArgs, parseSelectionIndex, renderCandidateLines, shellQuote, withAnsi, withHeight, withNoSort, withPrompt)
 import Okf.Cli.Fzf.Selector (ConceptOrder (..), conceptCandidates, conceptPreviewCommand, orderConcepts, parseBundleSearchRoots, profileCandidates, profilePreviewCommand)
 import Okf.Cli.Help (HelpTopic (..), helpTopics)
+import Okf.Cli.Kit (KitCommand (..), OutputFormat (..))
 import Okf.Cli.ProfileDiscovery (ProfileDiscovery (..), discoverAvailableProfiles, parseProfileSearchRoots, profileSearchRootsEnvVar)
 import Okf.ConceptId (ConceptId, parseConceptId, renderConceptId)
 import Okf.Document (Attester (..), Executor (..), Parameter (..), parseDocument)
@@ -33,7 +37,7 @@ import Okf.Profile.Registry (ProfileSource (..), ProfileSourceLoadError (..), Re
 import Okf.Query (ConceptFilter (..), ConceptPredicate (..), FieldSelector (..), SortDirection (..), SortKey (..), WhereCondition (..), filterConcepts, filterConceptsWhere, parseSortKey, parseWhereCondition, sortConcepts)
 import Okf.Validation (ValidationProfile (..), validateBundle)
 import Options.Applicative
-import System.Directory (Permissions (..), createDirectoryIfMissing, createFileLink, doesDirectoryExist, doesFileExist, getCurrentDirectory, getPermissions, getTemporaryDirectory, listDirectory, makeAbsolute, removeDirectoryRecursive, setModificationTime, setPermissions, withCurrentDirectory)
+import System.Directory (Permissions (..), canonicalizePath, createDirectoryIfMissing, createFileLink, doesDirectoryExist, doesFileExist, getCurrentDirectory, getPermissions, getTemporaryDirectory, listDirectory, makeAbsolute, removeDirectoryRecursive, setModificationTime, setPermissions, withCurrentDirectory)
 import System.Environment (lookupEnv, setEnv, unsetEnv, withArgs)
 import System.Exit (ExitCode (..), exitFailure)
 import System.FilePath (normalise, takeDirectory, (</>))
@@ -64,6 +68,7 @@ main = do
   assistCommandBuilder <- testAssistCommandBuilder
   assistModelOverride <- testAssistModelOverride
   assistCodexCommandBuilder <- testAssistCodexCommandBuilder
+  assistKitVisibility <- testAssistKitVisibility
   profileBootstrap <- testProfileBootstrap
   profileDocumentWrites <- testProfileDocumentWritesBundle
   profileDocumentDeclaresVersion <- testProfileDocumentDeclaresOkfVersion
@@ -704,6 +709,15 @@ main = do
           assistCommandBuilder,
           assistModelOverride,
           assistCodexCommandBuilder,
+          assistKitVisibility,
+          parseCommandMatches ["kit"] (Kit (KitList HumanOutput)),
+          parseCommandMatches ["kit", "list", "--json"] (Kit (KitList JsonOutput)),
+          parseCommandMatches ["kit", "status", "--json"] (Kit (KitStatus JsonOutput)),
+          parseCommandMatches ["kit", "update", "author", "--force", "--json"] (Kit (KitUpdate (Just "author") OverwriteLocalEdits JsonOutput)),
+          parseCommandMatches ["kit", "install", "author"] (Kit (KitInstall (Just "author") UserScope defaultInstallOptions)),
+          parseCommandMatches ["kit", "install", "author", "--project", "--shared"] (Kit (KitInstall (Just "author") ProjectScope (InstallOptions (Just SharedVisibility) False))),
+          parseCommandMatches ["kit", "install", "author", "--tool-only", "--accept-shared-codex"] (Kit (KitInstall (Just "author") UserScope (InstallOptions (Just ToolOnlyVisibility) True))),
+          parseCommandMatches ["kit", "uninstall", "author", "--project"] (Kit (KitUninstall "author" ProjectScope)),
           testAssistEffortReachesEachVendor,
           testAssistUnconfiguredRendersNoFlags,
           testAgentFlagBeatsEverything,
@@ -3286,6 +3300,59 @@ testAssistUnconfiguredRendersNoFlags :: Bool
 testAssistUnconfiguredRendersNoFlags =
   buildAgentCommand (resolvedAgentWith ProviderClaude Nothing Nothing Nothing) ["/a"] (assistPrompt "x")
     == Right ("claude", ["--add-dir", "/a", "--", "x"])
+
+-- | Exercise the actual launch path: user and project tool-only skills are
+-- enabled for Codex, while shared skills, foreign sidecars, and Claude stay out
+-- of the Codex session override.
+testAssistKitVisibility :: IO Bool
+testAssistKitVisibility =
+  withIsolatedConfigEnv "okf-cli-assist-kit" $ do
+    root <- getCurrentDirectory
+    let project = root </> "project"
+        config = defaultOkfConfig {kit = KitSettings "unused" [ProviderClaude, ProviderCodex]}
+        codex = resolvedAgentWith ProviderCodex Nothing Nothing Nothing
+        claude = resolvedAgentWith ProviderClaude Nothing Nothing (Just "Be concise")
+        prompt = assistPrompt "do work"
+        writeSkill base name visibility sidecar = do
+          let dir = base </> ".agents" </> "skills" </> name
+          createDirectoryIfMissing True dir
+          Text.IO.writeFile (dir </> "SKILL.md") "# Test skill\n"
+          Aeson.encodeFile (dir </> sidecar) $
+            Aeson.object
+              [ "name" Aeson..= name,
+                "kind" Aeson..= ("skill" :: Text.Text),
+                "hash" Aeson..= ("test" :: Text.Text),
+                "installedAt" Aeson..= ("2026-10-06T00:00:00Z" :: Text.Text),
+                "visibility" Aeson..= (visibility :: Text.Text)
+              ]
+          canonicalizePath (dir </> "SKILL.md")
+    createDirectoryIfMissing True project
+    withCurrentDirectory project $ do
+      withoutSkills <- buildSessionAgentCommand config codex prompt
+      userSkill <- writeSkill root "user-only" "tool-only" ".okf-kit.json"
+      projectSkill <- writeSkill project "project-only" "tool-only" ".okf-kit.json"
+      sharedSkill <- writeSkill project "shared" "shared" ".okf-kit.json"
+      foreignSkill <- writeSkill project "foreign" "tool-only" ".other-kit.json"
+      rendered <- buildSessionAgentCommand config codex prompt
+      claudeRendered <- buildSessionAgentCommand config claude prompt
+      pure $
+        withoutSkills == buildAgentCommand codex [] prompt
+          && claudeRendered == buildAgentCommand claude [] prompt
+          && case rendered of
+            Left _ -> False
+            Right (executable, args) ->
+              executable == "codex"
+                && take 1 args == ["-c"]
+                && last args == "do work"
+                && case args of
+                  _ : override : _ ->
+                    "skills.config=[" `List.isPrefixOf` override
+                      && "enabled=true" `List.isInfixOf` override
+                      && userSkill `List.isInfixOf` override
+                      && projectSkill `List.isInfixOf` override
+                      && not (sharedSkill `List.isInfixOf` override)
+                      && not (foreignSkill `List.isInfixOf` override)
+                  _ -> False
 
 assistPrompt :: Text.Text -> AssistOptions
 assistPrompt promptText =

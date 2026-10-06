@@ -12,16 +12,17 @@ module Okf.Cli.Assist
     assistAgentOverrides,
     handleAssistCommand,
     buildAgentCommand,
+    buildSessionAgentCommand,
   )
 where
 
 import Baikai.Agent (AgentRenderError, renderAgentRenderError)
 import Baikai.Interactive (InteractiveLaunchRequest, interactiveLaunchRequest)
-import Baikai.Kit.Session (agentDirsForSession)
+import Baikai.Kit.Session (agentDirsForSession, codexSessionArgs)
 import Baikai.Provider.Claude.Interactive (claudeInteractiveCommand, defaultClaudeInteractiveConfig)
 import Baikai.Provider.OpenAI.Interactive (codexInteractiveCommand, defaultCodexInteractiveConfig)
 import Control.Exception (IOException, try)
-import Control.Lens ((&), (.~))
+import Control.Lens ((%~), (&), (.~))
 import Data.Bifunctor (first)
 import Data.Generics.Labels ()
 import Data.Text (Text)
@@ -171,11 +172,27 @@ buildAgentCommand resolved agentDirs options =
 resolvedProviderOf :: ResolvedAgent -> OkfProvider
 resolvedProviderOf ResolvedAgent {provider = ResolvedField {resolvedValue}} = resolvedValue
 
+-- | Discover installed kit assets and enable this tool's hidden Codex skills
+-- for the session. Both execution and --print-command use this same argv.
+buildSessionAgentCommand ::
+  OkfConfig -> ResolvedAgent -> AssistOptions -> IO (Either AgentRenderError (FilePath, [String]))
+buildSessionAgentCommand config resolved options = do
+  let launcher = launcherFor (resolvedProviderOf resolved)
+      kit = kitConfig config
+  agentDirs <- agentDirsForSession kit
+  sessionArgs <- case resolvedProviderOf resolved of
+    ProviderClaude -> pure []
+    ProviderCodex -> codexSessionArgs kit
+  let request =
+        assistLaunchRequest launcher resolved agentDirs options
+          & #extraArgs %~ (<> sessionArgs)
+  pure (buildCommand launcher request)
+
 handleAssistCommand :: OkfConfig -> ResolvedAgent -> AssistOptions -> IO ()
 handleAssistCommand config resolved options = do
   let launcher = launcherFor (resolvedProviderOf resolved)
-  agentDirs <- agentDirsForSession (kitConfig config)
-  case buildAgentCommand resolved agentDirs options of
+  renderedCommand <- buildSessionAgentCommand config resolved options
+  case renderedCommand of
     Left renderError -> do
       Text.IO.hPutStrLn stderr ("okf assist: " <> renderAgentRenderError renderError)
       exitWith (ExitFailure 2)

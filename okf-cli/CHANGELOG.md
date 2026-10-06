@@ -9,6 +9,11 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- `okf kit list`, `status`, and `update` accept `--json`. Installation accepts
+  `--shared`, `--tool-only`, and `--accept-shared-codex` for skill and subagent
+  visibility. `okf assist --provider codex` enables OKF's tool-only skills for
+  that session, including in `--print-command` output.
+
 - User-defined command aliases in Dhall configuration, such as
   `aliases = toMap { c = "concepts" }`. Expansion applies to the first argument
   once, preserving trailing arguments and built-in commands. `okf alias` and
@@ -37,6 +42,15 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   absence semantics, how repeated flags combine, and profile checking.
 
 ### Changed
+
+- Requires `mori://shinzui/baikai/packages/baikai` 0.7.2.0,
+  `mori://shinzui/baikai/packages/baikai-kit` 0.4.0.0, and
+  `mori://shinzui/baikai/packages/baikai-claude` and
+  `mori://shinzui/baikai/packages/baikai-openai` 0.7.1.0. Nix uses the matching
+  kit release source revision.
+- **Breaking (library):** `Okf.Cli.Kit.KitCommand` now re-exports the engine's
+  command type: list/status/update carry `OutputFormat`, and install takes
+  `Maybe Text` and `InstallOptions` in addition to scope.
 
 - **Breaking (library):** `OkfConfig` gains `aliases :: Map Text Text`; callers
   constructing the record must supply it. On-disk Dhall configurations remain

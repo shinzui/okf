@@ -21,8 +21,8 @@
       # inputs.haskell-nix; its haskellExtension supplies every version-scoped
       # patch okf needs — streamly, streamly-core, unicode-data, openai, cradle,
       # and the whole baikai family (baikai / baikai-claude / baikai-kit /
-      # baikai-openai at the pinned baikai-src rev) — so none of them are hand
-      # pinned here any more.
+      # baikai-openai at the baikai-src release rev selected in flake.nix).
+      # The registry owns package wiring; the project selects its kit release.
       #
       # The extension also disables library profiling and Haddock across the
       # whole set (it overrides mkDerivation, so okf-core/okf-cli inherit it via
