@@ -1808,6 +1808,7 @@
               , when : Optional { field : Text, hasValue : List Text }
               }
         }
+    , guidance : Optional Text
     , idField : Optional Text
     , name : Text
     , okfVersion : Text
@@ -2582,6 +2583,7 @@
                     , when : Optional { field : Text, hasValue : List Text }
                     }
               }
+          , guidance : Optional Text
           , idPrefix : Optional Text
           , pathPattern : Optional Text
           , requireSchemaSection : Bool
@@ -3338,6 +3340,7 @@
               , when : Optional { field : Text, hasValue : List Text }
               }
         }
+    , guidance : Optional Text
     , idPrefix : Optional Text
     , pathPattern : Optional Text
     , requireSchemaSection : Bool
@@ -6345,6 +6348,7 @@
                   , when : Optional { field : Text, hasValue : List Text }
                   }
             }
+        , guidance : Optional Text
         , idField : Optional Text
         , name : Text
         , okfVersion : Text
@@ -7125,6 +7129,7 @@
                         , when : Optional { field : Text, hasValue : List Text }
                         }
                   }
+              , guidance : Optional Text
               , idPrefix : Optional Text
               , pathPattern : Optional Text
               , requireSchemaSection : Bool
@@ -7904,6 +7909,7 @@
                    , when : Optional { field : Text, hasValue : List Text }
                    }
         }
+      , guidance = None Text
       , idField = None Text
       , okfVersion = "0.1"
       , requireBundleVersion = None Text
@@ -8740,6 +8746,7 @@
                                Optional { field : Text, hasValue : List Text }
                            }
                      }
+                 , guidance : Optional Text
                  , idPrefix : Optional Text
                  , pathPattern : Optional Text
                  , requireSchemaSection : Bool
@@ -9519,6 +9526,7 @@
                   , when : Optional { field : Text, hasValue : List Text }
                   }
             }
+        , guidance : Optional Text
         , idPrefix : Optional Text
         , pathPattern : Optional Text
         , requireSchemaSection : Bool
@@ -10295,6 +10303,7 @@
                    , when : Optional { field : Text, hasValue : List Text }
                    }
         }
+      , guidance = None Text
       , idPrefix = None Text
       , pathPattern = None Text
       , requireSchemaSection = False

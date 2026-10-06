@@ -528,7 +528,7 @@ DOCUMENT REFERENCES
   runs are offline. Pass --registry with a local checkout to be offline
   throughout.
 
-  The built-in pin currently targets v0.14.0 and publishes thirteen OKF 0.2 profiles
+  The built-in pin currently targets v0.19.0 and publishes seventeen OKF 0.2 profiles
   with descriptions. `okf profile sources` reports that version without network
   access. Pass --check-latest to that command for an explicit upstream tag
   comparison; a failed optional check is reported but does not change the source

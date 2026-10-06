@@ -1039,7 +1039,7 @@ stay present even with explicit `--registry` flags; pass `--no-local` to
 suppress exactly them. Their export is the filename without `.dhall`, and a
 duplicate export remains an ambiguity rather than being chosen by precedence.
 
-With no override, okf currently pins v0.14.0 of that catalogue. The default
+With no override, okf currently pins v0.19.0 of that catalogue. The default
 table keeps every line to at most 100 Unicode code points. Each profile uses an
 aligned identity-and-rules line plus an indented description line; long source,
 export, name, and description values end in `…`:
@@ -1122,9 +1122,9 @@ it evaluates each source to count its profiles:
 ```text
 $ okf profile sources --no-local
 SOURCE                         ORIGIN              STATUS  PROFILES
-okf-profiles v0.14.0 (pinned)  [built-in default]  loaded  13
+okf-profiles v0.19.0 (pinned)  [built-in default]  loaded  17
 
-Pinned catalogue: okf-profiles v0.14.0 (not checked; pass --check-latest to query upstream tags)
+Pinned catalogue: okf-profiles v0.19.0 (not checked; pass --check-latest to query upstream tags)
 
 Precedence, highest first:
   1. --registry flag (repeatable); the flag list replaces every other registry layer
@@ -1180,7 +1180,7 @@ For repository maintainers, refreshing a deliberately reviewed release is one
 command:
 
 ```bash
-./scripts/refresh-default-registry.sh v0.14.0
+./scripts/refresh-default-registry.sh v0.19.0
 ```
 
 The script computes the normalized Dhall hash, regenerates the offline catalogue

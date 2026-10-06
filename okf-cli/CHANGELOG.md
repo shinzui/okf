@@ -7,6 +7,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.10.0.0] - 2026-10-06
+
 ### Added
 
 - `okf kit list`, `status`, and `update` accept `--json`. Installation accepts
@@ -65,6 +67,12 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - **Breaking (library):** `ConceptsOptions` gains a `sortKeys :: [SortKey]`
   field after `showFields`, and `conceptsProfileDiagnostics` takes a trailing
   `[SortKey]` argument.
+- Requires `okf-core ^>=0.10.0.0`.
+- `okf profile list` and `okf profile sources` report the built-in
+  `mori://shinzui/okf-profiles` v0.19.0 catalogue (seventeen profiles, up from
+  thirteen), including `assurance.verificationEvidence`,
+  `coordination.patternApplications`, `documentation.specifications`, and
+  `documentation.terminology`.
 
 ## [0.9.0.0] - 2026-09-13
 

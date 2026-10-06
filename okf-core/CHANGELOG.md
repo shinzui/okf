@@ -7,6 +7,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.10.0.0] - 2026-10-06
+
 ### Added
 
 - `Okf.Profile.Bootstrap` renders adoption descriptors with Dhall path/label escaping, remote import freezing, local relative imports, and maximum-version selection.
@@ -29,6 +31,14 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   before text, concepts without a comparable value last in both directions,
   lists by their smallest or largest element, and ties in input order.
   `okf-core` now depends on `scientific` directly.
+
+### Changed
+
+- `defaultRegistryReference` now pins `mori://shinzui/okf-profiles` v0.19.0
+  (from v0.14.0); the offline catalogue conformance fixture decodes all
+  seventeen published profiles, adding `assurance.verificationEvidence`,
+  `coordination.patternApplications`, `documentation.specifications`, and
+  `documentation.terminology`.
 
 ## [0.9.0.0] - 2026-09-13
 

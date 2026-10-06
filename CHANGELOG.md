@@ -7,6 +7,48 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.10.0.0] - 2026-10-06
+
+### Added
+
+- `okf profile init [EXPORT] --bundle DIR [--write]` previews or adopts a
+  profile into a bundle: a verified descriptor, versioned indexes, an Adoption
+  log entry, and validation. Existing descriptors are refused and concept files
+  are preserved. The rendering lives in the new `Okf.Profile.Bootstrap` module.
+- `okf concepts --where` accepts flexible conditions alongside `KEY=VALUE`:
+  `!=`, `in [...]`, `not in [...]`, `has(KEY)`, `missing(KEY)`, and
+  parenthesized `and`/`or`/`not` expressions. With `--profile`, every key and
+  value in a condition is checked before the bundle is walked. `Okf.Query`
+  exposes the parser, evaluator, and profile check.
+- `okf concepts --sort KEY[:desc]` orders concepts by one or more frontmatter
+  keys, in natural order for text (`IR-2` before `IR-10`) and numeric order for
+  numbers, with missing values last. `Okf.Query` exposes `sortConcepts` and
+  its key parser.
+- User-defined command aliases in Dhall configuration, such as
+  `aliases = toMap { c = "concepts" }`, expanded once on the first argument.
+  `okf alias list` and `okf help aliases` inspect and document them; older
+  config files keep loading.
+- `okf help where` documents the `--where` condition language.
+- `okf kit list`, `status`, and `update` accept `--json`; installation accepts
+  `--shared`, `--tool-only`, and `--accept-shared-codex`. `okf assist
+  --provider codex` enables OKF's tool-only skills for that session.
+
+### Changed
+
+- **Breaking (okf-cli library):** `Okf.Cli.Kit.KitCommand` re-exports the
+  baikai-kit engine's command type; `OkfConfig` gains `aliases`; `Command`
+  gains `Alias`; `ConceptsOptions.fieldFilters` is now `[WhereCondition]` and
+  `ConceptsOptions` gains `sortKeys`. The `okf` command line and on-disk
+  configuration remain compatible.
+- Requires `mori://shinzui/baikai/packages/baikai` 0.7.2.0,
+  `mori://shinzui/baikai/packages/baikai-kit` 0.4.0.0, and
+  `mori://shinzui/baikai/packages/baikai-claude` and
+  `mori://shinzui/baikai/packages/baikai-openai` 0.7.1.0.
+- The built-in profile registry now pins `mori://shinzui/okf-profiles` v0.19.0
+  (from v0.14.0), adding `assurance.verificationEvidence`,
+  `coordination.patternApplications`, `documentation.specifications`, and
+  `documentation.terminology` to the default catalogue.
+
 ## [0.9.0.0] - 2026-09-13
 
 ### Added
