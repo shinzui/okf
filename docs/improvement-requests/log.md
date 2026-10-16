@@ -2,6 +2,8 @@
 
 ## 2026-10-16
 
+* **Acceptance and planning**: IR-9 validated against the descriptor implementation and producer checker; nine missing rules and the existing inline-name uniqueness capability clarified, and ExecPlan 70 linked for implementation.
+
 * **Addition**: IR-9: express the single-concept product-discovery constraints of the okf-profiles jobs, product-research, features, and use-case profiles in profile descriptors, retiring the okf-owned rules of its interim checker.
 
 ## 2026-08-19
