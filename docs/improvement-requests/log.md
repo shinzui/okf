@@ -1,5 +1,9 @@
 # Bundle Update Log
 
+## 2026-10-16
+
+* **Addition**: IR-9: express the single-concept product-discovery constraints of the okf-profiles jobs, product-research, features, and use-case profiles in profile descriptors, retiring the okf-owned rules of its interim checker.
+
 ## 2026-08-19
 
 * **Addition and acceptance**: IR-8: add nested reference policies and
