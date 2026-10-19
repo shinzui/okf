@@ -2,6 +2,10 @@
 
 ## 2026-10-19
 
+* **Addition**: IR-10: fail `okf validate --profile-enforce` when no profile is
+  applied, instead of passing with no profile checks run.
+* **Addition**: IR-11: let a profile close the vocabulary of nested frontmatter
+  records, the follow-up IR-2 and IR-4 left out of scope.
 * **Status reconciliation**: IR-1 through IR-8 changed from accepted to completed
   after checking their implementation plans' progress and outcomes against the
   release changelog. Completion metadata records this audit's confirmation time,
