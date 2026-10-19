@@ -1,5 +1,20 @@
 # Bundle Update Log
 
+## 2026-10-19
+
+* **Status reconciliation**: IR-1 through IR-8 changed from accepted to completed
+  after checking their implementation plans' progress and outcomes against the
+  release changelog. Completion metadata records this audit's confirmation time,
+  not an inferred historical implementation time; original review records remain
+  unchanged. IR-3 is complete only in its accepted named-format scope.
+* **Traceability**: Added the missing IR-8 targetPlan for
+  [ExecPlan 64](../plans/64-add-nested-reference-policies-and-record-list-uniqueness.md)
+  and visible implementation-plan links in every completed request's Status
+  section, including both plans needed for IR-1 and IR-4.
+* **Planning**: IR-9 remains accepted and linked to
+  [ExecPlan 70](../plans/70-express-single-concept-product-discovery-constraints-in-profile-descriptors.md),
+  whose implementation milestones remain unchecked.
+
 ## 2026-10-16
 
 * **Acceptance and planning**: IR-9 validated against the descriptor implementation and producer checker; nine missing rules and the existing inline-name uniqueness capability clarified, and ExecPlan 70 linked for implementation.

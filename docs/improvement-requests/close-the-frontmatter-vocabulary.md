@@ -4,9 +4,14 @@ title: Let a profile close its frontmatter vocabulary
 description: Add an allowUnknownFields switch so a profile can reject frontmatter
   keys it does not declare, catching misspelled and abandoned keys that every
   value-level check is blind to.
-timestamp: "2026-07-29T17:30:21Z"
+timestamp: "2026-10-19T17:10:31Z"
 requestId: IR-2
-status: accepted
+status: completed
+completedAt: "2026-10-19T17:10:31Z"
+resolution: >-
+  ExecPlan 26 completed allowUnknownFields enforcement against each concept's
+  effective field names, with type-isolation, compatibility, and external-catalog
+  validation. The capability is recorded in the 0.3.0.0 changelog.
 origin: mori://shinzui/okf-profiles
 targetPlan: docs/plans/26-enforce-closed-field-name-and-field-value-vocabularies.md
 relatedPlans:
@@ -31,7 +36,8 @@ reviews:
 
 ## Status
 
-- **Status:** accepted with design corrections on 2026-07-29
+- **Status:** completed; completion verified on 2026-10-19.
+- **Implementation plan:** [ExecPlan 26](../plans/26-enforce-closed-field-name-and-field-value-vocabularies.md).
 - **Origin:** `shinzui/okf-profiles` (the authoritative profile catalog)
 - **Owner of the build:** `shinzui/okf`
 - **Size:** small — one `Bool` on `Profile`, one violation constructor, one check.

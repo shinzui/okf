@@ -4,9 +4,15 @@ title: Check that document handles referenced in frontmatter resolve to real con
 description: Let a profile declare that a field holds handles of governed concepts,
   so a supersedes or sourceStreams reference to a nonexistent document is reported
   instead of silently accepted.
-timestamp: "2026-07-29T17:30:21Z"
+timestamp: "2026-10-19T17:10:31Z"
 requestId: IR-6
-status: accepted
+status: completed
+completedAt: "2026-10-19T17:10:31Z"
+resolution: >-
+  ExecPlan 31 completed profile-declared document references, bundle-local handle
+  integrity, explicit external URI policies, inspection, and diagnostics, with
+  passing acceptance checks. The capability is recorded in the 0.3.0.0 changelog;
+  cross-repository target resolution remains outside OKF's scope.
 origin: mori://shinzui/okf-profiles
 targetPlan: docs/plans/31-validate-profile-declared-document-references.md
 relatedPlans:
@@ -31,7 +37,8 @@ reviews:
 
 ## Status
 
-- **Status:** accepted with design corrections on 2026-07-29
+- **Status:** completed; completion verified on 2026-10-19.
+- **Implementation plan:** [ExecPlan 31](../plans/31-validate-profile-declared-document-references.md).
 - **Origin:** `shinzui/okf-profiles` (the authoritative profile catalog)
 - **Owner of the build:** `shinzui/okf`
 - **Size:** moderate. The check is cheap; the design question is the boundary

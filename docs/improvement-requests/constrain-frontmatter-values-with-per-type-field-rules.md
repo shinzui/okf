@@ -4,9 +4,14 @@ title: Constrain frontmatter values with closed vocabularies, scoped per concept
 description: Let a profile declare the allowed values of a field, and let field
   rules attach to a type rule instead of only to the profile, so a closed vocabulary
   can apply to the types it actually governs.
-timestamp: "2026-07-29T17:30:21Z"
+timestamp: "2026-10-19T17:10:31Z"
 requestId: IR-1
-status: accepted
+status: completed
+completedAt: "2026-10-19T17:10:31Z"
+resolution: >-
+  ExecPlans 25 and 26 completed type-specific frontmatter rules, effective-rule
+  compilation, closed value vocabularies, inspection, diagnostics, and
+  compatibility checks. The capability is recorded in the 0.3.0.0 changelog.
 origin: mori://shinzui/okf-profiles
 targetPlan: docs/plans/26-enforce-closed-field-name-and-field-value-vocabularies.md
 relatedPlans:
@@ -32,7 +37,9 @@ reviews:
 
 ## Status
 
-- **Status:** accepted with design corrections on 2026-07-29
+- **Status:** completed; completion verified on 2026-10-19.
+- **Implementation plans:** [ExecPlan 26](../plans/26-enforce-closed-field-name-and-field-value-vocabularies.md)
+  and its compilation foundation, [ExecPlan 25](../plans/25-compile-effective-type-aware-profile-field-rules.md).
 - **Origin:** `shinzui/okf-profiles` (the authoritative profile catalog)
 - **Owner of the build:** `shinzui/okf`
 - **Size:** a coordinated raw-schema and validator change: `allowedValues` on

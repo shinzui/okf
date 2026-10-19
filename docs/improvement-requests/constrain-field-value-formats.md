@@ -4,9 +4,15 @@ title: Constrain field value formats for the open-ended keys a vocabulary cannot
 description: Add named formats to FieldRule so profiles can check UTC timestamps,
   dates, URIs, URI schemes, and handle shapes rather than only checking that a
   value is non-empty.
-timestamp: "2026-07-29T17:30:21Z"
+timestamp: "2026-10-19T17:10:31Z"
 requestId: IR-3
-status: accepted
+status: completed
+completedAt: "2026-10-19T17:10:31Z"
+resolution: >-
+  ExecPlan 28 completed the accepted named-format scope: UTC timestamps, dates,
+  absolute URIs, URI schemes, and document handles, including compilation,
+  inspection, diagnostics, and compatibility. The capability is recorded in the
+  0.3.0.0 changelog; arbitrary field patterns remain outside the accepted scope.
 origin: mori://shinzui/okf-profiles
 targetPlan: docs/plans/28-enforce-named-profile-field-formats.md
 relatedPlans:
@@ -31,7 +37,8 @@ reviews:
 
 ## Status
 
-- **Status:** accepted in named-format scope on 2026-07-29
+- **Status:** completed in the accepted named-format scope; completion verified on 2026-10-19.
+- **Implementation plan:** [ExecPlan 28](../plans/28-enforce-named-profile-field-formats.md).
 - **Origin:** `shinzui/okf-profiles` (the authoritative profile catalog)
 - **Owner of the build:** `shinzui/okf`
 - **Size:** additive — one optional field on `FieldRule`, one violation

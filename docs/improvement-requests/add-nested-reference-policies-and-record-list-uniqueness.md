@@ -4,9 +4,16 @@ title: Add nested reference policies and per-record uniqueness constraints to pr
 description: Let nested profile fields carry document-reference policies and let
   a list-of-records rule name a required scalar uniqueness key, so typed source
   dependencies and stable acceptance criteria can be validated and inspected.
-timestamp: "2026-08-19T18:58:11Z"
+timestamp: "2026-10-19T17:10:31Z"
 requestId: IR-8
-status: accepted
+status: completed
+completedAt: "2026-10-19T17:10:31Z"
+resolution: >-
+  ExecPlan 64 completed nested reference policies and record-list uniqueness,
+  compatibility, inspection, generated documentation, and acceptance checks.
+  Its release milestone records okf-core and okf-cli 0.8.0.0 published to Hackage
+  with the matching immutable v0.8.0.0 tag and documented decoder contract.
+targetPlan: docs/plans/64-add-nested-reference-policies-and-record-list-uniqueness.md
 origin: mori://shinzui/okf-profiles/okf/improvement-requests/concepts/IR-2
 reviews:
   - kind: model
@@ -28,7 +35,9 @@ reviews:
 
 ## Status
 
-- **Status:** accepted on 2026-08-19.
+- **Status:** completed; completion verified on 2026-10-19.
+- **Implementation plan:** [ExecPlan 64](../plans/64-add-nested-reference-policies-and-record-list-uniqueness.md),
+  including its completed 0.8.0.0 release milestone.
 - **Origin:**
   `mori://shinzui/okf-profiles/okf/improvement-requests/concepts/IR-2`.
 - **Owner of the build:** `mori://shinzui/okf`.

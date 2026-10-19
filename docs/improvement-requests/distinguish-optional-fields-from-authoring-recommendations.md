@@ -4,9 +4,15 @@ title: Distinguish optional profile fields from authoring recommendations
 description: Add an explicit optional rule class so profiles can validate a
   field when present without reporting its absence or turning it into a strict
   authoring requirement.
-timestamp: "2026-07-30T20:41:48Z"
+timestamp: "2026-10-19T17:10:31Z"
 requestId: IR-7
-status: accepted
+status: completed
+completedAt: "2026-10-19T17:10:31Z"
+resolution: >-
+  ExecPlan 32 completed optional rules at profile, type, and nested scopes,
+  compatibility decoding, compilation, inspection, documentation, and acceptance
+  checks. The capability is recorded in the 0.4.0.0 changelog; downstream catalog
+  migration remains a separate release decision.
 origin: mori://shinzui/mori
 targetPlan: docs/plans/32-add-optional-profile-field-rules.md
 ---
@@ -15,7 +21,8 @@ targetPlan: docs/plans/32-add-optional-profile-field-rules.md
 
 ## Status
 
-- **Status:** accepted with design decisions on 2026-07-30
+- **Status:** completed; completion verified on 2026-10-19.
+- **Implementation plan:** [ExecPlan 32](../plans/32-add-optional-profile-field-rules.md).
 - **Origin:** `shinzui/mori`, whose ADR bundle exposed the ambiguity
 - **Owner of the build:** `shinzui/okf`
 - **Size:** moderate — extend the profile schema and compatibility decoders,

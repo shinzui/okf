@@ -4,9 +4,14 @@ title: Express field requirements that depend on another field's value
 description: Let a profile state that a key becomes required when another key holds
   a particular value, so rules like "supersededBy is required when status is
   superseded" stop living in prose.
-timestamp: "2026-07-29T17:30:21Z"
+timestamp: "2026-10-19T17:10:31Z"
 requestId: IR-5
-status: accepted
+status: completed
+completedAt: "2026-10-19T17:10:31Z"
+resolution: >-
+  ExecPlan 30 completed same-scope conditional presence for top-level and nested
+  fields, definition checks, inspection, and non-cascading diagnostics. Its
+  acceptance matrix passed, and the capability is recorded in the 0.3.0.0 changelog.
 origin: mori://shinzui/okf-profiles
 targetPlan: docs/plans/30-enforce-same-scope-conditional-field-requirements.md
 relatedPlans:
@@ -31,7 +36,8 @@ reviews:
 
 ## Status
 
-- **Status:** accepted with design corrections on 2026-07-29
+- **Status:** completed; completion verified on 2026-10-19.
+- **Implementation plan:** [ExecPlan 30](../plans/30-enforce-same-scope-conditional-field-requirements.md).
 - **Origin:** `shinzui/okf-profiles` (the authoritative profile catalog)
 - **Owner of the build:** `shinzui/okf`
 - **Size:** moderate. Small in implementation, but it introduces the profile

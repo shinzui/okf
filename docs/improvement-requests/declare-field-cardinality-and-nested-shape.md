@@ -4,9 +4,14 @@ title: Declare field cardinality and the shape of nested frontmatter records
 description: Let a profile say whether a field is a scalar or a list, and describe
   the fields of records inside a list, so structured frontmatter like review
   records can be governed instead of merely mentioned.
-timestamp: "2026-07-29T17:30:21Z"
+timestamp: "2026-10-19T17:10:31Z"
 requestId: IR-4
-status: accepted
+status: completed
+completedAt: "2026-10-19T17:10:31Z"
+resolution: >-
+  ExecPlan 27 completed scalar/list cardinality and ExecPlan 29 completed bounded
+  one-level nested record rules, including indexed diagnostics, inspection,
+  compatibility, and acceptance checks. Both are recorded in the 0.3.0.0 changelog.
 origin: mori://shinzui/okf-profiles
 targetPlan: docs/plans/27-enforce-profile-field-cardinality.md
 relatedPlans:
@@ -33,7 +38,10 @@ reviews:
 
 ## Status
 
-- **Status:** accepted with design corrections on 2026-07-29
+- **Status:** completed; completion verified on 2026-10-19.
+- **Implementation plans:** [ExecPlan 27](../plans/27-enforce-profile-field-cardinality.md)
+  for cardinality and [ExecPlan 29](../plans/29-validate-one-level-nested-profile-records.md)
+  for nested records.
 - **Origin:** `shinzui/okf-profiles` (the authoritative profile catalog)
 - **Owner of the build:** `shinzui/okf`
 - **Size:** the largest request in this bundle. It adds explicit cardinality plus
