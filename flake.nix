@@ -39,8 +39,8 @@
       inputs.haskell-nix-dev.follows = "haskell-nix-dev";
       inputs.nixpkgs.follows = "nixpkgs";
       # Project-specific release pin for mori://shinzui/baikai/packages/baikai-kit
-      # 0.4.0.0, which also includes baikai 0.7.2.0 and both providers 0.7.1.0.
-      inputs.baikai-src.url = "github:shinzui/baikai/16425ff769d8291bc4bb3deba4b145fe9c2074b8";
+      # 0.4.0.3, which also includes baikai 0.10.0.0 and both providers 0.7.3.0.
+      inputs.baikai-src.url = "github:shinzui/baikai/03140cf60381ac154ebfa86d3bb2208d7df8626c";
     };
 
     # Project-local Redpanda on Apple Container (macOS), consumed by

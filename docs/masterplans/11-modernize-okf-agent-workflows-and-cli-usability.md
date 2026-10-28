@@ -10,6 +10,12 @@ provenance:
     model: "gpt-6-astra"
     harness: "codex-cli"
     at: 2026-10-28T03:31:55Z
+  revisions:
+    - model: "gpt-6.1-sol"
+      harness: "codex-cli"
+      at: 2026-10-28T03:42:02Z
+      mode: "implement"
+      note: "Begin dependency compatibility baseline"
 ---
 
 # Modernize OKF agent workflows and CLI usability
@@ -42,7 +48,7 @@ Dependency compatibility is one independently testable baseline. Contextual sess
 
 | Plan | Title and path | Dependencies | Status |
 | --- | --- | --- | --- |
-| 70 | [upgrade the baikai release family and verify launch compatibility](../plans/70-upgrade-the-baikai-release-family-and-verify-launch-compatibility.md) | None | Not Started |
+| 70 | [upgrade the baikai release family and verify launch compatibility](../plans/70-upgrade-the-baikai-release-family-and-verify-launch-compatibility.md) | None | Complete |
 | 71 | [launch contextual interactive agent sessions without a required prompt](../plans/71-launch-contextual-interactive-agent-sessions-without-a-required-prompt.md) | Hard: 70 complete; integration: 72 | Not Started |
 | 72 | [select kit installations interactively with fzf](../plans/72-select-kit-installations-interactively-with-fzf.md) | Hard: 70 complete; integration: 71 | Not Started |
 | 73 | [close cli usability and haskell standards gaps](../plans/73-close-cli-usability-and-haskell-standards-gaps.md) | Hard: 71 and 72 complete | Not Started |
@@ -72,7 +78,7 @@ Early producer/consumer checks are mandatory: plan 70 compiles existing Assist/K
 ## Progress
 
 
-Planning complete; no implementation started. Plan 70 is eligible. Plans 71 and 72 await its complete compatibility baseline; plan 73 awaits both functional children. The final integration gate is owned by plan 73.
+Plan 70 is Complete: Cabal and Nix builds, both package suites and fake-provider terminal/Kit acceptance pass on the verified release family. Plan 71 is next, then 72; plan 73 awaits both functional children. The final integration gate is owned by plan 73.
 
 ## Surprises & Discoveries
 

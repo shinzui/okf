@@ -179,7 +179,7 @@ in  Schema.Project::{
               , kind = Some Schema.DependencyKind.ThirdParty
               , source = Some Schema.DependencySource.Hackage
               , scope = Some Schema.DependencyScope.Regular
-              , versionConstraint = Some "^>=0.7.2.0"
+              , versionConstraint = Some "^>=0.10.0.0"
               }
           , Schema.Dependency.WithAugmentation
               { name = "shinzui/baikai:baikai-claude"
@@ -188,7 +188,7 @@ in  Schema.Project::{
               , kind = Some Schema.DependencyKind.ThirdParty
               , source = Some Schema.DependencySource.Hackage
               , scope = Some Schema.DependencyScope.Regular
-              , versionConstraint = Some "^>=0.7.1.0"
+              , versionConstraint = Some "^>=0.7.3.0"
               }
           , Schema.Dependency.WithAugmentation
               { name = "shinzui/baikai:baikai-kit"
@@ -197,7 +197,7 @@ in  Schema.Project::{
               , kind = Some Schema.DependencyKind.ThirdParty
               , source = Some Schema.DependencySource.Hackage
               , scope = Some Schema.DependencyScope.Regular
-              , versionConstraint = Some "^>=0.4.0.0"
+              , versionConstraint = Some "^>=0.4.0.3"
               }
           , Schema.Dependency.WithAugmentation
               { name = "shinzui/baikai:baikai-openai"
@@ -206,7 +206,7 @@ in  Schema.Project::{
               , kind = Some Schema.DependencyKind.ThirdParty
               , source = Some Schema.DependencySource.Hackage
               , scope = Some Schema.DependencyScope.Regular
-              , versionConstraint = Some "^>=0.7.1.0"
+              , versionConstraint = Some "^>=0.7.3.0"
               }
           , Schema.Dependency.WithAugmentation
               { name = "shinzui/okf:okf-core"
@@ -321,6 +321,13 @@ in  Schema.Project::{
         , profile = Some "docs/adr/profile.dhall"
         , okfVersion = "0.2"
         , description = Some "Durable architecture decisions"
+        }
+      , Schema.OkfBundle::{
+        , name = "friction-log"
+        , path = "docs/friction-log"
+        , profile = Some "docs/friction-log/profile.dhall"
+        , okfVersion = "0.2"
+        , description = Some "Friction encountered while implementing plans"
         }
       ]
     }

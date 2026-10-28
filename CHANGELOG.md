@@ -7,6 +7,13 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Changed
+
+- Upgrade `mori://shinzui/baikai/packages/baikai` to 0.10.0.0,
+  `mori://shinzui/baikai/packages/baikai-kit` to 0.4.0.3, and
+  `mori://shinzui/baikai/packages/baikai-claude` and
+  `mori://shinzui/baikai/packages/baikai-openai` to 0.7.3.0.
+
 ## [0.10.0.0] - 2026-10-06
 
 ### Added

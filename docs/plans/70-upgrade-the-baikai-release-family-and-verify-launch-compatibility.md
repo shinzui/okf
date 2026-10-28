@@ -11,6 +11,12 @@ provenance:
     model: "gpt-6-astra"
     harness: "codex-cli"
     at: 2026-10-28T03:32:16Z
+  revisions:
+    - model: "gpt-6.1-sol"
+      harness: "codex-cli"
+      at: 2026-10-28T03:42:02Z
+      mode: "implement"
+      note: "Verify and upgrade the released Baikai dependency baseline"
 ---
 
 # Upgrade the Baikai release family and verify launch compatibility
@@ -29,13 +35,13 @@ Build and run OKF against the latest released Baikai family, preserving existing
 ## Progress
 
 
-- [ ] M1: Cabal and Nix resolve the verified release family and build both packages.
-- [ ] M2: Existing agent rendering, process behavior, kit JSON and configuration compatibility pass regression checks.
+- [x] M1 (2026-10-27): Cabal and Nix build both packages with baikai 0.10.0.0, Kit 0.4.0.3 and both providers 0.7.3.0, from release revision 03140cf60381ac154ebfa86d3bb2208d7df8626c. Hackage package JSON and peeled upstream release tags agree.
+- [x] M2 (2026-10-27): Both Cabal package suites pass, including legacy Dhall, configuration precedence, provider rendering/refusal and installed-asset visibility. Four executable acceptance tests pass against both Cabal and Nix binaries: argv/Unicode, inherited terminal streams, exit propagation, Ctrl-C, missing executable, inspection and Kit JSON.
 
 ## Surprises & Discoveries
 
 
-(None yet.)
+2026-10-27: The shared Nix channel no longer consumes its baikai-src input when selecting first-party packages; updating that input alone built Kit 0.4.0.1. The catalog owns source selection. Compose a narrow project overlay from the pinned release after the shared extension. FRIC-1 in docs/friction-log records this interface detour.
 
 ## Decision Log
 
@@ -45,7 +51,11 @@ Build and run OKF against the latest released Baikai family, preserving existing
 ## Outcomes & Retrospective
 
 
-(To be filled during implementation.)
+The released family is selected consistently by Cabal, Nix and Mori metadata. No Interactive API adaptation was required. Released source still lacks the semantics requested by mori://shinzui/baikai/okf/improvement-requests/concepts/IR-4 and mori://shinzui/baikai/okf/improvement-requests/concepts/IR-5, so the existing append and process adapters remain. ADR 16's architectural boundary remains valid and needs no decision change for this compatibility step.
+
+Acceptance: `nix develop --no-write-lock-file -c cabal build all`, `cabal test all` in that shell, `nix build .#okf-cli --out-link /tmp/okf-plan70-result --no-write-lock-file`, `nix fmt`, and `git diff --check` pass. `scripts/test-agent-workflows.py` passes all four tests against each binary; the packaged executable prints `okf v0.10.0.0 (dirty)`. Normal Nix builds preserve the shared channel's skipped upstream tests and relaxed bounds; OKF's own package suites still run. An exploratory build enabling upstream tests failed on Darwin sandbox process restrictions, and was not accepted as verification.
+
+FRIC-1 and FRIC-2 in docs/friction-log are accepted: keep the explicit release overlay and the channel's source normalization/build policies until the shared catalog selects this family. No unresolved friction remains under this child.
 
 ## Context and Orientation
 
@@ -88,6 +98,14 @@ git diff --check
 ```
 
 Build and tests must exit zero. Inspect formatter changes and retain only relevant edits. Record actual results and any baseline failures; do not claim a blocked check passed.
+
+Run executable acceptance against each built binary:
+
+```bash
+python3 scripts/test-agent-workflows.py --okf "$(cabal list-bin exe:okf)"
+```
+
+The isolated fake-provider harness checks both providers' argv, inherited terminal streams, exit 23, missing executable exit 127 and inspection without a provider, plus one-document Kit JSON under a legacy Dhall configuration.
 
 ## Validation and Acceptance
 

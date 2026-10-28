@@ -15,27 +15,31 @@
 {
   perSystem = { pkgs, config, ... }:
     let
-      # okf builds its package set from nixpkgs' ghc9124 with the shared
-      # haskell-nix patch registry (mori://shinzui/haskell-nix) composed on top.
-      # nix.haskell-nix = true makes the module own the rev-pinned
-      # inputs.haskell-nix; its haskellExtension supplies every version-scoped
-      # patch okf needs — streamly, streamly-core, unicode-data, openai, cradle,
-      # and the whole baikai family (baikai / baikai-claude / baikai-kit /
-      # baikai-openai at the baikai-src release rev selected in flake.nix).
-      # The registry owns package wiring; the project selects its kit release.
-      #
-      # The extension also disables library profiling and Haddock across the
-      # whole set (it overrides mkDerivation, so okf-core/okf-cli inherit it via
-      # callCabal2nix). That replaces okf's former `fleetBuildSettings`: nothing
-      # here reads the `p_` way or the `doc` output, and
-      # `haskell.packages.ghc9124.*` is absent from cache.nixos.org, so every
-      # consumer would otherwise compile both twice from source. Profiling is
-      # contagious across a dependency edge, so it is flipped whole-scope rather
-      # than per package; `haskell.lib.compose.{doHaddock,enableLibraryProfiling}`
-      # still re-apply on top for a single package.
+      # The shared channel owns toolchain and compatibility patches. Its
+      # immutable first-party catalog no longer consumes baikai-src overrides,
+      # so select this project's released family explicitly after that channel.
+      # Source: mori://shinzui/baikai; release pin: flake.nix.
       haskellPackages = pkgs.haskell.packages.ghc9124.override {
-        overrides =
-          inputs.haskell-nix.lib.haskellExtension pkgs.haskell.lib.compose pkgs;
+        overrides = pkgs.lib.composeExtensions
+          (inputs.haskell-nix.lib.haskellExtension pkgs.haskell.lib.compose pkgs)
+          (final: prev:
+            pkgs.lib.genAttrs
+              [ "baikai" "baikai-claude" "baikai-kit" "baikai-openai" ]
+              (name: pkgs.haskell.lib.compose.doJailbreak (pkgs.haskell.lib.compose.overrideCabal
+                # Preserve the channel's relaxed bounds and upstream-test policy;
+                # the release's
+                # process tests need /bin/ps outside Darwin's build sandbox.
+                (drv: {
+                  doCheck = prev.${name}.doCheck;
+                  # Monorepo packages link LICENSE to their parent; Cabal's
+                  # subdirectory source would otherwise leave a dangling link.
+                  prePatch = (drv.prePatch or "") + ''
+                    cp --remove-destination ${inputs.haskell-nix.inputs.baikai-src}/LICENSE LICENSE
+                  '';
+                })
+                (final.callCabal2nix name
+                  (inputs.haskell-nix.inputs.baikai-src + "/${name}")
+                  { }))));
       };
 
       # okf is a multi-package project: okf-core (library) and okf-cli (library +

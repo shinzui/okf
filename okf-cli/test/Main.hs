@@ -1,15 +1,20 @@
 module Main (main) where
 
+import Baikai.Interactive (CodexApprovalPolicy (..), CodexSandboxMode (..), InteractiveSafety (..), interactiveLaunchRequest)
 import Baikai.Kit.Config (KitScope (..))
 import Baikai.Kit.Install (InstallOptions (..), OverwritePolicy (..), defaultInstallOptions)
 import Baikai.Kit.Visibility (KitVisibility (..))
+import Baikai.Provider.Claude.Interactive (claudeInteractiveCommand, defaultClaudeInteractiveConfig)
+import Baikai.Provider.OpenAI.Interactive (codexInteractiveCommand, defaultCodexInteractiveConfig)
 import Control.Exception (bracket, try)
+import Control.Lens ((&), (.~))
 import Control.Monad (unless)
 import Data.Aeson (Value (..), toJSON)
 import Data.Aeson qualified as Aeson
 import Data.Aeson.KeyMap qualified as KeyMap
 import Data.Bifunctor (first)
 import Data.Foldable (toList, traverse_)
+import Data.Generics.Labels ()
 import Data.List qualified as List
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map.Strict qualified as Map
@@ -720,6 +725,7 @@ main = do
           parseCommandMatches ["kit", "uninstall", "author", "--project"] (Kit (KitUninstall "author" ProjectScope)),
           testAssistEffortReachesEachVendor,
           testAssistUnconfiguredRendersNoFlags,
+          testInteractivePolicyRefusals,
           testAgentFlagBeatsEverything,
           testAgentEnvBeatsBothScopes,
           testAgentCommandKeyBeatsDefaultKeyInScope,
@@ -3680,3 +3686,16 @@ testProfileBootstrap =
       invalidDescriptor <- doesFileExist (invalidBundle </> "profile.dhall")
       structuralOk <- success "post-write validation" (invalidResult == Left (ExitFailure 1) && invalidLog && invalidDescriptor)
       pure (and [previewOk, greenOk, dateOk, dateSyntaxOk, directoryOk, danglingOk, danglingBundleOk, fileTargetOk, versionOk, existingOk, invalidOk, mismatchOk, indexFailureOk, logFailureOk, structuralOk])
+
+-- A refusal is an error-shaped value, so it cannot be mistaken for an argv
+-- that a consumer may spawn. Keep this compatibility boundary on upgrades.
+testInteractivePolicyRefusals :: Bool
+testInteractivePolicyRefusals =
+  refused (claudeInteractiveCommand defaultClaudeInteractiveConfig (request (CodexSandbox CodexReadOnly CodexApprovalOnRequest)))
+    && refused (codexInteractiveCommand defaultCodexInteractiveConfig (request (ClaudeAllowedTools ["Read"])))
+    && all
+      (\approval -> refused (codexInteractiveCommand defaultCodexInteractiveConfig (request (CodexSandbox CodexReadOnly approval))))
+      [CodexApprovalUntrusted, CodexApprovalOnFailure]
+  where
+    request policy = interactiveLaunchRequest "inspect" & #safety .~ policy
+    refused = either (const True) (const False)
