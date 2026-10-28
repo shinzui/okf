@@ -7,6 +7,17 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- `Okf.Profile.Sweep`: enumerate and apply relaxations of an authored
+  `ProfileSpec`, load a sweep suite (acceptance bundles and `expected.json`
+  cases in file order), check its baseline, and observe each relaxation's
+  witnesses with the okf-profiles catalog's legacy predicate. `sweepProfile`
+  classifies each relaxation by evidence and proof: `behaviourKey` proves
+  inertness with documented erasures, composite policy units and
+  `admitValue` relaxations cover what one relaxation alone cannot show, and
+  `parseExceptions` reads a per-suite exception manifest.
+
 ## [0.11.0.0] - 2026-10-28
 
 ### Added

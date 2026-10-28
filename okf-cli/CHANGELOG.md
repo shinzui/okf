@@ -7,6 +7,19 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- `okf profile sweep PROFILE --accept BUNDLE --cases DIR` weakens each profile
+  rule one way at a time in process and reports which rejection case notices,
+  streaming one line (or, with `--json`, one NDJSON event) per relaxation.
+  `--kinds legacy` reproduces the okf-profiles Python sweep's relaxations;
+  the default adds presence demotion. Each relaxation is classified as
+  protected, subsumed, covered, inert, exception, descriptor-invalid,
+  acceptance-observable or unprotected, with an exception manifest
+  (`--exceptions`, default `CASES/sweep-exceptions.json`) for what okf cannot
+  decide. Exit 1 when any result is failing or an exception is stale, 2 for an
+  unreadable suite or a failing baseline, 3 for an inertness contradiction.
+
 ## [0.11.0.0] - 2026-10-28
 
 ### Added

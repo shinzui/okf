@@ -8,7 +8,7 @@ import Baikai.Kit.Visibility (KitVisibility (..))
 import Baikai.Provider.Claude.Interactive (claudeInteractiveCommand, defaultClaudeInteractiveConfig)
 import Baikai.Provider.OpenAI.Interactive (codexInteractiveCommand, defaultCodexInteractiveConfig)
 import Control.Concurrent (forkIO, newEmptyMVar, putMVar, takeMVar, threadDelay)
-import Control.Exception (AsyncException (UserInterrupt), bracket, throwTo, try)
+import Control.Exception (AsyncException (UserInterrupt), bracket, finally, throwTo, try)
 import Control.Lens ((&), (.~), (^.))
 import Control.Monad (unless)
 import Data.Aeson (Value (..), toJSON)
@@ -21,10 +21,12 @@ import Data.Generics.Labels ()
 import Data.List qualified as List
 import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map.Strict qualified as Map
+import Data.Maybe (listToMaybe)
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text.IO
 import Data.Time.Calendar (fromGregorian)
 import Data.Time.Clock (UTCTime (..))
+import GHC.IO.Handle (hDuplicate, hDuplicateTo)
 import Okf.Bundle (Concept, bundleInventoryOfConcepts, conceptAttester, conceptExecutor, conceptFromDocument, conceptIdOf, conceptParameters, conceptRuntime, conceptType, walkBundle, walkBundleInventory)
 import Okf.Cli
 import Okf.Cli.Agent.Config (AgentCommandName (..), AgentConfigSource (..), AgentField (..), AgentOverrides (..), ResolvedAgent (..), ResolvedField (..), agentSourceLabel, noAgentOverrides, parseOkfEffort, parseOkfProvider, renderAgentResolution, resolveAgent)
@@ -45,13 +47,15 @@ import Okf.Document (Attester (..), Executor (..), Parameter (..), parseDocument
 import Okf.Index (OkfVersion (..), VersionDeclaration (..), parseOkfVersion, readBundleVersion)
 import Okf.Profile (Cardinality (..), CompiledProfile, FieldCondition (..), FieldFormat (..), FieldPath (..), FieldPathSegment (..), FieldRule (..), FrontmatterRules (..), HandleReferenceRule (..), NestedFieldRule (..), NestedRules (..), PathReferenceRule (..), ProfileSpec (..), ProfileViolation (..), TypeRule (..), compileProfile, compiledProfileSpec, loadProfileFile, validateProfile, validateProfileVersion)
 import Okf.Profile.Registry (ProfileSource (..), ProfileSourceLoadError (..), RegistryEntry (..), RegistryLoadError (..), RegistryRef (..), SourcedProfile (..), defaultRegistryReference)
+import Okf.Profile.Sweep qualified as Sweep
 import Okf.Query (ConceptFilter (..), ConceptPredicate (..), FieldSelector (..), SortDirection (..), SortKey (..), WhereCondition (..), filterConcepts, filterConceptsWhere, parseSortKey, parseWhereCondition, sortConcepts)
 import Okf.Validation (ValidationProfile (..), validateBundle)
 import Options.Applicative
-import System.Directory (Permissions (..), canonicalizePath, createDirectoryIfMissing, createFileLink, doesDirectoryExist, doesFileExist, getCurrentDirectory, getPermissions, getTemporaryDirectory, listDirectory, makeAbsolute, removeDirectoryRecursive, setModificationTime, setPermissions, withCurrentDirectory)
+import System.Directory (Permissions (..), canonicalizePath, copyFile, createDirectoryIfMissing, createFileLink, doesDirectoryExist, doesFileExist, getCurrentDirectory, getPermissions, getTemporaryDirectory, listDirectory, makeAbsolute, removeDirectoryRecursive, setModificationTime, setPermissions, withCurrentDirectory)
 import System.Environment (getArgs, getExecutablePath, lookupEnv, setEnv, unsetEnv, withArgs)
 import System.Exit (ExitCode (..), exitFailure)
 import System.FilePath (normalise, takeDirectory, (</>))
+import System.IO (IOMode (..), hClose, hFlush, stdout, withFile)
 import System.IO.Temp (createTempDirectory)
 import System.Timeout (timeout)
 
@@ -75,6 +79,7 @@ fzfFixture arguments = do
 runTests :: IO ()
 runTests = do
   nestedClosureCli <- testNestedClosureCli
+  profileSweepCli <- testProfileSweepCli
   productDiscoveryCli <- testProductDiscoveryCli
   fzfCancellation <- testFzfCancellation
   bundleDiscoveryListing <- testBundleDiscoveryListing
@@ -128,6 +133,7 @@ runTests = do
   nonAsciiDiagnostics <- testNonAsciiValuesSurviveDiagnostics
   let results =
         [ nestedClosureCli,
+          profileSweepCli,
           productDiscoveryCli,
           fzfCancellation,
           testHelpWrapping,
@@ -3924,3 +3930,78 @@ testNestedClosureCli = withRepositoryPath2 "nested closure CLI" "okf-core/test/f
                       (NestedFieldNotInProfile cid (FieldPath (FieldName "rows" :| [ArrayIndex 3, FieldName "名前"])))
                       == "note: nested field not declared by profile: rows[3].名前"
   pure (results == [Right (), Left (ExitFailure 1), Right (), Left (ExitFailure 1), Right ()] && surfaces)
+
+-- | Run an action with stdout redirected to a file, returning what it printed.
+captureStdout :: IO a -> IO (a, Text.Text)
+captureStdout action = do
+  temporary <- getTemporaryDirectory
+  directory <- createTempDirectory temporary "okf-cli-capture"
+  let path = directory </> "stdout"
+  result <- withFile path WriteMode $ \handle -> do
+    hFlush stdout
+    saved <- hDuplicate stdout
+    hDuplicateTo handle stdout
+    action `finally` (hFlush stdout >> hDuplicateTo saved stdout >> hClose saved)
+  output <- Text.IO.readFile path
+  removeDirectoryRecursive directory
+  pure (result, output)
+
+-- | @okf profile sweep --json@ on okf-core's two-case sweep fixture: the NDJSON
+-- events arrive in order with the published keys; an untested rule exits 1
+-- until a manifest documents it, a malformed manifest exits 2, and a case whose
+-- expectation is wrong stops the sweep with exit 2 before any relaxation event.
+testProfileSweepCli :: IO Bool
+testProfileSweepCli = withRepositoryPath2 "profile sweep CLI" "okf-core/test/fixtures/sweep/profile.dhall" "okf-core/test/fixtures/sweep" $ \descriptor fixture -> do
+  let sweepWith manifest casesDir =
+        captureStdout . try @ExitCode . runCommand . Profile . ProfileSweep $
+          ProfileSweepOptions
+            { profilePath = descriptor,
+              accept = (fixture </> "accept") :| [],
+              casesDir = casesDir,
+              kinds = Sweep.LegacyKinds,
+              json = True,
+              only = Nothing,
+              exceptionsPath = manifest
+            }
+      sweep = sweepWith Nothing
+      events output = [event | line <- Text.lines output, Just (Aeson.Object event) <- [Aeson.decodeStrictText line]]
+      eventName event = KeyMap.lookup "event" event
+      hasKeys keys event = all (`KeyMap.member` event) keys
+  (completed, output) <- sweep (fixture </> "cases")
+  temporary <- getTemporaryDirectory
+  broken <- createTempDirectory temporary "okf-cli-sweep-broken"
+  createDirectoryIfMissing True (broken </> "note-bad-status" </> "notes")
+  copyFile (fixture </> "cases" </> "note-bad-status" </> "notes" </> "bad-status.md") (broken </> "note-bad-status" </> "notes" </> "bad-status.md")
+  Text.IO.writeFile (broken </> "expected.json") "{\"note-bad-status\": \"title\"}"
+  (faulted, faultOutput) <- sweep broken
+  let manifestPath = broken </> "manifest.json"
+  Text.IO.writeFile manifestPath "{\"version\": 1, \"exceptions\": [{\"relaxation\": \"profile/required/type#delete\", \"class\": \"shared-family\", \"home\": \"okfCore\", \"rationale\": \"Every profile requires type; the core suite tests it.\"}]}"
+  (documented, documentedOutput) <- sweepWith (Just manifestPath) (fixture </> "cases")
+  Text.IO.writeFile manifestPath "{\"version\": 1, \"exceptions\": [{\"relaxation\": \"x\", \"class\": \"vibes\", \"rationale\": \"no\"}]}"
+  (malformed, _) <- sweepWith (Just manifestPath) (fixture </> "cases")
+  removeDirectoryRecursive broken
+  let parsed = events output
+      relaxations = filter ((== Just "relaxation") . eventName) parsed
+      faultEvents = events faultOutput
+      outcomesOf events' = [KeyMap.lookup "outcome" event | event <- events', eventName event == Just "relaxation"]
+      summaryOf events' = [event | event <- events', eventName event == Just "summary"]
+      ok =
+        completed == Left (ExitFailure 1)
+          && outcomesOf parsed == map (Just . String) ["unprotected", "protected", "protected", "protected", "inert"]
+          && [KeyMap.lookup "failing" event | event <- summaryOf parsed] == [Just (toJSON ["profile/required/type#delete" :: Text.Text])]
+          && documented == Right ()
+          && outcomesOf (events documentedOutput) == map (Just . String) ["exception", "protected", "protected", "protected", "inert"]
+          && malformed == Left (ExitFailure 2)
+          && map eventName parsed == map (Just . String) (["start", "baseline"] <> replicate 5 "relaxation" <> ["summary"])
+          && all (hasKeys ["index", "total", "id", "field", "kind", "outcome", "legacyOutcome", "witness", "witnesses", "facetWitnesses", "coveredBy", "reason", "exception", "elapsedMs"]) relaxations
+          && [KeyMap.lookup "legacyOutcome" event | event <- relaxations]
+            == map (Just . String) ["UNPROTECTED", "fixture note-missing-title", "fixture note-bad-status", "fixture note-bad-status", "UNPROTECTED"]
+          && fmap (KeyMap.lookup "relaxationCount") (listToMaybe parsed) == Just (Just (Number 5))
+          && faulted == Left (ExitFailure 2)
+          && map eventName faultEvents == map (Just . String) ["start", "baseline", "summary"]
+          && [KeyMap.lookup "ok" event | event <- faultEvents, eventName event == Just "baseline"] == [Just (Bool False)]
+  unless ok $ do
+    putStrLn "FAIL profile sweep CLI"
+    Text.IO.putStrLn output
+    Text.IO.putStrLn faultOutput
+  pure ok

@@ -24,6 +24,7 @@ module Okf.Cli
     ProfilesOptions (..),
     ProfileSourceOrigin (..),
     ProfileShowOptions (..),
+    ProfileSweepOptions (..),
     ResolvedProfileSource (..),
     RegistryTableMode (..),
     ReleaseVersion (..),
@@ -124,6 +125,8 @@ import Okf.Cli.ProfileDiscovery
     discoverAvailableProfiles,
     profileSearchRootsEnvVar,
   )
+import Okf.Cli.ProfileSweep (ProfileSweepOptions (..), profileSweepOptionsParser, runProfileSweep)
+import Okf.Cli.ProfileSweep qualified as Sweep
 import Okf.Cli.Version (appVersionWithGit)
 import Okf.ConceptId
 import Okf.Document
@@ -395,6 +398,7 @@ data ProfileCommand
   | ProfileShow ProfileShowOptions
   | ProfileDocument ProfileDocumentOptions
   | ProfileInit ProfileInitOptions
+  | ProfileSweep ProfileSweepOptions
   deriving stock (Show, Eq)
 
 data ProfileListOptions = ProfileListOptions
@@ -782,6 +786,12 @@ profileCommandParser =
           ( info
               (ProfileDocument <$> profileDocumentOptionsParser <**> helper)
               (progDesc "Generate an OKF bundle documenting a profile")
+          )
+        <> command
+          "sweep"
+          ( info
+              (ProfileSweep <$> profileSweepOptionsParser <**> helper)
+              (progDesc "Weaken each profile rule in turn and report which rejection case notices")
           )
     )
     <|> pure (ProfileList (ProfileListOptions [] False False False))
@@ -1184,6 +1194,7 @@ runProfile = \case
   ProfileShow options -> runProfileShow options
   ProfileDocument options -> runProfileDocument options
   ProfileInit options -> runProfileInit options
+  ProfileSweep options -> runProfileSweepCommand options
 
 -- | Decode the plural environment value. Aeson decodes directly to @[Text]@,
 -- so a non-array or non-string member is rejected rather than coerced. Blank
@@ -1317,6 +1328,24 @@ renderRegistryLoadError reference err =
       "Dhall expression such as a hash-pinned URL. Remote references need network access on first",
       "use; pass --registry with a local checkout to work offline."
     ]
+
+-- | Load and compile the profile with the same messages as every other profile
+-- command, then hand over to 'runProfileSweep' with this module's renderers.
+runProfileSweepCommand :: ProfileSweepOptions -> IO ()
+runProfileSweepCommand options = do
+  let path = options ^. #profilePath
+  spec <- loadProfileOrExit path
+  compiled <- compileProfileOrExit (Text.pack path) spec
+  runProfileSweep
+    Sweep.SweepRenderers
+      { Sweep.violation = renderProfileViolation,
+        Sweep.bundleValidationError = renderBundleValidationError,
+        Sweep.logStaleness = renderLogStaleness,
+        Sweep.bundleError = renderBundleError,
+        Sweep.definitionError = renderProfileDefinitionError
+      }
+    options
+    compiled
 
 runProfileList :: ProfileListOptions -> IO ()
 runProfileList ProfileListOptions {registryRefs, noLocal, json, wide} = do

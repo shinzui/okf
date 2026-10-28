@@ -27,6 +27,7 @@ extra-doc-files: CHANGELOG.md
 extra-source-files:
   dhall/**/*.dhall
   test/fixtures/**/*.dhall
+  test/fixtures/**/*.json
   test/fixtures/**/*.md
   test/fixtures/**/*.py
   test/fixtures/**/*.sql
@@ -73,6 +74,7 @@ library
     Okf.Profile.Discovery
     Okf.Profile.Documentation
     Okf.Profile.Registry
+    Okf.Profile.Sweep
     Okf.Query
     Okf.Trust
     Okf.Validation

@@ -10,7 +10,7 @@ import Data.Foldable (for_, toList)
 import Data.List qualified as List
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (catMaybes, mapMaybe, maybeToList)
+import Data.Maybe (catMaybes, listToMaybe, mapMaybe, maybeToList)
 import Data.Set qualified as Set
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text.IO
@@ -41,6 +41,7 @@ import Okf.Profile.Bootstrap
 import Okf.Profile.Discovery qualified as ProfileDiscovery
 import Okf.Profile.Documentation
 import Okf.Profile.Registry
+import Okf.Profile.Sweep qualified as Sweep
 import Okf.Query
 import Okf.Trust
 import Okf.Validation
@@ -164,6 +165,17 @@ main = do
         testIO "loadProfileFile decodes the postgresql fixture" testLoadProfileFixture,
         testIO "loadProfileFile decodes record-completed document ID rules" testLoadDocumentIdProfileFixture,
         testIO "loadProfileFile exposes nested reference and uniqueness declarations" testLoadNestedReferenceProfileFixture,
+        testIO "sweep enumerates relaxations in declaration order" testSweepEnumeration,
+        testIO "sweep applies each relaxation kind to the authored descriptor" testSweepApplyRelaxation,
+        test "sweep reads expected.json in file order" testSweepExpectationOrder,
+        testIO "sweep finds witnesses and unprotected relaxations on a two-case suite" testSweepWitnesses,
+        testIO "sweep baseline reports a case that does not meet its expectation" testSweepBaselineFault,
+        testIO "sweep classifies an open profile's relaxations by evidence and proof" testSweepClassification,
+        testIO "sweep classifies closed-profile deletions as subsumed or acceptance-observable" testSweepClosedProfile,
+        testIO "sweep reports an inert relaxation some case notices as a contradiction" testSweepContradiction,
+        testIO "sweep applies manifest exceptions and reports stale ones" testSweepExceptions,
+        test "sweep rejects malformed exception manifests" testSweepMalformedExceptions,
+        testIO "behaviourKey erases only what validation never consults" testSweepBehaviourKeyErasures,
         testIO "loadProfileFile accepts the pre-type-frontmatter described schema" testLoadDescribedProfileFixture,
         testIO "loadProfileFile accepts the frozen EP-1 type-aware schema" testLoadTypeAwareCompatibilityFixture,
         testIO "loadProfileFile accepts the frozen EP-2 vocabulary schema" testLoadVocabularyCompatibilityFixture,
@@ -8577,3 +8589,353 @@ testNestedClosureMatrix = do
   assertEqual (violationsFor True "stray") (unknowns coexist)
   assertEqual 1 (length [() | ConstraintPresenceMissing {} <- coexist])
   assertEqual 1 (length [() | TimestampOrderViolation {} <- coexist])
+
+-- Load-bearing sweeps ---------------------------------------------------------
+
+-- | A renderer that needs nothing from the CLI: 'show' names the field, which is
+-- all the legacy predicate looks for.
+showRender :: Sweep.Render
+showRender _ _ violation = Text.pack (show violation)
+
+loadSweepFixture :: IO (ProfileSpec, CompiledProfile, Sweep.Suite)
+loadSweepFixture = do
+  profilePath <- fixtureFilePath "sweep/profile.dhall"
+  acceptPath <- fixturePath "sweep/accept"
+  casesPath <- fixturePath "sweep/cases"
+  spec <- either (fail . Text.unpack) pure =<< loadProfileFile profilePath
+  compiled <- either (fail . show) pure (compileProfile spec)
+  suite <- either (fail . show) pure =<< Sweep.loadSuite [acceptPath] casesPath
+  pure (spec, compiled, suite)
+
+testSweepEnumeration :: IO (Either Text ())
+testSweepEnumeration = do
+  (spec, _, _) <- loadSweepFixture
+  nestedPath <- fixtureFilePath "profiles/nested-references-and-uniqueness.dhall"
+  nestedSpec <- either (fail . Text.unpack) pure =<< loadProfileFile nestedPath
+  pure $ do
+    assertEqual
+      [ "profile/required/type#delete",
+        "profile/required/title#delete",
+        "type:Note/required/status#delete",
+        "type:Note/required/status#allowedValues",
+        "type:Note/optional/summary#delete"
+      ]
+      (map Sweep.relaxationId (Sweep.enumerateRelaxations Sweep.LegacyKinds spec))
+    assertEqual
+      [ "profile/required/type#delete",
+        "profile/required/type#presence",
+        "profile/required/title#delete",
+        "profile/required/title#presence",
+        "type:Note/required/status#delete",
+        "type:Note/required/status#presence",
+        "type:Note/required/status#allowedValues",
+        "type:Note/optional/summary#delete"
+      ]
+      (map Sweep.relaxationId (Sweep.enumerateRelaxations Sweep.DefaultKinds spec))
+    assertEqual
+      [ "profile/required/type#delete",
+        "profile/required/requestId#delete",
+        "profile/required/requestId#format",
+        "profile/required/dependencies#delete",
+        "profile/required/dependencies/elementFields/required/ref#delete",
+        "profile/required/dependencies/elementFields/required/ref#allowSelf",
+        "profile/required/dependencies/elementFields/required/ref#allowLocal",
+        "profile/required/dependencies/elementFields/required/ref#externalUriPattern",
+        "profile/required/acceptanceCriteria#delete",
+        "profile/required/acceptanceCriteria#uniqueBy",
+        "profile/required/acceptanceCriteria/elementFields/required/id#delete",
+        "profile/required/acceptanceCriteria/elementFields/required/id#format",
+        "profile/required/acceptanceCriteria/elementFields/required/text#delete"
+      ]
+      (map Sweep.relaxationId (Sweep.enumerateRelaxations Sweep.LegacyKinds nestedSpec))
+    assertEqual
+      (Just "id")
+      (listToMaybe [Sweep.relaxationField r | r <- Sweep.enumerateRelaxations Sweep.LegacyKinds nestedSpec, Sweep.relaxationId r == "profile/required/acceptanceCriteria/elementFields/required/id#format"])
+
+testSweepApplyRelaxation :: IO (Either Text ())
+testSweepApplyRelaxation = do
+  (spec, _, _) <- loadSweepFixture
+  nestedPath <- fixtureFilePath "profiles/nested-references-and-uniqueness.dhall"
+  nestedSpec <- either (fail . Text.unpack) pure =<< loadProfileFile nestedPath
+  let status = Sweep.RuleTarget (Sweep.RuleLocation (Sweep.TypeScope "Note") Sweep.RequiredList "status" Nothing)
+      note relaxed = case relaxed ^. #types of
+        [rule] -> Right (rule ^. #frontmatter)
+        other -> Left ("expected one type rule, got " <> Text.pack (show (length other)))
+      relax target kind = Sweep.applyRelaxation (Sweep.Relaxation target kind)
+      fieldsOf = map (^. #field)
+      ref = Sweep.RuleTarget (Sweep.RuleLocation Sweep.ProfileScope Sweep.RequiredList "dependencies" (Just (Sweep.ElementFields, Sweep.RequiredList, "ref")))
+      nestedRef relaxed = do
+        dependencies <- lookupRawRule "dependencies" (relaxed ^. #frontmatter . #required)
+        case dependencies ^. #elementFields of
+          Just nestedRules | [member] <- nestedRules ^. #required -> Right member
+          _ -> Left "expected one nested rule under dependencies"
+  pure $ do
+    deleted <- note (relax status Sweep.Delete spec)
+    assertEqual [] (fieldsOf (deleted ^. #required))
+    demoted <- note (relax status Sweep.Presence spec)
+    assertEqual [] (fieldsOf (demoted ^. #required))
+    assertEqual ["summary", "status"] (fieldsOf (demoted ^. #optional))
+    cleared <- note (relax status Sweep.ClearVocabulary spec)
+    assertEqual [[]] (map (^. #allowedValues) (cleared ^. #required))
+    admitted <- note (relax status (Sweep.AdmitValue "wip") spec)
+    assertEqual [["draft", "final", "wip"]] (map (^. #allowedValues) (admitted ^. #required))
+    anyShape <- note (relax status Sweep.DropCardinality spec)
+    assertEqual [Any] (map (^. #cardinality) (anyShape ^. #required))
+    assertEqual spec (relax (Sweep.RuleTarget (Sweep.RuleLocation (Sweep.TypeScope "Missing") Sweep.RequiredList "status" Nothing)) Sweep.Delete spec)
+    selfAllowed <- nestedRef (relax ref Sweep.AllowSelf nestedSpec)
+    assertEqual (Just True) ((^. #allowSelf) <$> selfAllowed ^. #reference)
+    localAllowed <- nestedRef (relax ref Sweep.AllowLocal nestedSpec)
+    assertEqual (Just True) ((^. #allowLocal) <$> localAllowed ^. #reference)
+    unpatterned <- nestedRef (relax ref Sweep.DropExternalUriPattern nestedSpec)
+    assertEqual (Just Nothing) ((^. #externalUriPattern) <$> unpatterned ^. #reference)
+    unreferenced <- nestedRef (relax ref Sweep.DropReference nestedSpec)
+    assertEqual Nothing (unreferenced ^. #reference)
+    let criteria = Sweep.RuleTarget (Sweep.RuleLocation Sweep.ProfileScope Sweep.RequiredList "acceptanceCriteria" Nothing)
+    notUnique <- lookupRawRule "acceptanceCriteria" (relax criteria Sweep.DropUniqueBy nestedSpec ^. #frontmatter . #required)
+    assertEqual Nothing (notUnique ^. #uniqueBy)
+    flat <- lookupRawRule "acceptanceCriteria" (relax criteria (Sweep.DropNested Sweep.ElementFields) nestedSpec ^. #frontmatter . #required)
+    assertBool "elementFields dropped" (isNothing (flat ^. #elementFields))
+
+testSweepExpectationOrder :: Either Text ()
+testSweepExpectationOrder = do
+  parsed <-
+    Sweep.parseExpectations
+      "{\"zeta\": \"status\", \"alpha\": {\"field\": \"docId\", \"diagnostics\": 2}, \"mid\": \"title\"}"
+  assertEqual
+    [ ("zeta", Sweep.CaseExpectation "status" 1),
+      ("alpha", Sweep.CaseExpectation "docId" 2),
+      ("mid", Sweep.CaseExpectation "title" 1)
+    ]
+    parsed
+  assertBool "a non-object is rejected" (either (const True) (const False) (Sweep.parseExpectations "[]"))
+  assertBool "a malformed entry is rejected" (either (const True) (const False) (Sweep.parseExpectations "{\"a\": 3}"))
+
+testSweepWitnesses :: IO (Either Text ())
+testSweepWitnesses = do
+  (_, compiled, suite) <- loadSweepFixture
+  pure $ do
+    assertEqual ["note-missing-title", "note-bad-status"] (map (^. #name) (suite ^. #cases))
+    prepared <- first (Text.pack . show) (Sweep.checkBaseline showRender compiled suite)
+    let results = Sweep.sweepProfile [] prepared (Sweep.planRelaxations Sweep.LegacyKinds prepared)
+        outcomes = [(Sweep.relaxationId (r ^. #relaxation), Sweep.legacyOutcome (r ^. #observation)) | r <- results]
+    assertEqual
+      [ ("profile/required/type#delete", "UNPROTECTED"),
+        ("profile/required/title#delete", "fixture note-missing-title"),
+        ("type:Note/required/status#delete", "fixture note-bad-status"),
+        ("type:Note/required/status#allowedValues", "fixture note-bad-status"),
+        ("type:Note/optional/summary#delete", "UNPROTECTED")
+      ]
+      outcomes
+
+testSweepBaselineFault :: IO (Either Text ())
+testSweepBaselineFault = do
+  (_, compiled, suite) <- loadSweepFixture
+  let misdirected =
+        suite
+          & #cases
+          . traverse
+          . filtered ((== "note-bad-status") . (^. #name))
+          . #expectation
+          . #field
+          .~ "title"
+  pure $ case Sweep.checkBaseline showRender compiled misdirected of
+    Left (Sweep.CaseExpectationUnmet "note-bad-status" (Sweep.CaseExpectation "title" 1) [_] :| []) -> Right ()
+    Left faults -> Left ("unexpected faults: " <> Text.pack (show faults))
+    Right _ -> Left "a case whose expected field is wrong must fail the baseline"
+
+lookupRawRule :: Text -> [FieldRule] -> Either Text FieldRule
+lookupRawRule key rules =
+  case [rule | rule <- rules, rule ^. #field == key] of
+    [rule] -> Right rule
+    _ -> Left ("expected one raw rule for " <> key)
+
+sweepLogFile :: LogFile
+sweepLogFile = LogFile "log.md" (parseLog "# Bundle Update Log\n\n## 2026-10-28\n* **Add**: Created the sweep fixture.\n")
+
+sweepDocument :: [(Text, Text)] -> Text
+sweepDocument fields =
+  "---\n" <> Text.unlines [key <> ": " <> value | (key, value) <- fields] <> "---\n\n# Sweep fixture\n\nA concept.\n"
+
+-- | A bundle held in memory, with one fresh log so strict acceptance passes.
+memoryBundle :: FilePath -> [(Text, [(Text, Text)])] -> Either Text Sweep.SuiteBundle
+memoryBundle bundlePath documents = do
+  concepts <- for documents $ \(rawId, fields) -> do
+    conceptId <- parseTestConceptId rawId
+    document <- firstShow (parseDocument (sweepDocument fields))
+    pure (conceptFromDocument conceptId document)
+  pure (Sweep.SuiteBundle bundlePath concepts (bundleInventoryOfConcepts concepts) VersionUndeclared [sweepLogFile])
+
+memoryCase :: Text -> Text -> [(Text, Text)] -> Either Text Sweep.RejectionCase
+memoryCase caseName expected fields =
+  Sweep.RejectionCase caseName (Sweep.CaseExpectation expected 1) <$> memoryBundle (Text.unpack caseName) [("tasks/" <> caseName, fields)]
+
+setSweepField :: Text -> Text -> [(Text, Text)] -> [(Text, Text)]
+setSweepField key value fields = [(k, v) | (k, v) <- fields, k /= key] <> [(key, value)]
+
+baseTask :: [(Text, Text)]
+baseTask =
+  [ ("type", "Task"),
+    ("title", "A task"),
+    ("description", "A task in the sweep fixture."),
+    ("timestamp", "\"2026-10-01T00:00:00Z\""),
+    ("docId", "TASK-1"),
+    ("status", "open")
+  ]
+
+loadCompiledFixture :: FilePath -> IO (ProfileSpec, CompiledProfile)
+loadCompiledFixture name = do
+  path <- fixtureFilePath name
+  spec <- either (fail . Text.unpack) pure =<< loadProfileFile path
+  compiled <- either (fail . show) pure (compileProfile spec)
+  pure (spec, compiled)
+
+-- | The classification fixture's suite: one accepted task and three cases, each
+-- breaking exactly one rule.
+classificationSuite :: Either Text Sweep.Suite
+classificationSuite = do
+  accept <- memoryBundle "accept" [("tasks/first", baseTask <> [("parent", "https://example.com/tasks/1")])]
+  cases <-
+    sequence
+      [ memoryCase "task-bad-status" "status" (setSweepField "status" "wip" baseTask),
+        memoryCase "task-local-parent" "parent" (baseTask <> [("parent", "TASK-9")]),
+        memoryCase "task-missing-closedby" "closedBy" (setSweepField "status" "done" baseTask)
+      ]
+  pure (Sweep.Suite [accept] cases)
+
+sweepOutcomes :: [Sweep.SweepException] -> Sweep.KindSet -> Sweep.PreparedSuite -> [(Text, Sweep.SweepResult)]
+sweepOutcomes exceptions kinds prepared =
+  [(Sweep.relaxationId (result ^. #relaxation), result) | result <- Sweep.sweepProfile exceptions prepared (Sweep.planRelaxations kinds prepared)]
+
+expectOutcome :: [(Text, Sweep.SweepResult)] -> Text -> Sweep.Outcome -> Either Text ()
+expectOutcome results relaxation expected =
+  case lookup relaxation results of
+    Nothing -> Left ("no result for " <> relaxation <> " among " <> Text.pack (show (map fst results)))
+    Just result
+      | result ^. #outcome == expected -> Right ()
+      | otherwise -> Left (relaxation <> ": expected " <> Text.pack (show expected) <> ", got " <> Text.pack (show (result ^. #outcome)) <> " from " <> Text.pack (show (result ^. #observation)))
+
+testSweepClassification :: IO (Either Text ())
+testSweepClassification = do
+  (_, compiled) <- loadCompiledFixture "sweep/classification.dhall"
+  pure $ do
+    suite <- classificationSuite
+    prepared <- first (Text.pack . show) (Sweep.checkBaseline showRender compiled suite)
+    let results = sweepOutcomes [] Sweep.DefaultKinds prepared
+        expect = expectOutcome results
+    -- A vocabulary a condition depends on cannot be cleared, so admitting the
+    -- value a case reports stands in for it.
+    expect "type:Task/required/status#admitValue:wip" Sweep.Protected
+    expect "type:Task/required/status#allowedValues" (Sweep.Covered "type:Task/required/status#admitValue:wip" "task-bad-status")
+    expect "type:Task/required/status#delete" Sweep.DescriptorInvalidOutcome
+    expect "type:Task/required/status#presence" Sweep.Unprotected
+    expect "type:Task/required/closedBy#delete" Sweep.Protected
+    expect "type:Task/required/closedBy#presence" Sweep.Protected
+    -- allowLocal turns the local-handle rejection into a dangling-handle one on
+    -- the same field, which the legacy predicate cannot tell apart.
+    expect "type:Task/optional/parent#allowLocal" (Sweep.Covered "type:Task/optional/parent#reference" "task-local-parent")
+    assertEqual (Just ["task-local-parent"]) ((^. #observation . #facetWitnesses) <$> lookup "type:Task/optional/parent#allowLocal" results)
+    expect "type:Task/optional/parent#allowSelf" (Sweep.Inert "allowSelf is never read while allowLocal is False")
+    expect "type:Task/optional/note#delete" (Sweep.Inert "the relaxed profile compiles to the same behaviour key as the baseline")
+    expect "type:Task/optional/priority#allowedValues" Sweep.Unprotected
+    assertBool "a composite unit is not reported as its own result" (isNothing (lookup "type:Task/optional/parent#reference" results))
+    assertBool "no protected result lacks a witness" (and [not (null (r ^. #observation . #witnesses)) | (_, r) <- results, r ^. #outcome == Sweep.Protected])
+
+testSweepClosedProfile :: IO (Either Text ())
+testSweepClosedProfile = do
+  (_, compiled) <- loadCompiledFixture "sweep/closed.dhall"
+  pure $ do
+    let item extra =
+          [("type", "Item"), ("title", "An item"), ("description", "An item."), ("timestamp", "\"2026-10-01T00:00:00Z\"")] <> extra
+    accept <- memoryBundle "accept" [("items/first", item [("size", "s"), ("colour", "red")])]
+    badSize <- memoryCase "item-bad-size" "size" (item [("size", "xl")])
+    prepared <- first (Text.pack . show) (Sweep.checkBaseline showRender compiled (Sweep.Suite [accept] [badSize]))
+    let results = sweepOutcomes [] Sweep.LegacyKinds prepared
+        expect = expectOutcome results
+    expect "profile/optional/size#allowedValues" Sweep.Protected
+    expect "profile/optional/size#delete" (Sweep.Subsumed ["profile/optional/size#allowedValues"])
+    expect "profile/optional/colour#allowedValues" Sweep.Unprotected
+    expect "profile/optional/colour#delete" Sweep.AcceptanceObservableOutcome
+    assertEqual (Just "acceptance-fails") (Sweep.legacyOutcome . (^. #observation) <$> lookup "profile/optional/size#delete" results)
+
+testSweepContradiction :: IO (Either Text ())
+testSweepContradiction = do
+  (_, compiled) <- loadCompiledFixture "sweep/classification.dhall"
+  pure $ do
+    suite <- classificationSuite
+    prepared <- first (Text.pack . show) (Sweep.checkBaseline showRender compiled suite)
+    -- A key that erases everything claims every relaxation is inert.
+    let erasesEverything = Sweep.withBehaviourKey (const (Sweep.behaviourKey compiled)) prepared
+        results = sweepOutcomes [] Sweep.DefaultKinds erasesEverything
+    expectOutcome results "type:Task/required/closedBy#delete" Sweep.Contradiction
+
+testSweepExceptions :: IO (Either Text ())
+testSweepExceptions = do
+  (_, compiled) <- loadCompiledFixture "sweep/classification.dhall"
+  pure $ do
+    suite <- classificationSuite
+    prepared <- first (Text.pack . show) (Sweep.checkBaseline showRender compiled suite)
+    let shared = Sweep.SweepException "type:Task/optional/priority#allowedValues" (Sweep.SharedFamily "tasks") "Tested in the tasks family."
+        inexpressible = Sweep.SweepException "type:Task/required/status#delete" (Sweep.OverlappingRule "type:Task/required/closedBy") "closedBy's condition needs status."
+        notAGap = Sweep.SweepException "type:Task/required/closedBy#delete" (Sweep.Deferred "mori://shinzui/okf/okf/improvement-requests/concepts/IR-12") "Protected after all."
+        absent = Sweep.SweepException "type:Task/optional/ghost#delete" (Sweep.SharedFamily "tasks") "No such rule."
+        exceptions = [shared, inexpressible, notAGap, absent]
+        results = sweepOutcomes exceptions Sweep.DefaultKinds prepared
+        outcomes = [(identifier, result ^. #outcome) | (identifier, result) <- results]
+    expectOutcome results "type:Task/optional/priority#allowedValues" (Sweep.ExceptionOutcome shared)
+    expectOutcome results "type:Task/required/status#delete" (Sweep.ExceptionOutcome inexpressible)
+    expectOutcome results "type:Task/required/closedBy#delete" Sweep.Protected
+    assertEqual [notAGap, absent] (Sweep.staleExceptions Sweep.DefaultKinds False exceptions outcomes)
+    assertEqual [notAGap] (Sweep.staleExceptions Sweep.DefaultKinds True exceptions outcomes)
+    -- A presence exception names a kind a legacy run never enumerates.
+    let presence = Sweep.SweepException "type:Task/required/ghost#presence" (Sweep.SharedFamily "tasks") "Default kinds only."
+    assertEqual [] (Sweep.staleExceptions Sweep.LegacyKinds False [presence] outcomes)
+
+testSweepMalformedExceptions :: Either Text ()
+testSweepMalformedExceptions = do
+  let rejected bytes = either (const True) (const False) (Sweep.parseExceptions bytes)
+      entry fields = "{\"version\": 1, \"exceptions\": [{" <> fields <> "}]}"
+  parsed <- Sweep.parseExceptions (entry "\"relaxation\": \"profile/required/x#delete\", \"class\": \"shared-family\", \"home\": \"okfV02\", \"rationale\": \"Spliced.\"")
+  assertEqual [Sweep.SweepException "profile/required/x#delete" (Sweep.SharedFamily "okfV02") "Spliced."] parsed
+  assertBool "version 2 is rejected" (rejected "{\"version\": 2, \"exceptions\": []}")
+  assertBool "an unknown class is rejected" (rejected (entry "\"relaxation\": \"r\", \"class\": \"vibes\", \"rationale\": \"x\""))
+  assertBool "shared-family needs home" (rejected (entry "\"relaxation\": \"r\", \"class\": \"shared-family\", \"rationale\": \"x\""))
+  assertBool "overlapping-rule needs overlapsWith" (rejected (entry "\"relaxation\": \"r\", \"class\": \"overlapping-rule\", \"rationale\": \"x\""))
+  assertBool "deferred needs a mori:// request" (rejected (entry "\"relaxation\": \"r\", \"class\": \"deferred\", \"request\": \"IR-3\", \"rationale\": \"x\""))
+  assertBool "an empty rationale is rejected" (rejected (entry "\"relaxation\": \"r\", \"class\": \"shared-family\", \"home\": \"h\", \"rationale\": \" \""))
+
+-- | Each erasure must leave the key equal and, on concepts that exercise the
+-- erased member, the violations identical; a description on a rule with a
+-- presence clause must not be erased.
+testSweepBehaviourKeyErasures :: IO (Either Text ())
+testSweepBehaviourKeyErasures = do
+  (spec, compiled) <- loadCompiledFixture "sweep/classification.dhall"
+  pure $ do
+    probes <-
+      traverse
+        (\(rawId, fields) -> conceptFromDocument <$> parseTestConceptId rawId <*> firstShow (parseDocument (sweepDocument fields)))
+        [ ("tasks/a", baseTask <> [("note", "anything"), ("parent", "TASK-1")]),
+          ("tasks/b", setSweepField "docId" "TASK-2" baseTask <> [("parent", "https://example.com/tasks/1")]),
+          ("tasks/c", setSweepField "docId" "TASK-3" baseTask <> [("parent", "TASK-2"), ("note", "[1, 2]")]),
+          ("tasks/d", [(k, v) | (k, v) <- setSweepField "docId" "TASK-4" baseTask, k /= "title"])
+        ]
+    let onType f = spec & #types . traverse . #frontmatter %~ f
+        onRule name f = onType (\rules -> rules & #optional . traverse . filtered ((== name) . (^. #field)) %~ f)
+        withReference f = onRule "parent" (\rule -> rule & #reference . _Just %~ f)
+        same label relaxed = do
+          relaxedCompiled <- first (\errors -> label <> ": " <> Text.pack (show errors)) (compileProfile relaxed)
+          assertBool (label <> ": behaviour key differs") (Sweep.behaviourKey relaxedCompiled == Sweep.behaviourKey compiled)
+          for_ [PermissiveConformance, StrictAuthoring] $ \mode ->
+            assertEqual (validateProfile mode compiled probes) (validateProfile mode relaxedCompiled probes)
+        unpatterned = withReference (\policy -> policy & #externalUriSchemes .~ [] & #externalUriPattern .~ Nothing)
+        patterned = withReference (\policy -> policy & #externalUriSchemes .~ [] & #externalUriPattern ?~ "https://example[.]com/.*")
+    same "unconstrained optional rule in an open record" (onType (#optional %~ filter ((/= "note") . (^. #field))))
+    same "description on a rule without a presence clause" (onRule "note" (#description .~ Nothing))
+    same "allowSelf while allowLocal is False" (withReference (#allowSelf .~ True))
+    unpatternedCompiled <- first (Text.pack . show) (compileProfile unpatterned)
+    patternedCompiled <- first (Text.pack . show) (compileProfile patterned)
+    assertBool "externalUriPattern without schemes is erased" (Sweep.behaviourKey unpatternedCompiled == Sweep.behaviourKey patternedCompiled)
+    for_ [PermissiveConformance, StrictAuthoring] $ \mode ->
+      assertEqual (validateProfile mode unpatternedCompiled probes) (validateProfile mode patternedCompiled probes)
+    let describedTitle = spec & #frontmatter . #required . traverse . filtered ((== "title") . (^. #field)) . #description ?~ "Shown when title is missing."
+    describedCompiled <- first (Text.pack . show) (compileProfile describedTitle)
+    assertBool "a required rule's description is kept" (Sweep.behaviourKey describedCompiled /= Sweep.behaviourKey compiled)

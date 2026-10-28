@@ -8,6 +8,7 @@ columns. Profiles are written as Dhall descriptors.
 USAGE
 
   okf profile init [EXPORT] --bundle DIR [--write]
+  okf profile sweep PROFILE.dhall --accept BUNDLE --cases DIR [--json]
   okf profiles
   okf profiles --json
   okf validate BUNDLE --profile PROFILE.dhall
@@ -138,6 +139,73 @@ REGISTRIES
   indented description line. Pass --wide to list for every value in full. The
   EXPORT column reads "(root)" when a registry reference is itself a profile;
   ID FIELD reads "-" when the profile declares no idField.
+
+SWEEPING RULES FOR LOAD-BEARINGNESS
+
+  A sweep weakens each profile rule one way at a time (a relaxation) and
+  reports which rejection case notices. A rule no case notices is not tested.
+
+    okf profile sweep PROFILE.dhall --accept BUNDLE --cases DIR
+    okf profile sweep PROFILE.dhall --accept BUNDLE --cases DIR --json
+
+  --accept BUNDLE names a bundle that must pass validate --strict with
+  --profile-enforce and --log-enforce; repeat it for several. DIR holds one
+  case bundle per subdirectory and an expected.json mapping each case name to
+  the field its diagnostic must name, or to {"field": F, "diagnostics": N}.
+  A case meets its expectation when, validated without --strict, it prints
+  exactly N "profile:" lines (default 1) and one of them contains F.
+
+  The profile is decoded once and every bundle loaded once; each relaxation
+  recompiles the descriptor in memory and re-runs only the profile check. If
+  the unrelaxed profile already fails an acceptance bundle or a case, the
+  sweep prints why and exits 2 before any relaxation runs.
+
+  One line per relaxation follows as soon as its rule is decided, named by its
+  relaxation ID, such as type:Launch/required/launchRef#allowLocal. A
+  witness is a case that stops meeting its expectation. --json prints NDJSON
+  instead: a start event, a baseline event, one event per relaxation and a
+  summary.
+
+  --kinds legacy    delete, allowedValues, format, uniqueBy, allowSelf,
+                    allowLocal, externalUriPattern
+  --kinds default   legacy plus presence (required moved to optional) and,
+                    for a vocabulary a condition needs, admitValue:VALUE
+  --kinds all       default plus cardinality, condition, path, reference,
+                    elementFields, objectFields and type attributes
+  --only FIELD      only rules whose innermost field is FIELD, or whose
+                    relaxation ID starts with FIELD
+
+  Each relaxation is classified; the first that applies wins:
+
+  protected            a case noticed it; the descriptor compiles and every
+                       acceptance bundle passes
+  subsumed             a delete that breaks the descriptor or an acceptance
+                       bundle, while every other relaxation of the rule passes
+  covered              the descriptor cannot express it, or a case cannot tell
+                       it apart, but a case notices the admitted value or the
+                       whole policy unit (reference; list shape; idPrefix
+                       with its document-handle format; uniqueBy with its key)
+  descriptor-invalid   the relaxed descriptor no longer compiles
+  acceptance-observable  an acceptance bundle fails, and no case notices
+  inert                the relaxed profile is provably the same profile
+  exception            documented in the exception manifest
+  unprotected          none of the above: the suite has a gap
+
+  --exceptions FILE (default DIR/sweep-exceptions.json when present) lists
+  relaxations okf cannot decide, such as members of a shared field family:
+
+    {"version": 1, "exceptions": [{"relaxation": "ID",
+      "class": "shared-family", "home": "NAME", "rationale": "WHY"}]}
+
+  class is shared-family (needs home), overlapping-rule (needs overlapsWith)
+  or deferred (needs request, a mori:// URI). An entry whose relaxation is not
+  otherwise unprotected or descriptor-invalid, or that names no relaxation
+  this run's kinds enumerate, is stale.
+
+  Exit 0 when nothing is failing; 1 when a relaxation is unprotected,
+  descriptor-invalid or acceptance-observable, or an exception is stale; 2
+  when the suite or manifest cannot be read or the baseline fails; 3 when okf
+  finds a relaxation inert that a case noticed, which is an okf bug.
 
 GENERATING DOCUMENTATION
 
