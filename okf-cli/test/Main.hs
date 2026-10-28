@@ -25,9 +25,11 @@ import Data.Time.Clock (UTCTime (..))
 import Okf.Bundle (Concept, bundleInventoryOfConcepts, conceptAttester, conceptExecutor, conceptFromDocument, conceptIdOf, conceptParameters, conceptRuntime, conceptType, walkBundle, walkBundleInventory)
 import Okf.Cli
 import Okf.Cli.Agent.Config (AgentCommandName (..), AgentConfigSource (..), AgentField (..), AgentOverrides (..), ResolvedAgent (..), ResolvedField (..), agentSourceLabel, noAgentOverrides, parseOkfEffort, parseOkfProvider, renderAgentResolution, resolveAgent)
+import Okf.Cli.Agent.Context qualified as Context
 import Okf.Cli.Aliases (AliasCommand (..), expandAlias, isAliasCandidate, renderAliases, validateAliases)
-import Okf.Cli.Assist (AssistOptions (..), buildAgentCommand, buildSessionAgentCommand)
+import Okf.Cli.Assist (AssistInspection (..), AssistOptions (..), buildAgentCommand, buildSessionAgentCommand)
 import Okf.Cli.BundleDiscovery (BundleDiscovery (..), bundleSearchRootsEnvVar, discoverAvailableBundles)
+import Okf.Cli.CommandMetadata qualified as Metadata
 import Okf.Cli.Config (AgentFieldSettings (..), AgentSettings (..), ConfigSource (..), KitSettings (..), OkfConfig (..), OkfEffort (..), OkfProvider (..), ProfileSettings (..), agentSharedDefaults, defaultOkfConfig, exampleConfigText, findConfigSource, loadAgentScopes, loadAliasesForExpansion, loadOkfConfig, okfConfigEnvVar, projectConfigPath, renderConfig)
 import Okf.Cli.Fzf (Candidate (..), FzfConfig (..), FzfOpts (..), optsToArgs, parseSelectionIndex, renderCandidateLines, shellQuote, withAnsi, withHeight, withNoSort, withPrompt)
 import Okf.Cli.Fzf.Selector (ConceptOrder (..), conceptCandidates, conceptPreviewCommand, orderConcepts, parseBundleSearchRoots, profileCandidates, profilePreviewCommand)
@@ -348,6 +350,12 @@ main = do
           parseSucceeds ["kit", "uninstall", "demo-skill"],
           parseSucceeds ["kit", "uninstall", "demo-skill", "--project"],
           parseSucceeds ["kit", "status"],
+          parseSucceeds ["agent", "assist"],
+          parseSucceeds ["assist"],
+          parseSucceeds ["agent", "context", "--json"],
+          parseFails ["agent", "assist", "--debug", "--print-command"],
+          testContextRendering,
+          List.sort builtinCommands == List.sort [Metadata.commandPath guide | guide <- Metadata.commandGuides, not (Text.any (== ' ') (Metadata.commandPath guide))],
           parseSucceeds ["assist", "Summarize this bundle"],
           parseSucceeds ["assist", "--print-command", "Summarize this bundle"],
           parseSucceeds ["assist", "--model", "claude-opus-4-5", "Summarize this bundle"],
@@ -3342,14 +3350,14 @@ testAssistKitVisibility =
       rendered <- buildSessionAgentCommand config codex prompt
       claudeRendered <- buildSessionAgentCommand config claude prompt
       pure $
-        withoutSkills == buildAgentCommand codex [] prompt
-          && claudeRendered == buildAgentCommand claude [] prompt
+        either (const False) (\(_, args) -> "# OKF project context" `List.isInfixOf` last args) withoutSkills
+          && either (const False) (\(_, args) -> "--append-system-prompt" `elem` args && any (List.isInfixOf "# OKF project context") args) claudeRendered
           && case rendered of
             Left _ -> False
             Right (executable, args) ->
               executable == "codex"
                 && take 1 args == ["-c"]
-                && last args == "do work"
+                && "do work" `List.isSuffixOf` last args
                 && case args of
                   _ : override : _ ->
                     "skills.config=[" `List.isPrefixOf` override
@@ -3363,12 +3371,12 @@ testAssistKitVisibility =
 assistPrompt :: Text.Text -> AssistOptions
 assistPrompt promptText =
   AssistOptions
-    { prompt = promptText,
+    { prompt = Just promptText,
       providerOverride = Nothing,
       modelOverride = Nothing,
       effortOverride = Nothing,
       systemPromptOverride = Nothing,
-      printCommand = False
+      inspection = LaunchSession
     }
 
 assistTestAgent :: OkfProvider -> Maybe OkfEffort -> ResolvedAgent
@@ -3699,3 +3707,20 @@ testInteractivePolicyRefusals =
   where
     request policy = interactiveLaunchRequest "inspect" & #safety .~ policy
     refused = either (const True) (const False)
+
+testContextRendering :: Bool
+testContextRendering =
+  all (`Text.isInfixOf` markdown) ["/project/ü", "fixture-profile", "Author guidance", "API: Type guidance", "okf bundles --json"]
+    && Aeson.decode (Context.renderContextJson fixture) == Just (toJSON fixture)
+  where
+    fixture =
+      Context.AgentContext
+        1
+        "/project/ü"
+        "/project"
+        ["/project/bundle"]
+        [Context.ProfileContext "/project/profile.dhall" "fixture-profile" Nothing (Just "Author guidance") [("API", "Type guidance")]]
+        Metadata.commandGuides
+        []
+        []
+    markdown = Context.renderContextMarkdown fixture

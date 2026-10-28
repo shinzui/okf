@@ -278,10 +278,15 @@ cabal run okf -- assist --print-command "add a tables/orders concept"
 ```
 
 `okf kit install author-okf-concept` installs the seed skill into the agent asset
-layout managed by `baikai-kit`. `okf assist "PROMPT"` launches Claude with the
+layout managed by `baikai-kit`. `okf agent assist [PROMPT]` launches an interactive provider with live OKF context and the
 installed OKF skill directories passed through `--add-dir`, so the session can
 discover and use those skills. Use `--print-command` to inspect the launch command
-without starting an interactive session.
+without starting an interactive session. Use `okf agent assist --debug` or
+`okf agent context --json` to inspect discovered bundles, local profile guidance,
+installed assets and common commands. A starting prompt is optional; `okf assist`
+remains an alias and keeps the existing configuration keys. Launches require a
+controlling terminal; inspection works in scripts. Project asset lookup uses the
+nearest `.git`, `okf-config.dhall` or `.okf` ancestor.
 
 To publish another skill, add `skills/<name>/SKILL.md` to `okf-kit`, add a matching
 entry to `kit.json`, commit, and push. Users pick it up with `okf kit update` or

@@ -96,9 +96,11 @@ import Okf.Cli.Agent.Config
     renderAgentResolution,
     resolveAgent,
   )
+import Okf.Cli.Agent.Context (collectAgentContext, renderContextJson, renderContextMarkdown)
 import Okf.Cli.Aliases (AliasCommand (..), aliasCommandParser, expandAlias, isAliasCandidate, renderAliases)
 import Okf.Cli.Assist (AssistOptions, assistAgentOverrides, assistOptionsParser, handleAssistCommand)
 import Okf.Cli.BundleDiscovery (BundleDiscovery (..), discoverAvailableBundles)
+import Okf.Cli.CommandMetadata (commandDescription)
 import Okf.Cli.Completions (CompletionsShell, completionsParser, handleCompletions)
 import Okf.Cli.Config
 import Okf.Cli.Fzf (FzfConfig, detectFzfConfig, shellQuote)
@@ -143,6 +145,7 @@ import Okf.Graph (buildGraph)
 import Okf.Index
 import Okf.Log qualified as Log
 import Okf.Path (PathReference (..), classifyPathReference)
+
 -- 'List' and 'Object' are 'Okf.Profile.Cardinality' constructors here; aeson's
 -- same-named 'Value' constructors are reached as 'Aeson.Object' and friends.
 import Okf.Prelude hiding (List, Object)
@@ -263,6 +266,7 @@ data Command
   | Config ConfigCommand
   | Profile ProfileCommand
   | Kit KitCommand
+  | AgentContext Bool
   | Assist AssistOptions
   | Completions CompletionsShell
   | Help HelpCommand
@@ -511,25 +515,26 @@ optionsParser = Options <$> commandParser
 -- | One registry owns parser registration, help order, and alias protection.
 commandDefinitions :: [(String, ParserInfo Command)]
 commandDefinitions =
-  [ ("bundles", info (Bundles <$> bundlesOptionsParser <**> helper) (progDesc "List discovered OKF bundles")),
-    ("profiles", info (Profiles <$> profilesOptionsParser <**> helper) (progDesc "List local profile descriptor paths; use `okf profile list` for all effective sources")),
-    ("validate", info (Validate <$> validateOptionsParser <**> helper) (progDesc "Validate an OKF bundle")),
-    ("index", info (Index <$> indexOptionsParser <**> helper) (progDesc "Preview or write generated index.md files")),
-    ("log", info (Log <$> logOptionsParser <**> helper) (progDesc "Preview and check log.md files")),
-    ("graph", info (GraphCommand <$> graphOptionsParser <**> helper) (progDesc "Print a bundle graph")),
-    ("show", info (ShowConcept <$> showOptionsParser <**> helper) (progDesc "Show one concept")),
-    ("trust", info (Trust <$> trustOptionsParser <**> helper) (progDesc "Report trust tiers, status, and staleness for every concept")),
-    ("sources", info (Sources <$> sourcesOptionsParser <**> helper) (progDesc "List the provenance recorded by each concept")),
-    ("computations", info (Computations <$> computationsOptionsParser <**> helper) (progDesc "List the attested computations a bundle declares")),
-    ("concepts", info (Concepts <$> conceptsOptionsParser <**> helper) (progDesc "List the concepts a bundle holds, with optional filters")),
-    ("id", info (Id <$> idOptionsParser <**> helper) (progDesc "Allocate and list document IDs")),
-    ("alias", info (Alias <$> aliasCommandParser <**> helper) (progDesc "List configured command aliases")),
-    ("config", info (Config <$> configCommandParser <**> helper) (progDesc "Show and manage okf configuration")),
-    ("profile", info (Profile <$> profileCommandParser <**> helper) (progDesc "List and inspect profiles from registries and local descriptors")),
-    ("kit", info (Kit <$> kitCommandParser <**> helper) (progDesc "Install and manage agent skills and subagents")),
-    ("assist", info (Assist <$> assistOptionsParser <**> helper) (progDesc "Launch an interactive agent session with installed okf skills")),
-    ("completions", info (Completions <$> completionsParser <**> helper) (progDesc "Generate a shell completion script (bash, zsh, fish)")),
-    ("help", info (Help <$> helpCommandParser <**> helper) (progDesc "Show conceptual help topics"))
+  [ ("bundles", info (Bundles <$> bundlesOptionsParser <**> helper) (progDesc (commandDescription "bundles"))),
+    ("profiles", info (Profiles <$> profilesOptionsParser <**> helper) (progDesc (commandDescription "profiles"))),
+    ("validate", info (Validate <$> validateOptionsParser <**> helper) (progDesc (commandDescription "validate"))),
+    ("index", info (Index <$> indexOptionsParser <**> helper) (progDesc (commandDescription "index"))),
+    ("log", info (Log <$> logOptionsParser <**> helper) (progDesc (commandDescription "log"))),
+    ("graph", info (GraphCommand <$> graphOptionsParser <**> helper) (progDesc (commandDescription "graph"))),
+    ("show", info (ShowConcept <$> showOptionsParser <**> helper) (progDesc (commandDescription "show"))),
+    ("trust", info (Trust <$> trustOptionsParser <**> helper) (progDesc (commandDescription "trust"))),
+    ("sources", info (Sources <$> sourcesOptionsParser <**> helper) (progDesc (commandDescription "sources"))),
+    ("computations", info (Computations <$> computationsOptionsParser <**> helper) (progDesc (commandDescription "computations"))),
+    ("concepts", info (Concepts <$> conceptsOptionsParser <**> helper) (progDesc (commandDescription "concepts"))),
+    ("id", info (Id <$> idOptionsParser <**> helper) (progDesc (commandDescription "id"))),
+    ("alias", info (Alias <$> aliasCommandParser <**> helper) (progDesc (commandDescription "alias"))),
+    ("config", info (Config <$> configCommandParser <**> helper) (progDesc (commandDescription "config"))),
+    ("profile", info (Profile <$> profileCommandParser <**> helper) (progDesc (commandDescription "profile"))),
+    ("kit", info (Kit <$> kitCommandParser <**> helper) (progDesc (commandDescription "kit"))),
+    ("agent", info (agentCommandParser <**> helper) (progDesc (commandDescription "agent"))),
+    ("assist", info (Assist <$> assistOptionsParser <**> helper) (progDesc (commandDescription "assist"))),
+    ("completions", info (Completions <$> completionsParser <**> helper) (progDesc (commandDescription "completions"))),
+    ("help", info (Help <$> helpCommandParser <**> helper) (progDesc (commandDescription "help")))
   ]
 
 builtinCommands :: [Text]
@@ -537,6 +542,13 @@ builtinCommands = map (Text.pack . fst) commandDefinitions
 
 commandParser :: Parser Command
 commandParser = hsubparser (foldMap (uncurry command) commandDefinitions)
+
+agentCommandParser :: Parser Command
+agentCommandParser =
+  hsubparser
+    ( command "assist" (info (Assist <$> assistOptionsParser <**> helper) (progDesc (commandDescription "agent assist")))
+        <> command "context" (info (AgentContext <$> jsonSwitch <**> helper) (progDesc (commandDescription "agent context")))
+    )
 
 bundlesOptionsParser :: Parser BundlesOptions
 bundlesOptionsParser = BundlesOptions <$> jsonSwitch
@@ -981,6 +993,11 @@ runCommand = \case
   Kit kitCommand -> do
     config <- loadConfigOrDie
     handleKitCommand config kitCommand
+  AgentContext asJson -> do
+    context <- collectAgentContext
+    if asJson
+      then LazyByteString.putStrLn (renderContextJson context)
+      else Text.IO.putStr (renderContextMarkdown context)
   Assist assistOptions -> do
     config <- loadConfigOrDie
     resolved <- resolveAgentOrDie AgentCmdAssist (assistAgentOverrides assistOptions)

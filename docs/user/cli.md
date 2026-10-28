@@ -1261,10 +1261,39 @@ omit `--registry`; its bundle declares 0.2. Read its conventions with
 `okf profile document --profile DIR/profile.dhall`.
 
 
-## assist
+## agent assist and agent context
 
-Launch an interactive agent session with your installed okf skills on its path,
-starting from a prompt.
+`okf agent assist [PROMPT]` launches the configured interactive coding-agent session
+with live OKF context. The prompt is optional; omitting it supplies no invented
+user task. `okf assist` remains a parser alias with identical configuration and
+flags. Both use the existing `agent.assist.*` keys.
+
+```bash
+okf agent context --json
+okf agent assist --debug
+okf agent assist
+okf agent assist --provider codex --print-command
+```
+
+`agent context` and `assist --debug` expose the same read-only snapshot. JSON
+schemaVersion 1 contains workingDirectory, projectRoot, bundles, profiles,
+commands, installedAssets and warnings, without a timestamp. Discovered paths are
+absolute; example command paths are relative to the working directory. Collections
+are sorted. Local profile identity and authoring guidance are included when
+available without network access. Credentials and agent configuration values are
+omitted. Missing profiles/kits are valid empty states; inaccessible optional
+sources become warnings. Discovery stops at depth four and excludes hidden,
+build/vendor and symlink directories.
+
+`--debug` and `--print-command` conflict at parsing. Both work without a provider
+binary or terminal. Actual sessions require a controlling terminal and otherwise
+exit 2 with inspection alternatives. Context and extra configured instructions
+are appended to Claude's own instructions; Codex transports them in its initial
+interactive prompt. User prompt text remains a separate input to Baikai.
+
+Project-scoped kit assets resolve from the nearest `.git`, `okf-config.dhall` or
+`.okf` ancestor, with the working directory as fallback. Kit installation and
+session discovery share that policy, including from nested directories.
 
 ```bash
 cabal run okf -- assist "list the concepts in this bundle"
@@ -1282,7 +1311,7 @@ fastest way to check what your configuration resolved to:
 
 ```bash
 cabal run okf -- assist --print-command "audit this bundle"
-# claude --add-dir ~/.config/okf/agents/.claude -- 'audit this bundle'
+# Includes discovered asset paths and --append-system-prompt with live context.
 ```
 
 | Flag | Meaning |
@@ -1357,7 +1386,7 @@ Both apply, which is the point:
 
 ```bash
 cabal run okf -- assist --print-command "x"
-# claude --model claude-opus-4-8 --effort max -- x
+# Includes --model claude-opus-4-8 --effort max and contextual instructions.
 ```
 
 `okf config agent` prints what resolved and the key that supplied it, so you
@@ -1378,5 +1407,5 @@ scopes while specificity beats scope within one, is in `okf help config`.
 |-----------|---------|
 | `0` | the command line was printed, or the session ran and exited zero |
 | the agent's own | the session ran and exited non-zero |
-| `2` | the request asked for something the chosen provider cannot express |
+| `2` | no controlling terminal, invalid inspection flags, or an unsupported provider policy |
 | `127` | the provider's CLI is not installed |

@@ -21,12 +21,26 @@ KIT COMMANDS
 
 ASSIST
 
-  okf assist "PROMPT"               Launch an interactive agent session with your
-                                    installed okf skills on its path, starting
-                                    from PROMPT.
-  okf assist --print-command "PROMPT"
-                                    Print the agent command line without
-                                    launching it.
+  okf agent assist                  Open a contextual interactive session.
+  okf agent assist "PROMPT"         Start with an optional task or question.
+  okf agent assist --debug          Print live OKF context without launching.
+  okf agent assist --print-command  Print the launch command without launching.
+  okf agent context [--json]        Inspect the same read-only context snapshot.
+
+  'okf assist' remains an alias with the same flags and agent.assist settings.
+  --debug and --print-command are mutually exclusive. Inspection works without
+  a terminal or installed provider. Launching requires a controlling terminal.
+
+  Context contains absolute bundle/profile paths, available profile guidance,
+  installed OKF kit references and common commands, including which can write.
+  Discovery uses depth four, skips hidden/build/symlink directories, and makes
+  no network requests. Config values and credentials are omitted. Empty and
+  inaccessible optional sources are reported without preventing inspection.
+  JSON is one object with schemaVersion 1, workingDirectory, projectRoot,
+  bundles, profiles, commands, installedAssets and warnings; it has no clock.
+
+  Project assets use the nearest .git, okf-config.dhall or .okf ancestor, falling
+  back to the current directory. Installation and sessions share this policy.
 
   Both Claude Code and Codex can be launched. The provider you choose is the CLI
   okf runs, so that CLI must be installed: 'claude' for Provider.Claude and
@@ -66,7 +80,7 @@ CONFIGURATION
     agent.model                     launches an agent.
     agent.effort
     agent.systemPrompt
-    agent.assist.provider           Per-command settings for 'okf assist'.
+    agent.assist.provider           Settings for both assist spellings.
     agent.assist.model              These win over the shared defaults above.
     agent.assist.effort
     agent.assist.systemPrompt

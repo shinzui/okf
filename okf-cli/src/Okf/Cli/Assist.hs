@@ -8,6 +8,7 @@
 -- that launches an agent.
 module Okf.Cli.Assist
   ( AssistOptions (..),
+    AssistInspection (..),
     assistOptionsParser,
     assistAgentOverrides,
     handleAssistCommand,
@@ -17,14 +18,16 @@ module Okf.Cli.Assist
 where
 
 import Baikai.Agent (AgentRenderError, renderAgentRenderError)
-import Baikai.Interactive (InteractiveLaunchRequest, interactiveLaunchRequest)
+import Baikai.Interactive (InteractiveLaunchRequest, InteractiveProvider (..), interactiveLaunchRequest)
+import Baikai.Kit.Config qualified as Kit
 import Baikai.Kit.Session (agentDirsForSession, codexSessionArgs)
 import Baikai.Provider.Claude.Interactive (claudeInteractiveCommand, defaultClaudeInteractiveConfig)
 import Baikai.Provider.OpenAI.Interactive (codexInteractiveCommand, defaultCodexInteractiveConfig)
-import Control.Exception (IOException, try)
+import Control.Exception (IOException, bracket, try)
 import Control.Lens ((%~), (&), (.~))
 import Data.Bifunctor (first)
 import Data.Generics.Labels ()
+import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text.IO
@@ -36,27 +39,33 @@ import Okf.Cli.Agent.Config
     parseOkfProvider,
     thinkingLevelOf,
   )
+import Okf.Cli.Agent.Context (collectAgentContext, renderContextMarkdown)
 import Okf.Cli.Config (OkfConfig, OkfEffort, OkfProvider (..))
+import Okf.Cli.Fzf (shellQuote)
 import Okf.Cli.Kit.Config (kitConfig)
 import Options.Applicative
 import System.Exit (ExitCode (..), exitWith)
-import System.IO (hPutStrLn, stderr)
+import System.IO (IOMode (ReadMode), hClose, hPutStrLn, openFile, stderr)
 import System.Process (createProcess, delegate_ctlc, proc, waitForProcess)
 
+-- | Inspection modes are a parser alternative, so conflicting flags fail.
+data AssistInspection = LaunchSession | PrintCommand | DebugContext
+  deriving stock (Show, Eq)
+
 data AssistOptions = AssistOptions
-  { prompt :: !Text,
+  { prompt :: !(Maybe Text),
     providerOverride :: !(Maybe OkfProvider),
     modelOverride :: !(Maybe Text),
     effortOverride :: !(Maybe OkfEffort),
     systemPromptOverride :: !(Maybe Text),
-    printCommand :: !Bool
+    inspection :: !AssistInspection
   }
   deriving stock (Show, Eq)
 
 assistOptionsParser :: Parser AssistOptions
 assistOptionsParser =
   AssistOptions
-    <$> (Text.pack <$> strArgument (metavar "PROMPT" <> help "The task or question to start the agent session with"))
+    <$> optional (Text.pack <$> strArgument (metavar "PROMPT" <> help "Optional task or question to start the interactive session"))
     <*> optional
       ( option
           (eitherReader (first Text.unpack . parseOkfProvider . Text.pack))
@@ -85,7 +94,10 @@ assistOptionsParser =
                 <> help "Extra system prompt, appended to the agent's own"
             )
       )
-    <*> switch (long "print-command" <> help "Print the agent command line instead of launching it")
+    <*> ( flag' PrintCommand (long "print-command" <> help "Print the rendered interactive command without launching")
+            <|> flag' DebugContext (long "debug" <> help "Print the live OKF context without launching")
+            <|> pure LaunchSession
+        )
 
 -- | The flag layer of the precedence chain. Values are already parsed, so
 -- @--effort medum@ fails during argument parsing with the list of valid levels
@@ -152,7 +164,7 @@ assistLaunchRequest
   agentDirs
   AssistOptions {prompt} =
     applySystemPrompt launcher (resolvedValue <$> systemPrompt) $
-      interactiveLaunchRequest prompt
+      interactiveLaunchRequest (fromMaybe "" prompt)
         & #modelId .~ (resolvedValue <$> model)
         & #effort .~ (thinkingLevelOf . resolvedValue <$> effort)
         & #extraDirs .~ agentDirs
@@ -178,28 +190,43 @@ buildSessionAgentCommand ::
   OkfConfig -> ResolvedAgent -> AssistOptions -> IO (Either AgentRenderError (FilePath, [String]))
 buildSessionAgentCommand config resolved options = do
   let launcher = launcherFor (resolvedProviderOf resolved)
-      kit = kitConfig config
+      kit = (kitConfig config) {Kit.providers = [InteractiveClaude, InteractiveCodex]}
   agentDirs <- agentDirsForSession kit
   sessionArgs <- case resolvedProviderOf resolved of
     ProviderClaude -> pure []
     ProviderCodex -> codexSessionArgs kit
-  let request =
-        assistLaunchRequest launcher resolved agentDirs options
+  context <- renderContextMarkdown <$> collectAgentContext
+  pure (buildContextualCommand launcher resolved agentDirs options sessionArgs context)
+
+buildContextualCommand :: InteractiveLauncher -> ResolvedAgent -> [FilePath] -> AssistOptions -> [Text] -> Text -> Either AgentRenderError (FilePath, [String])
+buildContextualCommand launcher resolved@ResolvedAgent {systemPrompt} agentDirs options sessionArgs context =
+  let extraInstructions = maybe [] (pure . resolvedValue) systemPrompt
+      instructions = Just (Text.intercalate "\n\n" (context : extraInstructions))
+      request =
+        applySystemPrompt launcher instructions (assistLaunchRequest launcher resolved agentDirs options)
           & #extraArgs %~ (<> sessionArgs)
-  pure (buildCommand launcher request)
+   in buildCommand launcher request
 
 handleAssistCommand :: OkfConfig -> ResolvedAgent -> AssistOptions -> IO ()
-handleAssistCommand config resolved options = do
-  let launcher = launcherFor (resolvedProviderOf resolved)
-  renderedCommand <- buildSessionAgentCommand config resolved options
-  case renderedCommand of
-    Left renderError -> do
-      Text.IO.hPutStrLn stderr ("okf assist: " <> renderAgentRenderError renderError)
-      exitWith (ExitFailure 2)
-    Right (executable, argv)
-      | printCommand options ->
-          Text.IO.putStrLn (Text.pack (unwords (executable : map quoteArg argv)))
-      | otherwise -> launchAgent launcher executable argv
+handleAssistCommand config resolved options
+  | inspection options == DebugContext = collectAgentContext >>= Text.IO.putStr . renderContextMarkdown
+  | otherwise = do
+      let launcher = launcherFor (resolvedProviderOf resolved)
+      renderedCommand <- buildSessionAgentCommand config resolved options
+      case renderedCommand of
+        Left renderError -> do
+          Text.IO.hPutStrLn stderr ("okf agent assist: " <> renderAgentRenderError renderError)
+          exitWith (ExitFailure 2)
+        Right (executable, argv)
+          | inspection options == PrintCommand ->
+              Text.IO.putStrLn (Text.unwords (map (shellQuote . Text.pack) (executable : argv)))
+          | otherwise -> do
+              terminal <- try @IOException (bracket (openFile "/dev/tty" ReadMode) hClose (const (pure ())))
+              case terminal of
+                Left _ -> do
+                  hPutStrLn stderr "okf agent assist: no controlling terminal; use --debug, --print-command, or `okf agent context --json`."
+                  exitWith (ExitFailure 2)
+                Right () -> launchAgent launcher executable argv
 
 -- | Spawn the rendered command and wait for the session to end.
 --
@@ -227,13 +254,3 @@ launchAgent launcher executable argv = do
           <> " or run `okf assist --print-command ...` to inspect the command."
       exitWith (ExitFailure 127)
     Right exitCode -> exitWith exitCode
-
-quoteArg :: String -> String
-quoteArg arg
-  | null arg = "''"
-  | any needsQuote arg = "'" <> concatMap escapeSingleQuote arg <> "'"
-  | otherwise = arg
-  where
-    needsQuote c = c == ' ' || c == '\t' || c == '\'' || c == '"'
-    escapeSingleQuote '\'' = "'\\''"
-    escapeSingleQuote c = [c]

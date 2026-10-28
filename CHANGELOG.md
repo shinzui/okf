@@ -7,6 +7,14 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- `okf agent assist [PROMPT]` opens a contextual interactive session without a
+  required prompt; `okf assist` remains an alias. `--debug` and `agent context
+  [--json]` inspect local context without launching. Context JSON uses schemaVersion 1.
+- Kit installation and session discovery share project-root lookup from nested
+  directories. Detached launches fail promptly with inspection alternatives.
+
 ### Changed
 
 - Upgrade `mori://shinzui/baikai/packages/baikai` to 0.10.0.0,

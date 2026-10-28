@@ -2,7 +2,7 @@ CONFIG
 
 okf config controls command aliases, profile registries, and optional agent
 assistance: where okf kit fetches skills and subagents from, which providers to
-install for, and how okf assist launches an interactive agent session.
+install for, and how okf agent assist launches an interactive agent session.
 
 COMMANDS
 
@@ -70,7 +70,7 @@ FIELDS
                                     renders no flag at all.
   agent.systemPrompt                Extra system prompt, appended to the agent's
                                     own rather than replacing it.
-  agent.assist.*                    The same four fields for 'okf assist' alone.
+  agent.assist.*                    The same four fields for both assist spellings.
                                     These win over the shared defaults above.
   profiles.registries               Ordered registry list okf profile reads by
                                     default. An explicit [] selects none.
@@ -126,3 +126,6 @@ EXAMPLE
   command parser. 'okf alias list' and 'okf config show' report errors strictly.
   Built-in commands and dash-prefixed startup arguments bypass alias loading.
   See 'okf help aliases' for duplicate handling and expansion boundaries.
+
+  Canonical agent assist and legacy assist share agent.assist.* keys and the
+  same resolution order. agent context never evaluates agent configuration.

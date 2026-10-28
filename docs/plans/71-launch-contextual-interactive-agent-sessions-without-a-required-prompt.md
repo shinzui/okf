@@ -11,6 +11,12 @@ provenance:
     model: "gpt-6-astra"
     harness: "codex-cli"
     at: 2026-10-28T03:32:16Z
+  revisions:
+    - model: "gpt-6.1-sol"
+      harness: "codex-cli"
+      at: 2026-10-28T03:52:48Z
+      mode: "implement"
+      note: "Implement inspectable context and contextual promptless interactive sessions"
 ---
 
 # Launch contextual interactive agent sessions without a required prompt
@@ -29,14 +35,14 @@ Record friction met while implementing in the friction-log bundle as it occurs (
 ## Progress
 
 
-- [ ] M1: Canonical agent commands and pure context rendering work with deterministic fixture snapshots.
-- [ ] M2: Promptless and prompted sessions launch both providers with inspected context and installed assets.
-- [ ] M3: Process, configuration, help and completion compatibility is documented and verified.
+- [x] M1 (2026-10-27): Canonical agent assist/context, legacy assist alias, shared command metadata and typed schemaVersion 1 snapshots pass pure-rendering and fixture tests. Context collection is read-only and network-silent.
+- [x] M2 (2026-10-27): Seven executable acceptance tests pass. Fixture bundle/profile guidance reaches JSON, debug, rendered argv and both fake providers. Both spellings launch prompted/promptless; named project skill installation is discoverable by both providers from nested directories.
+- [x] M3 (2026-10-27): Both package suites pass with legacy config, precedence, alias, help and completion coverage. PTYs prove Ctrl-C, inherited streams and child status; detached launches fail before spawning. README, user/embedded/config help and ADR 16 are updated; strict ADR validation passes.
 
 ## Surprises & Discoveries
 
 
-(None yet.)
+2026-10-27: Baikai still models userPrompt as Text, so omission is represented by empty text without inventing a task. Claude receives context through its append adapter; Codex carries it before the optional user text. Context inspection deliberately skips configuration evaluation and scans both providers' OKF sidecars. Shared Kit.Config now owns ancestor-based project-root lookup for installation, context and launch.
 
 ## Decision Log
 
@@ -46,7 +52,11 @@ Record friction met while implementing in the friction-log bundle as it occurs (
 ## Outcomes & Retrospective
 
 
-(To be filled during implementation.)
+`agent context [--json]` and `assist --debug` expose deterministic live context; `agent assist [PROMPT]` launches interactively with that context and configured extra instructions. Inspection flags conflict in the parser. The legacy spelling and configuration keys remain authoritative aliases to the same handler. Asset discovery uses Kit.Config's shared root resolver and explicitly inspects both providers' OKF-owned sidecars.
+
+Acceptance: `nix develop --no-write-lock-file -c cabal build all`, `cabal test all` in that shell, `nix fmt`, `git diff --check`, and strict ADR validation pass. `python3 scripts/test-agent-workflows.py --okf <Cabal executable>` passes seven tests, including empty/non-ASCII/nested/unreadable sources, deterministic output, absence of configuration/environment sentinel values, provider absence, canonical/legacy commands, malformed-config help/completion, actual local Kit installation and terminal process behavior. An isolated real-provider startup smoke observed Claude's welcome screen (1641 terminal bytes) and Codex startup (502 bytes); no task or authenticated model call was submitted. Fake-provider tests supply deterministic session/interrupt/exit evidence.
+
+No implementation friction crossed the logging threshold under this child. Durable context/launch ownership, promptless semantics and shared asset roots are recorded in ADR 16. Plan 72 still owns interactive installation selection and its acceptance.
 
 ## Context and Orientation
 

@@ -8,13 +8,18 @@ generated:
 docId: ADR-16
 status: Accepted
 date: 2026-08-11
+amended:
+  - by: codex-cli/gpt-6.1-sol
+    at: 2026-10-28T04:01:09Z
+    change: Add inspectable context, promptless aliases and shared project-root lookup.
 ---
 
 # ADR 16: Per-command agent configuration, config scopes, and who owns vendor flags
 
 ## Context
 
-okf launches a model in exactly one place, `okf assist`. Until this decision, the
+okf launches a model through one handler, canonically `okf agent assist`, with
+`okf assist` retained as a parser alias. Until this decision, the
 settings behind that launch — provider, model, extra system prompt — lived in an
 `assist` block resolved the same way as every other setting: `findConfigSource`
 returned the first configuration file that existed and the rest were never
@@ -93,8 +98,8 @@ session-wide override; a per-command variable per field would multiply the
 surface area for a case the per-command configuration keys serve better.
 
 **Effort and provider default to nothing and to Claude respectively.** An unset
-effort renders no flag, so an unconfigured okf produces byte-for-byte the command
-line it produced before this change; pinning a default would silently raise every
+effort renders no flag, so adding contextual instructions does not select a new
+model or reasoning budget; pinning a default would silently raise every
 user's token spend on upgrade. `provider` needs a concrete default because a
 launcher has to pick one, and Claude remains it because that is what `okf assist`
 has always launched.
@@ -115,7 +120,7 @@ Codex launcher never sets `delegate_ctlc` — and a terminal SIGINT goes to the
 whole foreground process group, so the first Ctrl-C inside a session would kill
 okf and orphan the agent. Interrupting a turn is the routine way a user redirects
 an agent, so this is a regression in the most common interaction in the feature.
-The gap is filed upstream as baikai IR-5; when it lands, `launchAgent` in
+The gap is filed upstream as mori://shinzui/baikai/okf/improvement-requests/concepts/IR-5; when it lands, `launchAgent` in
 `okf-cli/src/Okf/Cli/Assist.hs` should be deleted in favour of Baikai's
 launchers. Process control is not vendor-specific, so keeping it in okf costs
 nothing the rule was protecting.
@@ -130,13 +135,40 @@ okf has always appended, so it keeps appending by passing the pair through
 request's `systemPrompt` into the prompt text ahead of the user's words — so
 there okf must set the field and pass nothing through `extraArgs`. One shared
 builder would get one of the two wrong. The modelling gap is filed upstream as
-baikai IR-4.
+mori://shinzui/baikai/okf/improvement-requests/concepts/IR-4.
 
-**`AgentCommandName` is a closed enumeration with one constructor.** `okf assist`
-is the only command that launches a model. Introducing the type now, with `Enum`
+**`AgentCommandName` is a closed enumeration with one constructor.** `okf agent assist` and its `okf assist` alias share the only handler that launches a model. Introducing the type now, with `Enum`
 and `Bounded` so the inspection command iterates it, means a second agent command
 is a one-constructor change rather than a redesign, and exhaustiveness checking
 guarantees the key builders and the inspection table are extended with it.
+
+
+**Context belongs to OKF; provider rendering stays in Baikai.** `agent context`
+collects a read-only local snapshot with schemaVersion 1, workingDirectory,
+projectRoot, bundles, profiles, commands, installedAssets and warnings. Paths are
+absolute, collections are sorted, and there is no clock value. The snapshot
+contains no agent configuration values or environment dump and never refreshes
+kit repositories or fetches remote profiles. Profile discovery retains ADR 18's
+network-silent loader. Optional source failures become warnings. Shared command
+metadata supplies help descriptions and actionable context examples.
+
+Both assist spellings permit an absent prompt and retain `agent.assist.*` keys.
+No task is invented. `--debug` prints the same context exposed by `agent context`;
+`--print-command` renders the execution request. Inspection modes are mutually
+exclusive and need neither a provider executable nor a terminal. Actual launches
+require a controlling terminal and fail with inspection alternatives when detached.
+Claude receives context and configured extra instructions through the existing
+append adapter; Codex transports them in the initial interactive prompt. Its
+session arguments enable installed tool-only skills, regardless of the default
+provider list used for installation. Rendering refuses unsupported policy before
+process creation; OKF keeps Ctrl-C delegation and returns the child's exit code.
+
+**Kit installation and session discovery share one project-root policy.** The
+nearest ancestor containing `.git`, `okf-config.dhall` or `.okf` owns project
+assets; with no marker, the working directory is the fallback. The shared
+`Kit.Config` builds that resolver for every engine consumer, so launching from a
+nested directory can find assets installed at project scope. Context uses that
+same root policy without evaluating agent configuration.
 
 
 ## Consequences

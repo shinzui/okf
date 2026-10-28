@@ -1,5 +1,8 @@
 # Bundle Update Log
 
+## 2026-10-28
+* **Update**: Record contextual promptless agent sessions and shared project-root discovery.
+
 ## 2026-10-03
 * **Update**: Document command alias behavior and configuration compatibility
 * **Update**: Record concept sorting semantics
