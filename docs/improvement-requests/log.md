@@ -1,5 +1,10 @@
 # Bundle Update Log
 
+## 2026-10-28
+
+* **Traceability**: IR-9: identify the linked implementation plan by its full title
+  to distinguish the two plans numbered 70; retain the existing targetPlan path.
+
 ## 2026-10-19
 
 * **Addition**: IR-10: fail `okf validate --profile-enforce` when no profile is

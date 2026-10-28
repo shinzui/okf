@@ -5,7 +5,7 @@ description: Add the descriptor features the okf-profiles jobs, product-research
   features, and use-case profiles need to state their remaining single-concept
   constraints, so okf-profiles can retire the okf-owned rules of its interim
   product-discovery checker.
-timestamp: "2026-10-16T14:37:22Z"
+timestamp: "2026-10-28T03:45:40Z"
 generated:
   by: claude-code/claude-opus-5-5
   at: "2026-10-16T14:30:00Z"
@@ -48,7 +48,7 @@ reviews:
 ## Status
 
 - **Status:** accepted with design clarifications (2026-10-16)
-- **Implementation plan:** [ExecPlan 70](../plans/70-express-single-concept-product-discovery-constraints-in-profile-descriptors.md).
+- **Implementation plan:** [ExecPlan 70: Express single-concept product-discovery constraints in profile descriptors](../plans/70-express-single-concept-product-discovery-constraints-in-profile-descriptors.md).
 - **Origin:** `mori://shinzui/okf-profiles/plans/12-add-jobs-and-product-research-profiles-linked-to-use-cases`
 - **Owner of the build:** `shinzui/okf`, through the descriptor-evolution process of okf
   [ADR 11](../adr/11-growing-the-profile-descriptor-language.md)
@@ -62,7 +62,7 @@ reviews:
 ## Review disposition
 
 Accepted for implementation in
-[ExecPlan 70](../plans/70-express-single-concept-product-discovery-constraints-in-profile-descriptors.md)
+[ExecPlan 70: Express single-concept product-discovery constraints in profile descriptors](../plans/70-express-single-concept-product-discovery-constraints-in-profile-descriptors.md)
 after checking `okf-core/dhall/`, `okf-core/src/Okf/Profile.hs`, the relevant
 local ADRs, and the producer checker's rule table and implementation. The
 single-concept boundary is sound: these rules compare only metadata within one
