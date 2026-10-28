@@ -85,18 +85,22 @@ from an okf-profiles checkout and sees:
       six catalog families against the legacy baselines recorded there.
       Handoff (2026-10-28): request IR-12 filed (`8d7750e`); engine and command committed in
       `e23e9a9`; `cabal test all` passes. Plan 13's baselines and script do not exist yet
-      (FRIC-5), so parity was checked locally against fresh legacy runs; see Outcomes. The
-      formal check with plan 13's script remains open.
+      (FRIC-5), so parity was checked locally against fresh legacy runs: every legacy result
+      matched on all six families (484 of 484; see Outcomes). Only the formal re-check with
+      plan 13's script remains, and it belongs to plan 13's own verification.
 - [x] Milestone 2 (2026-10-28, `e23e9a9`): classification, presence demotion, `admitValue`,
       composite units, exception manifests and exit codes. The default-kind strategy sweep with
       no manifest exits 1; its 39 `unprotected` lines are all profile-scope members of the
       shared V02 family (`generated`, `reviews`, `verified`, `sources`), its 2
       `descriptor-invalid` lines are the shared-family `reviews.kind` condition source, and every
       `allowSelf`/`allowLocal` line is protected, inert or covered.
-- [ ] Milestone 3 (conditional): bounded deterministic parallel evaluation, or a recorded
-      decision that serial evaluation meets the time budget.
-- [ ] Milestone 4: release prepared (expected 0.11.0.0; the owner tags and pushes), an ADR for
-      the in-process sweep and `behaviourKey` erasures, and the improvement request completed.
+- [x] Milestone 3 (2026-10-28): skipped by recorded decision. Serial evaluation sweeps the
+      strategy profile in 7.4 s with legacy kinds and 11.4 s with default kinds on the
+      release candidate, under a load average of 16; see the Decision Log.
+- [x] Milestone 4 (2026-10-28): release 0.12.0.0 prepared in the `chore(release): 0.12.0.0`
+      commit, after `cabal test all` passed on the candidate. ADR-23 recorded in `7d5c285`.
+      IR-12 is completed and its bundle validates strictly. Tagging `v0.12.0.0` and pushing are
+      left to the owner.
 
 
 ## Surprises & Discoveries
@@ -336,9 +340,78 @@ from an okf-profiles checkout and sees:
   two packages are versioned in lockstep.
   Date: 2026-10-28
 
+- Decision: Skip Milestone 3; evaluation stays serial.
+  Rationale: the default-kind strategy sweep takes 9.7–11.4 s on the release candidate with
+  the machine's load average at 16, under the 30 s threshold that would have justified
+  parallel evaluation, and the runtime's parallel collector already made this workload slower
+  (Surprises & Discoveries). Serial evaluation also keeps output order deterministic without
+  extra machinery.
+  Date: 2026-10-28
+
 ## Outcomes & Retrospective
 
-(To be filled during and after implementation.)
+**Outcome (2026-10-28).** `okf profile sweep` ships in okf 0.12.0.0. It sweeps any catalog
+profile in seconds, streams results one rule location at a time, classifies each relaxation
+by evidence or behaviour-key proof, and gates by exit code. Request IR-12's four acceptance
+criteria are met. Formal parity with plan 13's comparison script is the only open item, and
+it waits on plan 13.
+
+**Parity (AC-2).** okf-profiles `scripts/sweep-profile-rules.py` was run at `1f1f80b` for
+each family against this build's `okf`. Its results were compared with `okf profile sweep
+--kinds legacy --json` from the Milestone 2 build, as multisets keyed on `(field, kind,
+legacyOutcome)`. Every legacy result has a matching okf result:
+
+```text
+family        legacy matched   okf-only   legacy wall time*   okf --kinds legacy
+claim-checks      48 / 48          14            765 s               0.67 s
+audiences         65 / 65          28           2631 s               1.89 s
+campaigns         90 / 90          53           7990 s               5.90 s
+strategy         105 / 105         38           8251 s               7.34 s
+launches          97 / 97          25           6433 s               5.13 s
+messaging         79 / 79          22           4029 s               2.99 s
+```
+
+\* The six legacy runs ran concurrently while the machine's load average was 13–16, so
+their wall times overstate a serial run. Plan 13 forecasts about 70 s per strategy weakening
+in a serial run, which predicts the same order of magnitude. Each okf run was serial on the
+same machine. On strategy, the native sweep is more than 1,000 times faster than the
+concurrent legacy run, and at least 20 times faster than any plausible serial one.
+
+The okf-only results are relaxations the script never tries:
+
+- `delete`s nested under `objectFields`;
+- sole-element `delete`s;
+- `allowedValues` and `format` attributes whose value starts on the next line;
+- `externalUriPattern`, `allowSelf` and `allowLocal` attributes on object-nested references.
+
+These are the scanner gaps described in Surprises & Discoveries. Across the families, the
+script printed 27 `OK … acceptance-fails` lines as protection. okf classifies each of those
+relaxations as `descriptor-invalid` or as acceptance-observable, never as `protected`.
+
+**Timing (AC-1).** The release candidate (`okf v0.12.0.0`), run on strategy at a load
+average of 16, took 7.4–8.3 s with `--kinds legacy` (143 relaxations) and 9.7–11.4 s with
+the default kinds (192 relaxations). Both are inside the plan's 60 s ceiling. The default
+run's 39 `unprotected` and 2 `descriptor-invalid` results are all members of the shared V02
+family, which plan 13's exception manifest is meant to excuse.
+
+**What went beyond the plan.** Four changes are recorded in the Decision Log:
+
+- the uniqueness key became a fourth composite unit;
+- a manifest may excuse a `descriptor-invalid` result that has no witness;
+- the description erasure was narrowed to rules without a presence clause;
+- presence demotion drops `when`.
+
+Each change came from running the classification against the real strategy profile, not
+from the design. Plan 13 should also fix the scanner's multi-line attribute gap when it fixes
+the `objectFields` one.
+
+**Friction.** FRIC-5 (plan 13's parity prerequisites did not exist yet) is triaged as
+`accepted`. The ordering cost one detour, the equivalent comparison reached parity, and plan
+13 already owns the formal baselines and comparison script.
+
+**Lesson.** When a sweep classifies by proof, run it against the largest real input early.
+The design did not anticipate any of the four classification changes. Each one appeared the
+first time the strategy profile ran, as a compile rejection or a rendered-line difference.
 
 
 ## Context and Orientation

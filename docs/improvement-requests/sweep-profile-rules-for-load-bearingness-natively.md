@@ -10,7 +10,13 @@ generated:
   by: claude-code/claude-opus-5-5
   at: "2026-10-28T16:00:00Z"
 requestId: IR-12
-status: accepted
+status: completed
+completedAt: "2026-10-28T18:00:00Z"
+resolution: >-
+  ExecPlan 71 added okf profile sweep and Okf.Profile.Sweep, released in
+  0.12.0.0. A local comparison against fresh legacy runs matched all 484
+  legacy results across the six catalog families. The strategy sweep takes
+  7–11 s, against hours for the legacy script.
 targetPlan: docs/plans/71-add-okf-profile-sweep-for-load-bearing-rule-checks.md
 origin: mori://shinzui/okf-profiles/plans/13-make-profile-policy-sweeps-observable-and-run-them-natively-in-okf
 dependencies:
@@ -53,7 +59,9 @@ acceptanceCriteria:
 
 ## Status
 
-- **Status:** accepted (2026-10-28)
+- **Status:** completed; completion verified on 2026-10-28. Formal parity with
+  the okf-profiles comparison script is re-checked by
+  `mori://shinzui/okf-profiles/plans/13-make-profile-policy-sweeps-observable-and-run-them-natively-in-okf`.
 - **Origin:** `mori://shinzui/okf-profiles/plans/13-make-profile-policy-sweeps-observable-and-run-them-natively-in-okf`,
   which carries the catalog half of the work, motivated by
   `mori://shinzui/okf-profiles/okf/improvement-requests/concepts/IR-11`.

@@ -1,6 +1,7 @@
 # Bundle Update Log
 
 ## 2026-10-28
+* **Update**: FRIC-5 accepted: Accepted: the ordering cost one detour, the equivalent comparison reached parity, and plan 13 already owns the formal baselines and script.
 * **Addition**: FRIC-5 records detour process friction with mori://shinzui/okf-profiles/plans/13-make-profile-policy-sweeps-observable-and-run-them-natively-in-okf: Plan 13 parity prerequisites were not yet recorded
 * **Update**: FRIC-4 accepted: Accept the existing shell workflow after verifying core and CLI suites with its compiler.
 * **Addition**: FRIC-4 records detour environment friction with mori://shinzui/okf: Ambient Cabal selects a compiler below the project bound

@@ -1,6 +1,8 @@
 # Bundle Update Log
 
 ## 2026-10-28
+* **Update**: Complete IR-12 with all-family parity and timing evidence from ExecPlan 71;
+released in 0.12.0.0.
 * **Addition**: IR-12: sweep profile rules for load-bearingness natively with
 `okf profile sweep`; accepted for planning and linked to ExecPlan 71.
 * **Update**: Complete IR-11 with nested closure acceptance evidence and consumer migration guidance
