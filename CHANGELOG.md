@@ -7,6 +7,23 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.12.0.0] - 2026-10-28
+
+### Added
+
+- `okf profile sweep PROFILE --accept BUNDLE --cases DIR` checks that a
+  profile's test suite tests every rule. It weakens each rule one way at a time
+  in process, reports which rejection case notices, and classifies every
+  relaxation as protected, subsumed, covered, inert, exception or failing, with
+  an exception manifest for what okf cannot decide. Output streams as text or
+  NDJSON; exit 1 marks an untested rule, so the sweep can gate a release.
+  `--kinds legacy` reproduces the okf-profiles catalog's Python sweep.
+
+### Changed
+
+- **Breaking (library):** okf-cli's `ProfileCommand` adds `ProfileSweep`;
+  okf-core adds the `Okf.Profile.Sweep` module.
+
 ## [0.11.0.0] - 2026-10-28
 
 ### Added

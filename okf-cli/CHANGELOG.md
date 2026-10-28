@@ -7,6 +7,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.12.0.0] - 2026-10-28
+
 ### Added
 
 - `okf profile sweep PROFILE --accept BUNDLE --cases DIR` weakens each profile
@@ -19,6 +21,11 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   (`--exceptions`, default `CASES/sweep-exceptions.json`) for what okf cannot
   decide. Exit 1 when any result is failing or an exception is stale, 2 for an
   unreadable suite or a failing baseline, 3 for an inertness contradiction.
+
+### Changed
+
+- **Breaking (library):** `ProfileCommand` adds `ProfileSweep`, carrying the new
+  `ProfileSweepOptions`.
 
 ## [0.11.0.0] - 2026-10-28
 
