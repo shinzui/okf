@@ -79,6 +79,8 @@ A profile descriptor is a Dhall record. The shipped example
 PostgreSQL-table convention:
 
 ```dhall
+let FrontmatterRules = ../../okf-core/dhall/defaults/FrontmatterRules.dhall
+
 let field = ../../okf-core/dhall/mk/FieldRule.dhall
 
 let TypeRule = ../../okf-core/dhall/defaults/TypeRule.dhall
@@ -93,8 +95,8 @@ in  { name = "shinzui-postgresql"
         Write enough context that another reader can locate the object and verify the description against the database.
         ''
     , okfVersion = "0.2"
-    , frontmatter =
-      { required =
+    , frontmatter = FrontmatterRules::{
+      , required =
         [ field.documented
             "type"
             "The OKF concept type; must be one of the type rules below."
@@ -116,6 +118,7 @@ in  { name = "shinzui-postgresql"
     , allowUnknownTypes = False
     , allowUnknownFields = True
     , idField = None Text
+    , requireBundleVersion = None Text
     , types =
       [ TypeRule::{
         , type = "PostgreSQL Table"
@@ -144,8 +147,12 @@ The fields:
 | `guidance` | `Optional Text` | Multiline Markdown telling every author how to produce useful documents under this profile. Shown by `okf profile show` and generated documentation, but omitted from compact profile listings. Prescriptive, never validated or executed. |
 | `okfVersion` | `Text` | The OKF version the conventions target, as `<major>.<minor>`. Checked against the rules the profile declares; see [the declared OKF version](#the-declared-okf-version). |
 | `frontmatter.required` | `List FieldRule` | Frontmatter keys every concept must have as a non-empty value. A missing or empty key is reported as `missing profile-required field`. |
-| `frontmatter.recommended` | `List FieldRule` | Keys checked only by `okf validate --strict`; a missing value is reported as `missing profile-recommended field`. |
-| `frontmatter.optional` | `List FieldRule` | Keys the profile knows about but never demands. Absence is never reported, in any mode. Every constraint the rule declares still applies whenever the key is present, and the key counts as declared under `allowUnknownFields = False`. See [Optional fields](#optional-fields). |
+| `frontmatter.recommended` | `List FieldRule` | Keys whose standalone presence is checked only by `okf validate --strict`; present values are constrained in both modes. A missing value is reported as `missing profile-recommended field`. |
+| `frontmatter.optional` | `List FieldRule` | Keys with no standalone presence requirement; grouped presence constraints may still require them. Every constraint the rule declares still applies whenever the key is present, and the key counts as declared under `allowUnknownFields = False`. See [Optional fields](#optional-fields). |
+| `frontmatter.presenceConstraints` | `List PresenceConstraint` | Grouped presence rules combining a value gate, presence triggers, and all-of/any-of targets. Defaults to `[]`. |
+| `frontmatter.timestampOrderConstraints` | `List TimestampOrderConstraint` | Require one scalar UTC RFC3339 sibling to precede another. Defaults to `[]`. |
+| `frontmatter.membershipConstraints` | `List MembershipConstraint` | Require each selected source text value to occur in the selected target values on the same concept. Defaults to `[]`. |
+| `frontmatter.uniqueValuesConstraints` | `List UniqueValuesConstraint` | Reject duplicate text values across at least two selectors, including repeats within a selected list. Defaults to `[]`. |
 | `allowUnknownTypes` | `Bool` | When `False`, a concept whose `type` is not listed in `types` is reported as `type not in profile vocabulary`. Profile-wide frontmatter rules still apply whether this is `True` or `False`. |
 | `allowUnknownFields` | `Bool` | When `False`, top-level keys must be declared by the effective profile/type rules. Core OKF keys and `idField` are always permitted. The default is `True`, preserving producer extensions. |
 | `idField` | `Optional Text` | Names the frontmatter key that stores document IDs. `None Text` disables all document-ID checks. |
@@ -160,7 +167,7 @@ Each `FieldRule` — one frontmatter key, and optionally what it is for:
 | `description` | `Optional Text` | Prose explaining what the key should contain. Printed by `okf profile show`, and repeated in missing required or recommended advisories. Documentary only. |
 | `allowedValues` | `List Text` | Legal textual values. `[]` means unconstrained. Strings and lists of strings are checked whenever present, including recommended fields outside strict mode. |
 | `cardinality` | `Cardinality` | `Any` preserves legacy presence behavior; `Scalar` accepts non-blank text, numbers, and booleans; `List` accepts arrays. Null satisfies no explicit cardinality. A mapping satisfies none of the three either — declare `objectFields` instead, which refines the key to the compiled `object` shape. |
-| `format` | `Optional FieldFormat` | A parser-backed value contract: UTC RFC3339 timestamp, calendar date, absolute URI, URI with a required scheme, document handle, OKF v0.2 actor, `human:` actor, integer, non-negative integer, or boolean. `None` means unconstrained. See [actor and non-textual formats](#actor-and-non-textual-formats). |
+| `format` | `Optional FieldFormat` | A parser-backed value contract: UTC RFC3339 timestamp, calendar date, absolute URI, URI with a required scheme, document handle, OKF v0.2 actor, `human:` actor, integer, non-negative integer, finite decimal, or boolean. `None` means unconstrained. See [actor and non-textual formats](#actor-and-non-textual-formats). |
 | `elementFields` | `Optional NestedRules` | When present, the field must be a list whose elements are flat records checked with nested required, recommended, and optional rules. `None` means no element schema. |
 | `objectFields` | `Optional NestedRules` | When present, the field's value must itself be a mapping, whose members are checked with the same nested rules. Declaring it alongside `elementFields` accepts either spelling and checks both against the same members. `None` means no object schema. |
 | `reference` | `Optional HandleReferenceRule` | Declares that present values are local handles with one prefix or absolute external URIs using an explicitly allowed scheme and optional whole-value pattern. Available on top-level and nested rules. Local handles may be prohibited; when allowed, they must resolve inside the bundle. |
@@ -257,6 +264,8 @@ named-format, `reference`, `path`, and conditional-presence fields as
 `uniqueBy`; the schema cannot recurse beyond one record level.
 
 ```dhall
+let NestedRules = ../../okf-core/dhall/defaults/NestedRules.dhall
+
 let field = ../../okf-core/dhall/mk/FieldRule.dhall
 
 let NestedFieldRule = ../../okf-core/dhall/defaults/NestedFieldRule.dhall
@@ -265,7 +274,8 @@ let FieldFormat = ../../okf-core/dhall/FieldFormat.dhall
 
 in  field.recordList
       "reviews"
-      { required =
+      NestedRules::{
+      , required =
         [ NestedFieldRule::{ field = "outcome", allowedValues = [ "approved", "rejected" ] }
         , NestedFieldRule::{ field = "reviewed_at", format = Some FieldFormat.Rfc3339Utc }
         ]
@@ -283,9 +293,12 @@ modes, recommended nested fields under `--strict`, optional nested fields never,
 and present values always receive vocabulary, cardinality, and format checks.
 
 Diagnostics carry the complete path, including the list index, for example
-`reviews[2].outcome`. Extra keys inside each record remain allowed. Unless the
-parent declares `uniqueBy`, the profile does not compare records. It never
-captures top-level fields or validates a second nested level.
+`reviews[2].outcome`. Extra keys inside each record remain allowed by default;
+[close the nested vocabulary](#closing-nested-record-vocabularies) to reject them.
+Nested rules can also carry grouped presence and timestamp-order constraints.
+They read siblings in that record and never capture top-level fields or
+validate a second nested level. Root-level selectors can project one member
+across a record list for [same-concept constraints](#same-concept-constraints).
 
 ### Record-list uniqueness
 
@@ -295,7 +308,8 @@ Set a top-level `FieldRule.uniqueBy` to the name of one member declared by its
 ```dhall
     field.recordList
       "acceptanceCriteria"
-      { required =
+      NestedRules::{
+      , required =
         [ NestedFieldRule::{ field = "id", cardinality = Cardinality.Scalar }
         , NestedFieldRule::{ field = "text", cardinality = Cardinality.Scalar }
         ]
@@ -333,6 +347,8 @@ members are checked the same way. The two differ only in what they describe:
 `objectFields` describes the record that *is* the value.
 
 ```dhall
+let NestedRules = ../../okf-core/dhall/defaults/NestedRules.dhall
+
 let field = ../../okf-core/dhall/mk/FieldRule.dhall
 
 let NestedFieldRule = ../../okf-core/dhall/defaults/NestedFieldRule.dhall
@@ -341,7 +357,8 @@ let FieldFormat = ../../okf-core/dhall/FieldFormat.dhall
 
 in  field.record
       "generated"
-      { required =
+      NestedRules::{
+      , required =
         [ NestedFieldRule::{
           , field = "by"
           , description = Some "Who or what produced this content."
@@ -358,7 +375,7 @@ value must be a mapping; an explicit `Scalar` or `List` alongside it is a
 profile-definition error, reported as `objectFields at generated cannot be
 combined with cardinality scalar`. An empty mapping counts as absent, exactly as
 an empty list does under `List`. To demand a mapping without constraining its
-members, declare `objectFields` with three empty lists.
+members, use `objectFields = Some NestedRules::{=}`.
 
 Diagnostics name the member without an index, because there is no index:
 
@@ -377,7 +394,8 @@ both, which `field.recordOrList` does in one line:
 ```dhall
 field.recordOrList
   "verified"
-  { required =
+  NestedRules::{
+  , required =
     [ NestedFieldRule::{
       , field = "by"
       , description = Some "Who confirmed this content."
@@ -415,10 +433,49 @@ element, which OKF v0.2 also permits, is at depth two and is not. A profile can
 require `sources` to be a list of records and can constrain each record's own
 keys, but cannot reach `sources[0].usage_window.from`.
 
+### Closing nested record vocabularies
+
+`NestedRules.allowUnknownFields` defaults to `True`. Set it to `False` under
+`elementFields` or `objectFields` to reject undeclared members, independently
+of the profile's top-level `allowUnknownFields` setting:
+
+```dhall
+let okf = ../../okf-core/dhall/package.dhall
+
+in  okf.defaults.FieldRule::{
+    , field = "reviews"
+    , elementFields = Some okf.defaults.NestedRules::{
+      , allowUnknownFields = False
+      , required =
+        [ okf.defaults.NestedFieldRule::{ field = "by", format = Some okf.FieldFormat.Actor } ]
+      , optional =
+        [ okf.defaults.NestedFieldRule::{ field = "at", format = Some okf.FieldFormat.Rfc3339Utc } ]
+      }
+    }
+```
+
+This permits `by` and `at`, and reports `reviews[0].stray` for an undeclared
+`stray` member. Closure checks supplied names even when their values are null,
+blank, or empty, in both validation modes. Unlike top-level closure, no core OKF
+keys are implicitly allowed inside records. A closed shape with no declared
+members rejects every supplied name.
+
+Required, recommended, and optional declarations all contribute allowed names,
+even when their presence conditions are false. Profile and type scopes merge
+names by union and openness with boolean AND: either scope can close the
+shape, and an open declaration cannot reopen it. List and object policies remain
+independent when both shapes are accepted, while their member rules share the
+compiled contract.
+
+`profile show` (including `--json`) exposes each declared boolean. Generated
+profile documentation reports effective `open`, `closed`, or `none` separately
+for list records and object values. See the
+[fixture walkthrough](fixtures.md#closed-nested-records) for runnable examples.
+
 ### Actor and non-textual formats
 
-Five of the ten named formats came in with OKF v0.2. Two constrain an identity,
-three constrain a value that is not text at all.
+The eleven named formats include two actor formats and four formats for
+non-textual values: integers, non-negative integers, finite decimals, and booleans.
 
 **`actor` and `human-actor`.** Specification §7 defines one convention for every
 field that records who or what acted, and it has exactly three shapes:
@@ -488,6 +545,13 @@ profile: gen: frontmatter value at usage_count must match format non-negative-in
 `5.5` is reported by both integer formats, `-3` by `non-negative-integer` alone,
 and `required: "true"` by `boolean`.
 
+**`finite-decimal`.** Use `format = Some okf.FieldFormat.FiniteDecimal` for
+measurements such as `baseline` or `target`. It accepts YAML numbers, including
+zero, negative values, integers, and fractions, without conversion to floating
+point. Quoted numbers, booleans, null, and non-finite values are rejected. Like
+the other non-textual formats, it refines unspecified cardinality to `Scalar`;
+an explicit `List` applies the format to each element.
+
 **A limitation to know about.** `allowedValues` stays textual. There is no way to
 enumerate a closed set of numbers, because `valueMatchesVocabulary` compares text
 and no OKF v0.2 key motivates one; the single boolean-shaped case has exactly two
@@ -506,11 +570,14 @@ top-level key. A nested condition reads only the same list element record; it
 cannot capture a top-level key.
 
 ```dhall
+let FrontmatterRules = ../../okf-core/dhall/defaults/FrontmatterRules.dhall
+
 let FieldRule = ../../okf-core/dhall/defaults/FieldRule.dhall
 
 let Cardinality = ../../okf-core/dhall/Cardinality.dhall
 
-in  { required =
+in  FrontmatterRules::{
+    , required =
       [ FieldRule::{
         , field = "status"
         , allowedValues = [ "active", "superseded" ]
@@ -548,11 +615,10 @@ profile: decisions/old: missing profile-required field: supersededBy (when statu
 
 ### Optional fields
 
-`required` and `recommended` both answer "should absence be reported?" with
-*yes* — unconditionally, or under `--strict`. `optional` answers it with *never*,
-while leaving every other question about the key untouched. An optional key is
-documented, validated when present, and part of the closed vocabulary; its
-absence is simply not a defect.
+`required` and `recommended` check presence unconditionally or under `--strict`.
+`optional` adds no standalone presence check. An optional key is documented,
+validated when present, and part of the closed vocabulary. Its absence alone is
+not a defect, although grouped presence constraints can independently require it.
 
 Reach for it when a key describes something that is genuinely not true of every
 concept, rather than something authors keep forgetting. Architecture decisions
@@ -561,6 +627,8 @@ older one, `originatingPlan` only where a plan produced the decision, and
 `supersededBy` cannot exist on a live decision at all.
 
 ```dhall
+let FrontmatterRules = ../../okf-core/dhall/defaults/FrontmatterRules.dhall
+
 let FieldRule = ../../okf-core/dhall/defaults/FieldRule.dhall
 
 let HandleReferenceRule = ../../okf-core/dhall/defaults/HandleReferenceRule.dhall
@@ -569,7 +637,8 @@ let Cardinality = ../../okf-core/dhall/Cardinality.dhall
 
 let field = ../../okf-core/dhall/mk/FieldRule.dhall
 
-in  { required =
+in  FrontmatterRules::{
+    , required =
       [ FieldRule::{
         , field = "status"
         , allowedValues = [ "accepted", "superseded" ]
@@ -619,6 +688,126 @@ inside one type rule does **not** switch the recommendation off for that type:
 merged presence clauses accumulate, so a type rule can narrow what the profile
 demands but never silently weaken it. To make a key optional profile-wide, move
 it in the scope that declared it.
+
+### Same-concept constraints
+
+Use these constraints when a rule depends on several values in one concept.
+They supplement per-field `when` rules and run in both permissive and strict
+validation. Profile findings remain advisory unless `--profile-enforce` is set.
+They never resolve another concept or execute code.
+
+A `ValueSelector` is `{ field : Text, member : Optional Text }`. With
+`member = None Text`, it selects the field itself. With `member = Some "name"`,
+it selects that member from a declared object or each record in a declared list.
+Names must be nonblank and contain none of `.`, `[` or `]`; recursive paths,
+wildcards, and arbitrary expressions are unsupported. Every selected field and
+member must have an effective declaration; the implicit allowance of core keys
+under top-level closure does not declare them for selectors.
+
+| Constraint | Fields | Meaning |
+|------------|--------|---------|
+| `PresenceConstraint` | `when`, `whenAnyPresent`, `requireAll`, `requireAny` | If the optional sibling value gate matches and any presence trigger is present, require all `requireAll` targets and at least one `requireAny` target. An empty trigger list means no presence gate; an empty `requireAny` list adds no alternative requirement. At least one target is required. |
+| `TimestampOrderConstraint` | `before`, `after` | Named sibling fields must be distinct scalar `Rfc3339Utc` declarations. When both values are valid timestamps, require `before < after`; equal instants fail. Missing or malformed values retain their ordinary field checks. |
+| `MembershipConstraint` | `source`, `target` | Each usable source text occurrence must appear among target text occurrences. Both operands may project one record member. |
+| `UniqueValuesConstraint` | `selectors` | At least two distinct selectors contribute one combined set of text occurrences. Every repeat after the first is reported with its path and the first occurrence's path. |
+
+All four lists are available in `FrontmatterRules`, at profile and type scope.
+`NestedRules` supports `presenceConstraints` and `timestampOrderConstraints`
+within each record; selectors there name siblings only. Membership and combined
+uniqueness are declared at root scope, where selectors may project members.
+Profile and type constraints accumulate; exact duplicates are removed without
+changing declaration order. A type declaration cannot turn off a profile rule.
+
+#### Grouped presence and timestamp order
+
+This complete descriptor requires `end` whenever `start` is present, requires
+`method` when `status` is `measured`, and checks timestamp order:
+
+```dhall
+let okf = ../../okf-core/dhall/package.dhall
+
+let F = okf.defaults.FieldRule
+
+let select = \(field : Text) -> okf.defaults.ValueSelector::{ field }
+
+in  okf.defaults.Profile::{
+    , name = "measurement-window"
+    , okfVersion = "0.2"
+    , frontmatter = okf.defaults.FrontmatterRules::{
+      , optional =
+        [ F::{ field = "status", cardinality = okf.Cardinality.Scalar, allowedValues = [ "draft", "measured" ] }
+        , F::{ field = "method", cardinality = okf.Cardinality.Scalar }
+        , F::{ field = "start", format = Some okf.FieldFormat.Rfc3339Utc, cardinality = okf.Cardinality.Scalar }
+        , F::{ field = "end", format = Some okf.FieldFormat.Rfc3339Utc, cardinality = okf.Cardinality.Scalar }
+        ]
+      , presenceConstraints =
+        [ okf.defaults.PresenceConstraint::{
+          , whenAnyPresent = [ select "start" ]
+          , requireAll = [ select "end" ]
+          }
+        , okf.defaults.PresenceConstraint::{
+          , when = Some { field = "status", hasValue = [ "measured" ] }
+          , requireAll = [ select "method" ]
+          }
+        ]
+      , timestampOrderConstraints = [ { before = "start", after = "end" } ]
+      }
+    }
+```
+
+A `when` gate must name a declared scalar field with a closed textual vocabulary;
+its `hasValue` list must be nonempty and reachable. `whenAnyPresent` is
+existential: one present projected member anywhere in the selected record list
+can activate a root requirement such as `sources`. Targets must be siblings in
+the constraint's own scope, without `member` projections.
+
+Presence uses the selected value's compiled shape. Blank strings and empty
+containers do not count as present; numeric zero with `Scalar` cardinality does.
+A root selector of a container observes the whole container. A wrong-shape target
+keeps its shape error without an additional missing-target diagnostic. An
+`optional` field can therefore become required by a grouped constraint even
+though it has no standalone presence requirement.
+
+#### Membership and combined uniqueness
+
+For a profile declaring `jobs` as records with a scalar `name`, `features` as
+records with a list-valued `jobs` and scalar `featureRef`, and `featureRefs` as
+a text list, root rules can express:
+
+```dhall
+{ membershipConstraints =
+    [ { source = { field = "features", member = Some "jobs" }
+      , target = { field = "jobs", member = Some "name" }
+      }
+    ]
+, uniqueValuesConstraints =
+    [ { selectors =
+        [ { field = "featureRefs", member = None Text }
+        , { field = "features", member = Some "featureRef" }
+        ]
+      }
+    ]
+}
+```
+
+These are fields to add to a `FrontmatterRules` completion, rather than a full
+rules record. Relations require explicitly scalar/list text leaves. Numeric and
+boolean formats and record containers are invalid relation operands. Supplied
+non-text operands produce indexed diagnostics such as `jobs[0].name`; text
+comparison is exact and case-sensitive. A source with no usable occurrences
+adds no membership failure; a usable source with an empty target does. Combined
+uniqueness also catches repeats within any one selected list. For uniqueness of
+one required record member in one list, use [uniqueBy](#record-list-uniqueness).
+
+Malformed constraints fail profile compilation before bundle validation.
+`profile show --json` preserves declared lists, and `profile document` renders
+the effective constraints for every type and nested shape. Library consumers
+can inspect them with `compiledProfileBaseConstraints`,
+`compiledProfileConstraintsForType`, `fieldRuleElementConstraints`, and
+`fieldRuleObjectConstraints` from `Okf.Profile`.
+
+See [the product-discovery fixture](fixtures.md#same-concept-product-discovery-constraints)
+for a complete descriptor and valid/invalid bundles.
 
 ### The declared OKF version
 
@@ -809,6 +998,8 @@ The descriptor below is what such a policy looks like. It ships as
 that compiles it and runs it, so this section cannot rot.
 
 ```dhall
+let FrontmatterRules = ../../../dhall/defaults/FrontmatterRules.dhall
+
 let Profile = ../../../dhall/Profile.dhall
 let TypeRule = ../../../dhall/defaults/TypeRule.dhall
 let FieldRule = ../../../dhall/defaults/FieldRule.dhall
@@ -841,7 +1032,7 @@ in  { name = "attested-computation-house"
         "A house convention for the OKF v0.2 attested computation contract."
     , guidance = None Text
     , okfVersion = "0.2"
-    , frontmatter = { required = [ field.plain "type" ], recommended = [] : List FieldRule.Type, optional = [] : List FieldRule.Type }
+    , frontmatter = FrontmatterRules::{ required = [ field.plain "type" ], recommended = [] : List FieldRule.Type, optional = [] : List FieldRule.Type }
     , allowUnknownTypes = True
     , allowUnknownFields = True
     , idField = None Text
@@ -851,8 +1042,8 @@ in  { name = "attested-computation-house"
         , type = "Attested Computation"
         , description = Some
             "A sanctioned computation, with the means to check that a value came from running it."
-        , frontmatter =
-          { required =
+        , frontmatter = FrontmatterRules::{
+          , required =
             [ field.recordList "parameters" parameterMembers
             , field.record "executor" executorMembers
             ]
@@ -1189,142 +1380,40 @@ fixture, and prints the `defaultRegistryReference` literal to paste into
 
 ### Inspecting one profile
 
+Inspect a descriptor directly as a one-profile registry, without loading the
+built-in catalogue or local discovery:
+
 ```bash
-okf profile show documentation.architectureDecisions --registry /path/to/okf-profiles
+okf profile show --registry docs/profiles/postgresql.dhall --no-local
 ```
+
+The output begins as follows (field rules are omitted here):
 
 ```text
-export: documentation.architectureDecisions
-name: architecture-decision-records
-description: (none)
-guidance: (none)
-okfVersion: 0.1
-requireBundleVersion: (none)
+export: (root)
+name: shinzui-postgresql
+description: Conventions for documenting a PostgreSQL database as an OKF bundle.
+guidance:
+  Inspect the live PostgreSQL object and its relevant DDL before documenting it. Record what exists now, not an intended design.
+
+  Write enough operational context that another reader can locate the object and verify the description against the database.
+okfVersion: 0.2
+requireBundleVersion: 0.2
 allowUnknownTypes: false
 allowUnknownFields: true
-idField: docId
+idField: (none)
 frontmatter.required:
-  - type: (none)
-    allowedValues: (any)
-    cardinality: any
-    format: (none)
-    reference: (none)
-    path: (none)
-    when: (none)
-    uniqueBy: (none)
-    objectFields: (none)
-    elementFields: (none)
-  - title: (none)
-    allowedValues: (any)
-    cardinality: any
-    format: (none)
-    reference: (none)
-    path: (none)
-    when: (none)
-    uniqueBy: (none)
-    objectFields: (none)
-    elementFields: (none)
-  - docId: (none)
-    allowedValues: (any)
-    cardinality: any
-    format: (none)
-    reference: (none)
-    path: (none)
-    when: (none)
-    uniqueBy: (none)
-    objectFields: (none)
-    elementFields: (none)
-  - status: (none)
-    allowedValues: (any)
-    cardinality: any
-    format: (none)
-    reference: (none)
-    path: (none)
-    when: (none)
-    uniqueBy: (none)
-    objectFields: (none)
-    elementFields: (none)
-  - date: (none)
-    allowedValues: (any)
-    cardinality: any
-    format: (none)
-    reference: (none)
-    path: (none)
-    when: (none)
-    uniqueBy: (none)
-    objectFields: (none)
-    elementFields: (none)
-frontmatter.recommended:
-  - description: (none)
-    allowedValues: (any)
-    cardinality: any
-    format: (none)
-    reference: (none)
-    path: (none)
-    when: (none)
-    uniqueBy: (none)
-    objectFields: (none)
-    elementFields: (none)
-  - timestamp: (none)
-    allowedValues: (any)
-    cardinality: any
-    format: (none)
-    reference: (none)
-    path: (none)
-    when: (none)
-    uniqueBy: (none)
-    objectFields: (none)
-    elementFields: (none)
-  - supersedes: (none)
-    allowedValues: (any)
-    cardinality: any
-    format: (none)
-    reference: (none)
-    path: (none)
-    when: (none)
-    uniqueBy: (none)
-    objectFields: (none)
-    elementFields: (none)
-  - supersededBy: (none)
-    allowedValues: (any)
-    cardinality: any
-    format: (none)
-    reference: (none)
-    path: (none)
-    when: (none)
-    uniqueBy: (none)
-    objectFields: (none)
-    elementFields: (none)
-  - originatingPlan: (none)
-    allowedValues: (any)
-    cardinality: any
-    format: (none)
-    reference: (none)
-    path: (none)
-    when: (none)
-    uniqueBy: (none)
-    objectFields: (none)
-    elementFields: (none)
-frontmatter.optional: (none)
-
-type: Architecture Decision Record
-  description: (none)
-  guidance: (none)
-  frontmatter.required: (none)
-  frontmatter.recommended: (none)
-  frontmatter.optional: (none)
-  pathPattern: *
-  resourceScheme: (none)
-  requireSchemaSection: false
-  schemaColumns: (none)
-  idPrefix: ADR
-
-Use it with:
-  let registry = /path/to/okf-profiles/package.dhall
-  in  registry.documentation.architectureDecisions
+  ...
+Presence constraints: none
+Timestamp order constraints: none
+Membership constraints (text operands): none
+Unique values constraints (text operands): none
 ```
 
-Every optional field prints, as `(none)` when absent, so the output shape does
+Use `okf profile show documentation.architectureDecisions --registry REGISTRY`
+to inspect a named catalogue export, or add `--json` for the raw descriptor.
+
+Every optional setting prints, as `(none)` when absent, so the output shape does
 not shift between profiles and stays reliable to grep. Present multiline
 guidance prints beneath a `guidance:` header with its internal lines and blank
 lines preserved. All three presence lists
@@ -1512,6 +1601,8 @@ okf profile document --profile docs/profiles/postgresql.dhall
 type: OKF Profile
 title: shinzui-postgresql
 description: Conventions for documenting a PostgreSQL database as an OKF bundle.
+generated:
+  by: process:okf-profile-document
 ---
 
 # shinzui-postgresql
@@ -1520,15 +1611,28 @@ Conventions for documenting a PostgreSQL database as an OKF bundle.
 
 ## Guidance
 
-Inspect the live PostgreSQL object and its relevant DDL before documenting it.
-Record what exists now, not an intended design.
+Inspect the live PostgreSQL object and its relevant DDL before documenting it. Record what exists now, not an intended design.
+
+Write enough operational context that another reader can locate the object and verify the description against the database.
 
 ## Settings
 
 - OKF version: `0.2`
+- Required bundle version: `0.2`
 - Unknown concept types: rejected
 - Unknown frontmatter keys: allowed
 - Document ID field: none
+
+## Frontmatter rules
+
+These rules apply to every concept in a bundle governed by this profile,
+whatever its type. Each concept type's own page repeats them merged with that
+type's rules, which is the form that actually applies.
+
+- Presence constraints: none
+- Timestamp order constraints: none
+- Membership constraints (text operands): none
+- Unique values constraints (text operands): none
 ...
 (preview only; pass --out DIR --write to write these 4 files)
 ```
@@ -1803,6 +1907,8 @@ valid, while `ADR-007`, `ADR-0`, and `ADR-7-extra` are not.
 The decisions fixture demonstrates the complete descriptor:
 
 ```dhall
+let FrontmatterRules = ../../../dhall/defaults/FrontmatterRules.dhall
+
 let Profile = ../../../dhall/Profile.dhall
 
 let TypeRule = ../../../dhall/defaults/TypeRule.dhall
@@ -1813,8 +1919,8 @@ in  { name = "decisions"
     , description = Some "How this team records architectural decisions."
     , guidance = None Text
     , okfVersion = "0.1"
-    , frontmatter =
-      { required =
+    , frontmatter = FrontmatterRules::{
+      , required =
         [ field.documented
             "type"
             "The OKF concept type; must be a type rule below."
@@ -2199,6 +2305,27 @@ remote-imports — and the tool never requires network access of its own. For re
 made, versioned profiles to import rather than hand-write, see the separate
 `okf-profiles` repository; the `docs/profiles/postgresql.dhall` shipped here is a
 self-contained example, not the authoritative source.
+
+### Updating existing descriptors for the current schema
+
+The current schema adds four constraint lists to `FrontmatterRules`, two to
+`NestedRules`, `NestedRules.allowUnknownFields`, and the `FiniteDecimal` format.
+Prefer `okf.defaults.FrontmatterRules::{ ... }` and
+`okf.defaults.NestedRules::{ ... }` when editing descriptors: they supply empty
+constraint lists and open nested records. The examples above use these defaults.
+
+A literal annotated against the current types must supply every new member.
+Changing only its schema import is insufficient. With a frozen older schema
+import, existing descriptors still load through compatibility decoders in both
+file and registry workflows; missing constraint lists upgrade to empty lists
+and nested records stay open. This also preserves descriptors written after
+same-concept constraints were introduced but before nested closure. Those
+decoders accept historical shapes, not arbitrary mixtures of old and new fields.
+
+Move a descriptor to the current schema before using the new rules, validate a
+representative bundle, and regenerate its profile documentation. Inspect raw
+rules with `okf profile show --registry PATH --no-local --json` and check
+enforcement with `okf validate BUNDLE --profile PATH --profile-enforce`.
 
 ### Upgrading descriptors to okf 0.2.0.0
 

@@ -604,27 +604,47 @@ SEE ALSO
 
 SAME-CONCEPT CONSTRAINTS
 
+  Profiles can constrain several values within one concept's frontmatter.
+  ValueSelector names a declared field and optionally one flat record member;
+  names cannot contain dots or brackets. No recursive or external resolution is
+  performed. Root selectors can project a member across record-list elements.
 
-Profiles can express constraints confined to one concept's frontmatter. A
-ValueSelector names a field and optionally one flat record member; it supports
-neither recursive paths nor external resolution. presenceConstraints combine
-an optional closed-vocabulary when gate, existential whenAnyPresent triggers,
-and requireAll/requireAny targets. Targets are siblings; root triggers can
-project members across records. Presence observes whole containers using existing
-OKF semantics: blank strings and empty lists do not satisfy a target, while zero
-with scalar cardinality does activate a trigger.
+  presenceConstraints combine an optional closed-vocabulary when gate,
+  existential whenAnyPresent triggers, and sibling requireAll/requireAny targets.
+  Empty triggers mean no presence gate; at least one target is required. Blank
+  strings and empty containers are absent; zero with scalar cardinality is
+  present. A projected root trigger can require a root sibling such as sources.
 
-timestampOrderConstraints require scalar Rfc3339Utc endpoints with before
-strictly earlier than after, within the same record. membershipConstraints
-compare source text occurrences with a target in the same concept.
-uniqueValuesConstraints prohibit repeated text across two or more selectors,
-including repeats within a selected list. Relations require explicit scalar/list
-leaves and reject supplied nontext values at their indexed paths. FiniteDecimal
-accepts finite YAML numbers without floating-point conversion or string coercion;
-it refines unspecified cardinality to scalar. Nested rules support presence and
-timestamp constraints; membership and combined uniqueness live at root scope.
+  timestampOrderConstraints require distinct scalar Rfc3339Utc siblings with
+  before strictly earlier than after. Equal instants fail. Missing or malformed
+  endpoints retain ordinary field checks without an additional ordering error.
 
-Use okf.defaults.FrontmatterRules::{ ... } and
-okf.defaults.NestedRules::{ ... } to inherit empty constraint lists. Existing
-schema pins keep loading through frozen compatibility decoders. See
-okf-core/test/fixtures/profiles/product-discovery.dhall for a complete example.
+  membershipConstraints require each source text occurrence to appear in the
+  target. uniqueValuesConstraints reject repeats across at least two distinct
+  selectors, including repeats within one selected list. Operands must be
+  declared scalar/list text leaves; supplied nontext values have indexed errors.
+  Text comparison is exact and case-sensitive, within this one concept.
+
+  FrontmatterRules has all four lists; NestedRules has presence and timestamp
+  lists, reading siblings in each record. Profile and type constraints accumulate.
+  All checks run in both modes and remain advisory without --profile-enforce.
+  Invalid definitions fail compilation before any bundle is validated.
+
+  FiniteDecimal accepts YAML numbers, including zero, integers and fractions,
+  without floating-point conversion. It rejects quoted numbers, booleans and
+  non-finite values and refines unspecified cardinality to scalar.
+
+  Use okf.defaults.FrontmatterRules::{ ... } and
+  okf.defaults.NestedRules::{ ... } to inherit empty constraint lists and open
+  nested records. Literals against the current schema need all new members;
+  older pinned descriptor shapes keep loading through compatibility decoders.
+  profile show --json exposes declarations; profile document shows effective
+  constraints for each type and nested shape.
+
+  Runnable fixtures from the repository root:
+
+    okf validate okf-core/test/fixtures/profile-product-discovery-valid --profile okf-core/test/fixtures/profiles/product-discovery.dhall --profile-enforce
+    okf profile show --registry okf-core/test/fixtures/profiles/product-discovery.dhall --no-local --json
+
+  The complete selector schema, migration guidance, and fixture walkthrough
+  are in docs/user/profiles.md and docs/user/fixtures.md.

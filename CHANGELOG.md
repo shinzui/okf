@@ -9,40 +9,43 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
-- Add opt-in `NestedRules.allowUnknownFields` closure for list records and object
-  values, defaulting to open. Effective policies merge with AND across scopes;
-  diagnostics use indexed/member paths in both strict and permissive modes.
-  Raw inspection exposes declared booleans and generated documentation shows
-  effective open/closed/none policies. A complete pre-closure decoder preserves
-  product-discovery constraints and historical pins.
-- **Breaking (library/schema):** `NestedRules` gains a boolean and
-  `ProfileViolation` gains `NestedFieldNotInProfile ConceptId FieldPath`.
-  Exhaustive consumers, including `mori://shinzui/mori/packages/mori-cli`, must
-  handle the new constructor. Literals using the current schema need the new
-  member or record completion; older pinned descriptors retain open records.
-
-- `okf help TOPIC --width N` wraps prose; terminal help uses ioctl sizing,
-  capped at 140 columns, while piped default output stays byte-stable.
-- Topic-name completion, grouped agent/Kit options and shared command examples.
-
-- `okf kit install` uses an optional fzf picker when NAME is omitted; explicit
-  names remain suitable for scripts. Cancellation succeeds without installation.
-
-- `okf agent assist [PROMPT]` opens a contextual interactive session without a
-  required prompt; `okf assist` remains an alias. `--debug` and `agent context
-  [--json]` inspect local context without launching. Context JSON uses schemaVersion 1.
-- Kit installation and session discovery share project-root lookup from nested
-  directories. Detached launches fail promptly with inspection alternatives.
+- Profiles can check relationships within one concept: grouped presence,
+  timestamp ordering, text membership, and uniqueness across selected values.
+  Bounded selectors can project one member from records; diagnostics name the
+  indexed values involved. `FiniteDecimal` validates YAML numeric measurements.
+  Profile inspection exposes declared rules and generated documentation renders
+  effective rules. Existing pinned descriptor generations remain readable.
+- Nested record rules can set `allowUnknownFields = False` to reject undeclared
+  members in list records or object values, including null/empty values. Names
+  merge by union across profile/type scopes; openness merges with AND. The
+  default and older pinned descriptors stay open. Inspection and generated
+  documentation expose each shape's policy.
+- `okf agent assist [PROMPT]` opens a contextual interactive session with an
+  optional prompt; `okf assist` remains an alias. `--debug` and `agent context
+  [--json]` inspect local context without launching. Context JSON has
+  `schemaVersion: 1`. Kit installation and session discovery share project-root
+  lookup from nested directories. Detached launches fail with inspection options.
+- `okf kit install` offers an fzf picker when `NAME` is omitted; explicit names
+  work in scripts. Cancelling succeeds without installation.
+- `okf help TOPIC --width N` wraps prose; terminal help uses its width, capped
+  at 140 columns, while piped default output stays byte-stable. Completion now
+  includes topic names; agent and Kit help groups options with examples.
 
 ### Changed
 
-- Both packages require GHC >=9.12 (base >=4.21); configuration/profile decoding
-  preserves asynchronous cancellation and owned process/terminal resources close
+- Both packages require GHC >=9.12 (base >=4.21). Configuration/profile decoding
+  preserves asynchronous cancellation; owned process/terminal resources close
   on exceptions.
-- Unknown help topics report errors and valid alternatives on stderr.
-- **Breaking (okf-cli library):** AssistOptions carries an optional prompt and
-  an inspection mode; Command adds AgentContext and HelpCommand carries width.
-
+- Unknown help topics now report errors and valid alternatives on stderr and
+  exit 1.
+- **Breaking (library/schema):** `FrontmatterRules` and `NestedRules` gain
+  constraint lists; `NestedRules` also gains `allowUnknownFields`, and
+  `FieldFormat` gains `FiniteDecimal`. Public profile-definition errors and
+  violations gain cases for these checks. Exhaustive consumers must handle the
+  new constructors. Literals against the current schema need the new fields;
+  record-completion defaults and frozen older schema pins preserve defaults.
+- **Breaking (okf-cli library):** `AssistOptions` carries an optional prompt
+  and inspection mode; `Command` adds `AgentContext`; `HelpCommand` carries width.
 - Upgrade `mori://shinzui/baikai/packages/baikai` to 0.10.0.0,
   `mori://shinzui/baikai/packages/baikai-kit` to 0.4.0.3, and
   `mori://shinzui/baikai/packages/baikai-claude` and

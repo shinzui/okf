@@ -9,19 +9,31 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
-- Add opt-in `NestedRules.allowUnknownFields` closure for list records and object
-  values, defaulting to open. Effective policies merge with AND across scopes;
-  diagnostics use indexed/member paths in both strict and permissive modes.
-  Raw inspection exposes declared booleans and generated documentation shows
-  effective open/closed/none policies. A complete pre-closure decoder preserves
-  product-discovery constraints and historical pins.
-- **Breaking (library/schema):** `NestedRules` gains a boolean and
-  `ProfileViolation` gains `NestedFieldNotInProfile ConceptId FieldPath`.
-  Exhaustive consumers, including `mori://shinzui/mori/packages/mori-cli`, must
-  handle the new constructor. Literals using the current schema need the new
-  member or record completion; older pinned descriptors retain open records.
+- Bounded `ValueSelector` declarations, grouped presence, timestamp ordering,
+  text membership, combined uniqueness, and `FiniteDecimal` validation. Effective
+  root and nested constraints have read-only inspection APIs; generated profile
+  documentation renders them. Frozen compatibility decoders preserve complete
+  historical descriptor generations in file and registry workflows.
+- Opt-in `NestedRules.allowUnknownFields` closure for list records and object
+  values, defaulting to open. Names merge by union and policies with AND across
+  scopes; diagnostics use indexed/member paths in both validation modes. Raw
+  inspection exposes declared booleans and generated documentation shows
+  effective open/closed/none policies. Older descriptors retain open records.
 
-- Add bounded value selectors, grouped presence, timestamp ordering, text membership, combined uniqueness, and finite-decimal format. Compile effective root and nested constraints with read-only inspection. Preserve the complete pre-change 0.10.0.0 descriptor generation in file and registry decoding. New public constructors are `FiniteDecimal`, `InvalidConceptConstraint`, `ConstraintPresenceMissing`, `ConstraintAlternativeMissing`, `TimestampOrderViolation`, `TextOperandMismatch`, `MembershipValueMissing`, and `DuplicateSelectedValue`; exhaustive downstream consumers must handle them.
+### Changed
+
+- Requires GHC >=9.12 (base >=4.21). Profile/configuration exception handling
+  preserves asynchronous cancellation.
+- **Breaking (library/schema):** `FrontmatterRules` gains four constraint lists;
+  `NestedRules` gains two constraint lists and `allowUnknownFields`; `FieldFormat`
+  gains `FiniteDecimal`. Use record completion for new defaulted fields or retain
+  a frozen older schema import for existing descriptors.
+- **Breaking (library):** New error/violation constructors are
+  `InvalidConceptConstraint`, `ConstraintPresenceMissing`,
+  `ConstraintAlternativeMissing`, `TimestampOrderViolation`, `TextOperandMismatch`,
+  `MembershipValueMissing`, `DuplicateSelectedValue`, and
+  `NestedFieldNotInProfile ConceptId FieldPath`. Exhaustive consumers must handle
+  them, including `mori://shinzui/mori/packages/mori-cli`.
 
 ## [0.10.0.0] - 2026-10-06
 

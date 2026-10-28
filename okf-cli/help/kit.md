@@ -2,7 +2,7 @@ KIT
 
 okf kit installs reusable AI-agent skills and subagents from the configured
 okf-kit git repository. Installed items are made available to interactive agent
-sessions launched with okf assist.
+sessions launched with okf agent assist (also spelled okf assist).
 
 COMMANDS
 
@@ -25,6 +25,18 @@ SCOPES
   directory. Project scope installs into this project's local agent asset
   directory. Use project scope when a repository should carry its own agent
   helpers independently of your personal setup.
+
+VISIBILITY AND INSPECTION
+
+  list, status and update accept --json for versioned machine-readable output.
+  Installation uses the manifest's visibility, defaulting to tool-only. Use
+  --shared for ordinary provider sessions or --tool-only for sessions launched
+  by OKF. Codex subagents require shared visibility or --accept-shared-codex.
+  status reports requested and effective visibility, including repair needs.
+
+  Project operations and agent launches locate the same nearest ancestor with
+  .git, okf-config.dhall or .okf, falling back to the working directory. This
+  keeps project installations discoverable when launched from a subdirectory.
 
 CONFIGURATION
 

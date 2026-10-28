@@ -57,7 +57,10 @@ series, and consumers should still read them before upgrading.
   require either project.
 - Multiline profile guidance is growth of [CAP-7](declarative-house-profiles.md)
   and [CAP-15](self-documenting-profiles.md), not a separate capability. It is
-  present on the default branch but remains unreleased.
+  available since 0.9.0.0. Same-concept constraints and nested vocabulary closure
+  extend these capabilities in the upcoming release. Contextual sessions and
+  interactive Kit installation extend [CAP-10](interactive-agent-assistance.md)
+  and [CAP-9](agent-kit-management.md).
 
 ## Validation
 

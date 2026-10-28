@@ -3,8 +3,8 @@ title: "Declarative, type-aware house profiles"
 type: Capability
 description: "Compile Dhall profiles into deterministic rules for type vocabularies, fields, formats, references, paths, nested records, document IDs, layout, schemas, and authoring guidance."
 generated:
-  by: codex/gpt-5
-  at: "2026-09-13T14:55:27Z"
+  by: codex/gpt-6
+  at: "2026-10-28T12:08:10Z"
 capabilityId: CAP-7
 provider: mori://shinzui/okf
 status: shipped
@@ -39,19 +39,24 @@ A profile layers team conventions on top of permissive OKF without redefining
 the format. It can close type and field vocabularies; merge profile-wide and
 type-specific presence rules; constrain scalar/list/object shapes, formats,
 values, references, paths, and one-level nested records; require list-local
-uniqueness; apply conditional presence; constrain concept paths and schema-table
-columns; and declare stable document-ID prefixes.
+uniqueness; apply conditional and grouped presence; order sibling timestamps;
+check text membership and combined uniqueness within a concept; close nested
+member vocabularies; constrain concept paths and schema-table columns; and
+declare stable document-ID prefixes. `FiniteDecimal` constrains numeric
+measurements without string coercion.
 
 Descriptors compile once into a read-only effective rule model. Contradictory
 definitions fail before concept validation, while corpus deviations remain
-structured findings whose severity belongs to the caller. The default branch
-also carries multiline profile and type guidance as prescriptive Markdown;
+structured findings whose severity belongs to the caller. Profiles
+also carry multiline profile and type guidance as prescriptive Markdown;
 guidance is rendered but never executed or treated as a checked rule.
 
 ## Limits
 
 - Profiles are house policy, not part of the Open Knowledge Format standard.
 - Nested field schemas stop after one record level.
+- Same-concept relations do not resolve other concepts or external resources;
+  membership and combined uniqueness compare text leaves only.
 - External reference syntax can be constrained offline, but external targets
   are never resolved.
 - Guidance is documentary and cannot prove that an author followed it.

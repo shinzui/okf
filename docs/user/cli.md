@@ -29,6 +29,7 @@ alias
 config
 profile
 kit
+agent
 assist
 completions
 help
@@ -49,14 +50,20 @@ cabal run okf -- help format   # bundle layout, concept IDs, frontmatter, links
 
 Available topics: `okf`, `bundles`, `format`, `validation`, `profiles`, `computations`,
 `concepts`, `where`, `trust`, `index`, `log`, `graph`, `ids`, `interactive`,
-`config`, `aliases`, `kit`, `agents`. Topic lookup is case-insensitive. An unknown topic name prints
-the list of valid topics, and the command still succeeds (exit 0).
+`config`, `aliases`, `kit`, `agents`. Topic lookup is case-insensitive. An unknown
+topic prints an error and valid alternatives on stderr and exits 1.
 
 The `okf`, `format`, `validation`, and `profiles` topics cover the format and
 how a bundle is checked; `computations`,
 `concepts`, `trust`, `index`, `log`, `graph`, and `ids` are the command-level
 guides for the reports and generators documented below. `where` is the full
 reference for the `okf concepts --where` condition language.
+
+`okf help profiles --width 60` wraps prose at an explicit width. Terminal help
+uses the terminal width, capped at 140 columns; indented examples, fenced blocks,
+and unbreakable URLs stay intact. Default piped output is byte-stable. Widths
+must be positive integers; an invalid width exits 1. Topic names support shell
+completion. Help, version, and completion work with malformed config.
 
 
 ## alias
@@ -278,7 +285,10 @@ orders: link to missing concept: customers
 A profile descriptor declares house conventions on top of OKF (allowed `type`
 strings, required frontmatter keys, `resource:` schemes, file layout, and
 `# Schema` columns). Pass one with `--profile` to additionally check a bundle
-against it. See [Profiles](profiles.md) for the descriptor schema.
+against it. Checks include [closed nested records](profiles.md#closing-nested-record-vocabularies)
+and [same-concept constraints](profiles.md#same-concept-constraints) for grouped
+presence, timestamp order, text membership, and combined uniqueness. These rules
+run with or without `--strict`. See [Profiles](profiles.md) for the schema.
 
 ```bash
 cabal run okf -- validate [BUNDLE] --profile PROFILE.dhall
@@ -1261,6 +1271,8 @@ omit `--registry`; its bundle declares 0.2. Read its conventions with
 `okf profile document --profile DIR/profile.dhall`.
 
 
+<a id="assist"></a>
+
 ## agent assist and agent context
 
 `okf agent assist [PROMPT]` launches the configured interactive coding-agent session
@@ -1321,6 +1333,7 @@ cabal run okf -- assist --print-command "audit this bundle"
 | `--effort LEVEL` | Reasoning effort: `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. |
 | `--system-prompt TEXT` | Extra system prompt, appended to the agent's own rather than replacing it. |
 | `--print-command` | Print the command line instead of launching it. |
+| `--debug` | Print local OKF context instead of launching; cannot be combined with `--print-command`. |
 
 The six effort levels are the same for both providers, and okf renders whichever
 spelling the chosen CLI accepts. Claude Code has no `minimal` level, so okf sends
@@ -1328,10 +1341,10 @@ it `low`; Codex takes all six verbatim:
 
 ```bash
 cabal run okf -- assist --effort minimal --print-command "x"
-# claude --effort low -- x
+# Includes --effort low and the starting prompt x.
 
 cabal run okf -- assist --provider codex --effort minimal --print-command "x"
-# codex -c model_reasoning_effort=minimal -- x
+# Includes -c model_reasoning_effort=minimal and the starting prompt x.
 ```
 
 An invalid value fails before anything launches, naming every level okf accepts:
@@ -1405,13 +1418,36 @@ scopes while specificity beats scope within one, is in `okf help config`.
 
 | Exit code | Meaning |
 |-----------|---------|
-| `0` | the command line was printed, or the session ran and exited zero |
+| `0` | context or the command line was printed, or the session exited zero |
 | the agent's own | the session ran and exited non-zero |
-| `1` | invalid CLI arguments or an unknown help topic |
+| `1` | invalid CLI arguments or configuration |
 | `2` | no controlling terminal or an unsupported provider policy |
 | `127` | the provider's CLI is not installed |
 
-### Interactive Kit installation
+## kit
+
+Manage skills and subagents from the configured Git kit.
+
+```bash
+okf kit list [--json]
+okf kit install [NAME] [--project] [--shared|--tool-only] [--accept-shared-codex]
+okf kit status [--json]
+okf kit update [NAME] [--json]
+okf kit uninstall NAME [--project]
+```
+
+Installation defaults to user scope and the manifest’s visibility (tool-only
+when omitted). `--project` selects project scope. `--shared` makes an item
+available to ordinary provider sessions; `--tool-only` restricts it to sessions
+launched by OKF. Codex subagents require shared visibility or explicit
+`--accept-shared-codex`. `okf kit status` reports requested and effective
+visibility and any installation needing repair.
+
+The repository and target providers come from `kit.repoUrl` and `kit.providers`
+in configuration; inspect them with `okf config show`. Remote Kit refreshes need
+Git and network access. See `okf help kit` for publishing instructions.
+
+### Interactive installation
 
 `okf kit install` and `okf kit install --project --tool-only` offer the manifest's
 skills and subagents through fzf. The selected name is passed back to the shared
@@ -1425,27 +1461,3 @@ cancels with exit 0 and no installation, following the engine's contract. This
 is distinct from bundle/concept picker cancellation (130). Malformed output and
 picker process failures remain errors (exit 1). Project assets are discoverable
 by contextual sessions for both providers from nested project directories.
-
-### Help layout and scripting
-
-`okf help TOPIC --width 60` wraps plain prose to a positive explicit width.
-Interactive help uses the terminal's ioctl width with a 140-column cap. Indented
-examples, fenced blocks and unbreakable URLs remain intact. With no explicit
-width and piped stdout, help keeps its historical bytes (embedded topic text plus
-the writer's final newline). Bare `okf help` lists topics. Invalid widths and
-unknown topics fail on stderr with remedies.
-
-Agent settings/inspection, context output and Kit options have labeled help
-sections. Shell completions include topic names, canonical agent commands and
-Kit visibility flags. Help, version and completion work with malformed config.
-The Haskell packages require GHC 9.12 or newer (base >=4.21); every component
-inherits the GHC2024 common stanza.
-
-Executable acceptance uses temporary homes, local Git kits, fake fzf/providers,
-and PTYs; it never modifies installed user assets:
-
-```bash
-nix develop --no-write-lock-file -c cabal build all
-nix develop --no-write-lock-file -c cabal test all
-python3 scripts/test-agent-workflows.py --okf "$(cabal list-bin exe:okf)"
-```

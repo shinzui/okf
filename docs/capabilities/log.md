@@ -1,5 +1,8 @@
 # Bundle Update Log
 
+## 2026-10-28
+* **Update**: Refresh CAP-7, CAP-9, CAP-10, and CAP-15 for same-concept profile constraints, nested record closure, contextual agent sessions, interactive Kit installation, and effective-rule documentation.
+
 ## 2026-10-03
 * **Update**: Record concept sorting capability
 

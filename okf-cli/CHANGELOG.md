@@ -9,7 +9,33 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
-- Validate single-concept product discovery constraints, render indexed relation diagnostics, and show declared/effective constraints in profile inspection and generated documentation.
+- `okf agent assist [PROMPT]` launches a contextual Claude Code or Codex session;
+  `okf assist` remains an alias. `--debug` and `okf agent context [--json]`
+  inspect local bundles, profile guidance, assets, and commands without launch.
+  JSON uses `schemaVersion: 1`; inspection works without a provider or terminal.
+- `okf kit install [NAME]` selects through fzf when the name is omitted.
+  Explicit names bypass terminal probes; cancellation succeeds without installing.
+  Project asset discovery shares ancestor lookup with agent sessions.
+- Embedded help accepts `--width N`, adapts to terminal width up to 140 columns,
+  and preserves default piped bytes. Topic completion, grouped agent/Kit options,
+  and command examples are included.
+- Profile validation reports same-concept presence, timestamp, membership,
+  uniqueness, and nested-vocabulary deviations with indexed paths. Inspection
+  exposes declared constraints and policies; generated documentation shows
+  effective rules.
+
+### Changed
+
+- Unknown help topics print an error and valid alternatives on stderr and exit 1.
+- Interactive launches require a controlling terminal and fail with inspection
+  alternatives when detached; process and terminal resources close on exceptions.
+- Requires GHC >=9.12 (base >=4.21),
+  `mori://shinzui/baikai/packages/baikai` 0.10.0.0,
+  `mori://shinzui/baikai/packages/baikai-kit` 0.4.0.3, and
+  `mori://shinzui/baikai/packages/baikai-claude` and
+  `mori://shinzui/baikai/packages/baikai-openai` 0.7.3.0.
+- **Breaking (library):** `AssistOptions` has an optional prompt and inspection
+  mode; `Command` adds `AgentContext`; `HelpCommand` carries a width option.
 
 ## [0.10.0.0] - 2026-10-06
 

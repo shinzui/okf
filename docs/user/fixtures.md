@@ -225,6 +225,78 @@ cabal run okf -- validate okf-core/test/fixtures/doc-id-deviations \
 ```
 
 
+## Same-concept product-discovery constraints
+
+The descriptor at
+[`profiles/product-discovery.dhall`](../../okf-core/test/fixtures/profiles/product-discovery.dhall)
+combines grouped presence, timestamp order, membership, combined uniqueness, and
+`FiniteDecimal` measurements. Its rules apply within each concept, in both
+validation modes. Run the valid bundle from the repository root:
+
+```bash
+cabal run okf -- validate okf-core/test/fixtures/profile-product-discovery-valid \
+  --profile okf-core/test/fixtures/profiles/product-discovery.dhall --profile-enforce
+```
+
+```text
+OK: 1 concepts (okf_version 0.2)
+```
+
+The invalid bundle has a numeric job name and omits the evidence required by its
+baseline. The same invocation with `profile-product-discovery-invalid` exits 1:
+
+```bash
+cabal run okf -- validate okf-core/test/fixtures/profile-product-discovery-invalid \
+  --profile okf-core/test/fixtures/profiles/product-discovery.dhall --profile-enforce
+```
+
+```text
+profile: job: constraint requires sources
+profile: job: relation operand at jobs[0].name must be text, found: 42
+profile: job: value at features[0].jobs[0] is not in jobs[].name: Author
+```
+
+Omitting `--profile-enforce` prints the profile deviations but exits 0. Inspect
+its declared rules and generate effective documentation without remote sources:
+
+```bash
+okf profile show --registry okf-core/test/fixtures/profiles/product-discovery.dhall --no-local --json
+okf profile document --profile okf-core/test/fixtures/profiles/product-discovery.dhall
+```
+
+See [same-concept constraints](profiles.md#same-concept-constraints) for the
+selector schema and operand requirements.
+
+## Closed nested records
+
+[`profiles/nested-closure.dhall`](../../okf-core/test/fixtures/profiles/nested-closure.dhall)
+closes the member names of a `rows` record list and a `settings` object, while
+merging type-specific optional members. The valid fixture exits 0:
+
+```bash
+cabal run okf -- validate okf-core/test/fixtures/profile-nested-closure-valid \
+  --profile okf-core/test/fixtures/profiles/nested-closure.dhall --profile-enforce
+```
+
+The invalid fixture supplies two undeclared members, including one set to null:
+
+```bash
+cabal run okf -- validate okf-core/test/fixtures/profile-nested-closure-invalid \
+  --profile okf-core/test/fixtures/profiles/nested-closure.dhall --profile-enforce
+```
+
+It exits 1 with:
+
+```text
+profile: note: nested field not declared by profile: rows[0].stray
+profile: note: nested field not declared by profile: settings.extra
+```
+
+These checks also run without `--strict`; nested records stay open unless the
+profile opts in. See [closing nested record vocabularies](profiles.md#closing-nested-record-vocabularies)
+for allowed-name merging and compatibility.
+
+
 ## Invalid Bundles
 
 The unterminated-frontmatter fixture is:

@@ -21,7 +21,8 @@ REQUIREMENTS
 
   Interactive selection needs the fzf fuzzy finder on PATH and a terminal.
   Without them, an omitted BUNDLE exits 2 and tells you to pass it explicitly.
-  No command requires fzf when BUNDLE is given, and okf bundles never uses it.
+  Giving BUNDLE bypasses its picker; profile and concept pickers are separate.
+  okf bundles never uses fzf.
 
   fzf reads from the terminal device, not standard input, so a menu still works
   inside a pipeline such as 'okf validate | less'.
@@ -89,3 +90,14 @@ EXIT STATUS
 
   After selection, each command retains its existing success and failure
   semantics.
+
+THE KIT MENU
+
+  okf kit install                      Choose a skill or subagent with fzf.
+  okf kit install --project --tool-only Choose and install for this project.
+
+  Explicit NAME bypasses terminal and fzf probes. With NAME omitted, both are
+  required before the kit repository is refreshed. Unavailable selection exits
+  2 with a named-install alternative; an empty kit exits 1. Kit cancellation
+  exits 0 without installation; other Kit picker errors exit 1. The exit-status
+  table above describes bundle, profile and concept selection. See 'okf help kit'.

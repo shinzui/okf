@@ -3,8 +3,8 @@ title: "Agent skill and subagent kit management"
 type: Capability
 description: "List, install, update, inspect, and uninstall reusable OKF agent skills and subagents at user or project scope through a configured git-hosted kit."
 generated:
-  by: codex/gpt-5
-  at: "2026-09-13T14:55:27Z"
+  by: codex/gpt-6
+  at: "2026-10-28T12:08:10Z"
 capabilityId: CAP-9
 provider: mori://shinzui/okf
 status: shipped
@@ -18,7 +18,10 @@ interface:
 evidence:
   - kind: test
     resource: okf-cli/test/Main.hs
-    proves: Every kit subcommand and both installation scopes have parser coverage.
+    proves: Kit subcommands, installation scopes, visibility flags, and optional-name selection have parser coverage.
+  - kind: test
+    resource: scripts/test-agent-workflows.py
+    proves: Isolated kits and fake fzf cover selection, cancellation, explicit-name bypass, and project asset discovery.
   - kind: module
     resource: okf-cli/src/Okf/Cli/Kit.hs
     proves: The CLI delegates a typed list/install/update/uninstall/status command algebra to the shared kit engine.
@@ -33,6 +36,13 @@ evidence:
 OKF-specific default repository. Assets can be installed for one user or one
 project, refreshed without rebuilding okf, inspected for status, and removed
 through the same command family.
+
+`okf kit install` offers an fzf menu when the name is omitted; named installation
+bypasses terminal and fzf probes. Kit picker cancellation exits 0 without
+installation. User/project scope and shared/tool-only visibility are independent.
+`list`, `status`, and `update` support versioned JSON inspection. Project installs
+and contextual sessions use the same ancestor lookup, so assets remain visible
+from nested working directories.
 
 ## Limits
 

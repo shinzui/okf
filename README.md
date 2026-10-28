@@ -9,7 +9,9 @@ tools can validate, index, and traverse.
 
 This implementation tracks Google's
 [Open Knowledge Format v0.2 specification](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md).
-The standalone CLI does not require Mori, Mina, an LLM, or network access.
+Local bundle commands do not require Mori, Mina, an LLM, or network access.
+Remote profile imports and Kit refreshes use the network; agent sessions require
+the selected provider’s CLI.
 Integration documentation exists for Mori and Mina, but those workflows are
 thin layers over the reusable `okf-core` library.
 
@@ -74,7 +76,7 @@ The user guide starts at [docs/user/README.md](./docs/user/README.md).
 
 ## CLI
 
-The CLI surface is intentionally small:
+The main commands are:
 
 ```bash
 cabal run okf -- --version
@@ -97,15 +99,19 @@ cabal run okf -- show [<bundle>] [<concept-id-or-document-id>] [--profile <descr
 cabal run okf -- id next [<bundle>] <PREFIX> --profile <descriptor>
 cabal run okf -- id list [<bundle>] --profile <descriptor>
 cabal run okf -- config show
+cabal run okf -- config agent
+cabal run okf -- alias list
 cabal run okf -- profile list [--registry <registry>] [--no-local] [--wide]
 cabal run okf -- profile sources [--registry <registry>] [--no-local] [--check-latest]
 cabal run okf -- profile show [<export>]
 cabal run okf -- profile init [EXPORT] --bundle DIR [--write]
 cabal run okf -- profile document [--profile <descriptor>.dhall]
 cabal run okf -- kit list
-cabal run okf -- assist --print-command "PROMPT"
+cabal run okf -- kit install [NAME] [--project] [--shared|--tool-only]
+cabal run okf -- agent context [--json]
+cabal run okf -- agent assist [PROMPT] [--provider claude|codex] [--debug|--print-command]
 cabal run okf -- completions <bash|zsh|fish>
-cabal run okf -- help [topic]
+cabal run okf -- help [topic] [--width N]
 ```
 
 `validate` checks every concept document and whole-bundle referential integrity.
@@ -147,9 +153,11 @@ never fetches remote imports. `validate --pick-profile` explicitly selects a
 descriptor; bare validation remains profile-free.
 `id next` allocates the next numbered handle
 without writing, and `id list` prints all allocated handles. `config` shows or initializes the Dhall
-configuration used by the agent commands. `kit` installs reusable AI-agent
-skills and subagents from `okf-kit`. `assist` launches an interactive Claude
-session with installed OKF skills on its path. `completions` generates shell
+configuration used by the agent commands. `alias list` shows configured command
+shortcuts. `kit` installs reusable AI-agent skills and subagents from
+`mori://shinzui/okf-kit`. `agent assist` launches a contextual Claude Code or
+Codex session; `agent context` inspects its local context, and `assist` is an
+alias for `agent assist`. `completions` generates shell
 completion scripts for Bash, Zsh, and Fish. `help` prints embedded conceptual
 guides for `okf`, `bundles`, `format`, `validation`, `profiles`, `interactive`, `config`,
 `kit`, and `agents`.
@@ -194,6 +202,14 @@ records and object values stay independent. Defaults and older pinned descriptor
 remain open; literals retyped against the current schema must add the boolean or
 use record completion. `profile show --json` exposes declared policies, and
 `profile document` shows effective `open`, `closed`, or `none` policies.
+
+Profiles can also check relationships within one concept: grouped presence
+requirements, timestamp ordering, text membership, and uniqueness across selected
+fields. `FiniteDecimal` accepts YAML numbers for measurements such as baselines
+and targets. These checks run in both validation modes and follow the same
+advisory/`--profile-enforce` policy as other profile rules. See
+[same-concept constraints](./docs/user/profiles.md#same-concept-constraints)
+for selectors, examples, and schema migration.
 
 Profiles can also opt selected concept types into stable numbered document IDs,
 such as `ADR-7`, stored in an ordinary frontmatter key. The `okf id` command
@@ -275,9 +291,9 @@ profile registries, generating documentation, and worked examples.
 
 ## Agent Skills And Assist
 
-`okf` can install reusable AI-agent skills and subagents from the
-[okf-kit](https://github.com/shinzui/okf-kit) repository and launch an interactive
-Claude session that can use them. The default configuration points at
+`okf` can install reusable AI-agent skills and subagents from
+`mori://shinzui/okf-kit` and launch an interactive Claude Code or Codex session
+that can use them. The default configuration points at
 `https://github.com/shinzui/okf-kit.git`; override it per project with
 `okf-config.dhall` or globally with `~/.config/okf/config.dhall`.
 
@@ -287,7 +303,9 @@ cabal run okf -- kit list
 cabal run okf -- kit install                 # choose with fzf
 cabal run okf -- kit install author-okf-concept
 cabal run okf -- kit status
-cabal run okf -- assist --print-command "add a tables/orders concept"
+cabal run okf -- agent context --json
+cabal run okf -- agent assist --print-command "add a tables/orders concept"
+cabal run okf -- agent assist
 ```
 
 `okf kit install author-okf-concept` installs the seed skill into the agent asset
@@ -389,6 +407,13 @@ Run all tests:
 cabal test all
 ```
 
+Check executable agent and picker workflows in isolated temporary homes with
+local kits and fake providers (no installed user assets are changed):
+
+```bash
+python3 scripts/test-agent-workflows.py --okf "$(cabal list-bin exe:okf)"
+```
+
 Validate this repository's own OKF bundles (strict profile and log
 enforcement) before sending a change that touches `docs/adr/` or
 `docs/capabilities/`:
@@ -409,8 +434,8 @@ index rendering, `log.md` handling, and graph extraction. `okf-cli` is a thin
 adapter that parses arguments, calls `okf-core`, renders output, and chooses
 exit codes.
 
-The standalone CLI intentionally does not depend on Mori, Mina, an LLM, or
-network access. Future integrations should consume the core library surface
+Local bundle operations do not depend on Mori, Mina, an LLM, or network access.
+Integrations should consume the core library surface
 rather than shelling out to the CLI.
 
 
@@ -424,28 +449,3 @@ under `docs/plans/` break the work into independently verifiable streams.
 ## License
 
 [BSD-3-Clause](./LICENSE) - (c) 2026 Nadeem Bitar.
-
-
-Profiles can express constraints confined to one concept's frontmatter. A
-`ValueSelector` names a field and optionally one flat record member; it supports
-neither recursive paths nor external resolution. `presenceConstraints` combine
-an optional closed-vocabulary `when` gate, existential `whenAnyPresent` triggers,
-and `requireAll`/`requireAny` targets. Targets are siblings; root triggers can
-project members across records. Presence observes whole containers using existing
-OKF semantics: blank strings and empty lists do not satisfy a target, while zero
-with scalar cardinality does activate a trigger.
-
-`timestampOrderConstraints` require scalar `Rfc3339Utc` endpoints with `before`
-strictly earlier than `after`, within the same record. `membershipConstraints`
-compare source text occurrences with a target in the same concept.
-`uniqueValuesConstraints` prohibit repeated text across two or more selectors,
-including repeats within a selected list. Relations require explicit scalar/list
-leaves and reject supplied nontext values at their indexed paths. `FiniteDecimal`
-accepts finite YAML numbers without floating-point conversion or string coercion;
-it refines unspecified cardinality to scalar. Nested rules support presence and
-timestamp constraints; membership and combined uniqueness live at root scope.
-
-Use `okf.defaults.FrontmatterRules::{ ... }` and
-`okf.defaults.NestedRules::{ ... }` to inherit empty constraint lists. Existing
-schema pins keep loading through frozen compatibility decoders. See
-`okf-core/test/fixtures/profiles/product-discovery.dhall` for a complete example.

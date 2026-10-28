@@ -3,8 +3,8 @@ title: "Deterministic self-documenting profile bundles"
 type: Capability
 description: "Render a compiled profile into a browsable OKF bundle with one root page and one effective-rule page per type, suitable for review and byte-for-byte drift checks."
 generated:
-  by: codex/gpt-5
-  at: "2026-09-13T14:55:27Z"
+  by: codex/gpt-6
+  at: "2026-10-28T12:08:10Z"
 capabilityId: CAP-15
 provider: mori://shinzui/okf
 status: shipped
@@ -43,9 +43,11 @@ default producer actor lets the generated bundle pass strict validation.
 
 Output depends only on the compiled profile and explicit options; the generator
 does not read the clock, environment, or filesystem. A committed output can
-therefore be regenerated and checked with a byte-for-byte diff. The default
-branch additionally renders profile-wide and type-specific guidance in body
-sections without turning it into executable policy.
+therefore be regenerated and checked with a byte-for-byte diff. The generator
+also renders profile-wide and type-specific guidance in body
+sections without turning it into executable policy. Effective same-concept
+constraints and separate list/object openness policies appear alongside field
+rules, including empty closed shapes.
 
 ## Limits
 

@@ -484,9 +484,10 @@ instructions:
 - **Run `okf validate BUNDLE --strict` before you finish**, and fix what it
   names.
 
-`okf assist` launches an agent session with your installed okf skills on its
-path, which is one way to get those rules in front of it consistently — see
-[assist](cli.md#assist).
+`okf agent assist [PROMPT]` launches a contextual agent session with installed
+okf skills and locally available profile guidance. Use `okf agent context --json`
+to inspect that context first; `okf assist` remains an alias. See
+[agent sessions](cli.md#agent-assist-and-agent-context).
 
 
 ## Enforcing what you decided

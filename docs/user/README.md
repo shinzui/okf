@@ -4,8 +4,9 @@
 An OKF bundle is a directory tree of Markdown files. Concept files use YAML
 frontmatter for metadata and Markdown body text for human-readable knowledge.
 
-The CLI works on plain files and does not require Mori, Mina, BigQuery, an LLM,
-or network access.
+Local bundle commands work on plain files without Mori, Mina, BigQuery, an LLM,
+or network access. Remote profile imports and Kit refreshes need network access;
+interactive agent sessions need the selected provider’s CLI.
 
 okf implements OKF v0.2, which adds optional frontmatter for provenance, trust,
 and lifecycle so that a reader can judge machine-written knowledge: where a
@@ -18,7 +19,9 @@ to do with them once they are there.
 
 ## Start Here
 
-From the repository root, inspect the checked-in valid fixture bundle:
+Enter `nix develop` from the repository root, then inspect the checked-in valid
+fixture bundle. Source builds require GHC 9.12 or newer; the Nix shell supplies
+GHC 9.12.4.
 
 ```bash
 cabal run okf -- bundles
@@ -45,7 +48,10 @@ and CI should keep passing explicit paths.
 `okf` ships conceptual help guides baked into the binary. Run `okf help` to list
 the topics and `okf help <topic>` to read one — for example `okf help okf`
 explains what the Open Knowledge Format is. No network or docs checkout is
-needed. See the [CLI Reference](cli.md#help) for details.
+needed. Use `okf help profiles --width 80` to choose a width. Terminal output
+adapts to its width; piped output is stable unless a width is requested. Unknown
+topics exit 1 and list valid topics on stderr. See the
+[CLI Reference](cli.md#help) for details.
 
 
 ## Documentation
@@ -53,7 +59,7 @@ needed. See the [CLI Reference](cli.md#help) for details.
 - [CLI Reference](cli.md): command syntax, options, output, and exit behavior.
 - [OKF Bundle Format](format.md): directory layout, concept IDs, frontmatter, and links.
 - [Using OKF v0.2](okf-v0-2.md): adopting provenance, trust, lifecycle, and attested computations in a bundle, and gating on them.
-- [Profiles](profiles.md): checking a bundle against house conventions with `--profile`.
+- [Profiles](profiles.md): house conventions, closed nested records, same-concept constraints, and descriptor migration.
 - [Authoring Guide](authoring.md): the producer API for building, constructing, writing, and validating bundles in code.
 - [Fixture Walkthrough](fixtures.md): runnable examples using the repository fixtures and the worked bundles under `examples/`.
 
@@ -74,6 +80,14 @@ needed. See the [CLI Reference](cli.md#help) for details.
    declares, and `okf show <bundle> <concept-id> --computation` to print one.
 9. Run `okf profile document --profile <profile.dhall> --out <dir> --write` to
    generate browsable documentation for the profile you validate against.
+10. Run `okf agent context --json` to inspect the context available to an agent,
+    then `okf agent assist` to open a session with an optional starting prompt.
+
+To install agent helpers, run `okf kit list`, then `okf kit install` to select
+with fzf, or `okf kit install NAME` in a script. Kit picker cancellation exits
+successfully; bundle and concept picker cancellation exits 130. See
+[agent sessions](cli.md#agent-assist-and-agent-context) and
+[Kit management](cli.md#kit) for options and requirements.
 
 ## Shell Completion
 

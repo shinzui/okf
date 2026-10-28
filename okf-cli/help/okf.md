@@ -63,13 +63,16 @@ WHAT THE okf TOOL DOES
   alias         List configured command shortcuts.
   config        Show and manage okf configuration.
   kit           Install and manage agent skills and subagents.
-  assist        Launch an interactive agent session with installed okf skills.
+  agent         Inspect local OKF context or launch a contextual agent session.
+  assist        Alias for agent assist; a starting prompt is optional.
   completions   Generate a shell completion script.
 
 STANDALONE BY DESIGN
 
-  The okf CLI works on plain files only. It does not require Mori, Mina, an
-  LLM, PostgreSQL, or network access. It tracks Google's Open Knowledge Format
+  Local bundle commands work on plain files without Mori, Mina, an LLM,
+  PostgreSQL, or network access. Remote profile imports and Kit refreshes need
+  the network; agent launches require the selected provider CLI. okf tracks
+  Google's Open Knowledge Format
   v0.2 specification (the knowledge-catalog okf SPEC.md).
 
   It reads a v0.1 bundle unchanged. A bundle that declares nothing is read
@@ -91,7 +94,7 @@ SEE ALSO
   okf help where         The --where condition language for okf concepts.
   okf help ids           Profile-declared document IDs such as ADR-7.
   okf help interactive   Picking a bundle and concept with fzf.
-  okf help aliases      Command shortcuts and expansion rules.
+  okf help aliases       Command shortcuts and expansion rules.
   okf help config        Config files, precedence, and agent settings.
   okf help kit           Installing and publishing agent skills and subagents.
   okf help agents        Installing agent skills and launching assist.
