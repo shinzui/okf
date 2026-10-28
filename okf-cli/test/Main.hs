@@ -9,7 +9,7 @@ import Baikai.Provider.Claude.Interactive (claudeInteractiveCommand, defaultClau
 import Baikai.Provider.OpenAI.Interactive (codexInteractiveCommand, defaultCodexInteractiveConfig)
 import Control.Concurrent (forkIO, newEmptyMVar, putMVar, takeMVar, threadDelay)
 import Control.Exception (AsyncException (UserInterrupt), bracket, throwTo, try)
-import Control.Lens ((&), (.~))
+import Control.Lens ((&), (.~), (^.))
 import Control.Monad (unless)
 import Data.Aeson (Value (..), toJSON)
 import Data.Aeson qualified as Aeson
@@ -74,6 +74,7 @@ fzfFixture arguments = do
 
 runTests :: IO ()
 runTests = do
+  nestedClosureCli <- testNestedClosureCli
   productDiscoveryCli <- testProductDiscoveryCli
   fzfCancellation <- testFzfCancellation
   bundleDiscoveryListing <- testBundleDiscoveryListing
@@ -126,7 +127,8 @@ runTests = do
   conceptMenuOrdering <- testConceptMenuOrdering
   nonAsciiDiagnostics <- testNonAsciiValuesSurviveDiagnostics
   let results =
-        [ productDiscoveryCli,
+        [ nestedClosureCli,
+          productDiscoveryCli,
           fzfCancellation,
           testHelpWrapping,
           parseBundlesMatches ["bundles"] (BundlesOptions False),
@@ -1386,7 +1388,8 @@ sampleNestedProfile =
                   Nothing
                   ( Just
                       NestedRules
-                        { presenceConstraints = [],
+                        { allowUnknownFields = True,
+                          presenceConstraints = [],
                           timestampOrderConstraints = [],
                           required =
                             [ (nestedFieldRule "outcome" Nothing ["approved", "rejected"] Any Nothing Nothing (Just (FieldCondition "kind" ["model"])))
@@ -1418,7 +1421,8 @@ sampleNestedProfile =
                   Nothing
                   ( Just
                       NestedRules
-                        { presenceConstraints = [],
+                        { allowUnknownFields = True,
+                          presenceConstraints = [],
                           timestampOrderConstraints = [],
                           required = [nestedFieldRule "resource" (Just "The skill a runner follows.") [] Scalar Nothing (Just (PathReferenceRule [] False)) Nothing],
                           recommended = [],
@@ -1462,6 +1466,7 @@ sampleNestedProfileDetail =
     "    uniqueBy: outcome",
     "    objectFields: (none)",
     "    elementFields:",
+    "      allowUnknownFields: true",
     "      required:",
     "        - outcome: (none)",
     "          allowedValues: approved, rejected",
@@ -1497,6 +1502,7 @@ sampleNestedProfileDetail =
     "    when: (none)",
     "    uniqueBy: (none)",
     "    objectFields:",
+    "      allowUnknownFields: true",
     "      required:",
     "        - resource: The skill a runner follows.",
     "          allowedValues: (any)",
@@ -3873,3 +3879,48 @@ testProductDiscoveryCli = withRepositoryPath2 "product discovery CLI" "okf-core/
            in all (`Text.isInfixOf` detail) ["Presence constraints", "Timestamp order", "Membership constraints", "Unique values", "finite-decimal"]
                 && all (`Text.isInfixOf` encoded) ["presenceConstraints", "timestampOrderConstraints", "membershipConstraints", "uniqueValuesConstraints"]
   pure (valid == Right () && invalid == Left (ExitFailure 1) && advisory == Right () && surfaces)
+
+testNestedClosureCli :: IO Bool
+testNestedClosureCli = withRepositoryPath2 "nested closure CLI" "okf-core/test/fixtures/profiles/nested-closure.dhall" "okf-core/test/fixtures" $ \descriptor fixtures -> do
+  let run bundle strict enforce =
+        try @ExitCode $
+          runCommand $
+            Validate
+              ValidateOptions
+                { bundlePath = Just (fixtures </> bundle),
+                  strictMode = strict,
+                  profilePath = Just descriptor,
+                  pickProfile = False,
+                  profileEnforce = enforce,
+                  logEnforce = True
+                }
+  results <-
+    sequence
+      [ run "profile-nested-closure-valid" True True,
+        run "profile-nested-closure-invalid" True True,
+        run "profile-nested-closure-invalid" True False,
+        run "profile-nested-closure-invalid" False True,
+        run "profile-nested-closure-invalid" False False
+      ]
+  loaded <- loadProfileFile descriptor
+  let surfaces = case loaded >>= first (Text.pack . show) . compileProfile of
+        Left _ -> False
+        Right compiled ->
+          let spec = compiledProfileSpec compiled
+              detail = Text.unlines (renderProfileDetail "nestedClosure" spec)
+              declared = [rule | rule <- spec ^. #frontmatter . #optional] <> [rule | ty <- spec ^. #types, rule <- ty ^. #frontmatter . #optional]
+              policies = [KeyMap.lookup "allowUnknownFields" fields | rule <- declared, Just nested <- [rule ^. #elementFields], Aeson.Object fields <- [toJSON nested]]
+              objectPolicies = [KeyMap.lookup "allowUnknownFields" fields | rule <- declared, Just nested <- [rule ^. #objectFields], Aeson.Object fields <- [toJSON nested]]
+           in "allowUnknownFields: false" `Text.isInfixOf` detail
+                && "allowUnknownFields: true" `Text.isInfixOf` detail
+                && policies == [Just (Bool False), Just (Bool True)]
+                && objectPolicies == [Just (Bool False)]
+                && case parseConceptId "note" of
+                  Left _ -> False
+                  Right cid ->
+                    renderProfileViolation
+                      compiled
+                      []
+                      (NestedFieldNotInProfile cid (FieldPath (FieldName "rows" :| [ArrayIndex 3, FieldName "名前"])))
+                      == "note: nested field not declared by profile: rows[3].名前"
+  pure (results == [Right (), Left (ExitFailure 1), Right (), Left (ExitFailure 1), Right ()] && surfaces)

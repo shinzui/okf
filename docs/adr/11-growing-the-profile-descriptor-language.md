@@ -2,13 +2,17 @@
 type: Architecture Decision Record
 title: Growing the profile descriptor language
 description: "Ship every additive profile-schema change as one frozen generation: a private prior-shape copy, an `upgrade*` lifter, and a fixture-backed test."
-timestamp: "2026-10-28T04:45:00Z"
+timestamp: "2026-10-28T11:50:08Z"
 generated:
   by: claude/sonnet-5
   at: "2026-09-13T15:05:43Z"
 docId: ADR-11
 status: Accepted
 date: 2026-08-01
+amended:
+  - by: codex-cli/gpt-6.1-sol
+    at: "2026-10-28T11:50:08Z"
+    change: Document opt-in nested closure, effective inspection, and compatibility safeguards.
 ---
 
 # ADR 11: Growing the profile descriptor language
@@ -289,6 +293,34 @@ constraint member is present, preventing malformed current constraints from bein
 dropped. Descriptors importing the live schema must use record completion or add
 the new empty lists; descriptors pinned to older schema generations keep their
 original contract.
+
+
+### Nested closure generation and structural guards (2026-10-28)
+
+Nested closure lands after the product-discovery generation. The private
+`PreNestedClosure*` types freeze every reachable record and union at source
+revision `cfecb72e543c28f5a77ff852445fdd0f256b8810`; the inline fixture exercises
+both nested shapes, all four root constraint kinds, nested presence/timestamp
+constraints, and finite decimal format. Its upgrades retain every predecessor
+constraint and add `allowUnknownFields = True` to every nested rule. Register
+this generation newest-first in both decoding paths and independently prove
+file and registry compatibility by removing each fallback.
+
+Before any pre-closure width-extracting decoder, inspect the normalized
+expression structurally: follow profile/type frontmatter declaration lists,
+field rules, then their `elementFields`/`objectFields` records for the new
+member. Refuse older fallbacks even if that member's value is malformed. A
+global name search is incorrect because root-level `allowUnknownFields` already
+belongs to older generations. Test a closed historical root as well as malformed
+new nested policies, and prove the guard by removing it temporarily. Local
+discovery shares this protected pure decoding path.
+
+Existing descriptor pins stay open through upgrades. Literals retyped against
+the new schema must add the boolean or use record completion; defaults cannot
+retroactively repair literals. Exhaustive violation consumers, including
+`mori://shinzui/mori/packages/mori-cli`, must handle the new structured
+`NestedFieldNotInProfile` constructor. No downstream migration or catalog pin
+change is required for this implementation's acceptance.
 
 
 ## Consequences

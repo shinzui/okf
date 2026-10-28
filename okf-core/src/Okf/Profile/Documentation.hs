@@ -435,12 +435,16 @@ renderFieldRule level key rule =
         "- Format: " <> maybe "none" renderFieldFormatName (fieldRuleFormat rule),
         "- Reference: " <> maybe "none" renderReference (fieldRuleReference rule),
         "- Path: " <> maybe "none" renderPathRule (fieldRulePath rule),
-        "- Unique by: " <> maybe "none" code (fieldRuleUniqueBy rule)
+        "- Unique by: " <> maybe "none" code (fieldRuleUniqueBy rule),
+        "- Object field names: " <> closureName (fieldRuleObjectAllowsUnknownFields rule),
+        "- Element field names: " <> closureName (fieldRuleElementAllowsUnknownFields rule)
       ]
         <> conditionBullets
         <> objectFieldBullets
         <> elementFieldBullets
         <> strictNote
+
+    closureName = maybe "none" (\open -> if open then "open" else "closed")
 
     conditionBullets =
       case [clause | clause <- fieldRulePresenceClauses rule, isJust (presenceClauseCondition clause)] of

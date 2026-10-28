@@ -183,6 +183,18 @@ Profile deviations are advisory by default (printed, but exit `0`); add
 `--profile-enforce` to fail on drift in CI. The repository ships a conforming
 example bundle ([examples/postgresql-sample](./examples/postgresql-sample)) and a
 sample descriptor ([docs/profiles/postgresql.dhall](./docs/profiles/postgresql.dhall)).
+Nested records can opt into a closed set of names with
+`okf.defaults.NestedRules::{ allowUnknownFields = False, … }` under
+`elementFields` or `objectFields`. Undeclared members produce paths such as
+`rows[0].stray` and `settings.extra`, even when their value is null. Declared
+required, recommended, and optional names remain permitted when their presence
+condition is false. Profile/type declarations merge names by union and the
+open/closed policy with AND, so either scope can close a shape. Policies for list
+records and object values stay independent. Defaults and older pinned descriptors
+remain open; literals retyped against the current schema must add the boolean or
+use record completion. `profile show --json` exposes declared policies, and
+`profile document` shows effective `open`, `closed`, or `none` policies.
+
 Profiles can also opt selected concept types into stable numbered document IDs,
 such as `ADR-7`, stored in an ordinary frontmatter key. The `okf id` command
 lists and allocates those handles, and `okf show` resolves them after canonical

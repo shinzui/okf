@@ -9,6 +9,18 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- Add opt-in `NestedRules.allowUnknownFields` closure for list records and object
+  values, defaulting to open. Effective policies merge with AND across scopes;
+  diagnostics use indexed/member paths in both strict and permissive modes.
+  Raw inspection exposes declared booleans and generated documentation shows
+  effective open/closed/none policies. A complete pre-closure decoder preserves
+  product-discovery constraints and historical pins.
+- **Breaking (library/schema):** `NestedRules` gains a boolean and
+  `ProfileViolation` gains `NestedFieldNotInProfile ConceptId FieldPath`.
+  Exhaustive consumers, including `mori://shinzui/mori/packages/mori-cli`, must
+  handle the new constructor. Literals using the current schema need the new
+  member or record completion; older pinned descriptors retain open records.
+
 - `okf help TOPIC --width N` wraps prose; terminal help uses ioctl sizing,
   capped at 140 columns, while piped default output stays byte-stable.
 - Topic-name completion, grouped agent/Kit options and shared command examples.

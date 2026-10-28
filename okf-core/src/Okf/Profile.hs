@@ -80,6 +80,8 @@ module Okf.Profile
     fieldRulePath,
     fieldRuleElementFields,
     fieldRuleObjectFields,
+    fieldRuleElementAllowsUnknownFields,
+    fieldRuleObjectAllowsUnknownFields,
     compiledProfileTypeNames,
     compiledProfileBaseRules,
     compiledProfileRulesForType,
@@ -109,10 +111,11 @@ import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as Aeson.Key
 import Data.Aeson.KeyMap qualified as Aeson.KeyMap
 import Data.Char (isAsciiLower, isAsciiUpper)
+import Data.Foldable (toList)
 import Data.List qualified as List
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (catMaybes, mapMaybe)
+import Data.Maybe (catMaybes, mapMaybe, maybeToList)
 import Data.Set qualified as Set
 import Data.Text qualified as Text
 import Data.Text.Read qualified as Text.Read
@@ -289,7 +292,8 @@ data FieldRule = FieldRule
 -- type has neither an @elementFields@ nor an @objectFields@ member, which makes
 -- the public descriptor depth-bounded rather than recursive.
 data NestedRules = NestedRules
-  { required :: ![NestedFieldRule],
+  { allowUnknownFields :: !Bool,
+    required :: ![NestedFieldRule],
     recommended :: ![NestedFieldRule],
     optional :: ![NestedFieldRule],
     presenceConstraints :: ![PresenceConstraint],
@@ -468,9 +472,10 @@ instance ToJSON FieldRule where
       ]
 
 instance ToJSON NestedRules where
-  toJSON NestedRules {required, recommended, optional, presenceConstraints, timestampOrderConstraints} =
+  toJSON NestedRules {required, recommended, optional, presenceConstraints, timestampOrderConstraints, allowUnknownFields} =
     object
-      [ "required" .= required,
+      [ "allowUnknownFields" .= allowUnknownFields,
+        "required" .= required,
         "recommended" .= recommended,
         "optional" .= optional,
         "presenceConstraints" .= presenceConstraints,
@@ -608,6 +613,189 @@ data PreGuidancePathReferenceRule = PreGuidancePathReferenceRule
   { externalUriSchemes :: ![Text],
     allowSelf :: !Bool
   }
+  deriving stock (Generic, Eq, Ord, Show)
+  deriving anyclass (FromDhall)
+
+-- | FROZEN: complete descriptor at cfecb72e543c28f5a77ff852445fdd0f256b8810,
+-- after product-discovery constraints and before nested closure. No live
+-- descriptor records or unions are shared with this generation.
+data PreNestedClosureCardinality
+  = PreNestedClosureAny
+  | PreNestedClosureScalar
+  | PreNestedClosureList
+  deriving stock (Generic, Eq, Ord, Show)
+
+instance FromDhall PreNestedClosureCardinality where
+  autoWith _normalizer =
+    Dhall.union
+      ( (PreNestedClosureAny <$ Dhall.constructor "Any" Dhall.unit)
+          <> (PreNestedClosureScalar <$ Dhall.constructor "Scalar" Dhall.unit)
+          <> (PreNestedClosureList <$ Dhall.constructor "List" Dhall.unit)
+      )
+
+data PreNestedClosureFieldFormat
+  = PreNestedClosureRfc3339Utc
+  | PreNestedClosureDate
+  | PreNestedClosureUri
+  | PreNestedClosureUriWithScheme Text
+  | PreNestedClosureDocumentHandle Text
+  | PreNestedClosureActor
+  | PreNestedClosureHumanActor
+  | PreNestedClosureInteger
+  | PreNestedClosureNonNegativeInteger
+  | PreNestedClosureFiniteDecimal
+  | PreNestedClosureBoolean
+  deriving stock (Generic, Eq, Ord, Show)
+
+instance FromDhall PreNestedClosureFieldFormat where
+  autoWith _normalizer =
+    Dhall.union
+      ( (PreNestedClosureRfc3339Utc <$ Dhall.constructor "Rfc3339Utc" Dhall.unit)
+          <> (PreNestedClosureDate <$ Dhall.constructor "Date" Dhall.unit)
+          <> (PreNestedClosureUri <$ Dhall.constructor "Uri" Dhall.unit)
+          <> (PreNestedClosureUriWithScheme <$> Dhall.constructor "UriWithScheme" Dhall.auto)
+          <> (PreNestedClosureDocumentHandle <$> Dhall.constructor "DocumentHandle" Dhall.auto)
+          <> (PreNestedClosureActor <$ Dhall.constructor "Actor" Dhall.unit)
+          <> (PreNestedClosureHumanActor <$ Dhall.constructor "HumanActor" Dhall.unit)
+          <> (PreNestedClosureInteger <$ Dhall.constructor "Integer" Dhall.unit)
+          <> (PreNestedClosureNonNegativeInteger <$ Dhall.constructor "NonNegativeInteger" Dhall.unit)
+          <> (PreNestedClosureFiniteDecimal <$ Dhall.constructor "FiniteDecimal" Dhall.unit)
+          <> (PreNestedClosureBoolean <$ Dhall.constructor "Boolean" Dhall.unit)
+      )
+
+data PreNestedClosureProfileSpec = PreNestedClosureProfileSpec
+  { name :: !Text,
+    description :: !(Maybe Text),
+    guidance :: !(Maybe Text),
+    okfVersion :: !Text,
+    frontmatter :: !PreNestedClosureFrontmatterRules,
+    allowUnknownTypes :: !Bool,
+    allowUnknownFields :: !Bool,
+    idField :: !(Maybe Text),
+    requireBundleVersion :: !(Maybe Text),
+    types :: ![PreNestedClosureTypeRule]
+  }
+  deriving stock (Generic, Eq, Show)
+  deriving anyclass (FromDhall)
+
+data PreNestedClosureTypeRule = PreNestedClosureTypeRule
+  { type_ :: !Text,
+    description :: !(Maybe Text),
+    guidance :: !(Maybe Text),
+    frontmatter :: !PreNestedClosureFrontmatterRules,
+    pathPattern :: !(Maybe Text),
+    resourceScheme :: !(Maybe Text),
+    requireSchemaSection :: !Bool,
+    schemaColumns :: ![Text],
+    idPrefix :: !(Maybe Text)
+  }
+  deriving stock (Generic, Eq, Show)
+
+instance FromDhall PreNestedClosureTypeRule where
+  autoWith _normalizer =
+    genericAutoWith
+      (Dhall.defaultInterpretOptions {Dhall.fieldModifier = stripTrailingUnderscore})
+    where
+      stripTrailingUnderscore fieldName =
+        fromMaybe fieldName (Text.stripSuffix "_" fieldName)
+
+data PreNestedClosureFrontmatterRules = PreNestedClosureFrontmatterRules
+  { required :: ![PreNestedClosureFieldRule],
+    recommended :: ![PreNestedClosureFieldRule],
+    optional :: ![PreNestedClosureFieldRule],
+    presenceConstraints :: ![PreNestedClosurePresenceConstraint],
+    timestampOrderConstraints :: ![PreNestedClosureTimestampOrderConstraint],
+    membershipConstraints :: ![PreNestedClosureMembershipConstraint],
+    uniqueValuesConstraints :: ![PreNestedClosureUniqueValuesConstraint]
+  }
+  deriving stock (Generic, Eq, Show)
+  deriving anyclass (FromDhall)
+
+data PreNestedClosureFieldRule = PreNestedClosureFieldRule
+  { field :: !Text,
+    description :: !(Maybe Text),
+    allowedValues :: ![Text],
+    cardinality :: !PreNestedClosureCardinality,
+    format :: !(Maybe PreNestedClosureFieldFormat),
+    elementFields :: !(Maybe PreNestedClosureNestedRules),
+    objectFields :: !(Maybe PreNestedClosureNestedRules),
+    reference :: !(Maybe PreNestedClosureHandleReferenceRule),
+    path :: !(Maybe PreNestedClosurePathReferenceRule),
+    when :: !(Maybe PreNestedClosureFieldCondition),
+    uniqueBy :: !(Maybe Text)
+  }
+  deriving stock (Generic, Eq, Show)
+  deriving anyclass (FromDhall)
+
+data PreNestedClosureNestedRules = PreNestedClosureNestedRules
+  { required :: ![PreNestedClosureNestedFieldRule],
+    recommended :: ![PreNestedClosureNestedFieldRule],
+    optional :: ![PreNestedClosureNestedFieldRule],
+    presenceConstraints :: ![PreNestedClosurePresenceConstraint],
+    timestampOrderConstraints :: ![PreNestedClosureTimestampOrderConstraint]
+  }
+  deriving stock (Generic, Eq, Show)
+  deriving anyclass (FromDhall)
+
+data PreNestedClosureNestedFieldRule = PreNestedClosureNestedFieldRule
+  { field :: !Text,
+    description :: !(Maybe Text),
+    allowedValues :: ![Text],
+    cardinality :: !PreNestedClosureCardinality,
+    format :: !(Maybe PreNestedClosureFieldFormat),
+    path :: !(Maybe PreNestedClosurePathReferenceRule),
+    when :: !(Maybe PreNestedClosureFieldCondition),
+    reference :: !(Maybe PreNestedClosureHandleReferenceRule)
+  }
+  deriving stock (Generic, Eq, Show)
+  deriving anyclass (FromDhall)
+
+data PreNestedClosureFieldCondition = PreNestedClosureFieldCondition
+  { field :: !Text,
+    hasValue :: ![Text]
+  }
+  deriving stock (Generic, Eq, Ord, Show)
+  deriving anyclass (FromDhall)
+
+data PreNestedClosureHandleReferenceRule = PreNestedClosureHandleReferenceRule
+  { localPrefix :: !Text,
+    externalUriSchemes :: ![Text],
+    allowSelf :: !Bool,
+    allowLocal :: !Bool,
+    externalUriPattern :: !(Maybe Text)
+  }
+  deriving stock (Generic, Eq, Ord, Show)
+  deriving anyclass (FromDhall)
+
+data PreNestedClosurePathReferenceRule = PreNestedClosurePathReferenceRule
+  { externalUriSchemes :: ![Text],
+    allowSelf :: !Bool
+  }
+  deriving stock (Generic, Eq, Ord, Show)
+  deriving anyclass (FromDhall)
+
+data PreNestedClosureValueSelector = PreNestedClosureValueSelector {field :: !Text, member :: !(Maybe Text)}
+  deriving stock (Generic, Eq, Ord, Show)
+  deriving anyclass (FromDhall)
+
+data PreNestedClosurePresenceConstraint = PreNestedClosurePresenceConstraint
+  { when :: !(Maybe PreNestedClosureFieldCondition),
+    whenAnyPresent :: ![PreNestedClosureValueSelector],
+    requireAll :: ![PreNestedClosureValueSelector],
+    requireAny :: ![PreNestedClosureValueSelector]
+  }
+  deriving stock (Generic, Eq, Ord, Show)
+  deriving anyclass (FromDhall)
+
+data PreNestedClosureTimestampOrderConstraint = PreNestedClosureTimestampOrderConstraint {before :: !Text, after :: !Text}
+  deriving stock (Generic, Eq, Ord, Show)
+  deriving anyclass (FromDhall)
+
+data PreNestedClosureMembershipConstraint = PreNestedClosureMembershipConstraint {source :: !PreNestedClosureValueSelector, target :: !PreNestedClosureValueSelector}
+  deriving stock (Generic, Eq, Ord, Show)
+  deriving anyclass (FromDhall)
+
+newtype PreNestedClosureUniqueValuesConstraint = PreNestedClosureUniqueValuesConstraint {selectors :: [PreNestedClosureValueSelector]}
   deriving stock (Generic, Eq, Ord, Show)
   deriving anyclass (FromDhall)
 
@@ -1715,6 +1903,167 @@ upgradePreGuidancePathRule previous =
       allowSelf = previous ^. #allowSelf
     }
 
+upgradePreNestedClosureProfileSpec :: PreNestedClosureProfileSpec -> ProfileSpec
+upgradePreNestedClosureProfileSpec previous =
+  ProfileSpec
+    { name = previous ^. #name,
+      description = previous ^. #description,
+      guidance = previous ^. #guidance,
+      okfVersion = previous ^. #okfVersion,
+      frontmatter = upgradePreNestedClosureFrontmatterRules (previous ^. #frontmatter),
+      allowUnknownTypes = previous ^. #allowUnknownTypes,
+      allowUnknownFields = previous ^. #allowUnknownFields,
+      idField = previous ^. #idField,
+      requireBundleVersion = previous ^. #requireBundleVersion,
+      types = map upgradePreNestedClosureTypeRule (previous ^. #types)
+    }
+
+upgradePreNestedClosureTypeRule :: PreNestedClosureTypeRule -> TypeRule
+upgradePreNestedClosureTypeRule previous =
+  TypeRule
+    { type_ = previous ^. #type_,
+      description = previous ^. #description,
+      guidance = previous ^. #guidance,
+      frontmatter = upgradePreNestedClosureFrontmatterRules (previous ^. #frontmatter),
+      pathPattern = previous ^. #pathPattern,
+      resourceScheme = previous ^. #resourceScheme,
+      requireSchemaSection = previous ^. #requireSchemaSection,
+      schemaColumns = previous ^. #schemaColumns,
+      idPrefix = previous ^. #idPrefix
+    }
+
+upgradePreNestedClosureFrontmatterRules :: PreNestedClosureFrontmatterRules -> FrontmatterRules
+upgradePreNestedClosureFrontmatterRules previous =
+  FrontmatterRules
+    { required = map upgradePreNestedClosureFieldRule (previous ^. #required),
+      recommended = map upgradePreNestedClosureFieldRule (previous ^. #recommended),
+      optional = map upgradePreNestedClosureFieldRule (previous ^. #optional),
+      presenceConstraints = map upgradePreNestedClosurePresenceConstraint (previous ^. #presenceConstraints),
+      timestampOrderConstraints = map upgradePreNestedClosureTimestampOrderConstraint (previous ^. #timestampOrderConstraints),
+      membershipConstraints = map upgradePreNestedClosureMembershipConstraint (previous ^. #membershipConstraints),
+      uniqueValuesConstraints = map upgradePreNestedClosureUniqueValuesConstraint (previous ^. #uniqueValuesConstraints)
+    }
+
+upgradePreNestedClosureFieldRule :: PreNestedClosureFieldRule -> FieldRule
+upgradePreNestedClosureFieldRule previous =
+  FieldRule
+    { field = previous ^. #field,
+      description = previous ^. #description,
+      allowedValues = previous ^. #allowedValues,
+      cardinality = upgradePreNestedClosureCardinality (previous ^. #cardinality),
+      format = upgradePreNestedClosureFieldFormat <$> previous ^. #format,
+      elementFields = upgradePreNestedClosureNestedRules <$> previous ^. #elementFields,
+      objectFields = upgradePreNestedClosureNestedRules <$> previous ^. #objectFields,
+      reference = upgradePreNestedClosureHandleReferenceRule <$> previous ^. #reference,
+      path = upgradePreNestedClosurePathReferenceRule <$> previous ^. #path,
+      when = upgradePreNestedClosureFieldCondition <$> previous ^. #when,
+      uniqueBy = previous ^. #uniqueBy
+    }
+
+upgradePreNestedClosureNestedRules :: PreNestedClosureNestedRules -> NestedRules
+upgradePreNestedClosureNestedRules previous =
+  NestedRules
+    { allowUnknownFields = True,
+      required = map upgradePreNestedClosureNestedFieldRule (previous ^. #required),
+      recommended = map upgradePreNestedClosureNestedFieldRule (previous ^. #recommended),
+      optional = map upgradePreNestedClosureNestedFieldRule (previous ^. #optional),
+      presenceConstraints = map upgradePreNestedClosurePresenceConstraint (previous ^. #presenceConstraints),
+      timestampOrderConstraints = map upgradePreNestedClosureTimestampOrderConstraint (previous ^. #timestampOrderConstraints)
+    }
+
+upgradePreNestedClosureNestedFieldRule :: PreNestedClosureNestedFieldRule -> NestedFieldRule
+upgradePreNestedClosureNestedFieldRule previous =
+  NestedFieldRule
+    { field = previous ^. #field,
+      description = previous ^. #description,
+      allowedValues = previous ^. #allowedValues,
+      cardinality = upgradePreNestedClosureCardinality (previous ^. #cardinality),
+      format = upgradePreNestedClosureFieldFormat <$> previous ^. #format,
+      path = upgradePreNestedClosurePathReferenceRule <$> previous ^. #path,
+      when = upgradePreNestedClosureFieldCondition <$> previous ^. #when,
+      reference = upgradePreNestedClosureHandleReferenceRule <$> previous ^. #reference
+    }
+
+upgradePreNestedClosureFieldCondition :: PreNestedClosureFieldCondition -> FieldCondition
+upgradePreNestedClosureFieldCondition previous =
+  FieldCondition
+    { field = previous ^. #field,
+      hasValue = previous ^. #hasValue
+    }
+
+upgradePreNestedClosureHandleReferenceRule :: PreNestedClosureHandleReferenceRule -> HandleReferenceRule
+upgradePreNestedClosureHandleReferenceRule previous =
+  HandleReferenceRule
+    { localPrefix = previous ^. #localPrefix,
+      externalUriSchemes = previous ^. #externalUriSchemes,
+      allowSelf = previous ^. #allowSelf,
+      allowLocal = previous ^. #allowLocal,
+      externalUriPattern = previous ^. #externalUriPattern
+    }
+
+upgradePreNestedClosurePathReferenceRule :: PreNestedClosurePathReferenceRule -> PathReferenceRule
+upgradePreNestedClosurePathReferenceRule previous =
+  PathReferenceRule
+    { externalUriSchemes = previous ^. #externalUriSchemes,
+      allowSelf = previous ^. #allowSelf
+    }
+
+upgradePreNestedClosureValueSelector :: PreNestedClosureValueSelector -> ValueSelector
+upgradePreNestedClosureValueSelector previous =
+  ValueSelector
+    { field = previous ^. #field,
+      member = previous ^. #member
+    }
+
+upgradePreNestedClosurePresenceConstraint :: PreNestedClosurePresenceConstraint -> PresenceConstraint
+upgradePreNestedClosurePresenceConstraint previous =
+  PresenceConstraint
+    { when = upgradePreNestedClosureFieldCondition <$> previous ^. #when,
+      whenAnyPresent = map upgradePreNestedClosureValueSelector (previous ^. #whenAnyPresent),
+      requireAll = map upgradePreNestedClosureValueSelector (previous ^. #requireAll),
+      requireAny = map upgradePreNestedClosureValueSelector (previous ^. #requireAny)
+    }
+
+upgradePreNestedClosureTimestampOrderConstraint :: PreNestedClosureTimestampOrderConstraint -> TimestampOrderConstraint
+upgradePreNestedClosureTimestampOrderConstraint previous =
+  TimestampOrderConstraint
+    { before = previous ^. #before,
+      after = previous ^. #after
+    }
+
+upgradePreNestedClosureMembershipConstraint :: PreNestedClosureMembershipConstraint -> MembershipConstraint
+upgradePreNestedClosureMembershipConstraint previous =
+  MembershipConstraint
+    { source = upgradePreNestedClosureValueSelector (previous ^. #source),
+      target = upgradePreNestedClosureValueSelector (previous ^. #target)
+    }
+
+upgradePreNestedClosureUniqueValuesConstraint :: PreNestedClosureUniqueValuesConstraint -> UniqueValuesConstraint
+upgradePreNestedClosureUniqueValuesConstraint previous =
+  UniqueValuesConstraint
+    { selectors = map upgradePreNestedClosureValueSelector (previous ^. #selectors)
+    }
+
+upgradePreNestedClosureCardinality :: PreNestedClosureCardinality -> Cardinality
+upgradePreNestedClosureCardinality = \case
+  PreNestedClosureAny -> Any
+  PreNestedClosureScalar -> Scalar
+  PreNestedClosureList -> List
+
+upgradePreNestedClosureFieldFormat :: PreNestedClosureFieldFormat -> FieldFormat
+upgradePreNestedClosureFieldFormat = \case
+  PreNestedClosureRfc3339Utc -> Rfc3339Utc
+  PreNestedClosureDate -> Date
+  PreNestedClosureUri -> Uri
+  PreNestedClosureUriWithScheme value -> UriWithScheme value
+  PreNestedClosureDocumentHandle value -> DocumentHandle value
+  PreNestedClosureActor -> Actor
+  PreNestedClosureHumanActor -> HumanActor
+  PreNestedClosureInteger -> Integer
+  PreNestedClosureNonNegativeInteger -> NonNegativeInteger
+  PreNestedClosureBoolean -> Boolean
+  PreNestedClosureFiniteDecimal -> FiniteDecimal
+
 upgradePreProductDiscoveryFrontmatter :: PreProductDiscoveryFrontmatterRules -> FrontmatterRules
 upgradePreProductDiscoveryFrontmatter previous =
   FrontmatterRules
@@ -1743,7 +2092,8 @@ upgradePreProductDiscoveryFrontmatter previous =
         }
     upgradeNestedRules rules =
       NestedRules
-        { presenceConstraints = [],
+        { allowUnknownFields = True,
+          presenceConstraints = [],
           timestampOrderConstraints = [],
           required = map upgradeNestedField (rules ^. #required),
           recommended = map upgradeNestedField (rules ^. #recommended),
@@ -1818,7 +2168,8 @@ upgradePreGuidanceFrontmatter previous =
         }
     upgradeNestedRules rules =
       NestedRules
-        { presenceConstraints = [],
+        { allowUnknownFields = True,
+          presenceConstraints = [],
           timestampOrderConstraints = [],
           required = map upgradeNestedField (rules ^. #required),
           recommended = map upgradeNestedField (rules ^. #recommended),
@@ -1903,7 +2254,8 @@ upgradePreNestedReferenceFrontmatter previous =
         }
     upgradeNestedRules rules =
       NestedRules
-        { presenceConstraints = [],
+        { allowUnknownFields = True,
+          presenceConstraints = [],
           timestampOrderConstraints = [],
           required = map upgradeNestedField (rules ^. #required),
           recommended = map upgradeNestedField (rules ^. #recommended),
@@ -1978,7 +2330,8 @@ upgradePrePathProfileFrontmatter previous =
         }
     upgradeNestedRules rules =
       NestedRules
-        { presenceConstraints = [],
+        { allowUnknownFields = True,
+          presenceConstraints = [],
           timestampOrderConstraints = [],
           required = map upgradeNestedField (rules ^. #required),
           recommended = map upgradeNestedField (rules ^. #recommended),
@@ -2024,7 +2377,8 @@ upgradePreActorProfileFrontmatter previous =
         }
     upgradeNestedRules rules =
       NestedRules
-        { presenceConstraints = [],
+        { allowUnknownFields = True,
+          presenceConstraints = [],
           timestampOrderConstraints = [],
           required = map upgradeNestedField (rules ^. #required),
           recommended = map upgradeNestedField (rules ^. #recommended),
@@ -2070,7 +2424,8 @@ upgradePreObjectProfileFrontmatter previous =
         }
     upgradeNestedRules rules =
       NestedRules
-        { presenceConstraints = [],
+        { allowUnknownFields = True,
+          presenceConstraints = [],
           timestampOrderConstraints = [],
           required = map upgradeNestedField (rules ^. #required),
           recommended = map upgradeNestedField (rules ^. #recommended),
@@ -2116,7 +2471,8 @@ upgradeReferenceProfileFrontmatter previous =
         }
     upgradeNestedRules rules =
       NestedRules
-        { presenceConstraints = [],
+        { allowUnknownFields = True,
+          presenceConstraints = [],
           timestampOrderConstraints = [],
           required = map upgradeNestedField (rules ^. #required),
           recommended = map upgradeNestedField (rules ^. #recommended),
@@ -2189,7 +2545,8 @@ upgradeConditionalProfileFrontmatter previous =
         }
     upgradeNestedRules rules =
       NestedRules
-        { presenceConstraints = [],
+        { allowUnknownFields = True,
+          presenceConstraints = [],
           timestampOrderConstraints = [],
           required = map upgradeNestedField (rules ^. #required),
           recommended = map upgradeNestedField (rules ^. #recommended),
@@ -2235,7 +2592,8 @@ upgradeNestedProfileFrontmatter previous =
         }
     upgradeNestedProfileRules rules =
       NestedRules
-        { presenceConstraints = [],
+        { allowUnknownFields = True,
+          presenceConstraints = [],
           timestampOrderConstraints = [],
           required = map upgradeNestedField (rules ^. #required),
           recommended = map upgradeNestedField (rules ^. #recommended),
@@ -2703,7 +3061,8 @@ upgradeLegacyProfile legacy =
 -- | Load and decode a Dhall profile descriptor from a file path. Any evaluation
 -- or decoding failure is captured as a human-readable 'Left'.
 --
--- The pre-guidance shape, pre-nested-reference shape, pre-bundle-version shape,
+-- The pre-nested-closure, pre-product-discovery, pre-guidance,
+-- pre-nested-reference, pre-bundle-version,
 -- pre-path shape, pre-actor shape, pre-object
 -- shape, reference-aware shape,
 -- condition-aware shape, bounded-nested shape, EP-4
@@ -2726,7 +3085,8 @@ loadProfileFile path = do
     -- picks that generation's decoder. Adding a generation is one line here.
     frozenDecoders :: [IO (Maybe ProfileSpec)]
     frozenDecoders =
-      [ attempt upgradePreProductDiscoveryProfile,
+      [ attempt upgradePreNestedClosureProfileSpec,
+        attempt upgradePreProductDiscoveryProfile,
         attempt upgradePreGuidanceProfile,
         attempt upgradePreNestedReferenceProfile,
         attempt upgradePreBundleVersionProfile,
@@ -2762,7 +3122,8 @@ loadProfileFile path = do
         `catchSynchronous` \(exception :: SomeException) -> pure (Left (Text.pack (show exception)))
 
 -- | Does an already-evaluated Dhall expression decode as a profile? Tries the
--- current schema, then the pre-guidance, pre-nested-reference,
+-- current schema, then the pre-nested-closure, pre-product-discovery,
+-- pre-guidance, pre-nested-reference,
 -- pre-bundle-version, pre-path, pre-actor, pre-object,
 -- reference-aware,
 -- condition-aware, bounded-nested, EP-4, EP-3, EP-2, EP-1, self-documenting, and
@@ -2770,15 +3131,51 @@ loadProfileFile path = do
 -- Uses 'Dhall.rawInput', which normalizes and runs the decoder's extractor
 -- without throwing, which is what lets registry enumeration be pure.
 decodeProfileExpr :: Expr Src Void -> Maybe ProfileSpec
-decodeProfileExpr expression =
+decodeProfileExpr rawExpression =
   Dhall.rawInput Dhall.auto expression
-    <|> ( if containsProductDiscoveryField expression
+    <|> ( if containsNestedClosureField expression
             then Nothing
             else
-              fmap upgradePreProductDiscoveryProfile (Dhall.rawInput Dhall.auto expression)
-                <|> fmap upgradePreGuidanceProfile (Dhall.rawInput Dhall.auto expression)
-                <|> decodeProfilesBeforeGuidance expression
+              fmap upgradePreNestedClosureProfileSpec (Dhall.rawInput Dhall.auto expression)
+                <|> ( if containsProductDiscoveryField expression
+                        then Nothing
+                        else
+                          fmap upgradePreProductDiscoveryProfile (Dhall.rawInput Dhall.auto expression)
+                            <|> fmap upgradePreGuidanceProfile (Dhall.rawInput Dhall.auto expression)
+                            <|> decodeProfilesBeforeGuidance expression
+                    )
         )
+  where
+    expression = Dhall.Core.normalize rawExpression
+
+-- | Inspect only nested-rule records reached through descriptor field rules.
+-- The profile root has carried the same name since before nested closure.
+containsNestedClosureField :: Expr Src Void -> Bool
+containsNestedClosureField expression =
+  any nestedClosure (frontmatters expression)
+  where
+    member key (Dhall.Core.RecordLit fields) =
+      Dhall.Core.recordFieldValue <$> Dhall.Map.lookup key fields
+    member _ _ = Nothing
+    listValues (Dhall.Core.ListLit _ values) = toList values
+    listValues _ = []
+    frontmatters profile =
+      maybeToList (member "frontmatter" profile)
+        <> [ fm
+           | typeValues <- maybeToList (member "types" profile),
+             typeRule <- listValues typeValues,
+             fm <- maybeToList (member "frontmatter" typeRule)
+           ]
+    nestedClosure fm =
+      or
+        [ Dhall.Map.member "allowUnknownFields" fields
+        | listName <- ["required", "recommended", "optional"],
+          rules <- maybeToList (member listName fm),
+          rule <- listValues rules,
+          shape <- ["elementFields", "objectFields"],
+          Dhall.Core.Some nested <- maybeToList (member shape rule),
+          Dhall.Core.RecordLit fields <- [nested]
+        ]
 
 -- | The generic Dhall record extractor deliberately ignores extra record
 -- members. Without this guard, a value from the 0.8.0.0 generation can fall
@@ -2910,6 +3307,8 @@ data EffectiveFieldRule = EffectiveFieldRule
     format :: !(Maybe FieldFormat),
     elementFields :: !(Maybe (Map Text EffectiveFieldRule)),
     objectFields :: !(Maybe (Map Text EffectiveFieldRule)),
+    elementAllowsUnknownFields :: !(Maybe Bool),
+    objectAllowsUnknownFields :: !(Maybe Bool),
     reference :: !(Maybe HandleReferenceRule),
     path :: !(Maybe PathReferenceRule),
     uniqueBy :: !(Maybe Text),
@@ -2928,6 +3327,8 @@ instance Eq EffectiveFieldRule where
       && left ^. #allowedValues == right ^. #allowedValues
       && left ^. #cardinality == right ^. #cardinality
       && left ^. #format == right ^. #format
+      && left ^. #elementAllowsUnknownFields == right ^. #elementAllowsUnknownFields
+      && left ^. #objectAllowsUnknownFields == right ^. #objectAllowsUnknownFields
       && left ^. #elementFields == right ^. #elementFields
       && left ^. #objectFields == right ^. #objectFields
       && left ^. #reference == right ^. #reference
@@ -2947,7 +3348,9 @@ instance Show EffectiveFieldRule where
           rule ^. #objectFields,
           rule ^. #reference,
           rule ^. #path,
-          rule ^. #uniqueBy
+          rule ^. #uniqueBy,
+          rule ^. #elementAllowsUnknownFields,
+          rule ^. #objectAllowsUnknownFields
         )
 
 -- | The stable lowercase display name for a cardinality: @any@, @scalar@,
@@ -3047,6 +3450,14 @@ fieldRuleElementFields rule = rule ^. #elementFields
 -- the same member rules.
 fieldRuleObjectFields :: EffectiveFieldRule -> Maybe (Map Text EffectiveFieldRule)
 fieldRuleObjectFields rule = rule ^. #objectFields
+
+-- | Effective per-shape closure. Nothing means no rule for that shape;
+-- Just False with an empty member map forbids every supplied member name.
+fieldRuleElementAllowsUnknownFields :: EffectiveFieldRule -> Maybe Bool
+fieldRuleElementAllowsUnknownFields rule = rule ^. #elementAllowsUnknownFields
+
+fieldRuleObjectAllowsUnknownFields :: EffectiveFieldRule -> Maybe Bool
+fieldRuleObjectAllowsUnknownFields rule = rule ^. #objectAllowsUnknownFields
 
 -- | Whether this clause demands the key or merely recommends it.
 presenceClauseRequirement :: PresenceClause -> FieldRequirement
@@ -3744,6 +4155,8 @@ compileOptionalFieldRule rule =
         format = rule ^. #format,
         elementConstraints = maybe emptyConstraints (\n -> resolveConstraints (compileNestedRules n) (nestedConstraints n)) (rule ^. #elementFields),
         objectConstraints = maybe emptyConstraints (\n -> resolveConstraints (compileNestedRules n) (nestedConstraints n)) (rule ^. #objectFields),
+        elementAllowsUnknownFields = (^. #allowUnknownFields) <$> rule ^. #elementFields,
+        objectAllowsUnknownFields = (^. #allowUnknownFields) <$> rule ^. #objectFields,
         elementFields = compileNestedRules <$> rule ^. #elementFields,
         objectFields = compileNestedRules <$> rule ^. #objectFields,
         reference = compiledReference,
@@ -3809,6 +4222,8 @@ compileOptionalNestedFieldRule rule =
       format = rule ^. #format,
       elementConstraints = emptyConstraints,
       objectConstraints = emptyConstraints,
+      elementAllowsUnknownFields = Nothing,
+      objectAllowsUnknownFields = Nothing,
       elementFields = Nothing,
       -- Nested rules stay depth-bounded: 'NestedFieldRule' has no object member,
       -- so a profile cannot constrain @sources[0].usage_window.from@.
@@ -3843,6 +4258,8 @@ mergeEffectiveFieldRule profileRule typeRule =
         format = fromMaybe (profileRule ^. #format) (mergeFieldFormat (profileRule ^. #format) (typeRule ^. #format)),
         elementConstraints = resolveConstraints (fromMaybe Map.empty (mergeNestedRuleMaps (profileRule ^. #elementFields) (typeRule ^. #elementFields))) (mergeConstraints (profileRule ^. #elementConstraints) (typeRule ^. #elementConstraints)),
         objectConstraints = resolveConstraints (fromMaybe Map.empty (mergeNestedRuleMaps (profileRule ^. #objectFields) (typeRule ^. #objectFields))) (mergeConstraints (profileRule ^. #objectConstraints) (typeRule ^. #objectConstraints)),
+        elementAllowsUnknownFields = mergeClosure (profileRule ^. #elementAllowsUnknownFields) (typeRule ^. #elementAllowsUnknownFields),
+        objectAllowsUnknownFields = mergeClosure (profileRule ^. #objectAllowsUnknownFields) (typeRule ^. #objectAllowsUnknownFields),
         elementFields = mergeNestedRuleMaps (profileRule ^. #elementFields) (typeRule ^. #elementFields),
         objectFields = mergeNestedRuleMaps (profileRule ^. #objectFields) (typeRule ^. #objectFields),
         reference = mergedReference,
@@ -3917,9 +4334,13 @@ mergePathRule (Just profilePolicy) (Just typePolicy) =
         allowSelf = profilePolicy ^. #allowSelf && typePolicy ^. #allowSelf
       }
 
--- | Merge one scope's map of member rules with another's. Used for both
--- @elementFields@ and @objectFields@; it was named for the former until the
--- latter existed and is a plain union-with-merge either way.
+-- | Either scope may close a shape; an absent declaration is the identity.
+mergeClosure :: Maybe Bool -> Maybe Bool -> Maybe Bool
+mergeClosure Nothing policy = policy
+mergeClosure policy Nothing = policy
+mergeClosure (Just left) (Just right) = Just (left && right)
+
+-- | Merge the member maps for a shape across profile and type scopes.
 mergeNestedRuleMaps :: Maybe (Map Text EffectiveFieldRule) -> Maybe (Map Text EffectiveFieldRule) -> Maybe (Map Text EffectiveFieldRule)
 mergeNestedRuleMaps Nothing typeRules = typeRules
 mergeNestedRuleMaps profileRules Nothing = profileRules
@@ -4193,6 +4614,8 @@ data ProfileViolation
     DanglingPathReference ConceptId FieldPath Text
   | -- | a closed profile does not declare this top-level field
     FieldNotInProfile ConceptId Text
+  | -- | a closed nested shape does not declare this member
+    NestedFieldNotInProfile ConceptId FieldPath
   | -- | a declared list element is not an object record
     NestedElementNotRecord ConceptId FieldPath Value
   | -- | one valid scalar member value occurs in more than one list element
@@ -4399,9 +4822,10 @@ validateProfileWithPresence presenceRule inventoryOf validationProfile compiled 
                  in concat
                       [ case elementValue of
                           Aeson.Object members ->
-                            concatMap
-                              (checkRecordMember (nestedValuePath parentKey elementIndex) members)
-                              (Map.toAscList nestedRules)
+                            unknownRecordMembers (nestedValuePath parentKey elementIndex) nestedRules (parentRule ^. #elementAllowsUnknownFields) members
+                              <> concatMap
+                                (checkRecordMember (nestedValuePath parentKey elementIndex) members)
+                                (Map.toAscList nestedRules)
                               <> validateConceptConstraints cid (nestedValuePath parentKey elementIndex) (\k -> Aeson.KeyMap.lookup (Aeson.Key.fromText k) members) nestedRules (parentRule ^. #elementConstraints)
                           _ -> [NestedElementNotRecord cid (nestedElementPath parentKey elementIndex) elementValue]
                       | (elementIndex, elementValue) <- indexedElements
@@ -4415,11 +4839,19 @@ validateProfileWithPresence presenceRule inventoryOf validationProfile compiled 
         objectViolations parentKey parentRule = \case
           Aeson.Object members
             | Just objectRules <- parentRule ^. #objectFields ->
-                concatMap
-                  (checkRecordMember (nestedDefinitionPath parentKey) members)
-                  (Map.toAscList objectRules)
+                unknownRecordMembers (nestedDefinitionPath parentKey) objectRules (parentRule ^. #objectAllowsUnknownFields) members
+                  <> concatMap
+                    (checkRecordMember (nestedDefinitionPath parentKey) members)
+                    (Map.toAscList objectRules)
                   <> validateConceptConstraints cid (nestedDefinitionPath parentKey) (\k -> Aeson.KeyMap.lookup (Aeson.Key.fromText k) members) objectRules (parentRule ^. #objectConstraints)
           _ -> []
+
+        unknownRecordMembers buildPath rules policy members =
+          [ NestedFieldNotInProfile cid (buildPath key)
+          | policy == Just False,
+            key <- List.sort (map Aeson.Key.toText (Aeson.KeyMap.keys members)),
+            Map.notMember key rules
+          ]
 
         -- Check one member of one record. Shared by the list-element and
         -- object-value walks, which differ only in how they name the member;

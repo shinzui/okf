@@ -16,6 +16,11 @@ provenance:
       at: 2026-10-28T04:04:11Z
       mode: "other"
       note: "Complete IR-11 plan with closure merge semantics, ordered schema compatibility, corrected conditional-field acceptance, and public validation."
+    - model: "gpt-6.1-sol"
+      harness: "codex-cli"
+      at: 2026-10-28T11:40:12Z
+      mode: "implement"
+      note: "Implement opt-in nested closure with complete compatibility, validation, and public documentation."
 ---
 
 # Close the vocabulary of nested profile records
@@ -34,19 +39,24 @@ This implements [IR-11](../improvement-requests/close-the-vocabulary-of-nested-f
 ## Progress
 
 
-- [ ] Milestone 1: the new schema loads and compiles, exposes merged closure policies, preserves earlier descriptors, and rejects an undeclared list-record member through the CLI.
-- [ ] Milestone 2: both nested shapes enforce the declared-name set consistently across scopes, conditions, validation modes, and malformed input.
-- [ ] Milestone 3: inspection, generated documentation, compatibility checks, and consumer migration guidance describe and verify the complete contract.
+- [x] (2026-10-28) Milestone 1: the schema, compiled policies, and complete pre-closure generation load and compile through file, registry, and discovery paths; the public CLI rejects `rows[0].stray`. Independent file/registry fallback removal fails compatibility, and removing the structural guard accepts malformed new policies; all controls were restored.
+- [x] (2026-10-28) Milestone 2: core tests pass the complete closure matrix for both shapes, every boolean merge and absent-rule identity, merged names, unknown types, conditions, empty/malformed values, Unicode, and coexistence with presence/timestamp constraints. CLI tests prove strict/permissive and advisory/enforced behavior.
+- [x] (2026-10-28) Milestone 3: raw human/JSON inspection, compiled accessors, deterministic generated documentation, migration guidance, IR-11, and ADRs 5/6/11 are updated. `nix develop --no-write-lock-file --command cabal test all`, schema/fixture type checks, all required bundle validations, and `git diff --check` pass; a second example generation is byte-identical.
 
-Planning handoff (2026-10-28): no implementation is claimed. Implement after all four milestones of [the product-discovery ExecPlan](70-express-single-concept-product-discovery-constraints-in-profile-descriptors.md). Both changes extend `NestedRules`; serial ordering prevents incompatible frozen generations. That prerequisite introduces presence and timestamp constraints on nested records and changes the format union. Freeze the resulting complete descriptor, preserving those additions, rather than freezing today's pre-product-discovery shape again. The similarly numbered Baikai plan is unrelated. Existing working-tree changes belong to other work and must be preserved.
+Completion evidence (2026-10-28): all four milestones of the product-discovery prerequisite were complete before implementation. The frozen generation records source revision `cfecb72e543c28f5a77ff852445fdd0f256b8810`, retaining all predecessor constraints. The strict valid CLI fixture exits 0 with one concept; the invalid fixture emits exactly `rows[0].stray` and `settings.extra`, exits 1 under enforcement in either mode, and exits 0 with the same diagnostics when advisory. Required validation passes for the four-concept generated example, 22 ADRs, 11 improvement requests, and four friction entries. The prerequisite's earlier IR-10 metadata defect was already repaired, so there is no pre-existing validation exception. FRIC-4 is triaged as accepted. No catalog pin or downstream repository was changed.
 
 
 ## Surprises & Discoveries
 
 
+- Implementation (2026-10-28): the completed prerequisite's `normalizeRecordShapes` already unifies member maps and record relation constraints for a field accepting both spellings. Preserve that established contract and add independent closure booleans; selecting a shape's closure must not remove predecessor constraints. Generated documentation continues to list the shared effective member contract.
+- Implementation (2026-10-28): the ambient compiler provides base 4.20 while the project requires at least 4.21. The documented Nix development shell supplies GHC 9.12.4; FRIC-4 records the environment workaround.
+
+
 ## Decision Log
 
 
+- Decision (2026-10-28): preserve the prerequisite's shared member/relation normalization when a field accepts both shapes, while compiling and merging closure independently per shape. This avoids changing existing descriptor behavior or losing product-discovery constraints. A dual-shape field's effective declared names therefore remain its normalized union, and only its actual shape chooses the closure boolean.
 - Decision (2026-10-28): nested closure is per `NestedRules`, defaults to open, and merges matching shapes with logical AND over `allowUnknownFields`. Declared names are the union of merged field maps. This lets either scope close the record while accepting fields declared by the other scope; no declaration can reopen an already closed shape.
 - Decision (2026-10-28): retain separate policies for list-element and object shapes, mirroring the existing separate nested maps. When an author supplies the same rules for both shapes, their behavior is identical; do not introduce a new restriction on descriptors that supply distinct rules.
 - Decision (2026-10-28): correct IR-11's conditional-optional test to conditional required/recommended members plus an unconditional optional member. `OptionalFieldWithCondition` already rejects `when` on optional rules, and closure must not relax that contract.
@@ -56,12 +66,19 @@ Planning handoff (2026-10-28): no implementation is claimed. Implement after all
 ## Outcomes & Retrospective
 
 
+Completed on 2026-10-28. All three milestones and AC-1 through AC-3 are accepted. Nested closure is opt-in, deterministic, and independent of presence conditions and validation mode. Compatibility retains historical open behavior and the prerequisite's constraints through both decoder paths and local discovery. Raw inspection describes declarations; compiled documentation describes effective policies and names. ADRs 5, 6, and 11 carry the durable merge, inspection, and structural fallback rules, and IR-11 records acceptance and the public-constructor migration.
+
+The main integration lesson was to inspect the prerequisite's actual compiled normalization: independent closure policies must coexist with its existing shared dual-shape member/relation contract. Negative controls prove both the new compatibility generation and the structural guard are necessary. No implementation work remains; package publication and downstream adoption remain separate release work.
+
+FRIC-4 in `docs/friction-log/` is accepted: the documented Nix development shell supplies the required GHC 9.12.4, while the ambient compiler does not meet the project bound.
+
+
 ## Context and Orientation
 
 
 Frontmatter is the YAML mapping at the start of a concept's Markdown file. Closing a record means reporting each key absent from its declared-name set, regardless of that key's value. It does not change when a declared field is required. Profiles are advisory unless the caller enables enforcement.
 
-`okf-core/src/Okf/Profile.hs` owns raw descriptor records, Dhall decoding, historical frozen records, compilation, inspection, JSON serialization, and validation. Current `NestedRules` contains required/recommended/optional member declarations. After the prerequisite it will also contain presence and timestamp constraint lists; retain these. `compileNestedRules` builds member maps, `compileOptionalFieldRule` attaches the nested rules, and `mergeEffectiveFieldRule`/`mergeNestedRuleMaps` merge profile-wide and per-type declarations. The opaque `EffectiveFieldRule` exposes maps through `fieldRuleElementFields` and `fieldRuleObjectFields`; preserve those accessor signatures. `validateProfileWith` shares member validation between `nestedViolations` and `objectViolations`. `nestedValuePath` produces indexed paths and `nestedDefinitionPath` object-member paths. `checkUnknownFields` currently checks only top-level names and exempts core frontmatter names; those exemptions do not apply inside arbitrary records.
+`okf-core/src/Okf/Profile.hs` owns raw descriptor records, Dhall decoding, historical frozen records, compilation, inspection, JSON serialization, and validation. The prerequisite is complete: `NestedRules` contains required/recommended/optional member declarations plus presence and timestamp constraint lists; retain these. Its dual-shape normalization shares member maps and relation constraints; closure policies remain separate. `compileNestedRules` builds member maps, `compileOptionalFieldRule` attaches the nested rules, and `mergeEffectiveFieldRule`/`mergeNestedRuleMaps` merge profile-wide and per-type declarations. The opaque `EffectiveFieldRule` exposes maps through `fieldRuleElementFields` and `fieldRuleObjectFields`; preserve those accessor signatures. `validateProfileWith` shares member validation between `nestedViolations` and `objectViolations`. `nestedValuePath` produces indexed paths and `nestedDefinitionPath` object-member paths. `checkUnknownFields` currently checks only top-level names and exempts core frontmatter names; those exemptions do not apply inside arbitrary records.
 
 `conditionDefinitionErrors` in that module rejects optional fields with conditions. A declared conditional required/recommended name remains declared when its condition is false. `evaluateFieldValue` treats empty lists and empty object values as absent, retaining existing presence diagnostics. Unknown-member checks need only actual records: do not invent children for absent parents or repeat shape errors for non-record list elements.
 
@@ -174,3 +191,5 @@ Validation is repeatable; fixture mutations and decoder negative controls belong
 Add `allowUnknownFields :: Bool` to current Haskell `NestedRules` and `allowUnknownFields : Bool` to its Dhall schema/defaults. Existing and new presence/timestamp constraint lists remain untouched. Default/upgrade value is `True`. Keep `fieldRuleElementFields` and `fieldRuleObjectFields` returning their existing optional maps. Add `fieldRuleElementAllowsUnknownFields :: EffectiveFieldRule -> Maybe Bool` and `fieldRuleObjectAllowsUnknownFields :: EffectiveFieldRule -> Maybe Bool`; `Nothing` means no rule for that shape, and `Just False` with an empty map means no member name is allowed. Store the policy in the opaque compiled representation, with invariant that policy and matching map are either both absent or both present. Merge policies with absence as identity and AND for two declarations, while maps retain their existing union/field-merge semantics.
 
 Add `NestedFieldNotInProfile ConceptId FieldPath` to `ProfileViolation`, preserving `FieldNotInProfile ConceptId Text`. Render the new constructor using the existing structural-path renderer and the wording in Concrete Steps; expose it wherever current violations are exposed and cover all exhaustive matches. There is no new runtime dependency, registry lookup, numeric format, cardinality alternative, or recursive type. If a dependency API becomes relevant, locate its source/docs with Mori before using it; verify authoritative release/tag data before any bounds change. No bounds change is planned.
+
+Revision note (2026-10-28): implementation confirmed the prerequisite's shared dual-shape member/relation normalization, so the plan now explicitly preserves it while keeping closure policies independent. All original closure and compatibility acceptance remains covered.

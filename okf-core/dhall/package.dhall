@@ -12,7 +12,8 @@
 -- `defaults` holds the `{ Type, default }` record-completion modules; `mk` holds
 -- constructor functions for the types authors write repeatedly. Both protect a
 -- descriptor written from now on against future additive, defaulted schema
--- fields; neither is a compatibility mechanism for descriptors that already
+-- fields (including the open-by-default NestedRules.allowUnknownFields policy);
+-- neither is a compatibility mechanism for descriptors that already
 -- exist (okf-core's legacy fallback decoder is what keeps those loading).
 { Profile = ./Profile.dhall
 , TypeRule = ./TypeRule.dhall

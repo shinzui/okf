@@ -1,0 +1,1 @@
+{ nestedClosure = ./nested-closure.dhall }

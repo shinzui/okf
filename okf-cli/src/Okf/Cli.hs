@@ -2103,7 +2103,7 @@ renderProfileDetail
       renderNestedBlock indent label = \case
         Nothing -> [indent <> "    " <> label <> ": (none)"]
         Just nestedRules ->
-          [indent <> "    " <> label <> ":"]
+          [indent <> "    " <> label <> ":", indent <> "      allowUnknownFields: " <> (if nestedRules ^. #allowUnknownFields then "true" else "false")]
             <> renderNestedFieldRules (indent <> "      ") "required" (nestedRules ^. #required)
             <> renderNestedFieldRules (indent <> "      ") "recommended" (nestedRules ^. #recommended)
             <> renderNestedFieldRules (indent <> "      ") "optional" (nestedRules ^. #optional)
@@ -3286,6 +3286,8 @@ renderProfileViolation compiled concepts = \case
       <> renderFieldPath fieldPath
       <> " climbs above the bundle root: "
       <> rawPath
+  NestedFieldNotInProfile cid fieldPath ->
+    renderConceptId cid <> ": nested field not declared by profile: " <> renderFieldPath fieldPath
   FieldNotInProfile cid key ->
     renderConceptId cid <> ": frontmatter field not declared by profile: " <> key
   NestedElementNotRecord cid fieldPath actual ->

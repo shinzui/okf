@@ -378,8 +378,40 @@ NESTED RECORD FIELDS
     profile: requests/example: missing profile-required field: reviews[2].outcome
     profile: requests/example: frontmatter element at reviews[1] must be a record, found: "not-a-record"
 
-  Extra keys inside a record remain allowed. Nested field-name closure and a
-  second nested level are not part of this schema.
+  NestedRules defaults to allowUnknownFields = True. To close either shape:
+
+    okf.defaults.NestedRules::{ allowUnknownFields = False, optional = [ ... ] }
+
+  Put those rules in elementFields for list records or objectFields for one
+  mapping. Every supplied undeclared key is reported, including null or empty
+  values; core keys such as title and the document-ID key have no exemption:
+
+    profile: note: nested field not declared by profile: rows[0].stray
+    profile: note: nested field not declared by profile: settings.extra
+
+  All names in required/recommended/optional count as declared even when a
+  presence condition is false. Optional rules still cannot have when clauses.
+  Profile/type names merge by union; allowUnknownFields merges with AND, with
+  an absent nested rule as identity. Either scope can close a shape and neither
+  can reopen it. List and object policies remain independent, including on a
+  field accepting both shapes. Its member and relation rules retain their
+  shared compiled contract. A closed empty member map rejects every key.
+
+  Closure applies with and without --strict and is advisory unless
+  --profile-enforce is supplied. Missing/empty parents retain presence checks,
+  and non-record list elements retain their shape diagnostic. No second nested
+  level is supported.
+
+  Human profile show and --json show declared allowUnknownFields at both
+  scopes. Generated documentation shows effective open/closed/none policies
+  alongside the merged declared names, including empty member maps.
+
+  Old descriptor pins keep open nested records through compatibility decoding.
+  Literals retyped against the current schema must add allowUnknownFields or
+  use NestedRules::{ ... } record completion; defaults do not repair existing
+  literals. Library consumers matching ProfileViolation must add a case for
+  NestedFieldNotInProfile ConceptId FieldPath, including
+  mori://shinzui/mori/packages/mori-cli. FieldNotInProfile remains top-level.
 
 RECORD-LIST UNIQUENESS
 

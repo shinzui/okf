@@ -7,9 +7,9 @@ description: Extend IR-2's closed vocabulary to the records declared by
 generated:
   by: claude-code/claude-opus-5-5
   at: "2026-10-19T17:23:17Z"
-timestamp: "2026-10-28T04:04:00Z"
+timestamp: "2026-10-28T11:55:33Z"
 requestId: IR-11
-status: accepted
+status: completed
 targetPlan: docs/plans/74-close-the-vocabulary-of-nested-profile-records.md
 origin: mori://tan/tan-ng-frontend
 dependencies:
@@ -56,13 +56,17 @@ reviews:
       checkUnknownFields in okf-core at v0.10.0.0-5-gae835b2, IR-2, IR-4, ExecPlan
       29 and ADR 11, with a reproduction against installed okf 0.9.0.0
       (da8459e). Not an independent review.
+amended:
+  - by: codex-cli/gpt-6.1-sol
+    at: "2026-10-28T11:55:33Z"
+    change: Record nested closure acceptance evidence and consumer migration guidance.
 ---
 
 # Improvement Request: Let a profile close the vocabulary of nested frontmatter records
 
 ## Status
 
-- **Status:** accepted for planning (2026-10-28); implementation not started.
+- **Status:** completed (2026-10-28); downstream adoption can follow an appropriate OKF release.
 - **Implementation plan:** [ExecPlan 74: Close the vocabulary of nested profile records](../plans/74-close-the-vocabulary-of-nested-profile-records.md).
 - **Origin:** `mori://tan/tan-ng-frontend`, from reviewing its design bundle
   (`mori://tan/tan-ng-frontend/okf/designs/concepts/BB-1`)
@@ -70,6 +74,38 @@ reviews:
   [ADR 11](../adr/11-growing-the-profile-descriptor-language.md)
 - **Size:** small to medium — one member on `NestedRules`, one frozen generation,
   one check reusing the nested path rendering IR-4 added.
+
+## Implementation evidence
+
+`NestedRules.allowUnknownFields` defaults to `True` and closes list records or
+object values when `False`. The core closure matrix covers AC-1/AC-2: sorted
+unknown names, actual indexed paths, Unicode, null/empty values, malformed list
+elements, conditional declarations, optional-condition rejection, empty maps,
+missing parents, both validation modes, all scope-policy merges, and independent
+list/object policies. Existing dual-shape member and relation normalization is
+preserved. Closure coexists with presence/timestamp constraints after merging.
+
+AC-3 is covered by every frozen fixture loading and compiling unchanged, plus
+`pre-nested-closure.dhall` at source revision
+`cfecb72e543c28f5a77ff852445fdd0f256b8810`. It retains all four root constraint
+kinds, nested presence/timestamp constraints, finite decimals, and open defaults
+through file loading, registry enumeration, and local discovery. Removing each
+new fallback independently failed its compatibility path. Removing the structural
+guard made a malformed nested policy discoverable; restoring it rejects both
+profile-scope and type-scope malformed policies without rejecting the historical
+root closure flag.
+
+The public CLI reports exactly `rows[0].stray` and `settings.extra` for the
+invalid fixture. Strict and permissive enforcement exit 1; advisory invocations
+exit 0 with the same two diagnostics. The valid strict/enforced fixture exits 0.
+Raw human/JSON inspection exposes declared policies at both scopes, and generated
+documentation shows effective open/closed/none policies and merged names.
+
+Consumers retyping literals against the current schema must add the boolean or
+use record completion; old pins remain open through decoding. Exhaustive
+`ProfileViolation` consumers, including `mori://shinzui/mori/packages/mori-cli`,
+must handle `NestedFieldNotInProfile ConceptId FieldPath`. No catalog migration,
+pin update, publication, or automatic closing of existing profiles is included.
 
 ## Planning disposition
 

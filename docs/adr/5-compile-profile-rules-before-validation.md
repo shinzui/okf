@@ -2,13 +2,17 @@
 type: Architecture Decision Record
 title: Compile profile rules before validation
 description: Validate a raw ProfileSpec once into an opaque CompiledProfile, or structured errors, before it can be used for bundle validation.
-timestamp: "2026-10-28T04:45:00Z"
+timestamp: "2026-10-28T11:50:08Z"
 generated:
   by: claude/sonnet-5
   at: "2026-08-19T20:27:45Z"
 docId: ADR-5
 status: Accepted
 date: 2026-07-29
+amended:
+  - by: codex-cli/gpt-6.1-sol
+    at: "2026-10-28T11:50:08Z"
+    change: Document opt-in nested closure, effective inspection, and compatibility safeguards.
 ---
 
 # ADR 5: Compile profile rules before validation
@@ -136,7 +140,9 @@ Nested validation traverses only array elements that are objects. Diagnostics
 carry structural paths such as `reviews[2].outcome`; non-object elements are
 reported at paths such as `reviews[1]`. Required nested fields are always checked,
 recommended nested fields only under `StrictAuthoring`, and value constraints run
-whenever a nested field is present. Undeclared keys inside a record remain allowed.
+whenever a nested field is present. At introduction, undeclared keys inside a
+record remained allowed; the opt-in closure amendment below adds an explicit
+policy while preserving that default.
 The complete EP-4 format-aware descriptor generation is frozen before this schema
 addition and upgrades with `elementFields = Nothing`.
 
@@ -395,6 +401,31 @@ occurrences and independently reject nontext values, preserving indexed paths an
 deduplicating operand type errors. Runtime relation state belongs to one concept.
 Numeric formats never coerce strings; finite decimal validation uses the existing
 arbitrary-precision decimal representation rather than a machine float.
+
+
+### Opt-in nested field-name closure (2026-10-28)
+
+`NestedRules.allowUnknownFields` defaults to `True`; `False` rejects every
+supplied key outside the effective member map. Compile the policy beside each
+shape's map and expose it through `fieldRuleElementAllowsUnknownFields` and
+`fieldRuleObjectAllowsUnknownFields`. `Nothing` means no shape rule, while
+`Just False` with an empty map forbids every member. Matching profile/type
+policies merge with AND, absence is identity, and member maps retain their union
+and field-merge semantics. A type declaration cannot reopen a closed shape.
+
+List and object closure policies remain independent. The predecessor's shared
+member and relation contract for a field accepting both spellings remains intact;
+closure selects only the actual shape's policy. Required, recommended, and optional
+names all count as declared even when a presence condition is false. Conditions
+gate presence only, and optional conditions remain definition errors.
+
+Report `NestedFieldNotInProfile ConceptId FieldPath` for each undeclared key,
+including null/empty values, sorted by name within each list index. Unlike
+root closure, arbitrary nested records exempt neither core names nor `idField`.
+Malformed list elements retain their existing shape error. Missing and empty
+parents retain their presence behavior; neither strict mode nor a false parent
+presence condition disables closure on supplied records. The existing top-level
+`FieldNotInProfile ConceptId Text` contract remains unchanged.
 
 
 ## Consequences

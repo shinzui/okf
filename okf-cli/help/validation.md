@@ -132,3 +132,13 @@ PROFILE RELATIONS
   text membership, and reject duplicate text across fields in one concept.
   They run offline; indexed paths identify invalid occurrences. All profile
   deviations remain advisory unless --profile-enforce is supplied.
+
+NESTED FIELD NAMES
+
+  A profile may close elementFields or objectFields with NestedRules'
+  allowUnknownFields = False. Each undeclared member produces a diagnostic at
+  its actual path, such as rows[0].stray or settings.extra. This includes keys
+  with null or empty values and core names such as title. Declared conditional
+  members stay declared when their presence condition is false. Both validation
+  modes check closure; --profile-enforce makes the advisory deviations fail.
+  Existing descriptors stay open unless they opt in.

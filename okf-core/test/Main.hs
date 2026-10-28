@@ -10,7 +10,7 @@ import Data.Foldable (for_, toList)
 import Data.List qualified as List
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (catMaybes, maybeToList)
+import Data.Maybe (catMaybes, mapMaybe, maybeToList)
 import Data.Set qualified as Set
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text.IO
@@ -178,6 +178,9 @@ main = do
         testIO "loadProfileFile and registry decoding preserve the complete 0.8.0.0 descriptor schema" testLoadPreGuidanceCompatibilityFixture,
         testIO "loadProfileFile and JSON preserve multiline guidance" testLoadGuidanceFixture,
         testIO "guidance does not affect profile validation" testGuidanceDoesNotAffectValidation,
+        testIO "nested closure loads through current and frozen public decoders" testNestedClosureDecoding,
+        test "nested closure validates records and merges policies" testNestedClosureValidation,
+        test "nested closure scope, shape, condition and malformed-value matrix" testNestedClosureMatrix,
         testIO "product discovery constraints preserve scope, types and occurrence paths" testProductDiscoveryConstraints,
         testIO "every frozen generation fixture compiles, not merely decodes" testFrozenFixturesCompile,
         testIO "loadProfileFile preserves the frozen pre-bundle-version schema" testLoadPreBundleVersionCompatibilityFixture,
@@ -2765,6 +2768,7 @@ frozenGenerationFixtures =
     "pre-nested-references-and-uniqueness-0.7.0.0.dhall",
     "pre-guidance-0.8.0.0.dhall",
     "pre-product-discovery-0.10.0.0.dhall",
+    "pre-nested-closure.dhall",
     -- Not a frozen generation but a *documented* one: this is the descriptor
     -- @docs\/user\/profiles.md@ shows for the specification §10 contract as a
     -- house convention. It is listed here so the documented descriptor cannot
@@ -4390,7 +4394,8 @@ testCompiledNestedRules :: Either Text ()
 testCompiledNestedRules = do
   let profileRules =
         NestedRules
-          { presenceConstraints = [],
+          { allowUnknownFields = True,
+            presenceConstraints = [],
             timestampOrderConstraints = [],
             required = [nestedFieldRule "kind" Nothing ["decision", "implementation"] Any Nothing Nothing Nothing],
             recommended = [nestedFieldRule "notes" Nothing [] Scalar Nothing Nothing Nothing],
@@ -4398,7 +4403,8 @@ testCompiledNestedRules = do
           }
       typeRules =
         NestedRules
-          { presenceConstraints = [],
+          { allowUnknownFields = True,
+            presenceConstraints = [],
             timestampOrderConstraints = [],
             required =
               [ nestedFieldRule "kind" Nothing ["implementation", "operations"] Any Nothing Nothing Nothing,
@@ -4540,7 +4546,8 @@ nestedReviewProfileSpec =
   where
     nestedRules =
       NestedRules
-        { presenceConstraints = [],
+        { allowUnknownFields = True,
+          presenceConstraints = [],
           timestampOrderConstraints = [],
           required =
             [ nestedFieldRule "kind" Nothing ["human", "model"] Any Nothing Nothing Nothing,
@@ -4607,7 +4614,8 @@ objectProfileWithRules key declaredCardinality objectRules elementRules =
 provenanceMemberRules :: NestedRules
 provenanceMemberRules =
   NestedRules
-    { presenceConstraints = [],
+    { allowUnknownFields = True,
+      presenceConstraints = [],
       timestampOrderConstraints = [],
       required = [nestedFieldRule "by" (Just "Who or what produced this content.") [] Any Nothing Nothing Nothing],
       recommended = [nestedFieldRule "at" Nothing [] Any (Just Rfc3339Utc) Nothing Nothing],
@@ -4754,7 +4762,8 @@ sourcesPathProfile permittedSchemes =
   where
     memberRules =
       NestedRules
-        { presenceConstraints = [],
+        { allowUnknownFields = True,
+          presenceConstraints = [],
           timestampOrderConstraints = [],
           required =
             [ (nestedFieldRule "resource" Nothing [] Any Nothing Nothing Nothing)
@@ -5041,7 +5050,8 @@ testValidatePathObjectScope = do
               Any
               ( Just
                   NestedRules
-                    { presenceConstraints = [],
+                    { allowUnknownFields = True,
+                      presenceConstraints = [],
                       timestampOrderConstraints = [],
                       required =
                         [ (nestedFieldRule "resource" Nothing [] Any Nothing Nothing Nothing)
@@ -5284,7 +5294,8 @@ testConditionDefinitionErrors = do
     (compileWith [fieldRule "status" Nothing ["active"] Scalar Nothing Nothing Nothing (Just (FieldCondition "status" ["active"]))])
   let nestedCrossScope =
         NestedRules
-          { presenceConstraints = [],
+          { allowUnknownFields = True,
+            presenceConstraints = [],
             timestampOrderConstraints = [],
             required =
               [ nestedFieldRule "kind" Nothing ["human", "model"] Scalar Nothing Nothing Nothing,
@@ -5372,7 +5383,8 @@ testNestedConditionalPresence :: Either Text ()
 testNestedConditionalPresence = do
   let nestedRules =
         NestedRules
-          { presenceConstraints = [],
+          { allowUnknownFields = True,
+            presenceConstraints = [],
             timestampOrderConstraints = [],
             required =
               [ nestedFieldRule "kind" Nothing ["human", "model"] Scalar Nothing Nothing Nothing,
@@ -5829,7 +5841,8 @@ testOptionalNestedFieldPresence :: Either Text ()
 testOptionalNestedFieldPresence = do
   let nestedRules =
         NestedRules
-          { presenceConstraints = [],
+          { allowUnknownFields = True,
+            presenceConstraints = [],
             timestampOrderConstraints = [],
             required = [nestedFieldRule "kind" Nothing ["human", "model"] Scalar Nothing Nothing Nothing],
             recommended = [nestedFieldRule "notes" Nothing [] Scalar Nothing Nothing Nothing],
@@ -5940,7 +5953,8 @@ testOptionalDefinitionErrors = do
     )
   let nestedRules =
         NestedRules
-          { presenceConstraints = [],
+          { allowUnknownFields = True,
+            presenceConstraints = [],
             timestampOrderConstraints = [],
             required = [nestedFieldRule "kind" Nothing ["model"] Scalar Nothing Nothing Nothing],
             recommended = [],
@@ -6064,7 +6078,7 @@ testClosedFieldValidation = do
       FieldNotInProfile cid "stauts"
     ]
     (validateProfile PermissiveConformance compiled [typo])
-  let reopened = closed {allowUnknownFields = True}
+  let reopened = closed & #allowUnknownFields .~ True
   reopenedCompiled <- firstShow (compileProfile reopened)
   assertEqual
     [MissingProfileField cid "status" Nothing]
@@ -6200,7 +6214,7 @@ testValidateEmptyObjectRules = do
           ( objectProfileWithRules
               "generated"
               Any
-              (Just (NestedRules {presenceConstraints = [], timestampOrderConstraints = [], required = [], recommended = [], optional = []}))
+              (Just (NestedRules {allowUnknownFields = True, presenceConstraints = [], timestampOrderConstraints = [], required = [], recommended = [], optional = []}))
               Nothing
           )
       )
@@ -8274,7 +8288,7 @@ testProductDiscoveryConstraints = do
     -- Merge conjunction, exact deduplication, and nested constraints shared by
     -- the two accepted record spellings.
     let sourceRule = fieldRule "sources" Nothing [] List Nothing Nothing Nothing Nothing
-        objectMembers = NestedRules [] [] [nestedFieldRule "value" Nothing [] Scalar Nothing Nothing Nothing] [] []
+        objectMembers = NestedRules True [] [] [nestedFieldRule "value" Nothing [] Scalar Nothing Nothing Nothing] [] []
         obj = (fieldRule "context" Nothing [] Any Nothing Nothing Nothing Nothing) & #objectFields .~ Just objectMembers
         p = PresenceConstraint Nothing [ValueSelector "outcomes" (Just "name")] [select "context"] []
         objectSpec = spec & #frontmatter . #optional %~ (obj :) & #frontmatter . #presenceConstraints .~ [p]
@@ -8327,8 +8341,8 @@ testProductDiscoveryConstraints = do
     let siblingA = nestedFieldRule "a" Nothing [] Scalar Nothing Nothing Nothing
         siblingB = nestedFieldRule "b" Nothing [] Scalar Nothing Nothing Nothing
         recordGate = PresenceConstraint Nothing [select "b"] [select "a"] []
-        elementRules = NestedRules [] [] [siblingA, siblingB] [recordGate] []
-        objectRules = NestedRules [] [] [siblingA, siblingB] [] []
+        elementRules = NestedRules True [] [] [siblingA, siblingB] [recordGate] []
+        objectRules = NestedRules True [] [] [siblingA, siblingB] [] []
         dual = (fieldRule "dual" Nothing [] Any Nothing (Just elementRules) Nothing Nothing) & #objectFields .~ Just objectRules
         dualSpec = spec & #frontmatter .~ (emptyTestFrontmatterRules & #optional .~ [dual])
     dualCompiled <- firstShow (compileProfile dualSpec)
@@ -8341,3 +8355,212 @@ testProductDiscoveryConstraints = do
     rendered <- firstShow (renderProfileDocumentation defaultDocumentationOptions dualCompiled)
     let prose = Text.concat (map serializeConcept rendered)
     assertEqual 1 (length (Text.breakOnAll "require all [a]" prose))
+
+-- Exercise exact file decoding, width-extracting registry decoding, and local
+-- discovery; the root-level closure flag in the frozen fixture is intentional.
+testNestedClosureDecoding :: IO (Either Text ())
+testNestedClosureDecoding = do
+  currentPath <- fixtureFilePath "profiles/nested-closure.dhall"
+  oldPath <- fixtureFilePath "profiles/pre-nested-closure.dhall"
+  registryPath <- fixtureFilePath "profiles/nested-closure-registry.dhall"
+  malformedPath <- fixtureFilePath "profiles/nested-closure-malformed.dhall"
+  current <- loadProfileFile currentPath
+  old <- loadProfileFile oldPath
+  registry <- loadRegistry (RegistryFile registryPath)
+  oldRegistry <- loadRegistry (RegistryFile oldPath)
+  malformed <- loadRegistry (RegistryFile malformedPath)
+  malformedFile <- loadProfileFile malformedPath
+  malformedTypePath <- fixtureFilePath "profiles/nested-closure-malformed-type.dhall"
+  malformedType <- loadRegistry (RegistryFile malformedTypePath)
+  discovered <- traverse ProfileDiscovery.fileQualifiesAsProfileDescriptor [currentPath, oldPath, malformedPath]
+  pure $ do
+    spec <- current
+    oldSpec <- old
+    compiled <- firstShow (compileProfile spec)
+    oldCompiled <- firstShow (compileProfile oldSpec)
+    entries <- firstShow registry
+    assertEqual ["nestedClosure"] (map (^. #export) entries)
+    assertEqual [spec] (map (^. #spec) entries)
+    historical <- firstShow oldRegistry
+    assertEqual [oldSpec] (map (^. #spec) historical)
+    assertEqual [True, True, False] discovered
+    assertEqual False (oldSpec ^. #allowUnknownFields)
+    assertEqual [] =<< firstShow malformed
+    assertEqual [] =<< firstShow malformedType
+    case malformedFile of
+      Left _ -> Right ()
+      Right _ -> Left "malformed descriptor loaded through a frozen decoder"
+    for_ [compiledProfileBaseRules compiled, compiledProfileRulesForType compiled "Note"] $ \rules -> do
+      rows <- lookupCompiledRule "rows" rules
+      assertEqual (Just False) (fieldRuleElementAllowsUnknownFields rows)
+    rendered <- firstShow (renderProfileDocumentation defaultDocumentationOptions compiled)
+    let documentation = Text.concat (map serializeConcept rendered)
+    for_ ["- Element field names: closed", "- Object field names: closed", "- Element field names: none", "note"] $ \expected ->
+      assertBool ("missing compiled documentation: " <> expected) (expected `Text.isInfixOf` documentation)
+    assertEqual rendered =<< firstShow (renderProfileDocumentation defaultDocumentationOptions compiled)
+    for_ [compiledProfileBaseRules oldCompiled, compiledProfileRulesForType oldCompiled "Note"] $ \rules -> do
+      rows <- lookupCompiledRule "rows" rules
+      settings <- lookupCompiledRule "settings" rules
+      assertEqual (Just True) (fieldRuleElementAllowsUnknownFields rows)
+      assertEqual (Just True) (fieldRuleObjectAllowsUnknownFields settings)
+      for_ [fieldRuleElementConstraints rows, fieldRuleObjectConstraints settings] $ \constraints -> do
+        assertEqual 1 (length (conceptPresenceConstraints constraints))
+        assertEqual [TimestampOrderConstraint "start" "end"] (conceptTimestampOrderConstraints constraints)
+      score <- maybe (Left "frozen nested members missing") (lookupCompiledRule "score") (fieldRuleElementFields rows)
+      assertEqual (Just FiniteDecimal) (fieldRuleFormat score)
+    for_ [compiledProfileBaseConstraints oldCompiled, compiledProfileConstraintsForType oldCompiled "Note"] $ \constraints -> do
+      assertEqual 1 (length (conceptPresenceConstraints constraints))
+      assertEqual 1 (length (conceptTimestampOrderConstraints constraints))
+      assertEqual 1 (length (conceptMembershipConstraints constraints))
+      assertEqual 1 (length (conceptUniqueValuesConstraints constraints))
+
+-- A public diagnostic slice: one supplied unknown key, independent of values.
+testNestedClosureValidation :: Either Text ()
+testNestedClosureValidation = do
+  let members = NestedRules False [nestedFieldRule "name" Nothing [] Scalar Nothing Nothing Nothing] [] [] [] []
+      spec = nestedProfileWithRules Any members Nothing
+      validate rawSpec fields = do
+        compiled <- firstShow (compileProfile rawSpec)
+        concept <- profileConcept "one" (("type", String "Reviewed Concept") : fields) ""
+        pure (validateProfile PermissiveConformance compiled [concept])
+      row values = ("reviews", toJSON [object values])
+  cid <- firstShow (parseConceptId "one")
+  violations <- validate spec [row ["name" .= ("a" :: Text), "stray" .= ("x" :: Text)]]
+  assertEqual [NestedFieldNotInProfile cid (FieldPath (FieldName "reviews" :| [ArrayIndex 0, FieldName "stray"]))] violations
+  assertEqual [] =<< validate spec [row ["name" .= ("a" :: Text)]]
+  let open = members & #allowUnknownFields .~ True
+      declared = members & #optional .~ [nestedFieldRule "stray" Nothing [] Scalar Nothing Nothing Nothing]
+  for_ [open, declared] $ \rules ->
+    assertEqual [] =<< validate (nestedProfileWithRules Any rules Nothing) [row ["name" .= ("a" :: Text), "stray" .= ("x" :: Text)]]
+
+-- The matrix isolates scope merging, record shape, and presence from closure.
+testNestedClosureMatrix :: Either Text ()
+testNestedClosureMatrix = do
+  cid <- firstShow (parseConceptId "one")
+  let scalar key = nestedFieldRule key Nothing [] Scalar Nothing Nothing Nothing
+      rules policy names = NestedRules policy [] [] (map scalar names) [] []
+      parent elements objects = (requiredField "value") & #elementFields .~ elements & #objectFields .~ objects
+      front field = emptyTestFrontmatterRules & #optional .~ [field]
+      specFor elements objects = objectProfileWithRules "value" Any objects elements & #okfVersion .~ "0.2"
+      typed base field = base & #types .~ [TypeRule "Note" Nothing Nothing (front field) Nothing Nothing False [] Nothing]
+      record = object . map (\key -> (key, String "present"))
+      array :: [Value] -> Value
+      array values = toJSON values
+      validate mode spec values = do
+        compiled <- firstShow (compileProfile spec)
+        concept <- profileConcept "one" values ""
+        pure (validateProfile mode compiled [concept])
+      check spec value = validate PermissiveConformance spec [("type", String "Note"), ("value", value)]
+      unknowns = mapMaybe (\case NestedFieldNotInProfile _ path -> Just path; _ -> Nothing)
+      path segments = FieldPath (FieldName "value" :| segments)
+      violationsFor shape key = [path (if shape then [ArrayIndex 0, FieldName key] else [FieldName key])]
+      shapeValue shape value = if shape then array [value] else value
+      inspect shape = if shape then fieldRuleElementAllowsUnknownFields else fieldRuleObjectAllowsUnknownFields
+      shapeRules shape = if shape then fieldRuleElementFields else fieldRuleObjectFields
+      mkParent shape r = if shape then parent (Just r) Nothing else parent Nothing (Just r)
+      mkSpec shape r = if shape then specFor (Just r) Nothing else specFor Nothing (Just r)
+  noShapeCompiled <- firstShow (compileProfile (specFor Nothing Nothing))
+  noShapeRule <- lookupCompiledRule "value" (compiledProfileBaseRules noShapeCompiled)
+  assertEqual Nothing (fieldRuleElementAllowsUnknownFields noShapeRule)
+  assertEqual Nothing (fieldRuleObjectAllowsUnknownFields noShapeRule)
+  for_ [True, False] $ \shape -> do
+    -- All boolean pairs, union of names, absence as identity, and unknown types.
+    for_ [(a, b) | a <- [True, False], b <- [True, False]] $ \(a, b) -> do
+      let base = mkSpec shape (rules a ["base"])
+          spec = typed base (mkParent shape (rules b ["typed"]))
+      compiled <- firstShow (compileProfile spec)
+      effective <- lookupCompiledRule "value" (compiledProfileRulesForType compiled "Note")
+      assertEqual (Just (a && b)) (inspect shape effective)
+      members <- maybe (Left "expected nested map") Right (shapeRules shape effective)
+      assertEqual ["base", "typed"] (Map.keys members)
+      assertEqual [] =<< check spec (shapeValue shape (record ["base", "typed"]))
+      rejected <- check spec (shapeValue shape (record ["base", "typed", "stray"]))
+      assertEqual (if a && b then [] else violationsFor shape "stray") (unknowns rejected)
+      for_ [typed base (requiredField "value"), typed (specFor Nothing Nothing) (mkParent shape (rules a ["base"]))] $ \identitySpec -> do
+        identityCompiled <- firstShow (compileProfile identitySpec)
+        identityRule <- lookupCompiledRule "value" (compiledProfileRulesForType identityCompiled "Note")
+        assertEqual (Just a) (inspect shape identityRule)
+      unknownType <- validate PermissiveConformance spec [("type", String "Unknown"), ("value", shapeValue shape (record ["base", "typed"]))]
+      assertEqual (if a then [] else violationsFor shape "typed") (unknowns unknownType)
+    for_ [True, False] $ \open -> do
+      emptyCompiled <- firstShow (compileProfile (mkSpec shape (rules open [])))
+      emptyRule <- lookupCompiledRule "value" (compiledProfileBaseRules emptyCompiled)
+      assertEqual (Just open) (inspect shape emptyRule)
+      emptyDocumentation <- firstShow (renderProfileDocumentation defaultDocumentationOptions emptyCompiled)
+      let expected = (if shape then "- Element field names: " else "- Object field names: ") <> if open then "open" else "closed"
+      assertBool "empty map lost closure in documentation" (expected `Text.isInfixOf` Text.concat (map serializeConcept emptyDocumentation))
+    -- An empty closed declaration forbids every member, including core/ID names.
+    let closedEmpty = mkSpec shape (rules False []) & #idField .~ Just "docId"
+    rejected <- check closedEmpty (shapeValue shape (record ["title", "docId"]))
+    assertEqual (map (\key -> head (violationsFor shape key)) ["docId", "title"]) (unknowns rejected)
+    for_ [[], [("value", shapeValue shape (object []))], [("value", if shape then array [] else object [])]] $ \values -> do
+      absent <- validate StrictAuthoring closedEmpty (("type", String "Note") : values)
+      assertEqual [] (unknowns absent)
+      -- Required parent remains missing; a list containing an empty record is present.
+      assertEqual (if shape && values == [("value", array [object []])] then [] else [MissingProfileField cid "value" Nothing]) absent
+    -- The same declared rules work for either shape and retain ordinary checks.
+    let kind = (scalar "kind") & #allowedValues .~ ["human", "model"]
+        conditional = FieldCondition "kind" ["model"]
+        provider = (scalar "provider") & #when .~ Just conditional & #allowedValues .~ ["openai"]
+        recommended = (scalar "audit") & #when .~ Just conditional
+        conditionalRules = NestedRules False [kind, provider] [recommended] [scalar "note"] [] []
+        conditionalSpec = mkSpec shape conditionalRules
+        human = object ["kind" .= ("human" :: Text), "provider" .= ("openai" :: Text), "audit" .= True, "note" .= ("ok" :: Text)]
+    assertEqual [] =<< check conditionalSpec (shapeValue shape human)
+    invalidKnown <- check conditionalSpec (shapeValue shape (object ["kind" .= ("human" :: Text), "provider" .= ("bad" :: Text)]))
+    assertEqual [] (unknowns invalidKnown)
+    assertEqual 1 (length invalidKnown)
+    for_ [PermissiveConformance, StrictAuthoring] $ \mode -> do
+      active <- validate mode conditionalSpec [("type", String "Note"), ("value", shapeValue shape (record ["note"]))]
+      -- Unknown checking does not manufacture keys or replace missing presence.
+      assertEqual [] (unknowns active)
+      model <- validate mode conditionalSpec [("type", String "Note"), ("value", shapeValue shape (object ["kind" .= ("model" :: Text), "provider" .= ("openai" :: Text), "stray" .= Null]))]
+      assertEqual (violationsFor shape "stray") (unknowns model)
+      assertEqual (if mode == StrictAuthoring then 2 else 1) (length model)
+    let invalidOptional = conditionalRules & #optional .~ [(scalar "note") & #when .~ Just conditional]
+    case compileProfile (mkSpec shape invalidOptional) of
+      Right _ -> Left "closure allowed an optional condition"
+      Left errs -> assertBool "expected OptionalFieldWithCondition" (any (\case OptionalFieldWithCondition {} -> True; _ -> False) errs)
+    -- A false parent condition changes only presence; supplied children stay closed.
+    let gate = (requiredField "mode") & #cardinality .~ Scalar & #allowedValues .~ ["on", "off"]
+        falseParent = (mkParent shape (rules False [])) & #when .~ Just (FieldCondition "mode" ["on"])
+        gated = (specFor Nothing Nothing) & #frontmatter .~ (emptyTestFrontmatterRules & #required .~ [falseParent] & #optional .~ [gate])
+    gatedViolations <- validate PermissiveConformance gated [("mode", String "off"), ("value", shapeValue shape (record ["stray"]))]
+    assertEqual (violationsFor shape "stray") (unknowns gatedViolations)
+  -- Separate policies for two fields and both accepted shapes of one field.
+  for_ [(a, b) | a <- [False, True], b <- [False, True]] $ \(elementOpen, objectOpen) -> do
+    let elementRules = rules elementOpen ["name"]
+        objects = rules objectOpen ["name"]
+        dual = specFor (Just elementRules) (Just objects)
+        separate = dual & #frontmatter .~ (emptyTestFrontmatterRules & #optional .~ [parent (Just elementRules) Nothing, (parent Nothing (Just objects)) & #field .~ "settings"])
+    compiled <- firstShow (compileProfile dual)
+    effective <- lookupCompiledRule "value" (compiledProfileBaseRules compiled)
+    assertEqual (Just elementOpen) (fieldRuleElementAllowsUnknownFields effective)
+    assertEqual (Just objectOpen) (fieldRuleObjectAllowsUnknownFields effective)
+    for_ [(True, elementOpen), (False, objectOpen)] $ \(shape, open) -> do
+      actual <- check dual (shapeValue shape (record ["name", "stray"]))
+      assertEqual (if open then [] else violationsFor shape "stray") (unknowns actual)
+    combined <- validate PermissiveConformance separate [("value", array [record ["stray"]]), ("settings", record ["stray"])]
+    assertEqual ((if elementOpen then 0 else 1) + (if objectOpen then 0 else 1)) (length (unknowns combined))
+  -- Sorting is per record, indices are stable, null is still a key, Unicode survives.
+  let closed = specFor (Just (rules False ["name"])) Nothing
+      mixed = array [object ["z" .= Null, "a" .= ("" :: Text), "名前" .= ([] :: [Text])], record ["again"], Number 1]
+  mixedViolations <- check closed mixed
+  assertEqual
+    [NestedFieldNotInProfile cid (path [ArrayIndex 0, FieldName key]) | key <- ["a", "z", "名前"]]
+    (take 3 mixedViolations)
+  assertEqual [NestedFieldNotInProfile cid (path [ArrayIndex 1, FieldName "again"]), NestedElementNotRecord cid (path [ArrayIndex 2]) (Number 1)] (drop 3 mixedViolations)
+  -- Closure and predecessor constraints coexist after scope merging.
+  let constrained =
+        (rules False ["trigger", "required", "start", "end"])
+          & #optional
+          .~ [scalar "trigger", scalar "required", (scalar "start") & #format .~ Just Rfc3339Utc, (scalar "end") & #format .~ Just Rfc3339Utc]
+          & #presenceConstraints
+          .~ [PresenceConstraint Nothing [ValueSelector "trigger" Nothing] [ValueSelector "required" Nothing] []]
+          & #timestampOrderConstraints
+          .~ [TimestampOrderConstraint "start" "end"]
+      spec = typed (specFor (Just constrained) Nothing) (parent (Just (rules True ["typed"])) Nothing)
+  coexist <- check spec (array [object ["trigger" .= True, "start" .= ("2026-10-02T00:00:00Z" :: Text), "end" .= ("2026-10-01T00:00:00Z" :: Text), "stray" .= Null]])
+  assertEqual (violationsFor True "stray") (unknowns coexist)
+  assertEqual 1 (length [() | ConstraintPresenceMissing {} <- coexist])
+  assertEqual 1 (length [() | TimestampOrderViolation {} <- coexist])

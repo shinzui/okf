@@ -1,6 +1,8 @@
 # Bundle Update Log
 
 ## 2026-10-28
+* **Update**: FRIC-4 accepted: Accept the existing shell workflow after verifying core and CLI suites with its compiler.
+* **Addition**: FRIC-4 records detour environment friction with mori://shinzui/okf: Ambient Cabal selects a compiler below the project bound
 * **Update**: FRIC-3 resolved: Resolve the metadata defect exposed by Plan 70 final validation.
 * **Addition**: FRIC-3 records detour process friction with mori://shinzui/okf: Improvement-request validation is blocked by missing IR-10 timestamp
 * **Update**: FRIC-2 accepted: Preserve shared build normalization when selecting an application-specific release.

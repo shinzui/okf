@@ -2,13 +2,17 @@
 type: Architecture Decision Record
 title: Generated profile documentation
 description: Generate a profile's own documentation as an ordinary cross-linked OKF bundle, one concept per profile and per declared type rule.
-timestamp: "2026-10-28T04:45:00Z"
+timestamp: "2026-10-28T11:50:08Z"
 generated:
   by: claude/sonnet-5
   at: "2026-09-13T14:43:18Z"
 docId: ADR-6
 status: Accepted
 date: 2026-07-31
+amended:
+  - by: codex-cli/gpt-6.1-sol
+    at: "2026-10-28T11:50:08Z"
+    change: Document opt-in nested closure, effective inspection, and compatibility safeguards.
 ---
 
 # ADR 6: Generated profile documentation
@@ -168,6 +172,19 @@ Nested record prose includes presence and timestamp-order categories. Rendering
 uses compiled effective constraints, with selectors, gates and text-operand
 requirements, rather than recombining raw declarations. These additions affect
 body prose only; the documentation meta-profile's frontmatter contract is unchanged.
+
+
+### Nested closure inspection (2026-10-28)
+
+The fixed field-constraint list includes object and element field-name policies,
+each rendered as `open`, `closed`, or `none` through compiled accessors. Empty
+member maps retain their policy: a closed empty map permits no names. The member
+lists show the effective merged declared names; profile/type policies combine
+with AND. A field accepting both spellings keeps separate closure policies and
+the established shared member/relation contract. Raw `profile show` and JSON
+retain the booleans as declared at each scope. This is a body-only addition:
+the documentation meta-profile's frontmatter contract does not change, and
+regeneration must still be deterministic and match the committed example.
 
 
 ## Consequences
