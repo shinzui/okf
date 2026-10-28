@@ -7,6 +7,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.11.0.0] - 2026-10-28
+
 ### Added
 
 - Profiles can check relationships within one concept: grouped presence,
@@ -50,6 +52,10 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   `mori://shinzui/baikai/packages/baikai-kit` to 0.4.0.3, and
   `mori://shinzui/baikai/packages/baikai-claude` and
   `mori://shinzui/baikai/packages/baikai-openai` to 0.7.3.0.
+- `defaultRegistryReference` now pins `mori://shinzui/okf-profiles` v0.25.0
+  (from v0.19.0), with thirty profiles verified by the offline catalogue fixture.
+  New exports cover transitions, runbooks, product discovery, designs, friction
+  logs, campaigns, audiences, claim checks, strategy, launches, and messaging.
 
 ## [0.10.0.0] - 2026-10-06
 

@@ -251,8 +251,8 @@ uses stable error categories. It reports the pinned release without network
 access, and `--check-latest` is the only mode that separately queries upstream
 tags.
 
-The built-in default is pinned to `mori://shinzui/okf-profiles` v0.19.0, which
-publishes seventeen OKF 0.2 profiles with descriptions. Repository maintainers move
+The built-in default is pinned to `mori://shinzui/okf-profiles` v0.25.0, which
+publishes thirty OKF 0.2 profiles with descriptions. Repository maintainers move
 that reviewed pin and its offline conformance fixture together with
 `./scripts/refresh-default-registry.sh TAG`.
 

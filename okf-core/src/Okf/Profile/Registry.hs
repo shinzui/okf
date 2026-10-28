@@ -190,8 +190,8 @@ data SourcedProfile = SourcedProfile
 -- newer tag means changing the URL and the hash together.
 defaultRegistryReference :: Text
 defaultRegistryReference =
-  "https://raw.githubusercontent.com/shinzui/okf-profiles/v0.19.0/package.dhall\
-  \ sha256:85176d78369b6d73c9f13c30277903b629d6bf048a4c7d71fc26e68b99c3eaa6"
+  "https://raw.githubusercontent.com/shinzui/okf-profiles/v0.25.0/package.dhall\
+  \ sha256:ec74cc6f7b8ee1a5af81ee7fc8804f35cf2c9ba4010671d9e881da72eb6719d3"
 
 -- | How an entry with an empty export path is displayed.
 rootExportLabel :: Text

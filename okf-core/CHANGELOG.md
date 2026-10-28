@@ -7,6 +7,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.11.0.0] - 2026-10-28
+
 ### Added
 
 - Bounded `ValueSelector` declarations, grouped presence, timestamp ordering,
@@ -34,6 +36,10 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   `MembershipValueMissing`, `DuplicateSelectedValue`, and
   `NestedFieldNotInProfile ConceptId FieldPath`. Exhaustive consumers must handle
   them, including `mori://shinzui/mori/packages/mori-cli`.
+- `defaultRegistryReference` now pins `mori://shinzui/okf-profiles` v0.25.0
+  (from v0.19.0), with thirty profiles verified by the offline catalogue fixture.
+  New exports cover transitions, runbooks, product discovery, designs, friction
+  logs, campaigns, audiences, claim checks, strategy, launches, and messaging.
 
 ## [0.10.0.0] - 2026-10-06
 

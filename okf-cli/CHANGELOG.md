@@ -7,6 +7,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.11.0.0] - 2026-10-28
+
 ### Added
 
 - `okf agent assist [PROMPT]` launches a contextual Claude Code or Codex session;
@@ -36,6 +38,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   `mori://shinzui/baikai/packages/baikai-openai` 0.7.3.0.
 - **Breaking (library):** `AssistOptions` has an optional prompt and inspection
   mode; `Command` adds `AgentContext`; `HelpCommand` carries a width option.
+- Requires `okf-core ^>=0.11.0.0`, including the expanded v0.25.0 built-in
+  catalogue from `mori://shinzui/okf-profiles`.
 
 ## [0.10.0.0] - 2026-10-06
 
