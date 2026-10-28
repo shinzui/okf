@@ -1201,6 +1201,29 @@ See [profiles.md](./profiles.md) for what a registry is in more detail, and its
 section for what the generated pages contain.
 
 
+### profile sweep
+
+`profile sweep` checks that a profile's test suite tests every rule: it weakens
+each rule one way at a time and reports which rejection case notices, then exits
+non-zero when some relaxation is untested.
+
+```bash
+cabal run okf -- profile sweep okf-core/test/fixtures/sweep/profile.dhall \
+  --accept okf-core/test/fixtures/sweep/accept \
+  --cases okf-core/test/fixtures/sweep/cases
+# [3/8] OK  profile/required/title#delete            witness note-missing-title 0 ms
+# ...
+# sweep: 8 relaxations: 4 protected, 1 inert, ..., 3 unprotected, ...; 0.0 s
+```
+
+`--json` prints NDJSON events, `--kinds legacy|default|all` chooses the
+relaxations, `--only FIELD` narrows the run, and `--exceptions FILE` documents
+results okf cannot decide. Exit codes are 0 (nothing failing), 1 (a failing
+result or stale exception), 2 (unreadable suite or failing baseline) and 3 (an
+okf inertness contradiction). See
+[Sweeping a profile for load-bearing rules](./profiles.md#sweeping-a-profile-for-load-bearing-rules).
+
+
 ### profile init
 
 ```text

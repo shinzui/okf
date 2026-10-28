@@ -10,6 +10,12 @@ provenance:
     model: "claude-fable-5-1"
     harness: "claude-code"
     at: 2026-10-28T14:56:30Z
+  revisions:
+    - model: "claude-opus-5-5"
+      harness: "claude-code"
+      at: 2026-10-28T15:54:24Z
+      mode: "implement"
+      note: "Milestones 1 and 2 implemented; parity checked against local legacy runs"
 ---
 
 # Add okf profile sweep for load-bearing rule checks
@@ -77,11 +83,16 @@ from an okf-profiles checkout and sees:
       `okf profile sweep` with the seven legacy relaxation kinds, streaming text and NDJSON
       output; okf-core and okf-cli tests pass; plan 13's comparison script reports parity on all
       six catalog families against the legacy baselines recorded there.
-- [ ] Milestone 2: classification (`protected`, `subsumed`, `covered`, `inert`, `exception`,
-      `unprotected`, failing acceptance and descriptor results), presence demotion and
-      value-admitting relaxations, exception manifests and exit codes; the default-kind
-      strategy sweep exits 1 with only shared-family members and genuine gaps unprotected and
-      no `allowSelf`/`allowLocal` result unprotected.
+      Handoff (2026-10-28): request IR-12 filed (`8d7750e`); engine and command committed in
+      `e23e9a9`; `cabal test all` passes. Plan 13's baselines and script do not exist yet
+      (FRIC-5), so parity was checked locally against fresh legacy runs; see Outcomes. The
+      formal check with plan 13's script remains open.
+- [x] Milestone 2 (2026-10-28, `e23e9a9`): classification, presence demotion, `admitValue`,
+      composite units, exception manifests and exit codes. The default-kind strategy sweep with
+      no manifest exits 1; its 39 `unprotected` lines are all profile-scope members of the
+      shared V02 family (`generated`, `reviews`, `verified`, `sources`), its 2
+      `descriptor-invalid` lines are the shared-family `reviews.kind` condition source, and every
+      `allowSelf`/`allowLocal` line is protected, inert or covered.
 - [ ] Milestone 3 (conditional): bounded deterministic parallel evaluation, or a recorded
       decision that serial evaluation meets the time budget.
 - [ ] Milestone 4: release prepared (expected 0.11.0.0; the owner tags and pushes), an ADR for
@@ -89,6 +100,41 @@ from an okf-profiles checkout and sees:
 
 
 ## Surprises & Discoveries
+
+- **2026-10-28 (implementation): plan 13's parity prerequisites did not exist yet.** At
+  okf-profiles `1f1f80b` there is no `docs/plans/evidence/13/` and no
+  `scripts/compare-sweep-results.py`. Parity was checked instead by running the existing
+  `scripts/sweep-profile-rules.py` for all six families against this build's `okf` (copied to a
+  scratch `PATH` entry so rendering is identical) and comparing with a scratch multiset
+  comparison keyed on `(field, kind, legacyOutcome)`, the key plan 13's script is specified to
+  use. Friction FRIC-5 records the detour.
+
+- **2026-10-28 (implementation): the Python scanner misses more than `objectFields`.** Its
+  `top_level_attr` looks for `attr = ` with a trailing space, so an attribute whose value starts
+  on the next line in normalized Dhall (`allowedValues =\n  [ … ]`, which `dhall` emits for
+  long lists) is never relaxed. On claim-checks the typed enumeration therefore produces
+  `allowedValues` relaxations for `reviews.scope`, `reviews.effort` and `verdict` that the
+  script never tried, besides the object-nested rules and sole-element deletions the plan
+  already expected. Plan 13's scanner fix should cover this case too.
+
+- **2026-10-28 (implementation): the executable's `-N` doubled the sweep's wall time on a busy
+  machine.** With six legacy sweeps running (load average 14–16), the strategy legacy sweep took
+  18.2 s with the default `-with-rtsopts=-N` and 8.6 s with `+RTS -N1`: every collection was a
+  parallel one across all cores for a serial workload. `runProfileSweep` now calls
+  `setNumCapabilities 1`; the same run then took 10.2 s.
+
+- **2026-10-28 (implementation): a recursive outcome map needs the lazy `Data.Map` API.**
+  Classifying a `delete` reads its siblings' outcomes from the map being built;
+  `Data.Map.Strict.mapWithKey` forces every value while building and the first catalog run
+  died with `<<loop>>`. The group's maps use `Data.Map.Lazy`.
+
+- **2026-10-28 (implementation): two classification rules the plan's order could not reach.**
+  On the default-kind strategy sweep, `profile/optional/reviews/elementFields/required/kind`'s
+  `delete` and `allowedValues` are `descriptor-invalid` (a `when` condition names `kind`) and
+  belong to the shared V02 family, so only a manifest can excuse them, yet rule 7 came after
+  rule 4. And `type:Objective/required/keyResults/elementFields/required/id`'s `delete` and
+  `presence` can never compile alone, because `compileProfile` requires a `uniqueBy` key to be
+  unconditionally required. See the Decision Log entries of the same date.
 
 - **2026-10-28 (planning): where a legacy `okf validate` call spends its time.** Measured in the
   okf-profiles checkout with `hyperfine -N -w 1 -r 5` on Apple Silicon against okf 0.10.0.0,
@@ -227,6 +273,68 @@ from an okf-profiles checkout and sees:
   linked.
   Date: 2026-10-28
 
+
+- Decision: The improvement request is IR-12,
+  `docs/improvement-requests/sweep-profile-rules-for-load-bearingness-natively.md`
+  (`mori://shinzui/okf/okf/improvement-requests/concepts/IR-12`), status `accepted`. Its
+  `origin` is the okf-profiles plan 13 URI and its `targetPlan` this plan; the okf-profiles
+  IR-11 is a soft dependency. `okf id next` needs `--profile`, and that bundle declares none, so
+  the handle was allocated by reading the existing `requestId`s (IR-1 to IR-11).
+  Date: 2026-10-28
+
+- Decision: Read `expected.json`'s order from aeson's token stream
+  (`Data.Aeson.Decoding.ByteString.Lazy.lbsToTokens`), skipping each value, and its values from
+  the decoded object. A repeated key keeps its first position, as a Python `dict` does.
+  Rationale: no new dependency, and `KeyMap` loses order. Tested by
+  `sweep reads expected.json in file order`.
+  Date: 2026-10-28
+
+- Decision: Interface adjustments to the planned exports. `checkBaseline` returns
+  `Either (NonEmpty BaselineFault) PreparedSuite` and reports every fault; the renderer is
+  stored in `PreparedSuite`, so `observeRelaxation :: PreparedSuite -> Relaxation -> Observation`
+  takes the spec from the prepared baseline; `planRelaxations :: KindSet -> PreparedSuite ->
+  [Relaxation]` gives the exact count (including `admitValue`) before any result;
+  `sweepProfile :: [SweepException] -> PreparedSuite -> [Relaxation] -> [SweepResult]` takes the
+  (possibly `--only`-filtered) plan; the inertness contradiction is an `Outcome` constructor
+  (`Contradiction`) rather than an `Either` around the whole list, which would have forced every
+  group before the first line; stale exceptions are a separate pure `staleExceptions`. The CLI
+  lives in `okf-cli/src/Okf/Cli/ProfileSweep.hs` and receives `Okf.Cli`'s renderers as a
+  `SweepRenderers` record, so the two modules do not import each other.
+  Date: 2026-10-28
+
+- Decision: Presence demotion drops the rule's `when` condition.
+  Rationale: `when` gates presence only, and `compileProfile` rejects an `optional` rule that
+  carries one (`OptionalFieldWithCondition`); keeping it would make every conditional demotion
+  `descriptor-invalid`.
+  Date: 2026-10-28
+
+- Decision: Narrow the description erasure in `behaviourKey`: a description is kept when the
+  effective rule has a presence clause.
+  Rationale: `renderProfileViolation` appends a field's description to `Missing*ProfileField`
+  diagnostics, and the legacy predicate searches rendered lines, so a description can change a
+  witness. Only rules with a presence clause produce those violations.
+  Date: 2026-10-28
+
+- Decision: Add a fourth composite unit, the uniqueness key (`DropUniqueKey`: a list rule's
+  `uniqueBy` dropped and its key member demoted together), and let a composite unit also cover a
+  `descriptor-invalid` member, as `admitValue` covers `allowedValues`. Let a manifest exception
+  excuse a `descriptor-invalid` result with no witness (never an acceptance-observable one).
+  Rationale: see Surprises & Discoveries. Without these, the strategy default sweep could never
+  exit 0 whatever manifest plan 13 wrote. A deletion with no siblings is `subsumed` vacuously:
+  there is nothing narrower to relax.
+  Date: 2026-10-28
+
+- Decision: An exception entry whose relaxation was not evaluated is stale only when the run's
+  kind set enumerates its kind (read from the ID's `#` suffix) and the run was not filtered with
+  `--only`.
+  Rationale: one manifest serves `legacy`, `default` and `all` runs.
+  Date: 2026-10-28
+
+- Decision: The release is 0.12.0.0, not 0.11.0.0.
+  Rationale: 0.11.0.0 was released and tagged (`296b618`, `v0.11.0.0`) before implementation
+  began. okf-cli's exported `ProfileCommand` gains `ProfileSweep`, a PVP major change, and the
+  two packages are versioned in lockstep.
+  Date: 2026-10-28
 
 ## Outcomes & Retrospective
 

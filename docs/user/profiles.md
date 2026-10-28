@@ -1580,6 +1580,101 @@ only illustrates that envelope; the type-rule name key in full output is `type`,
 matching the Dhall field.
 
 
+## Sweeping a profile for load-bearing rules
+
+A profile's own test suite is an acceptance bundle that must validate cleanly and
+a directory of rejection cases, each a tiny bundle that breaks one rule. That
+proves the profile accepts good bundles and rejects the broken ones. It does not
+prove the converse: that every rule is tested. `okf profile sweep` weakens each
+rule one way at a time (a *relaxation*) and reports which case notices.
+
+```bash
+okf profile sweep okf-core/test/fixtures/sweep/profile.dhall \
+  --accept okf-core/test/fixtures/sweep/accept \
+  --cases okf-core/test/fixtures/sweep/cases
+```
+
+```text
+sweep: okf 0.12.0.0; profile okf-core/test/fixtures/sweep/profile.dhall; 8 relaxations (default kinds); 2 cases
+baseline: ok (0.0 s)
+[1/8] !!  profile/required/type#delete             unprotected 0 ms
+[2/8] !!  profile/required/type#presence           unprotected 0 ms
+[3/8] OK  profile/required/title#delete            witness note-missing-title 0 ms
+[4/8] OK  profile/required/title#presence          witness note-missing-title 0 ms
+[5/8] OK  type:Note/required/status#delete         witness note-bad-status 0 ms
+[6/8] !!  type:Note/required/status#presence       unprotected 0 ms
+[7/8] OK  type:Note/required/status#allowedValues  witness note-bad-status 0 ms
+[8/8] OK  type:Note/optional/summary#delete        inert: the relaxed profile compiles to the same behaviour key as the baseline 0 ms
+sweep: 8 relaxations: 4 protected, 1 inert, 0 covered, 0 subsumed, 0 exception, 3 unprotected, 0 descriptor-invalid, 0 acceptance-observable; 0.0 s
+```
+
+The command exits 1 here: no case omits `type` or `status`, so nothing notices
+when either requirement is deleted or demoted to optional. Deleting `summary`
+is *inert*: it is an unconstrained optional key in an open profile, so the
+relaxed profile behaves identically, and okf proves that rather than asking for
+a case.
+
+**The suite.** Each `--accept BUNDLE` must pass
+`okf validate BUNDLE --strict --profile PROFILE --profile-enforce --log-enforce`.
+The cases directory holds one bundle per subdirectory and an `expected.json`
+mapping each case name to the field its diagnostic must name, or to
+`{"field": F, "diagnostics": N}` when okf reports one defect as N lines. A case
+meets its expectation when `okf validate CASE --profile PROFILE` prints exactly
+N `profile:` lines and one contains F. A *witness* is a case that stops meeting
+its expectation under a relaxation. If the unrelaxed profile already fails a
+bundle or a case, the sweep exits 2 before trying anything.
+
+**Speed and streaming.** The profile is decoded once and every bundle loaded
+once; each relaxation recompiles the descriptor in memory and re-runs only the
+profile check, so even a profile with nearly two hundred cases sweeps in seconds.
+Lines appear as each rule is decided, also when output is redirected, and
+`--json` prints the same as NDJSON events (`start`, `baseline`, one `relaxation`
+per line, `summary`).
+
+**Kinds.** `--kinds legacy` uses the seven kinds of the okf-profiles catalog's
+original Python sweep (`delete`, `allowedValues`, `format`, `uniqueBy`,
+`allowSelf`, `allowLocal`, `externalUriPattern`). The default adds `presence`
+and, for a vocabulary that a `when` condition needs and so cannot be cleared,
+`admitValue:VALUE` for each value a case reports. `--kinds all` adds
+`cardinality`, `condition`, `path`, `reference`, `elementFields`,
+`objectFields` and type attributes.
+
+**Outcomes.** Each relaxation is `protected` (a case noticed, and the descriptor
+and acceptance bundles are fine), `subsumed` (a deletion the acceptance bundle or
+the descriptor itself catches while every narrower relaxation of the rule
+passes), `covered` (a case notices the admitted value, or the whole policy unit
+the relaxation belongs to: a reference, a list's shape, a type's handle identity,
+or a `uniqueBy` with its key), `inert`, `exception`, or one of the failing
+outcomes `unprotected`, `descriptor-invalid` and `acceptance-observable`. An
+acceptance failure is never counted as protection.
+
+**Exceptions.** Some results okf cannot decide, such as rules spliced from a
+shared field family that its home profile tests. List them in
+`CASES/sweep-exceptions.json` (or pass `--exceptions FILE`):
+
+```json
+{
+  "version": 1,
+  "exceptions": [
+    {
+      "relaxation": "profile/required/type#delete",
+      "class": "shared-family",
+      "home": "okfCore",
+      "rationale": "Every profile requires type; the core suite tests it."
+    }
+  ]
+}
+```
+
+`class` is `shared-family` (with `home`), `overlapping-rule` (with
+`overlapsWith`) or `deferred` (with `request`, a `mori://` URI). An entry that no
+longer matches an untested relaxation is stale and fails the run.
+
+**Exit codes.** 0 when nothing fails; 1 for a failing outcome or stale
+exception; 2 for an unreadable suite or manifest or a failing baseline; 3 when
+okf calls a relaxation inert that some case noticed, which is an okf bug to
+report.
+
 ## Generating profile documentation
 
 A profile tells you what a bundle must look like, but reading it means reading
