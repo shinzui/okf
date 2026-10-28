@@ -1,6 +1,8 @@
 # Bundle Update Log
 
 ## 2026-10-28
+* **Addition**: IR-12: sweep profile rules for load-bearingness natively with
+`okf profile sweep`; accepted for planning and linked to ExecPlan 71.
 * **Update**: Complete IR-11 with nested closure acceptance evidence and consumer migration guidance
 * **Update**: Restore required IR-10 timestamp from its recorded creation and review metadata
 * **Update**: Record descriptor implementation consumer handoff
