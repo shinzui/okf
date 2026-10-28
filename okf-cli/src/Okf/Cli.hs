@@ -174,11 +174,15 @@ import Okf.Profile
     fieldRuleDescription,
     fieldRuleElementFields,
     fieldRuleObjectFields,
+    frontmatterConstraints,
     loadProfileFile,
+    nestedConstraints,
     nextDocumentId,
     parseDocumentId,
     profileFieldDescriptionForType,
+    renderConceptConstraints,
     renderDocumentId,
+    renderValueSelector,
     validateProfileVersion,
     validateProfileWith,
   )
@@ -2066,6 +2070,7 @@ renderProfileDetail
         renderFieldRules indent "frontmatter.required" (rules ^. #required)
           <> renderFieldRules indent "frontmatter.recommended" (rules ^. #recommended)
           <> renderFieldRules indent "frontmatter.optional" (rules ^. #optional)
+          <> map (indent <>) (renderConceptConstraints (frontmatterConstraints rules))
 
       -- A field's prose cannot share a comma-joined line with its neighbours, so
       -- a non-empty list becomes a headed block. An empty list keeps the
@@ -2102,6 +2107,7 @@ renderProfileDetail
             <> renderNestedFieldRules (indent <> "      ") "required" (nestedRules ^. #required)
             <> renderNestedFieldRules (indent <> "      ") "recommended" (nestedRules ^. #recommended)
             <> renderNestedFieldRules (indent <> "      ") "optional" (nestedRules ^. #optional)
+            <> map ((indent <> "      ") <>) (take 2 (renderConceptConstraints (nestedConstraints nestedRules)))
 
       renderNestedFieldRules indent label [] = [indent <> label <> ": " <> renderList []]
       renderNestedFieldRules indent label rules =
@@ -3150,6 +3156,12 @@ renderJsonValue = Text.Encoding.decodeUtf8Lenient . LazyBytes.toStrict . Aeson.e
 -- compiled profile and an empty list.
 renderProfileViolation :: CompiledProfile -> [Concept] -> ProfileViolation -> Text
 renderProfileViolation compiled concepts = \case
+  ConstraintPresenceMissing cid path gate -> renderConceptId cid <> ": constraint requires " <> renderFieldPath path <> renderConditionContext gate
+  ConstraintAlternativeMissing cid paths gate -> renderConceptId cid <> ": constraint requires any of " <> Text.intercalate ", " (map renderFieldPath paths) <> renderConditionContext gate
+  TimestampOrderViolation cid before after -> renderConceptId cid <> ": timestamp " <> renderFieldPath before <> " must precede " <> renderFieldPath after
+  TextOperandMismatch cid path actual -> renderConceptId cid <> ": relation operand at " <> renderFieldPath path <> " must be text, found: " <> renderJsonValue actual
+  MembershipValueMissing cid path value target -> renderConceptId cid <> ": value at " <> renderFieldPath path <> " is not in " <> renderValueSelector target <> ": " <> value
+  DuplicateSelectedValue cid path value original -> renderConceptId cid <> ": duplicate value at " <> renderFieldPath path <> " (first at " <> renderFieldPath original <> "): " <> value
   TypeNotInProfile cid ctype ->
     renderConceptId cid <> ": type not in profile vocabulary: " <> ctype
   MissingProfileField cid key condition ->
@@ -3360,6 +3372,7 @@ renderProfileViolation compiled concepts = \case
 
 renderProfileDefinitionError :: ProfileDefinitionError -> Text
 renderProfileDefinitionError = \case
+  InvalidConceptConstraint scope parent sel reason -> renderScope scope <> ": invalid constraint " <> maybe "" (<> ".") parent <> renderValueSelector sel <> ": " <> reason
   DuplicateTypeRule ctype -> "duplicate type rule: " <> ctype
   DuplicateFieldRule scope listName key ->
     renderScope scope <> ": duplicate " <> listName <> " field: " <> key
@@ -3574,6 +3587,7 @@ renderFieldFormat = \case
   HumanActor -> "human-actor"
   Integer -> "integer"
   NonNegativeInteger -> "non-negative-integer"
+  FiniteDecimal -> "finite-decimal"
   Boolean -> "boolean"
 
 renderHandleReferenceRule :: HandleReferenceRule -> Text

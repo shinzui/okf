@@ -1,3 +1,7 @@
+let NestedDefaults = ../../../dhall/defaults/NestedRules.dhall
+
+let FrontmatterDefaults = ../../../dhall/defaults/FrontmatterRules.dhall
+
 let Profile = ../../../dhall/Profile.dhall
 
 let FieldRule = ../../../dhall/defaults/FieldRule.dhall
@@ -15,7 +19,8 @@ let FieldFormat = ../../../dhall/FieldFormat.dhall
 let field = ../../../dhall/mk/FieldRule.dhall
 
 let dependencyRules =
-      { required =
+      NestedDefaults::{
+      , required =
         [ NestedFieldRule::{
           , field = "ref"
           , cardinality = Cardinality.Scalar
@@ -33,7 +38,8 @@ let dependencyRules =
       }
 
 let acceptanceCriteriaRules =
-      { required =
+      NestedDefaults::{
+      , required =
         [ NestedFieldRule::{
           , field = "id"
           , cardinality = Cardinality.Scalar
@@ -50,8 +56,8 @@ in    { name = "nested-references-and-uniqueness"
           "Exercises external-only nested Mori references and list-local acceptance criterion IDs."
       , guidance = None Text
       , okfVersion = "0.2"
-      , frontmatter =
-        { required =
+      , frontmatter = FrontmatterDefaults::{
+        , required =
           [ field.plain "type"
           , field.documentHandle "requestId" "IR"
           , field.recordList "dependencies" dependencyRules
@@ -65,6 +71,7 @@ in    { name = "nested-references-and-uniqueness"
       , allowUnknownFields = True
       , idField = Some "requestId"
       , requireBundleVersion = None Text
-      , types = [ TypeRule::{ type = "Improvement Request", idPrefix = Some "IR" } ]
+      , types =
+        [ TypeRule::{ type = "Improvement Request", idPrefix = Some "IR" } ]
       }
     : Profile

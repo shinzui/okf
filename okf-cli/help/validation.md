@@ -125,3 +125,10 @@ SEE ALSO
   okf help computations  The attested computation checks, in context.
   okf help log           Log advisories and --log-enforce.
   okf help index         Declaring okf_version with okf index.
+
+PROFILE RELATIONS
+
+  Profile constraints can require grouped presence, order timestamps, check
+  text membership, and reject duplicate text across fields in one concept.
+  They run offline; indexed paths identify invalid occurrences. All profile
+  deviations remain advisory unless --profile-enforce is supplied.

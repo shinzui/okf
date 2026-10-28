@@ -4,6 +4,7 @@ title: Fail --profile-enforce when no profile is applied
 description: Make okf validate reject --profile-enforce without --profile or
   --pick-profile, so a CI command that forgets the profile fails instead of
   passing with no profile checks run.
+timestamp: "2026-10-19T17:23:17Z"
 generated:
   by: claude-code/claude-opus-5-5
   at: "2026-10-19T17:23:17Z"

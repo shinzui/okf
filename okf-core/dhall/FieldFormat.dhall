@@ -15,5 +15,6 @@
 | HumanActor
 | Integer
 | NonNegativeInteger
+| FiniteDecimal
 | Boolean
 >

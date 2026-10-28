@@ -283,6 +283,8 @@ renderRootConcept options compiled rootId typeLayout =
                "type's rules, which is the form that actually applies.",
                ""
              ]
+          <> map ("- " <>) (renderConceptConstraints (compiledProfileBaseConstraints compiled))
+          <> [""]
           <> baseRuleLines
           <> [ "## Concept types",
                ""
@@ -377,6 +379,8 @@ renderTypeConcept options compiled rootId typeName typeConceptId =
                "the profile-wide rule and this type's own rule, already merged.",
                ""
              ]
+          <> map ("- " <>) (renderConceptConstraints (compiledProfileConstraintsForType compiled typeName))
+          <> [""]
           <> group "Required" (Map.toAscList (Map.filter ((== PresenceRequired) . presenceClassOf) rules))
           <> group "Recommended" (Map.toAscList (Map.filter ((== PresenceRecommended) . presenceClassOf) rules))
           <> group "Optional" (Map.toAscList (Map.filter ((== PresenceOptional) . presenceClassOf) rules))
@@ -458,6 +462,7 @@ renderFieldRule level key rule =
         Just members ->
           ["- Object fields:"]
             <> ["    - " <> renderElementField memberKey memberRule | (memberKey, memberRule) <- Map.toAscList members]
+            <> map ("    - " <>) (take 2 (renderConceptConstraints (fieldRuleObjectConstraints rule)))
 
     elementFieldBullets =
       case fieldRuleElementFields rule of
@@ -465,6 +470,7 @@ renderFieldRule level key rule =
         Just nested ->
           ["- Element fields:"]
             <> ["    - " <> renderElementField nestedKey nestedRule | (nestedKey, nestedRule) <- Map.toAscList nested]
+            <> (if isJust (fieldRuleObjectFields rule) then [] else map ("    - " <>) (take 2 (renderConceptConstraints (fieldRuleElementConstraints rule))))
 
     strictNote =
       case presenceClassOf rule of

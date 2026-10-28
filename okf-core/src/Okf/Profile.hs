@@ -12,6 +12,26 @@
 module Okf.Profile
   ( -- * Descriptor
     ProfileSpec (..),
+    ValueSelector (..),
+    PresenceConstraint (..),
+    TimestampOrderConstraint (..),
+    MembershipConstraint (..),
+    UniqueValuesConstraint (..),
+    EffectiveConceptConstraints,
+    conceptPresenceConstraints,
+    conceptResolvedSelectors,
+    conceptTimestampOrderConstraints,
+    conceptMembershipConstraints,
+    conceptUniqueValuesConstraints,
+    compiledProfileBaseConstraints,
+    compiledProfileConstraintsForType,
+    fieldRuleElementConstraints,
+    fieldRuleObjectConstraints,
+    resolveValueSelector,
+    renderConceptConstraints,
+    renderValueSelector,
+    frontmatterConstraints,
+    nestedConstraints,
     FrontmatterRules (..),
     FieldCondition (..),
     HandleReferenceRule (..),
@@ -186,7 +206,11 @@ data ProfileSpec = ProfileSpec
 data FrontmatterRules = FrontmatterRules
   { required :: ![FieldRule],
     recommended :: ![FieldRule],
-    optional :: ![FieldRule]
+    optional :: ![FieldRule],
+    presenceConstraints :: ![PresenceConstraint],
+    timestampOrderConstraints :: ![TimestampOrderConstraint],
+    membershipConstraints :: ![MembershipConstraint],
+    uniqueValuesConstraints :: ![UniqueValuesConstraint]
   }
   deriving stock (Generic, Eq, Show)
   deriving anyclass (FromDhall)
@@ -267,7 +291,9 @@ data FieldRule = FieldRule
 data NestedRules = NestedRules
   { required :: ![NestedFieldRule],
     recommended :: ![NestedFieldRule],
-    optional :: ![NestedFieldRule]
+    optional :: ![NestedFieldRule],
+    presenceConstraints :: ![PresenceConstraint],
+    timestampOrderConstraints :: ![TimestampOrderConstraint]
   }
   deriving stock (Generic, Eq, Show)
   deriving anyclass (FromDhall)
@@ -337,6 +363,7 @@ data FieldFormat
   | Integer
   | NonNegativeInteger
   | Boolean
+  | FiniteDecimal
   deriving stock (Generic, Eq, Ord, Show)
   deriving anyclass (FromDhall)
 
@@ -386,11 +413,15 @@ instance ToJSON ProfileSpec where
       ]
 
 instance ToJSON FrontmatterRules where
-  toJSON FrontmatterRules {required, recommended, optional} =
+  toJSON FrontmatterRules {required, recommended, optional, presenceConstraints, timestampOrderConstraints, membershipConstraints, uniqueValuesConstraints} =
     object
       [ "required" .= required,
         "recommended" .= recommended,
-        "optional" .= optional
+        "optional" .= optional,
+        "presenceConstraints" .= presenceConstraints,
+        "timestampOrderConstraints" .= timestampOrderConstraints,
+        "membershipConstraints" .= membershipConstraints,
+        "uniqueValuesConstraints" .= uniqueValuesConstraints
       ]
 
 instance ToJSON FieldCondition where
@@ -437,11 +468,13 @@ instance ToJSON FieldRule where
       ]
 
 instance ToJSON NestedRules where
-  toJSON NestedRules {required, recommended, optional} =
+  toJSON NestedRules {required, recommended, optional, presenceConstraints, timestampOrderConstraints} =
     object
       [ "required" .= required,
         "recommended" .= recommended,
-        "optional" .= optional
+        "optional" .= optional,
+        "presenceConstraints" .= presenceConstraints,
+        "timestampOrderConstraints" .= timestampOrderConstraints
       ]
 
 instance ToJSON NestedFieldRule where
@@ -479,6 +512,7 @@ instance ToJSON FieldFormat where
     HumanActor -> String "human-actor"
     Integer -> String "integer"
     NonNegativeInteger -> String "non-negative-integer"
+    FiniteDecimal -> String "finite-decimal"
     Boolean -> String "boolean"
 
 instance ToJSON TypeRule where
@@ -575,6 +609,89 @@ data PreGuidancePathReferenceRule = PreGuidancePathReferenceRule
     allowSelf :: !Bool
   }
   deriving stock (Generic, Eq, Ord, Show)
+  deriving anyclass (FromDhall)
+
+-- | FROZEN: complete public 0.10.0.0 generation, before concept constraints
+-- and FiniteDecimal. Only unions and policies already frozen above are shared.
+data PreProductDiscoveryFieldRule = PreProductDiscoveryFieldRule
+  { field :: !Text,
+    description :: !(Maybe Text),
+    allowedValues :: ![Text],
+    cardinality :: !PreGuidanceCardinality,
+    format :: !(Maybe PreGuidanceFieldFormat),
+    elementFields :: !(Maybe PreProductDiscoveryNestedRules),
+    objectFields :: !(Maybe PreProductDiscoveryNestedRules),
+    reference :: !(Maybe PreGuidanceHandleReferenceRule),
+    path :: !(Maybe PreGuidancePathReferenceRule),
+    when :: !(Maybe PreGuidanceFieldCondition),
+    uniqueBy :: !(Maybe Text)
+  }
+  deriving stock (Generic, Eq, Show)
+  deriving anyclass (FromDhall)
+
+data PreProductDiscoveryNestedRules = PreProductDiscoveryNestedRules
+  { required :: ![PreProductDiscoveryNestedFieldRule],
+    recommended :: ![PreProductDiscoveryNestedFieldRule],
+    optional :: ![PreProductDiscoveryNestedFieldRule]
+  }
+  deriving stock (Generic, Eq, Show)
+  deriving anyclass (FromDhall)
+
+data PreProductDiscoveryNestedFieldRule = PreProductDiscoveryNestedFieldRule
+  { field :: !Text,
+    description :: !(Maybe Text),
+    allowedValues :: ![Text],
+    cardinality :: !PreGuidanceCardinality,
+    format :: !(Maybe PreGuidanceFieldFormat),
+    path :: !(Maybe PreGuidancePathReferenceRule),
+    when :: !(Maybe PreGuidanceFieldCondition),
+    reference :: !(Maybe PreGuidanceHandleReferenceRule)
+  }
+  deriving stock (Generic, Eq, Show)
+  deriving anyclass (FromDhall)
+
+data PreProductDiscoveryFrontmatterRules = PreProductDiscoveryFrontmatterRules
+  { required :: ![PreProductDiscoveryFieldRule],
+    recommended :: ![PreProductDiscoveryFieldRule],
+    optional :: ![PreProductDiscoveryFieldRule]
+  }
+  deriving stock (Generic, Eq, Show)
+  deriving anyclass (FromDhall)
+
+data PreProductDiscoveryTypeRule = PreProductDiscoveryTypeRule
+  { type_ :: !Text,
+    description :: !(Maybe Text),
+    guidance :: !(Maybe Text),
+    frontmatter :: !PreProductDiscoveryFrontmatterRules,
+    pathPattern :: !(Maybe Text),
+    resourceScheme :: !(Maybe Text),
+    requireSchemaSection :: !Bool,
+    schemaColumns :: ![Text],
+    idPrefix :: !(Maybe Text)
+  }
+  deriving stock (Generic, Eq, Show)
+
+instance FromDhall PreProductDiscoveryTypeRule where
+  autoWith _normalizer =
+    genericAutoWith
+      (Dhall.defaultInterpretOptions {Dhall.fieldModifier = stripTrailingUnderscore})
+    where
+      stripTrailingUnderscore fieldName =
+        fromMaybe fieldName (Text.stripSuffix "_" fieldName)
+
+data PreProductDiscoveryProfileSpec = PreProductDiscoveryProfileSpec
+  { name :: !Text,
+    description :: !(Maybe Text),
+    guidance :: !(Maybe Text),
+    okfVersion :: !Text,
+    frontmatter :: !PreProductDiscoveryFrontmatterRules,
+    allowUnknownTypes :: !Bool,
+    allowUnknownFields :: !Bool,
+    idField :: !(Maybe Text),
+    requireBundleVersion :: !(Maybe Text),
+    types :: ![PreProductDiscoveryTypeRule]
+  }
+  deriving stock (Generic, Eq, Show)
   deriving anyclass (FromDhall)
 
 data PreGuidanceFieldRule = PreGuidanceFieldRule
@@ -759,7 +876,7 @@ data PreNestedReferenceFieldRule = PreNestedReferenceFieldRule
     description :: !(Maybe Text),
     allowedValues :: ![Text],
     cardinality :: !Cardinality,
-    format :: !(Maybe FieldFormat),
+    format :: !(Maybe PreGuidanceFieldFormat),
     elementFields :: !(Maybe PreNestedReferenceNestedRules),
     objectFields :: !(Maybe PreNestedReferenceNestedRules),
     reference :: !(Maybe PreNestedReferenceHandleReferenceRule),
@@ -782,7 +899,7 @@ data PreNestedReferenceNestedFieldRule = PreNestedReferenceNestedFieldRule
     description :: !(Maybe Text),
     allowedValues :: ![Text],
     cardinality :: !Cardinality,
-    format :: !(Maybe FieldFormat),
+    format :: !(Maybe PreGuidanceFieldFormat),
     path :: !(Maybe PathReferenceRule),
     when :: !(Maybe FieldCondition)
   }
@@ -866,7 +983,7 @@ data PrePathProfileFieldRule = PrePathProfileFieldRule
     description :: !(Maybe Text),
     allowedValues :: ![Text],
     cardinality :: !Cardinality,
-    format :: !(Maybe FieldFormat),
+    format :: !(Maybe PreGuidanceFieldFormat),
     elementFields :: !(Maybe PrePathProfileNestedRules),
     objectFields :: !(Maybe PrePathProfileNestedRules),
     reference :: !(Maybe PreNestedReferenceHandleReferenceRule),
@@ -888,7 +1005,7 @@ data PrePathProfileNestedFieldRule = PrePathProfileNestedFieldRule
     description :: !(Maybe Text),
     allowedValues :: ![Text],
     cardinality :: !Cardinality,
-    format :: !(Maybe FieldFormat),
+    format :: !(Maybe PreGuidanceFieldFormat),
     when :: !(Maybe FieldCondition)
   }
   deriving stock (Generic, Eq, Show)
@@ -1553,7 +1670,7 @@ instance FromDhall DescribedTypeRule where
         fromMaybe fieldName (Text.stripSuffix "_" fieldName)
 
 emptyFrontmatterRules :: FrontmatterRules
-emptyFrontmatterRules = FrontmatterRules {required = [], recommended = [], optional = []}
+emptyFrontmatterRules = FrontmatterRules {membershipConstraints = [], uniqueValuesConstraints = [], presenceConstraints = [], timestampOrderConstraints = [], required = [], recommended = [], optional = []}
 
 upgradePreGuidanceCardinality :: PreGuidanceCardinality -> Cardinality
 upgradePreGuidanceCardinality = \case
@@ -1598,10 +1715,14 @@ upgradePreGuidancePathRule previous =
       allowSelf = previous ^. #allowSelf
     }
 
-upgradePreGuidanceFrontmatter :: PreGuidanceFrontmatterRules -> FrontmatterRules
-upgradePreGuidanceFrontmatter previous =
+upgradePreProductDiscoveryFrontmatter :: PreProductDiscoveryFrontmatterRules -> FrontmatterRules
+upgradePreProductDiscoveryFrontmatter previous =
   FrontmatterRules
-    { required = map upgradeField (previous ^. #required),
+    { membershipConstraints = [],
+      uniqueValuesConstraints = [],
+      presenceConstraints = [],
+      timestampOrderConstraints = [],
+      required = map upgradeField (previous ^. #required),
       recommended = map upgradeField (previous ^. #recommended),
       optional = map upgradeField (previous ^. #optional)
     }
@@ -1622,7 +1743,84 @@ upgradePreGuidanceFrontmatter previous =
         }
     upgradeNestedRules rules =
       NestedRules
-        { required = map upgradeNestedField (rules ^. #required),
+        { presenceConstraints = [],
+          timestampOrderConstraints = [],
+          required = map upgradeNestedField (rules ^. #required),
+          recommended = map upgradeNestedField (rules ^. #recommended),
+          optional = map upgradeNestedField (rules ^. #optional)
+        }
+    upgradeNestedField rule =
+      NestedFieldRule
+        { field = rule ^. #field,
+          description = rule ^. #description,
+          allowedValues = rule ^. #allowedValues,
+          cardinality = upgradePreGuidanceCardinality (rule ^. #cardinality),
+          format = upgradePreGuidanceFieldFormat <$> rule ^. #format,
+          path = upgradePreGuidancePathRule <$> rule ^. #path,
+          when = upgradePreGuidanceCondition <$> rule ^. #when,
+          reference = upgradePreGuidanceHandleRule <$> rule ^. #reference
+        }
+
+upgradePreProductDiscoveryTypeRule :: PreProductDiscoveryTypeRule -> TypeRule
+upgradePreProductDiscoveryTypeRule rule =
+  TypeRule
+    { type_ = rule ^. #type_,
+      description = rule ^. #description,
+      guidance = rule ^. #guidance,
+      frontmatter = upgradePreProductDiscoveryFrontmatter (rule ^. #frontmatter),
+      pathPattern = rule ^. #pathPattern,
+      resourceScheme = rule ^. #resourceScheme,
+      requireSchemaSection = rule ^. #requireSchemaSection,
+      schemaColumns = rule ^. #schemaColumns,
+      idPrefix = rule ^. #idPrefix
+    }
+
+upgradePreProductDiscoveryProfile :: PreProductDiscoveryProfileSpec -> ProfileSpec
+upgradePreProductDiscoveryProfile previous =
+  ProfileSpec
+    { name = previous ^. #name,
+      description = previous ^. #description,
+      guidance = previous ^. #guidance,
+      okfVersion = previous ^. #okfVersion,
+      frontmatter = upgradePreProductDiscoveryFrontmatter (previous ^. #frontmatter),
+      allowUnknownTypes = previous ^. #allowUnknownTypes,
+      allowUnknownFields = previous ^. #allowUnknownFields,
+      idField = previous ^. #idField,
+      requireBundleVersion = previous ^. #requireBundleVersion,
+      types = map upgradePreProductDiscoveryTypeRule (previous ^. #types)
+    }
+
+upgradePreGuidanceFrontmatter :: PreGuidanceFrontmatterRules -> FrontmatterRules
+upgradePreGuidanceFrontmatter previous =
+  FrontmatterRules
+    { membershipConstraints = [],
+      uniqueValuesConstraints = [],
+      presenceConstraints = [],
+      timestampOrderConstraints = [],
+      required = map upgradeField (previous ^. #required),
+      recommended = map upgradeField (previous ^. #recommended),
+      optional = map upgradeField (previous ^. #optional)
+    }
+  where
+    upgradeField rule =
+      FieldRule
+        { field = rule ^. #field,
+          description = rule ^. #description,
+          allowedValues = rule ^. #allowedValues,
+          cardinality = upgradePreGuidanceCardinality (rule ^. #cardinality),
+          format = upgradePreGuidanceFieldFormat <$> rule ^. #format,
+          elementFields = upgradeNestedRules <$> rule ^. #elementFields,
+          objectFields = upgradeNestedRules <$> rule ^. #objectFields,
+          reference = upgradePreGuidanceHandleRule <$> rule ^. #reference,
+          path = upgradePreGuidancePathRule <$> rule ^. #path,
+          when = upgradePreGuidanceCondition <$> rule ^. #when,
+          uniqueBy = rule ^. #uniqueBy
+        }
+    upgradeNestedRules rules =
+      NestedRules
+        { presenceConstraints = [],
+          timestampOrderConstraints = [],
+          required = map upgradeNestedField (rules ^. #required),
           recommended = map upgradeNestedField (rules ^. #recommended),
           optional = map upgradeNestedField (rules ^. #optional)
         }
@@ -1680,7 +1878,11 @@ upgradePreNestedReferenceHandleRule previous =
 upgradePreNestedReferenceFrontmatter :: PreNestedReferenceFrontmatterRules -> FrontmatterRules
 upgradePreNestedReferenceFrontmatter previous =
   FrontmatterRules
-    { required = map upgradeField (previous ^. #required),
+    { membershipConstraints = [],
+      uniqueValuesConstraints = [],
+      presenceConstraints = [],
+      timestampOrderConstraints = [],
+      required = map upgradeField (previous ^. #required),
       recommended = map upgradeField (previous ^. #recommended),
       optional = map upgradeField (previous ^. #optional)
     }
@@ -1691,7 +1893,7 @@ upgradePreNestedReferenceFrontmatter previous =
           description = rule ^. #description,
           allowedValues = rule ^. #allowedValues,
           cardinality = rule ^. #cardinality,
-          format = rule ^. #format,
+          format = upgradePreGuidanceFieldFormat <$> rule ^. #format,
           elementFields = upgradeNestedRules <$> rule ^. #elementFields,
           objectFields = upgradeNestedRules <$> rule ^. #objectFields,
           reference = upgradePreNestedReferenceHandleRule <$> rule ^. #reference,
@@ -1701,7 +1903,9 @@ upgradePreNestedReferenceFrontmatter previous =
         }
     upgradeNestedRules rules =
       NestedRules
-        { required = map upgradeNestedField (rules ^. #required),
+        { presenceConstraints = [],
+          timestampOrderConstraints = [],
+          required = map upgradeNestedField (rules ^. #required),
           recommended = map upgradeNestedField (rules ^. #recommended),
           optional = map upgradeNestedField (rules ^. #optional)
         }
@@ -1711,7 +1915,7 @@ upgradePreNestedReferenceFrontmatter previous =
           description = rule ^. #description,
           allowedValues = rule ^. #allowedValues,
           cardinality = rule ^. #cardinality,
-          format = rule ^. #format,
+          format = upgradePreGuidanceFieldFormat <$> rule ^. #format,
           path = rule ^. #path,
           when = rule ^. #when,
           reference = Nothing
@@ -1749,7 +1953,11 @@ upgradePreNestedReferenceProfile previous =
 upgradePrePathProfileFrontmatter :: PrePathProfileFrontmatterRules -> FrontmatterRules
 upgradePrePathProfileFrontmatter previous =
   FrontmatterRules
-    { required = map upgradeField (previous ^. #required),
+    { membershipConstraints = [],
+      uniqueValuesConstraints = [],
+      presenceConstraints = [],
+      timestampOrderConstraints = [],
+      required = map upgradeField (previous ^. #required),
       recommended = map upgradeField (previous ^. #recommended),
       optional = map upgradeField (previous ^. #optional)
     }
@@ -1760,7 +1968,7 @@ upgradePrePathProfileFrontmatter previous =
           description = rule ^. #description,
           allowedValues = rule ^. #allowedValues,
           cardinality = rule ^. #cardinality,
-          format = rule ^. #format,
+          format = upgradePreGuidanceFieldFormat <$> rule ^. #format,
           elementFields = upgradeNestedRules <$> rule ^. #elementFields,
           objectFields = upgradeNestedRules <$> rule ^. #objectFields,
           reference = upgradePreNestedReferenceHandleRule <$> rule ^. #reference,
@@ -1770,7 +1978,9 @@ upgradePrePathProfileFrontmatter previous =
         }
     upgradeNestedRules rules =
       NestedRules
-        { required = map upgradeNestedField (rules ^. #required),
+        { presenceConstraints = [],
+          timestampOrderConstraints = [],
+          required = map upgradeNestedField (rules ^. #required),
           recommended = map upgradeNestedField (rules ^. #recommended),
           optional = map upgradeNestedField (rules ^. #optional)
         }
@@ -1780,7 +1990,7 @@ upgradePrePathProfileFrontmatter previous =
           description = rule ^. #description,
           allowedValues = rule ^. #allowedValues,
           cardinality = rule ^. #cardinality,
-          format = rule ^. #format,
+          format = upgradePreGuidanceFieldFormat <$> rule ^. #format,
           path = Nothing,
           when = rule ^. #when,
           reference = Nothing
@@ -1789,7 +1999,11 @@ upgradePrePathProfileFrontmatter previous =
 upgradePreActorProfileFrontmatter :: PreActorProfileFrontmatterRules -> FrontmatterRules
 upgradePreActorProfileFrontmatter previous =
   FrontmatterRules
-    { required = map upgradeField (previous ^. #required),
+    { membershipConstraints = [],
+      uniqueValuesConstraints = [],
+      presenceConstraints = [],
+      timestampOrderConstraints = [],
+      required = map upgradeField (previous ^. #required),
       recommended = map upgradeField (previous ^. #recommended),
       optional = map upgradeField (previous ^. #optional)
     }
@@ -1810,7 +2024,9 @@ upgradePreActorProfileFrontmatter previous =
         }
     upgradeNestedRules rules =
       NestedRules
-        { required = map upgradeNestedField (rules ^. #required),
+        { presenceConstraints = [],
+          timestampOrderConstraints = [],
+          required = map upgradeNestedField (rules ^. #required),
           recommended = map upgradeNestedField (rules ^. #recommended),
           optional = map upgradeNestedField (rules ^. #optional)
         }
@@ -1829,7 +2045,11 @@ upgradePreActorProfileFrontmatter previous =
 upgradePreObjectProfileFrontmatter :: PreObjectProfileFrontmatterRules -> FrontmatterRules
 upgradePreObjectProfileFrontmatter previous =
   FrontmatterRules
-    { required = map upgradeField (previous ^. #required),
+    { membershipConstraints = [],
+      uniqueValuesConstraints = [],
+      presenceConstraints = [],
+      timestampOrderConstraints = [],
+      required = map upgradeField (previous ^. #required),
       recommended = map upgradeField (previous ^. #recommended),
       optional = map upgradeField (previous ^. #optional)
     }
@@ -1850,7 +2070,9 @@ upgradePreObjectProfileFrontmatter previous =
         }
     upgradeNestedRules rules =
       NestedRules
-        { required = map upgradeNestedField (rules ^. #required),
+        { presenceConstraints = [],
+          timestampOrderConstraints = [],
+          required = map upgradeNestedField (rules ^. #required),
           recommended = map upgradeNestedField (rules ^. #recommended),
           optional = map upgradeNestedField (rules ^. #optional)
         }
@@ -1869,7 +2091,11 @@ upgradePreObjectProfileFrontmatter previous =
 upgradeReferenceProfileFrontmatter :: ReferenceProfileFrontmatterRules -> FrontmatterRules
 upgradeReferenceProfileFrontmatter previous =
   FrontmatterRules
-    { required = map upgradeField (previous ^. #required),
+    { membershipConstraints = [],
+      uniqueValuesConstraints = [],
+      presenceConstraints = [],
+      timestampOrderConstraints = [],
+      required = map upgradeField (previous ^. #required),
       recommended = map upgradeField (previous ^. #recommended),
       optional = []
     }
@@ -1890,7 +2116,9 @@ upgradeReferenceProfileFrontmatter previous =
         }
     upgradeNestedRules rules =
       NestedRules
-        { required = map upgradeNestedField (rules ^. #required),
+        { presenceConstraints = [],
+          timestampOrderConstraints = [],
+          required = map upgradeNestedField (rules ^. #required),
           recommended = map upgradeNestedField (rules ^. #recommended),
           optional = []
         }
@@ -1909,7 +2137,11 @@ upgradeReferenceProfileFrontmatter previous =
 upgradePreviousFrontmatter :: PreviousFrontmatterRules -> FrontmatterRules
 upgradePreviousFrontmatter previous =
   FrontmatterRules
-    { required = map upgradeField (previous ^. #required),
+    { membershipConstraints = [],
+      uniqueValuesConstraints = [],
+      presenceConstraints = [],
+      timestampOrderConstraints = [],
+      required = map upgradeField (previous ^. #required),
       recommended = map upgradeField (previous ^. #recommended),
       optional = []
     }
@@ -1932,7 +2164,11 @@ upgradePreviousFrontmatter previous =
 upgradeConditionalProfileFrontmatter :: ConditionalProfileFrontmatterRules -> FrontmatterRules
 upgradeConditionalProfileFrontmatter previous =
   FrontmatterRules
-    { required = map upgradeField (previous ^. #required),
+    { membershipConstraints = [],
+      uniqueValuesConstraints = [],
+      presenceConstraints = [],
+      timestampOrderConstraints = [],
+      required = map upgradeField (previous ^. #required),
       recommended = map upgradeField (previous ^. #recommended),
       optional = []
     }
@@ -1953,7 +2189,9 @@ upgradeConditionalProfileFrontmatter previous =
         }
     upgradeNestedRules rules =
       NestedRules
-        { required = map upgradeNestedField (rules ^. #required),
+        { presenceConstraints = [],
+          timestampOrderConstraints = [],
+          required = map upgradeNestedField (rules ^. #required),
           recommended = map upgradeNestedField (rules ^. #recommended),
           optional = []
         }
@@ -1972,7 +2210,11 @@ upgradeConditionalProfileFrontmatter previous =
 upgradeNestedProfileFrontmatter :: NestedProfileFrontmatterRules -> FrontmatterRules
 upgradeNestedProfileFrontmatter previous =
   FrontmatterRules
-    { required = map upgradeField (previous ^. #required),
+    { membershipConstraints = [],
+      uniqueValuesConstraints = [],
+      presenceConstraints = [],
+      timestampOrderConstraints = [],
+      required = map upgradeField (previous ^. #required),
       recommended = map upgradeField (previous ^. #recommended),
       optional = []
     }
@@ -1993,7 +2235,9 @@ upgradeNestedProfileFrontmatter previous =
         }
     upgradeNestedProfileRules rules =
       NestedRules
-        { required = map upgradeNestedField (rules ^. #required),
+        { presenceConstraints = [],
+          timestampOrderConstraints = [],
+          required = map upgradeNestedField (rules ^. #required),
           recommended = map upgradeNestedField (rules ^. #recommended),
           optional = []
         }
@@ -2012,7 +2256,11 @@ upgradeNestedProfileFrontmatter previous =
 upgradeFormatFrontmatter :: FormatFrontmatterRules -> FrontmatterRules
 upgradeFormatFrontmatter previous =
   FrontmatterRules
-    { required = map upgradeField (previous ^. #required),
+    { membershipConstraints = [],
+      uniqueValuesConstraints = [],
+      presenceConstraints = [],
+      timestampOrderConstraints = [],
+      required = map upgradeField (previous ^. #required),
       recommended = map upgradeField (previous ^. #recommended),
       optional = []
     }
@@ -2035,7 +2283,11 @@ upgradeFormatFrontmatter previous =
 upgradeCardinalityFrontmatter :: CardinalityFrontmatterRules -> FrontmatterRules
 upgradeCardinalityFrontmatter previous =
   FrontmatterRules
-    { required = map upgradeField (previous ^. #required),
+    { membershipConstraints = [],
+      uniqueValuesConstraints = [],
+      presenceConstraints = [],
+      timestampOrderConstraints = [],
+      required = map upgradeField (previous ^. #required),
       recommended = map upgradeField (previous ^. #recommended),
       optional = []
     }
@@ -2058,7 +2310,11 @@ upgradeCardinalityFrontmatter previous =
 upgradeVocabularyFrontmatter :: VocabularyFrontmatterRules -> FrontmatterRules
 upgradeVocabularyFrontmatter previous =
   FrontmatterRules
-    { required = map upgradeField (previous ^. #required),
+    { membershipConstraints = [],
+      uniqueValuesConstraints = [],
+      presenceConstraints = [],
+      timestampOrderConstraints = [],
+      required = map upgradeField (previous ^. #required),
       recommended = map upgradeField (previous ^. #recommended),
       optional = []
     }
@@ -2415,7 +2671,11 @@ upgradeLegacyProfile legacy =
       okfVersion = legacy ^. #okfVersion,
       frontmatter =
         FrontmatterRules
-          { required = map undocumented (legacy ^. #frontmatter . #required),
+          { membershipConstraints = [],
+            uniqueValuesConstraints = [],
+            presenceConstraints = [],
+            timestampOrderConstraints = [],
+            required = map undocumented (legacy ^. #frontmatter . #required),
             recommended = map undocumented (legacy ^. #frontmatter . #recommended),
             optional = []
           },
@@ -2466,7 +2726,8 @@ loadProfileFile path = do
     -- picks that generation's decoder. Adding a generation is one line here.
     frozenDecoders :: [IO (Maybe ProfileSpec)]
     frozenDecoders =
-      [ attempt upgradePreGuidanceProfile,
+      [ attempt upgradePreProductDiscoveryProfile,
+        attempt upgradePreGuidanceProfile,
         attempt upgradePreNestedReferenceProfile,
         attempt upgradePreBundleVersionProfile,
         attempt upgradePrePathProfile,
@@ -2511,8 +2772,13 @@ loadProfileFile path = do
 decodeProfileExpr :: Expr Src Void -> Maybe ProfileSpec
 decodeProfileExpr expression =
   Dhall.rawInput Dhall.auto expression
-    <|> fmap upgradePreGuidanceProfile (Dhall.rawInput Dhall.auto expression)
-    <|> decodeProfilesBeforeGuidance expression
+    <|> ( if containsProductDiscoveryField expression
+            then Nothing
+            else
+              fmap upgradePreProductDiscoveryProfile (Dhall.rawInput Dhall.auto expression)
+                <|> fmap upgradePreGuidanceProfile (Dhall.rawInput Dhall.auto expression)
+                <|> decodeProfilesBeforeGuidance expression
+        )
 
 -- | The generic Dhall record extractor deliberately ignores extra record
 -- members. Without this guard, a value from the 0.8.0.0 generation can fall
@@ -2563,7 +2829,8 @@ profileFieldDescription spec key =
 -- scope and present for a type-specific scope. The list name is @required@,
 -- @recommended@, or @optional@.
 data ProfileDefinitionError
-  = DuplicateTypeRule Text
+  = InvalidConceptConstraint (Maybe Text) (Maybe Text) ValueSelector Text
+  | DuplicateTypeRule Text
   | DuplicateFieldRule (Maybe Text) Text Text
   | ConflictingFieldRequirement (Maybe Text) Text
   | UnsatisfiableVocabulary (Maybe Text) Text [Text] [Text]
@@ -2646,13 +2913,17 @@ data EffectiveFieldRule = EffectiveFieldRule
     reference :: !(Maybe HandleReferenceRule),
     path :: !(Maybe PathReferenceRule),
     uniqueBy :: !(Maybe Text),
+    elementConstraints :: !EffectiveConceptConstraints,
+    objectConstraints :: !EffectiveConceptConstraints,
     compiledExternalUriPattern :: !(Maybe Regex)
   }
   deriving stock (Generic)
 
 instance Eq EffectiveFieldRule where
   left == right =
-    left ^. #presenceClauses == right ^. #presenceClauses
+    left ^. #elementConstraints == right ^. #elementConstraints
+      && left ^. #objectConstraints == right ^. #objectConstraints
+      && left ^. #presenceClauses == right ^. #presenceClauses
       && left ^. #description == right ^. #description
       && left ^. #allowedValues == right ^. #allowedValues
       && left ^. #cardinality == right ^. #cardinality
@@ -2707,6 +2978,7 @@ renderFieldFormatName = \case
   HumanActor -> "human-actor"
   Integer -> "integer"
   NonNegativeInteger -> "non-negative-integer"
+  FiniteDecimal -> "finite-decimal"
   Boolean -> "boolean"
 
 -- | The presence clauses that govern whether this key must be present, in the
@@ -2790,6 +3062,8 @@ presenceClauseCondition clause = clause ^. #condition
 data CompiledProfile = CompiledProfile
   { spec :: !ProfileSpec,
     baseRules :: !(Map Text EffectiveFieldRule),
+    baseConstraints :: !EffectiveConceptConstraints,
+    constraintsByType :: !(Map Text EffectiveConceptConstraints),
     rulesByType :: !(Map Text (Map Text EffectiveFieldRule)),
     -- | @requireBundleVersion@ already parsed, so 'validateProfileVersion' never
     -- re-parses and cannot disagree with what compilation accepted.
@@ -2835,6 +3109,8 @@ compileProfile rawSpec =
       Right
         CompiledProfile
           { spec = rawSpec,
+            baseConstraints = resolveConstraints baseRules (frontmatterConstraints (rawSpec ^. #frontmatter)),
+            constraintsByType = Map.fromList [(r ^. #type_, resolveConstraints (mergeRules baseRules (compileRules (r ^. #frontmatter))) (mergeConstraints (frontmatterConstraints (rawSpec ^. #frontmatter)) (frontmatterConstraints (r ^. #frontmatter)))) | r <- rawSpec ^. #types],
             baseRules,
             rulesByType =
               Map.fromList
@@ -2857,6 +3133,8 @@ compileProfile rawSpec =
             [ scopeErrors (Just (rule ^. #type_)) (rule ^. #frontmatter)
             | rule <- rawSpec ^. #types
             ]
+          <> constraintErrors Nothing Nothing baseRules (frontmatterConstraints (rawSpec ^. #frontmatter))
+          <> concat [constraintErrors (Just (r ^. #type_)) Nothing (mergeRules baseRules (compileRules (r ^. #frontmatter))) (mergeConstraints (frontmatterConstraints (rawSpec ^. #frontmatter)) (frontmatterConstraints (r ^. #frontmatter))) | r <- rawSpec ^. #types]
           <> vocabularyErrors
           <> cardinalityErrors
           <> nestedCardinalityErrors
@@ -2870,6 +3148,7 @@ compileProfile rawSpec =
           <> requiredBundleVersionErrors
 
     definitionErrorKey = \case
+      InvalidConceptConstraint scope parent sel reason -> (2, fromMaybe "" scope, 32, fromMaybe "" parent <> Text.pack (show sel), Text.length reason)
       DuplicateTypeRule ctype -> (1 :: Int, ctype, 0 :: Int, "", 0 :: Int)
       DuplicateFieldRule scope listName key ->
         let (scopeRank, typeName) = scopeKey scope
@@ -3446,29 +3725,32 @@ compileRules FrontmatterRules {required, recommended, optional} =
 -- recommended rule is built from.
 compileOptionalFieldRule :: FieldRule -> EffectiveFieldRule
 compileOptionalFieldRule rule =
-  EffectiveFieldRule
-    { presenceClauses = [],
-      description = rule ^. #description,
-      allowedValues = deduplicate (rule ^. #allowedValues),
-      cardinality =
-        -- Declaring a nested shape and no explicit cardinality refines what the
-        -- value may be, because the shape only makes sense against one. A rule
-        -- declaring both shapes stays 'Any', which is what lets either spelling
-        -- of the OKF v0.2 @verified@ key satisfy it.
-        case (rule ^. #objectFields, rule ^. #elementFields, rule ^. #cardinality) of
-          (Just _, Just _, Any) -> Any
-          (Just _, Nothing, Any) -> Object
-          (Nothing, Just _, Any) -> List
-          (_, _, Any) -> refineCardinalityForFormat (rule ^. #format)
-          (_, _, declared) -> declared,
-      format = rule ^. #format,
-      elementFields = compileNestedRules <$> rule ^. #elementFields,
-      objectFields = compileNestedRules <$> rule ^. #objectFields,
-      reference = compiledReference,
-      path = compilePathRule <$> rule ^. #path,
-      uniqueBy = rule ^. #uniqueBy,
-      compiledExternalUriPattern = compileReferenceMatcher compiledReference
-    }
+  normalizeRecordShapes $
+    EffectiveFieldRule
+      { presenceClauses = [],
+        description = rule ^. #description,
+        allowedValues = deduplicate (rule ^. #allowedValues),
+        cardinality =
+          -- Declaring a nested shape and no explicit cardinality refines what the
+          -- value may be, because the shape only makes sense against one. A rule
+          -- declaring both shapes stays 'Any', which is what lets either spelling
+          -- of the OKF v0.2 @verified@ key satisfy it.
+          case (rule ^. #objectFields, rule ^. #elementFields, rule ^. #cardinality) of
+            (Just _, Just _, Any) -> Any
+            (Just _, Nothing, Any) -> Object
+            (Nothing, Just _, Any) -> List
+            (_, _, Any) -> refineCardinalityForFormat (rule ^. #format)
+            (_, _, declared) -> declared,
+        format = rule ^. #format,
+        elementConstraints = maybe emptyConstraints (\n -> resolveConstraints (compileNestedRules n) (nestedConstraints n)) (rule ^. #elementFields),
+        objectConstraints = maybe emptyConstraints (\n -> resolveConstraints (compileNestedRules n) (nestedConstraints n)) (rule ^. #objectFields),
+        elementFields = compileNestedRules <$> rule ^. #elementFields,
+        objectFields = compileNestedRules <$> rule ^. #objectFields,
+        reference = compiledReference,
+        path = compilePathRule <$> rule ^. #path,
+        uniqueBy = rule ^. #uniqueBy,
+        compiledExternalUriPattern = compileReferenceMatcher compiledReference
+      }
   where
     compiledReference = compileReferenceRule <$> rule ^. #reference
 
@@ -3489,6 +3771,7 @@ refineCardinalityForFormat :: Maybe FieldFormat -> Cardinality
 refineCardinalityForFormat = \case
   Just Integer -> Scalar
   Just NonNegativeInteger -> Scalar
+  Just FiniteDecimal -> Scalar
   Just Boolean -> Scalar
   _ -> Any
 
@@ -3524,6 +3807,8 @@ compileOptionalNestedFieldRule rule =
           Any -> refineCardinalityForFormat (rule ^. #format)
           declared -> declared,
       format = rule ^. #format,
+      elementConstraints = emptyConstraints,
+      objectConstraints = emptyConstraints,
       elementFields = Nothing,
       -- Nested rules stay depth-bounded: 'NestedFieldRule' has no object member,
       -- so a profile cannot constrain @sources[0].usage_window.from@.
@@ -3549,19 +3834,22 @@ mergeRules = Map.unionWith mergeEffectiveFieldRule
 
 mergeEffectiveFieldRule :: EffectiveFieldRule -> EffectiveFieldRule -> EffectiveFieldRule
 mergeEffectiveFieldRule profileRule typeRule =
-  EffectiveFieldRule
-    { presenceClauses = profileRule ^. #presenceClauses <> typeRule ^. #presenceClauses,
-      description = typeRule ^. #description <|> profileRule ^. #description,
-      allowedValues = mergeVocabulary (profileRule ^. #allowedValues) (typeRule ^. #allowedValues),
-      cardinality = mergeCardinality (profileRule ^. #cardinality) (typeRule ^. #cardinality),
-      format = fromMaybe (profileRule ^. #format) (mergeFieldFormat (profileRule ^. #format) (typeRule ^. #format)),
-      elementFields = mergeNestedRuleMaps (profileRule ^. #elementFields) (typeRule ^. #elementFields),
-      objectFields = mergeNestedRuleMaps (profileRule ^. #objectFields) (typeRule ^. #objectFields),
-      reference = mergedReference,
-      path = mergePathRule (profileRule ^. #path) (typeRule ^. #path),
-      uniqueBy = fromMaybe (profileRule ^. #uniqueBy) (mergeUniqueBy (profileRule ^. #uniqueBy) (typeRule ^. #uniqueBy)),
-      compiledExternalUriPattern = compileReferenceMatcher mergedReference
-    }
+  normalizeRecordShapes $
+    EffectiveFieldRule
+      { presenceClauses = profileRule ^. #presenceClauses <> typeRule ^. #presenceClauses,
+        description = typeRule ^. #description <|> profileRule ^. #description,
+        allowedValues = mergeVocabulary (profileRule ^. #allowedValues) (typeRule ^. #allowedValues),
+        cardinality = mergeCardinality (profileRule ^. #cardinality) (typeRule ^. #cardinality),
+        format = fromMaybe (profileRule ^. #format) (mergeFieldFormat (profileRule ^. #format) (typeRule ^. #format)),
+        elementConstraints = resolveConstraints (fromMaybe Map.empty (mergeNestedRuleMaps (profileRule ^. #elementFields) (typeRule ^. #elementFields))) (mergeConstraints (profileRule ^. #elementConstraints) (typeRule ^. #elementConstraints)),
+        objectConstraints = resolveConstraints (fromMaybe Map.empty (mergeNestedRuleMaps (profileRule ^. #objectFields) (typeRule ^. #objectFields))) (mergeConstraints (profileRule ^. #objectConstraints) (typeRule ^. #objectConstraints)),
+        elementFields = mergeNestedRuleMaps (profileRule ^. #elementFields) (typeRule ^. #elementFields),
+        objectFields = mergeNestedRuleMaps (profileRule ^. #objectFields) (typeRule ^. #objectFields),
+        reference = mergedReference,
+        path = mergePathRule (profileRule ^. #path) (typeRule ^. #path),
+        uniqueBy = fromMaybe (profileRule ^. #uniqueBy) (mergeUniqueBy (profileRule ^. #uniqueBy) (typeRule ^. #uniqueBy)),
+        compiledExternalUriPattern = compileReferenceMatcher mergedReference
+      }
   where
     mergedReference = fromMaybe (profileRule ^. #reference) (mergeReferenceRule (profileRule ^. #reference) (typeRule ^. #reference))
 
@@ -3862,7 +4150,13 @@ nestedElementPath parent elementIndex =
 -- | A single deviation from a profile. Advisory by default at the CLI layer.
 data ProfileViolation
   = -- | concept's @type@ is not listed in the profile and unknown types are disallowed
-    TypeNotInProfile ConceptId Text
+    ConstraintPresenceMissing ConceptId FieldPath (Maybe FieldCondition)
+  | ConstraintAlternativeMissing ConceptId [FieldPath] (Maybe FieldCondition)
+  | TimestampOrderViolation ConceptId FieldPath FieldPath
+  | TextOperandMismatch ConceptId FieldPath Value
+  | MembershipValueMissing ConceptId FieldPath Text ValueSelector
+  | DuplicateSelectedValue ConceptId FieldPath Text FieldPath
+  | TypeNotInProfile ConceptId Text
   | -- | a required frontmatter key is missing or empty (concept, key, activating condition)
     MissingProfileField ConceptId Text (Maybe FieldCondition)
   | -- | a recommended frontmatter key is missing under strict authoring
@@ -4046,7 +4340,9 @@ validateProfileWithPresence presenceRule inventoryOf validationProfile compiled 
                 <> checkDocumentId spec cid ctype rule concept
 
     checkFields cid ctype concept =
-      concatMap checkField (Map.toAscList (effectiveRulesForType compiled ctype))
+      List.nub $
+        concatMap checkField (Map.toAscList (effectiveRulesForType compiled ctype))
+          <> validateConceptConstraints cid topLevelFieldPath (\k -> frontmatterLookup k (conceptFrontmatter concept)) (effectiveRulesForType compiled ctype) (compiledProfileConstraintsForType compiled ctype)
       where
         checkField (key, rule) =
           case evaluateFieldValue rule (frontmatterLookup key (conceptFrontmatter concept)) of
@@ -4106,6 +4402,7 @@ validateProfileWithPresence presenceRule inventoryOf validationProfile compiled 
                             concatMap
                               (checkRecordMember (nestedValuePath parentKey elementIndex) members)
                               (Map.toAscList nestedRules)
+                              <> validateConceptConstraints cid (nestedValuePath parentKey elementIndex) (\k -> Aeson.KeyMap.lookup (Aeson.Key.fromText k) members) nestedRules (parentRule ^. #elementConstraints)
                           _ -> [NestedElementNotRecord cid (nestedElementPath parentKey elementIndex) elementValue]
                       | (elementIndex, elementValue) <- indexedElements
                       ]
@@ -4121,6 +4418,7 @@ validateProfileWithPresence presenceRule inventoryOf validationProfile compiled 
                 concatMap
                   (checkRecordMember (nestedDefinitionPath parentKey) members)
                   (Map.toAscList objectRules)
+                  <> validateConceptConstraints cid (nestedDefinitionPath parentKey) (\k -> Aeson.KeyMap.lookup (Aeson.Key.fromText k) members) objectRules (parentRule ^. #objectConstraints)
           _ -> []
 
         -- Check one member of one record. Shared by the list-element and
@@ -4385,7 +4683,7 @@ valueMatchesFormat fieldFormat actual =
   case actual of
     String value -> textMatchesFormat fieldFormat value
     Array values -> all (valueMatchesFormat fieldFormat) (Vector.toList values)
-    Number _ -> numberMatchesFormat fieldFormat actual
+    Number _ -> fieldFormat == FiniteDecimal || numberMatchesFormat fieldFormat actual
     Bool _ -> fieldFormat == Boolean
     _ -> False
 
@@ -4424,6 +4722,7 @@ textMatchesFormat fieldFormat value =
     -- the whole point of being able to declare the format.
     Integer -> False
     NonNegativeInteger -> False
+    FiniteDecimal -> False
     Boolean -> False
 
 -- | Whether a YAML number satisfies a numeric format. Uses aeson's own
@@ -4653,3 +4952,279 @@ nodeText = foldMap go
     go (CMarkGFM.Node _ (CMarkGFM.TEXT t) _) = t
     go (CMarkGFM.Node _ (CMarkGFM.CODE t) _) = t
     go (CMarkGFM.Node _ _ inner) = nodeText inner
+
+containsProductDiscoveryField :: Expr Src Void -> Bool
+containsProductDiscoveryField = anyOf (cosmosOf Dhall.Core.subExpressions) $ \case
+  Dhall.Core.RecordLit fields ->
+    any
+      (`Dhall.Map.member` fields)
+      ["presenceConstraints", "timestampOrderConstraints", "membershipConstraints", "uniqueValuesConstraints"]
+  _ -> False
+
+-- | Bounded locations; operators determine whether to observe the whole value
+-- or project textual occurrences from a leaf list.
+data ValueSelector = ValueSelector {field :: !Text, member :: !(Maybe Text)}
+  deriving stock (Generic, Eq, Ord, Show)
+  deriving anyclass (FromDhall, ToJSON)
+
+data PresenceConstraint = PresenceConstraint
+  { when :: !(Maybe FieldCondition),
+    whenAnyPresent :: ![ValueSelector],
+    requireAll :: ![ValueSelector],
+    requireAny :: ![ValueSelector]
+  }
+  deriving stock (Generic, Eq, Ord, Show)
+  deriving anyclass (FromDhall, ToJSON)
+
+data TimestampOrderConstraint = TimestampOrderConstraint {before :: !Text, after :: !Text}
+  deriving stock (Generic, Eq, Ord, Show)
+  deriving anyclass (FromDhall, ToJSON)
+
+data MembershipConstraint = MembershipConstraint {source :: !ValueSelector, target :: !ValueSelector}
+  deriving stock (Generic, Eq, Ord, Show)
+  deriving anyclass (FromDhall, ToJSON)
+
+newtype UniqueValuesConstraint = UniqueValuesConstraint {selectors :: [ValueSelector]}
+  deriving stock (Generic, Eq, Ord, Show)
+  deriving anyclass (FromDhall, ToJSON)
+
+-- | Opaque conjunction of constraints, in declaration order within each kind.
+data EffectiveConceptConstraints = EffectiveConceptConstraints
+  { presenceConstraints :: ![PresenceConstraint],
+    timestampOrderConstraints :: ![TimestampOrderConstraint],
+    membershipConstraints :: ![MembershipConstraint],
+    uniqueValuesConstraints :: ![UniqueValuesConstraint],
+    resolvedSelectors :: !(Map ValueSelector EffectiveFieldRule)
+  }
+  deriving stock (Generic, Eq, Show)
+
+conceptPresenceConstraints :: EffectiveConceptConstraints -> [PresenceConstraint]
+conceptPresenceConstraints c = c ^. #presenceConstraints
+
+conceptTimestampOrderConstraints :: EffectiveConceptConstraints -> [TimestampOrderConstraint]
+conceptTimestampOrderConstraints c = c ^. #timestampOrderConstraints
+
+conceptMembershipConstraints :: EffectiveConceptConstraints -> [MembershipConstraint]
+conceptMembershipConstraints c = c ^. #membershipConstraints
+
+conceptUniqueValuesConstraints :: EffectiveConceptConstraints -> [UniqueValuesConstraint]
+conceptUniqueValuesConstraints c = c ^. #uniqueValuesConstraints
+
+emptyConstraints :: EffectiveConceptConstraints
+emptyConstraints = EffectiveConceptConstraints [] [] [] [] Map.empty
+
+frontmatterConstraints :: FrontmatterRules -> EffectiveConceptConstraints
+frontmatterConstraints r = EffectiveConceptConstraints (List.nub (r ^. #presenceConstraints)) (List.nub (r ^. #timestampOrderConstraints)) (List.nub (r ^. #membershipConstraints)) (List.nub (r ^. #uniqueValuesConstraints)) Map.empty
+
+nestedConstraints :: NestedRules -> EffectiveConceptConstraints
+nestedConstraints r = EffectiveConceptConstraints (List.nub (r ^. #presenceConstraints)) (List.nub (r ^. #timestampOrderConstraints)) [] [] Map.empty
+
+mergeConstraints :: EffectiveConceptConstraints -> EffectiveConceptConstraints -> EffectiveConceptConstraints
+mergeConstraints a b =
+  EffectiveConceptConstraints
+    (List.nub (a ^. #presenceConstraints <> b ^. #presenceConstraints))
+    (List.nub (a ^. #timestampOrderConstraints <> b ^. #timestampOrderConstraints))
+    (List.nub (a ^. #membershipConstraints <> b ^. #membershipConstraints))
+    (List.nub (a ^. #uniqueValuesConstraints <> b ^. #uniqueValuesConstraints))
+    Map.empty
+
+compiledProfileBaseConstraints :: CompiledProfile -> EffectiveConceptConstraints
+compiledProfileBaseConstraints c = c ^. #baseConstraints
+
+compiledProfileConstraintsForType :: CompiledProfile -> Text -> EffectiveConceptConstraints
+compiledProfileConstraintsForType c t = Map.findWithDefault (c ^. #baseConstraints) t (c ^. #constraintsByType)
+
+fieldRuleElementConstraints :: EffectiveFieldRule -> EffectiveConceptConstraints
+fieldRuleElementConstraints r = r ^. #elementConstraints
+
+fieldRuleObjectConstraints :: EffectiveFieldRule -> EffectiveConceptConstraints
+fieldRuleObjectConstraints r = r ^. #objectConstraints
+
+-- | Resolve a selector against the effective map, never against raw declarations.
+resolveValueSelector :: Map Text EffectiveFieldRule -> ValueSelector -> Maybe EffectiveFieldRule
+resolveValueSelector rules ValueSelector {field = key, member} = do
+  parent <- Map.lookup key rules
+  case member of
+    Nothing -> Just parent
+    Just child -> (parent ^. #elementFields <|> parent ^. #objectFields) >>= Map.lookup child
+
+constraintErrors :: Maybe Text -> Maybe Text -> Map Text EffectiveFieldRule -> EffectiveConceptConstraints -> [ProfileDefinitionError]
+constraintErrors scope parent rules c =
+  concatMap checkPresence (c ^. #presenceConstraints)
+    <> concatMap checkTime (c ^. #timestampOrderConstraints)
+    <> concatMap checkMembership (c ^. #membershipConstraints)
+    <> concatMap checkUnique (c ^. #uniqueValuesConstraints)
+    <> concat
+      [ constraintErrors scope (Just key) members constraints
+      | (key, r) <- Map.toList rules,
+        (Just members, constraints) <- [(r ^. #elementFields, r ^. #elementConstraints), (r ^. #objectFields, r ^. #objectConstraints)]
+      ]
+  where
+    err sel reason = [InvalidConceptConstraint scope parent sel reason]
+    nameOK t = not (Text.null (Text.strip t)) && not (Text.any (`elem` (".[]" :: String)) t)
+    checkSelector textOnly target sel =
+      if not (nameOK (sel ^. #field)) || maybe False (not . nameOK) (sel ^. #member)
+        then err sel "selector names must be nonblank field names without traversal"
+        else
+          if (isJust parent || target) && isJust (sel ^. #member)
+            then err sel "this scope requires a sibling selector"
+            else case resolveValueSelector rules sel of
+              Nothing -> err sel "selector is not declared"
+              Just r ->
+                [ InvalidConceptConstraint scope parent sel "relation operand must be a scalar or list text leaf"
+                | textOnly && (r ^. #cardinality `notElem` [Scalar, List] || isJust (r ^. #elementFields) || isJust (r ^. #objectFields) || r ^. #format `elem` map Just [Integer, NonNegativeInteger, FiniteDecimal, Boolean])
+                ]
+    checkPresence p =
+      [InvalidConceptConstraint scope parent (ValueSelector "" Nothing) "presence constraint needs a target" | null (p ^. #requireAll <> p ^. #requireAny)]
+        <> concatMap (checkSelector False False) (p ^. #whenAnyPresent)
+        <> concatMap (checkSelector False True) (p ^. #requireAll <> p ^. #requireAny)
+        <> concat [err s "duplicate presence selector" | xs <- [p ^. #whenAnyPresent, p ^. #requireAll, p ^. #requireAny], s <- List.nub xs, length (filter (== s) xs) > 1]
+        <> case p ^. #when of
+          Nothing -> []
+          Just gate ->
+            let sel = ValueSelector (gate ^. #field) Nothing
+             in case Map.lookup (gate ^. #field) rules of
+                  Just r | r ^. #cardinality == Scalar, not (null (r ^. #allowedValues)), not (null (gate ^. #hasValue)), all (`elem` r ^. #allowedValues) (gate ^. #hasValue) -> []
+                  _ -> err sel "when requires a declared scalar closed vocabulary and reachable nonempty values"
+    checkTime t =
+      let a = ValueSelector (t ^. #before) Nothing; b = ValueSelector (t ^. #after) Nothing
+       in concatMap (checkSelector False True) [a, b]
+            <> [ InvalidConceptConstraint scope parent a "timestamp endpoints must be distinct scalar rfc3339-utc fields"
+               | a == b || any (\sel -> maybe True (\r -> r ^. #cardinality /= Scalar || r ^. #format /= Just Rfc3339Utc) (resolveValueSelector rules sel)) [a, b]
+               ]
+    checkMembership m =
+      concatMap (checkSelector True False) [m ^. #source, m ^. #target]
+        <> [InvalidConceptConstraint scope parent (m ^. #source) "membership operands must differ" | m ^. #source == m ^. #target]
+    checkUnique u =
+      concatMap (checkSelector True False) (u ^. #selectors)
+        <> [InvalidConceptConstraint scope parent (ValueSelector "" Nothing) "uniqueness needs at least two distinct selectors" | length (u ^. #selectors) < 2 || length (List.nub (u ^. #selectors)) /= length (u ^. #selectors)]
+
+-- | Whole located values, preserving both parent-record and leaf-list indices.
+locateSelector :: (Text -> FieldPath) -> (Text -> Maybe Value) -> Map Text EffectiveFieldRule -> ValueSelector -> [(FieldPath, EffectiveFieldRule, Value)]
+locateSelector build lookupValue rules sel =
+  case (Map.lookup key rules, lookupValue key, sel ^. #member) of
+    (Just r, Just value, Nothing) -> [(build key, r, value)]
+    (Just r, Just (Aeson.Object members), Just child) | Just rs <- r ^. #objectFields -> childValue (appendPath (build key) (FieldName child)) rs child members
+    (Just r, Just (Array values), Just child)
+      | Just rs <- r ^. #elementFields ->
+          concat [childValue (appendPath (appendPath (build key) (ArrayIndex i)) (FieldName child)) rs child members | (i, Aeson.Object members) <- zip [0 ..] (Vector.toList values)]
+    _ -> []
+  where
+    key = sel ^. #field
+    childValue path rs child members = [(path, r, v) | Just r <- [Map.lookup child rs], Just v <- [Aeson.KeyMap.lookup (Aeson.Key.fromText child) members]]
+
+appendPath :: FieldPath -> FieldPathSegment -> FieldPath
+appendPath (FieldPath xs) x = FieldPath (xs <> (x :| []))
+
+validateConceptConstraints :: ConceptId -> (Text -> FieldPath) -> (Text -> Maybe Value) -> Map Text EffectiveFieldRule -> EffectiveConceptConstraints -> [ProfileViolation]
+validateConceptConstraints cid build lookupValue rules c =
+  List.nub $
+    concatMap presence (c ^. #presenceConstraints)
+      <> concatMap timeOrder (c ^. #timestampOrderConstraints)
+      <> concatMap membership (c ^. #membershipConstraints)
+      <> concatMap unique (c ^. #uniqueValuesConstraints)
+  where
+    locate sel = [(path, resolved, value) | (path, _, value) <- locateSelector build lookupValue rules sel, Just resolved <- [Map.lookup sel (c ^. #resolvedSelectors)]]
+    present s = any (\(_, r, v) -> case evaluateFieldValue r (Just v) of FieldPresent _ -> True; _ -> False) (locate s)
+    malformed s = any (\(_, r, v) -> case evaluateFieldValue r (Just v) of FieldWrongShape _ -> True; _ -> False) (locate s)
+    presence p =
+      let gated = maybe True (\g -> case lookupValue (g ^. #field) of Just (String v) -> v `elem` g ^. #hasValue; _ -> False) (p ^. #when)
+          triggered = null (p ^. #whenAnyPresent) || any present (p ^. #whenAnyPresent)
+       in if not (gated && triggered)
+            then []
+            else
+              [ConstraintPresenceMissing cid (build (s ^. #field)) (p ^. #when) | s <- p ^. #requireAll, not (present s), not (malformed s)]
+                <> [ConstraintAlternativeMissing cid (map (build . (^. #field)) (p ^. #requireAny)) (p ^. #when) | not (null (p ^. #requireAny)), not (any present (p ^. #requireAny)), not (any malformed (p ^. #requireAny))]
+    timestamp key = do
+      String v <- lookupValue key
+      if valueMatchesFormat Rfc3339Utc (String v) then iso8601ParseM (Text.unpack v) else Nothing
+    timeOrder t = [TimestampOrderViolation cid (build (t ^. #before)) (build (t ^. #after)) | Just a <- [timestamp (t ^. #before) :: Maybe UTCTime], Just b <- [timestamp (t ^. #after)], a >= b]
+    occurrences sel = concatMap project (locate sel)
+    project (path, r, v) = case (r ^. #cardinality, v) of
+      (List, Array vs) -> [(appendPath path (ArrayIndex i), r, x) | (i, x) <- zip [0 ..] (Vector.toList vs)]
+      (Scalar, _) -> [(path, r, v)]
+      _ -> [] -- ordinary cardinality check owns this failure
+    usable sel = [(path, v) | (path, r, String v) <- occurrences sel, not (Text.null (Text.strip v)), null (r ^. #allowedValues) || valueMatchesVocabulary (r ^. #allowedValues) (String v), maybe True (\f -> valueMatchesFormat f (String v)) (r ^. #format)]
+    bad sel =
+      [ TextOperandMismatch cid path value
+      | (path, r, value) <- occurrences sel,
+        case value of String _ -> False; _ -> True,
+        ordinaryAccepts r value
+      ]
+    ordinaryAccepts r v = case evaluateFieldValue (r & #cardinality .~ Scalar) (Just v) of
+      FieldWrongShape _ | r ^. #cardinality /= List -> False
+      _ ->
+        (null (r ^. #allowedValues) || valueMatchesVocabulary (r ^. #allowedValues) v)
+          && maybe True (`valueMatchesFormat` v) (r ^. #format)
+          && not (isJust (r ^. #reference) || isJust (r ^. #path))
+    membership m =
+      bad (m ^. #source)
+        <> bad (m ^. #target)
+        <> [MembershipValueMissing cid path value (m ^. #target) | (path, value) <- usable (m ^. #source), value `notElem` map snd (usable (m ^. #target))]
+    unique u = concatMap bad (u ^. #selectors) <> snd (List.foldl' add (Map.empty, []) (concatMap usable (u ^. #selectors)))
+    add (seen, errors) (path, value) = case Map.lookup value seen of
+      Nothing -> (Map.insert value path seen, errors)
+      Just original -> (seen, errors <> [DuplicateSelectedValue cid path value original])
+
+-- | Shared, deterministic prose for both declared and effective constraints.
+renderConceptConstraints :: EffectiveConceptConstraints -> [Text]
+renderConceptConstraints c =
+  category "Presence constraints" (map presence (c ^. #presenceConstraints))
+    <> category "Timestamp order constraints" [t ^. #before <> " < " <> t ^. #after | t <- c ^. #timestampOrderConstraints]
+    <> category "Membership constraints (text operands)" [selector (m ^. #source) <> " in " <> selector (m ^. #target) | m <- c ^. #membershipConstraints]
+    <> category "Unique values constraints (text operands)" [Text.intercalate ", " (map selector (u ^. #selectors)) | u <- c ^. #uniqueValuesConstraints]
+  where
+    category label [] = [label <> ": none"]
+    category label values = [label <> ": " <> Text.intercalate "; " values]
+    selector = renderValueSelector
+    presence p =
+      "when "
+        <> maybe "always" (\g -> g ^. #field <> " in [" <> Text.intercalate ", " (g ^. #hasValue) <> "]") (p ^. #when)
+        <> "; any present ["
+        <> Text.intercalate ", " (map selector (p ^. #whenAnyPresent))
+        <> "] (empty means no presence trigger)"
+        <> "; require all ["
+        <> Text.intercalate ", " (map selector (p ^. #requireAll))
+        <> "]"
+        <> "; require any ["
+        <> Text.intercalate ", " (map selector (p ^. #requireAny))
+        <> "]"
+
+normalizeRecordShapes :: EffectiveFieldRule -> EffectiveFieldRule
+normalizeRecordShapes r = case (r ^. #elementFields, r ^. #objectFields) of
+  (Just a, Just b) ->
+    let members = mergeRules a b
+        constraints = resolveConstraints members (mergeConstraints (r ^. #elementConstraints) (r ^. #objectConstraints))
+     in r
+          & #elementFields
+          .~ Just members
+          & #objectFields
+          .~ Just members
+          & #elementConstraints
+          .~ constraints
+          & #objectConstraints
+          .~ constraints
+  _ -> r
+
+-- | Resolved leaf rules for every selector and condition gate in this scope.
+-- Keys preserve the public bounded locations; values are read-only effective rules.
+conceptResolvedSelectors :: EffectiveConceptConstraints -> Map ValueSelector EffectiveFieldRule
+conceptResolvedSelectors c = c ^. #resolvedSelectors
+
+resolveConstraints :: Map Text EffectiveFieldRule -> EffectiveConceptConstraints -> EffectiveConceptConstraints
+resolveConstraints rules c =
+  c
+    & #resolvedSelectors
+    .~ Map.fromList
+      [(s, r) | s <- List.nub allSelectors, Just r <- [resolveValueSelector rules s]]
+  where
+    sibling key = ValueSelector key Nothing
+    allSelectors =
+      concat [p ^. #whenAnyPresent <> p ^. #requireAll <> p ^. #requireAny <> maybe [] (\g -> [sibling (g ^. #field)]) (p ^. #when) | p <- c ^. #presenceConstraints]
+        <> concat [[sibling (t ^. #before), sibling (t ^. #after)] | t <- c ^. #timestampOrderConstraints]
+        <> concat [[m ^. #source, m ^. #target] | m <- c ^. #membershipConstraints]
+        <> concatMap (^. #selectors) (c ^. #uniqueValuesConstraints)
+
+-- | Display a bounded declaration location, as distinct from an indexed value path.
+renderValueSelector :: ValueSelector -> Text
+renderValueSelector s = s ^. #field <> maybe "" (\m -> "[]." <> m) (s ^. #member)

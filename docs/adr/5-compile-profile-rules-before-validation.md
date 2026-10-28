@@ -2,6 +2,7 @@
 type: Architecture Decision Record
 title: Compile profile rules before validation
 description: Validate a raw ProfileSpec once into an opaque CompiledProfile, or structured errors, before it can be used for bundle validation.
+timestamp: "2026-10-28T04:45:00Z"
 generated:
   by: claude/sonnet-5
   at: "2026-08-19T20:27:45Z"
@@ -379,6 +380,21 @@ receives concepts and produces per-concept violations, and a bundle-level versio
 mismatch belongs to neither that vocabulary nor that scope. It would also
 duplicate a judgment `Okf.Validation.versionGate` already owns. If a motivating
 case appears, the natural home is `okf validate`'s own reporting.
+
+
+### Same-concept constraints (2026-10-28)
+
+Constraint groups are compiled separately from field presence clauses. Root
+constraints merge profile declarations followed by type declarations, removing
+exact duplicates while preserving order. Nested constraints merge with the parent
+field, and a field accepting both record-list and object spellings has the same
+member contract and record constraints under either spelling. Unknown types retain
+the profile-wide contract. Selectors are bounded to a field and optional flat
+member. Presence evaluates whole values; text relations project scalar/list leaf
+occurrences and independently reject nontext values, preserving indexed paths and
+deduplicating operand type errors. Runtime relation state belongs to one concept.
+Numeric formats never coerce strings; finite decimal validation uses the existing
+arbitrary-precision decimal representation rather than a machine float.
 
 
 ## Consequences

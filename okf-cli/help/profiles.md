@@ -569,3 +569,30 @@ SEE ALSO
   The full descriptor schema, and the upgrade steps above in detail, are
   documented in docs/user/profiles.md, whose "Generating profile
   documentation" section covers `okf profile document` at length.
+
+SAME-CONCEPT CONSTRAINTS
+
+
+Profiles can express constraints confined to one concept's frontmatter. A
+ValueSelector names a field and optionally one flat record member; it supports
+neither recursive paths nor external resolution. presenceConstraints combine
+an optional closed-vocabulary when gate, existential whenAnyPresent triggers,
+and requireAll/requireAny targets. Targets are siblings; root triggers can
+project members across records. Presence observes whole containers using existing
+OKF semantics: blank strings and empty lists do not satisfy a target, while zero
+with scalar cardinality does activate a trigger.
+
+timestampOrderConstraints require scalar Rfc3339Utc endpoints with before
+strictly earlier than after, within the same record. membershipConstraints
+compare source text occurrences with a target in the same concept.
+uniqueValuesConstraints prohibit repeated text across two or more selectors,
+including repeats within a selected list. Relations require explicit scalar/list
+leaves and reject supplied nontext values at their indexed paths. FiniteDecimal
+accepts finite YAML numbers without floating-point conversion or string coercion;
+it refines unspecified cardinality to scalar. Nested rules support presence and
+timestamp constraints; membership and combined uniqueness live at root scope.
+
+Use okf.defaults.FrontmatterRules::{ ... } and
+okf.defaults.NestedRules::{ ... } to inherit empty constraint lists. Existing
+schema pins keep loading through frozen compatibility decoders. See
+okf-core/test/fixtures/profiles/product-discovery.dhall for a complete example.

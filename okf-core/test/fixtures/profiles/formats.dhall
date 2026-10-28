@@ -1,3 +1,5 @@
+let FrontmatterDefaults = ../../../dhall/defaults/FrontmatterRules.dhall
+
 let Profile = ../../../dhall/Profile.dhall
 
 let FieldRule = ../../../dhall/defaults/FieldRule.dhall
@@ -14,8 +16,8 @@ in    { name = "formats"
       , description = Some "Exercises named textual field formats."
       , guidance = None Text
       , okfVersion = "0.1"
-      , frontmatter =
-        { required =
+      , frontmatter = FrontmatterDefaults::{
+        , required =
           [ field.plain "type"
           , field.rfc3339Utc "timestamp"
           , field.date "published"
@@ -37,8 +39,8 @@ in    { name = "formats"
       , types =
         [ TypeRule::{
           , type = "Format Concept"
-          , frontmatter =
-            { required = [ field.uriWithScheme "homepage" "https" ]
+          , frontmatter = FrontmatterDefaults::{
+            , required = [ field.uriWithScheme "homepage" "https" ]
             , recommended = [] : List FieldRule.Type
             , optional = [] : List FieldRule.Type
             }

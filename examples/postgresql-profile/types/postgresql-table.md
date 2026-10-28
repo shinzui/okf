@@ -39,6 +39,11 @@ Explain each column's business meaning and note defaults, generated values, or o
 Every rule below is the effective rule for a concept of type `PostgreSQL Table`:
 the profile-wide rule and this type's own rule, already merged.
 
+- Presence constraints: none
+- Timestamp order constraints: none
+- Membership constraints (text operands): none
+- Unique values constraints (text operands): none
+
 ### Required
 
 #### `title` — required
@@ -100,6 +105,8 @@ Provenance for this description, superseding the v0.1 `timestamp` key (OKF v0.2 
 - Object fields:
     - `at` — recommended; allowed values: any; cardinality: any; format: rfc3339-utc — UTC RFC3339 timestamp when the description was last confirmed accurate.
     - `by` — required; allowed values: any; cardinality: any; format: actor — Who or what produced this description, as an OKF v0.2 actor: `<producer>/<version>`, `human:<id>`, or `process:<id>`.
+    - Presence constraints: none
+    - Timestamp order constraints: none
 - Element fields: none
 - Checked only under `--strict`
 

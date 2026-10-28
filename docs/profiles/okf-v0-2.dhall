@@ -1,26 +1,5 @@
--- A reference profile for the OKF v0.2 frontmatter families, annotated against
--- okf's canonical published schema (okf-core/dhall/Profile.dhall) by relative
--- path.
---
--- Point `--profile` at it to check that a bundle's v0.2 families are well
--- formed, or copy it as the starting point for a house profile:
---
---     okf validate BUNDLE --profile docs/profiles/okf-v0-2.dhall --strict
---
--- This is a *format-level* profile, not a domain profile. It says how the v0.2
--- families must look when they are present and says nothing about which concept
--- types a team has, so `allowUnknownTypes` and `allowUnknownFields` are both
--- True and there are no type rules at all. A house profile adds those; this one
--- would be wrong to.
---
--- Profiles are not part of the Open Knowledge Format. A bundle that deviates
--- from this file is still fully OKF-conformant, and okf reports deviations as
--- advisories unless `--profile-enforce` is passed. What this file encodes is the
--- specification's own shape rules, not an additional layer of conformance.
---
--- Two omissions are deliberate and are explained where they occur: `verified` is
--- optional rather than recommended, and `sources[].resource` carries no path
--- rule.
+let FrontmatterDefaults = ../../okf-core/dhall/defaults/FrontmatterRules.dhall
+
 let Profile = ../../okf-core/dhall/Profile.dhall
 
 let TypeRule = ../../okf-core/dhall/TypeRule.dhall
@@ -37,18 +16,10 @@ let field = ../../okf-core/dhall/mk/FieldRule.dhall
 
 let nested = ../../okf-core/dhall/mk/NestedFieldRule.dhall
 
--- §5.2. `by` is REQUIRED within a trust record; `at` is the timestamp. The same
--- member rules describe `generated` and each `verified` entry, so they are
--- written once.
 let trustMembers =
       NestedRules::{
       , required =
-        [ -- §7 states that producers MUST use the `human:` prefix for
-          -- hand-authored content, because §5.3 makes that prefix the sole
-          -- discriminator between the machine-confirmed and human-reviewed trust
-          -- tiers. The `actor` format checks the shape; a team that wants to
-          -- demand the human tier uses `human-actor` instead.
-              nested.documented
+        [     nested.documented
                 "by"
                 "§7. The actor responsible: `<producer>/<version>`, `human:<id>`, or `process:<id>`."
           //  { format = Some FieldFormat.Actor }
@@ -66,8 +37,8 @@ in    { name = "okf-v0-2"
           "Reference profile for the OKF v0.2 frontmatter families: provenance, trust, lifecycle, and sources."
       , guidance = None Text
       , okfVersion = "0.2"
-      , frontmatter =
-        { required =
+      , frontmatter = FrontmatterDefaults::{
+        , required =
           [ field.documented
               "type"
               "The concept type. This profile constrains no vocabulary, because OKF defines no fixed taxonomy and requires consumers to tolerate unknown types."
@@ -84,18 +55,7 @@ in    { name = "okf-v0-2"
           ]
         , recommended = [] : List FieldRule.Type
         , optional =
-          [ -- §5.2 permits `verified` as a list of mappings or as one bare
-            -- mapping, and requires a consumer to treat the bare mapping as a
-            -- one-element list. `recordOrList` declares both spellings against
-            -- the same member rules, so either is accepted and both are checked.
-            --
-            -- OPTIONAL, deliberately, rather than recommended: §11 forbids
-            -- treating a missing optional family as a deficiency, so a reference
-            -- profile that made `--strict` complain about every unverified
-            -- concept would advise the opposite of the specification. A team that
-            -- wants verification demanded moves this rule to `required` or
-            -- `recommended` in their own profile.
-                field.recordOrList "verified" trustMembers
+          [     field.recordOrList "verified" trustMembers
             //  { description = Some
                     "§5.2. Independent confirmations that the content is accurate. Written as a list of mappings, or as one bare mapping meaning a single entry."
                 }
@@ -117,18 +77,7 @@ in    { name = "okf-v0-2"
                   "sources"
                   NestedRules::{
                   , required =
-                    [ -- Deliberately no path rule. §5.1 says this names "either
-                      -- a concrete artifact a consumer can follow ... or a
-                      -- population or scope descriptor it cannot", and
-                      -- `examples/ddd-ordering` uses the second form, so
-                      -- demanding a followable path is a house convention rather
-                      -- than a v0.2 rule. A team that wants one writes
-                      -- `nested.localOrExternalPath "resource" [ "https" ]`.
-                      --
-                      -- Keep this prose short: a description is echoed back
-                      -- inside the missing-field diagnostic, so an explanation
-                      -- belongs in a comment like this one.
-                      nested.documented
+                    [ nested.documented
                         "resource"
                         "§5.1. What the source is: a followable artifact, or a scope descriptor such as `all queries in BigQuery project X`."
                     ]

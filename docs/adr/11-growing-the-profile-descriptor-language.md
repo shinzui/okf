@@ -2,6 +2,7 @@
 type: Architecture Decision Record
 title: Growing the profile descriptor language
 description: "Ship every additive profile-schema change as one frozen generation: a private prior-shape copy, an `upgrade*` lifter, and a fixture-backed test."
+timestamp: "2026-10-28T04:45:00Z"
 generated:
   by: claude/sonnet-5
   at: "2026-09-13T15:05:43Z"
@@ -274,6 +275,20 @@ guards. Whether the meta-profile `docs/profiles/profile-documentation.dhall` als
 needs extending must be *checked* per change rather than assumed; it constrains
 the frontmatter of generated concepts, so the expected answer for a body-prose
 change is no.
+
+
+### Same-concept constraints (2026-10-28)
+
+The product-discovery generation adds four frontmatter constraint lists, two
+nested constraint lists, and `FiniteDecimal` together. One complete pre-change
+0.10.0.0 generation freezes all affected records and reuses the already frozen
+ten-alternative format union. Older records sharing the formerly live format
+union are rebound to that frozen union. Both decoding paths register the new
+fallback first. Pure record-width decoding refuses all fallbacks if any new
+constraint member is present, preventing malformed current constraints from being
+dropped. Descriptors importing the live schema must use record completion or add
+the new empty lists; descriptors pinned to older schema generations keep their
+original contract.
 
 
 ## Consequences

@@ -2,6 +2,7 @@
 type: Architecture Decision Record
 title: Generated profile documentation
 description: Generate a profile's own documentation as an ordinary cross-linked OKF bundle, one concept per profile and per declared type rule.
+timestamp: "2026-10-28T04:45:00Z"
 generated:
   by: claude/sonnet-5
   at: "2026-09-13T14:43:18Z"
@@ -157,6 +158,16 @@ record it, while this one describes a generator that provably does not know the 
 **`generated` itself is `required` in the meta-profile.** The generator stamps it on every
 page it writes, so a documentation bundle lacking it did not come from okf, and the
 meta-profile should say so.
+
+
+### Same-concept constraints (2026-10-28)
+
+Generated root and type pages include a fixed set of presence, timestamp-order,
+membership, and combined-uniqueness categories, including `none` when empty.
+Nested record prose includes presence and timestamp-order categories. Rendering
+uses compiled effective constraints, with selectors, gates and text-operand
+requirements, rather than recombining raw declarations. These additions affect
+body prose only; the documentation meta-profile's frontmatter contract is unchanged.
 
 
 ## Consequences

@@ -1,5 +1,5 @@
---| Semantically invalid reference policies; Dhall accepts the shape and
--- compileProfile rejects the policy errors before bundle traversal.
+let FrontmatterDefaults = ../../../dhall/defaults/FrontmatterRules.dhall
+
 let Profile = ../../../dhall/Profile.dhall
 
 let TypeRule = ../../../dhall/defaults/TypeRule.dhall
@@ -25,8 +25,8 @@ in    { name = "invalid-document-references"
       , description = None Text
       , guidance = None Text
       , okfVersion = "0.1"
-      , frontmatter =
-        { required =
+      , frontmatter = FrontmatterDefaults::{
+        , required =
           [ rule "badPrefix" "1ADR" ([] : List Text)
           , rule "undeclared" "PAT" ([] : List Text)
           , rule "badScheme" "ADR" [ "mori_" ]
@@ -47,8 +47,8 @@ in    { name = "invalid-document-references"
       , types =
         [ TypeRule::{
           , type = "Decision Record"
-          , frontmatter =
-            { required = [ rule "conflict" "RFC" ([] : List Text) ]
+          , frontmatter = FrontmatterDefaults::{
+            , required = [ rule "conflict" "RFC" ([] : List Text) ]
             , recommended = [] : List FieldRule.Type
             , optional = [] : List FieldRule.Type
             }

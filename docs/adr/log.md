@@ -1,6 +1,9 @@
 # Bundle Update Log
 
 ## 2026-10-28
+* **Update**: Record the product discovery generation compatibility boundary
+* **Update**: Document compiled concept and record constraints
+* **Update**: Record bounded selectors and concept constraint conjunction
 * **Update**: Verify resource ownership and help/Kit integration decisions.
 * **Update**: Record shared release selection, help presentation and cancellation ownership.
 * **Update**: Document optional Kit chooser ownership and cancellation semantics.

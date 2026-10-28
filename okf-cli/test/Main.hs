@@ -43,7 +43,7 @@ import Okf.Cli.ProfileDiscovery (ProfileDiscovery (..), discoverAvailableProfile
 import Okf.ConceptId (ConceptId, parseConceptId, renderConceptId)
 import Okf.Document (Attester (..), Executor (..), Parameter (..), parseDocument)
 import Okf.Index (OkfVersion (..), VersionDeclaration (..), parseOkfVersion, readBundleVersion)
-import Okf.Profile (Cardinality (..), CompiledProfile, FieldCondition (..), FieldFormat (..), FieldPath (..), FieldPathSegment (..), FieldRule (..), FrontmatterRules (..), HandleReferenceRule (..), NestedFieldRule (..), NestedRules (..), PathReferenceRule (..), ProfileSpec (..), ProfileViolation (..), TypeRule (..), compileProfile, loadProfileFile, validateProfile, validateProfileVersion)
+import Okf.Profile (Cardinality (..), CompiledProfile, FieldCondition (..), FieldFormat (..), FieldPath (..), FieldPathSegment (..), FieldRule (..), FrontmatterRules (..), HandleReferenceRule (..), NestedFieldRule (..), NestedRules (..), PathReferenceRule (..), ProfileSpec (..), ProfileViolation (..), TypeRule (..), compileProfile, compiledProfileSpec, loadProfileFile, validateProfile, validateProfileVersion)
 import Okf.Profile.Registry (ProfileSource (..), ProfileSourceLoadError (..), RegistryEntry (..), RegistryLoadError (..), RegistryRef (..), SourcedProfile (..), defaultRegistryReference)
 import Okf.Query (ConceptFilter (..), ConceptPredicate (..), FieldSelector (..), SortDirection (..), SortKey (..), WhereCondition (..), filterConcepts, filterConceptsWhere, parseSortKey, parseWhereCondition, sortConcepts)
 import Okf.Validation (ValidationProfile (..), validateBundle)
@@ -74,6 +74,7 @@ fzfFixture arguments = do
 
 runTests :: IO ()
 runTests = do
+  productDiscoveryCli <- testProductDiscoveryCli
   fzfCancellation <- testFzfCancellation
   bundleDiscoveryListing <- testBundleDiscoveryListing
   profileDiscoveryListing <- testProfileDiscoveryListing
@@ -125,7 +126,8 @@ runTests = do
   conceptMenuOrdering <- testConceptMenuOrdering
   nonAsciiDiagnostics <- testNonAsciiValuesSurviveDiagnostics
   let results =
-        [ fzfCancellation,
+        [ productDiscoveryCli,
+          fzfCancellation,
           testHelpWrapping,
           parseBundlesMatches ["bundles"] (BundlesOptions False),
           parseBundlesMatches ["bundles", "--json"] (BundlesOptions True),
@@ -884,6 +886,7 @@ nonAsciiDiagnosticLines compiled cid =
   [ render (ValueNotInVocabulary cid prefecture ["東京都", "京都府"] japanese),
     render (CardinalityMismatch cid prefecture List japanese),
     render (ValueFormatMismatch cid prefecture Uri japanese),
+    render (TextOperandMismatch cid prefecture japanese),
     render (MalformedDocumentReference cid prefecture japanese),
     render (MalformedPathReference cid prefecture japanese),
     render (NestedElementNotRecord cid nestedElement (toJSON ["東京" :: Text.Text]))
@@ -1247,7 +1250,11 @@ samplePostgresqlProfile =
       okfVersion = "0.1",
       frontmatter =
         FrontmatterRules
-          { required = [undocumentedField "type", undocumentedField "title"],
+          { membershipConstraints = [],
+            uniqueValuesConstraints = [],
+            presenceConstraints = [],
+            timestampOrderConstraints = [],
+            required = [undocumentedField "type", undocumentedField "title"],
             recommended = [],
             optional = []
           },
@@ -1260,7 +1267,7 @@ samplePostgresqlProfile =
             { type_ = "PostgreSQL Table",
               description = Nothing,
               guidance = Nothing,
-              frontmatter = FrontmatterRules {required = [], recommended = [], optional = []},
+              frontmatter = FrontmatterRules {membershipConstraints = [], uniqueValuesConstraints = [], presenceConstraints = [], timestampOrderConstraints = [], required = [], recommended = [], optional = []},
               pathPattern = Just "schemas/*/tables/*",
               resourceScheme = Just "postgresql",
               requireSchemaSection = True,
@@ -1281,7 +1288,11 @@ sampleDecisionsProfile =
       okfVersion = "0.1",
       frontmatter =
         FrontmatterRules
-          { required =
+          { membershipConstraints = [],
+            uniqueValuesConstraints = [],
+            presenceConstraints = [],
+            timestampOrderConstraints = [],
+            required =
               [ FieldRule
                   { field = "type",
                     description = Just "The OKF concept type; must be a type rule below.",
@@ -1325,7 +1336,11 @@ sampleDecisionsProfile =
               guidance = Just "Explain the trade-offs.\n\nRecord follow-up work.",
               frontmatter =
                 FrontmatterRules
-                  { required = [FieldRule "owner" (Just "Person responsible for the decision.") [] Scalar (Just (DocumentHandle "USR")) Nothing Nothing Nothing Nothing Nothing Nothing],
+                  { membershipConstraints = [],
+                    uniqueValuesConstraints = [],
+                    presenceConstraints = [],
+                    timestampOrderConstraints = [],
+                    required = [FieldRule "owner" (Just "Person responsible for the decision.") [] Scalar (Just (DocumentHandle "USR")) Nothing Nothing Nothing Nothing Nothing Nothing],
                     recommended = [FieldRule "reviewer" Nothing ["Ari", "Bo"] List Nothing Nothing Nothing (Just (handleReferenceRule "ADR" ["mori"] False)) Nothing Nothing Nothing],
                     optional = [FieldRule "supersedes" Nothing [] Scalar Nothing Nothing Nothing (Just (handleReferenceRule "ADR" [] False)) Nothing Nothing Nothing]
                   },
@@ -1358,7 +1373,11 @@ sampleNestedProfile =
       okfVersion = "0.1",
       frontmatter =
         FrontmatterRules
-          { required =
+          { membershipConstraints = [],
+            uniqueValuesConstraints = [],
+            presenceConstraints = [],
+            timestampOrderConstraints = [],
+            required =
               [ FieldRule
                   "reviews"
                   Nothing
@@ -1367,7 +1386,9 @@ sampleNestedProfile =
                   Nothing
                   ( Just
                       NestedRules
-                        { required =
+                        { presenceConstraints = [],
+                          timestampOrderConstraints = [],
+                          required =
                             [ (nestedFieldRule "outcome" Nothing ["approved", "rejected"] Any Nothing Nothing (Just (FieldCondition "kind" ["model"])))
                                 { reference =
                                     Just
@@ -1397,7 +1418,9 @@ sampleNestedProfile =
                   Nothing
                   ( Just
                       NestedRules
-                        { required = [nestedFieldRule "resource" (Just "The skill a runner follows.") [] Scalar Nothing (Just (PathReferenceRule [] False)) Nothing],
+                        { presenceConstraints = [],
+                          timestampOrderConstraints = [],
+                          required = [nestedFieldRule "resource" (Just "The skill a runner follows.") [] Scalar Nothing (Just (PathReferenceRule [] False)) Nothing],
                           recommended = [],
                           optional = [nestedFieldRule "receipt" Nothing [] List Nothing Nothing Nothing]
                         }
@@ -1463,6 +1486,8 @@ sampleNestedProfileDetail =
     "          reference: (none)",
     "          path: (none)",
     "          when: (none)",
+    "      Presence constraints: none",
+    "      Timestamp order constraints: none",
     "  - executor: Run instructions and the receipt fields a run must return.",
     "    allowedValues: (any)",
     "    cardinality: any",
@@ -1489,9 +1514,15 @@ sampleNestedProfileDetail =
     "          reference: (none)",
     "          path: (none)",
     "          when: (none)",
+    "      Presence constraints: none",
+    "      Timestamp order constraints: none",
     "    elementFields: (none)",
     "frontmatter.recommended: (none)",
-    "frontmatter.optional: (none)"
+    "frontmatter.optional: (none)",
+    "Presence constraints: none",
+    "Timestamp order constraints: none",
+    "Membership constraints (text operands): none",
+    "Unique values constraints (text operands): none"
   ]
 
 -- | Every optional field prints, as @(none)@ when absent, so the shape does not
@@ -1544,6 +1575,10 @@ sampleProfileDetail =
     "    uniqueBy: (none)",
     "    objectFields: (none)",
     "    elementFields: (none)",
+    "Presence constraints: none",
+    "Timestamp order constraints: none",
+    "Membership constraints (text operands): none",
+    "Unique values constraints (text operands): none",
     "",
     "type: Decision Record",
     "  description: One accepted decision, never edited after acceptance.",
@@ -1584,6 +1619,10 @@ sampleProfileDetail =
     "      uniqueBy: (none)",
     "      objectFields: (none)",
     "      elementFields: (none)",
+    "  Presence constraints: none",
+    "  Timestamp order constraints: none",
+    "  Membership constraints (text operands): none",
+    "  Unique values constraints (text operands): none",
     "  pathPattern: decisions/*",
     "  resourceScheme: (none)",
     "  requireSchemaSection: false",
@@ -1628,6 +1667,10 @@ sampleUndocumentedProfileDetail =
     "    elementFields: (none)",
     "frontmatter.recommended: (none)",
     "frontmatter.optional: (none)",
+    "Presence constraints: none",
+    "Timestamp order constraints: none",
+    "Membership constraints (text operands): none",
+    "Unique values constraints (text operands): none",
     "",
     "type: PostgreSQL Table",
     "  description: (none)",
@@ -1635,6 +1678,10 @@ sampleUndocumentedProfileDetail =
     "  frontmatter.required: (none)",
     "  frontmatter.recommended: (none)",
     "  frontmatter.optional: (none)",
+    "  Presence constraints: none",
+    "  Timestamp order constraints: none",
+    "  Membership constraints (text operands): none",
+    "  Unique values constraints (text operands): none",
     "  pathPattern: schemas/*/tables/*",
     "  resourceScheme: postgresql",
     "  requireSchemaSection: true",
@@ -3797,3 +3844,32 @@ testFzfCancellation = withIsolatedConfigEnv "okf-fzf-cancellation" $ do
     ready && case outcome of
       Just (Left UserInterrupt) -> True
       _ -> False
+
+-- Exercise enforced/advisory exit behavior through the public command runner.
+testProductDiscoveryCli :: IO Bool
+testProductDiscoveryCli = withRepositoryPath2 "product discovery CLI" "okf-core/test/fixtures/profiles/product-discovery.dhall" "okf-core/test/fixtures" $ \descriptor fixtures -> do
+  let run name enforce =
+        try @ExitCode $
+          runCommand $
+            Validate
+              ValidateOptions
+                { bundlePath = Just (fixtures </> name),
+                  strictMode = True,
+                  profilePath = Just descriptor,
+                  pickProfile = False,
+                  profileEnforce = enforce,
+                  logEnforce = True
+                }
+  valid <- run "profile-product-discovery-valid" True
+  invalid <- run "profile-product-discovery-invalid" True
+  advisory <- run "profile-product-discovery-invalid" False
+  loaded <- loadProfileFile descriptor
+  let surfaces = case loaded >>= first (Text.pack . show) . compileProfile of
+        Left _ -> False
+        Right compiled ->
+          let spec = compiledProfileSpec compiled
+              detail = Text.unlines (renderProfileDetail "productDiscovery" spec)
+              encoded = Text.pack (show (Aeson.toJSON spec))
+           in all (`Text.isInfixOf` detail) ["Presence constraints", "Timestamp order", "Membership constraints", "Unique values", "finite-decimal"]
+                && all (`Text.isInfixOf` encoded) ["presenceConstraints", "timestampOrderConstraints", "membershipConstraints", "uniqueValuesConstraints"]
+  pure (valid == Right () && invalid == Left (ExitFailure 1) && advisory == Right () && surfaces)

@@ -1,15 +1,7 @@
---| Exercises the third presence classification end to end.
---
--- `supersedes` and `originatingPlan` are lifecycle and provenance metadata: a
--- decision that replaces nothing has no `supersedes` value to give, and not
--- every decision came from a plan. They are declared, fully constrained, and
--- never reported when absent. `reviewedBy` is a genuine authoring
--- recommendation, so `--strict` must still demand it. `supersededBy` shows the
--- IR-5 coexistence: a conditional *requirement* in the same type as the optional
--- declarations, required only once `status` says the decision was superseded.
---
--- `allowUnknownFields = False` closes the vocabulary, so this fixture also
--- proves an optional key counts as declared.
+let NestedDefaults = ../../../dhall/defaults/NestedRules.dhall
+
+let FrontmatterDefaults = ../../../dhall/defaults/FrontmatterRules.dhall
+
 let okf = ../../../dhall/package.dhall
 
 let Profile = okf.defaults.Profile
@@ -33,8 +25,8 @@ let decision =
       , type = "Decision Record"
       , pathPattern = Some "decisions/*"
       , idPrefix = Some "ADR"
-      , frontmatter =
-        { required =
+      , frontmatter = FrontmatterDefaults::{
+        , required =
           [ FieldRule::{
             , field = "status"
             , description = Some "Where the decision is in its lifecycle."
@@ -65,10 +57,11 @@ let decision =
             }
           , FieldRule::{
             , field = "reviews"
-            , description = Some "Structured review records, when any were made."
+            , description = Some
+                "Structured review records, when any were made."
             , cardinality = Cardinality.List
-            , elementFields = Some
-              { required =
+            , elementFields = Some NestedDefaults::{
+              , required =
                 [ NestedFieldRule::{
                   , field = "kind"
                   , allowedValues = [ "human", "model" ]
@@ -96,8 +89,8 @@ in  Profile::{
     , allowUnknownTypes = False
     , allowUnknownFields = False
     , idField = Some "docId"
-    , frontmatter =
-      { required = [ field.plain "type", field.plain "title" ]
+    , frontmatter = FrontmatterDefaults::{
+      , required = [ field.plain "type", field.plain "title" ]
       , recommended = [] : List FieldRule.Type
       , optional =
         [ field.documented

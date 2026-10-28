@@ -10,4 +10,6 @@ let NestedFieldRule = ./NestedFieldRule.dhall
 in  { required : List NestedFieldRule
     , recommended : List NestedFieldRule
     , optional : List NestedFieldRule
+    , presenceConstraints : List ./PresenceConstraint.dhall
+    , timestampOrderConstraints : List ./TimestampOrderConstraint.dhall
     }

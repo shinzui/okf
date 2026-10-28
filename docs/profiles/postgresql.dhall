@@ -1,16 +1,5 @@
--- Self-contained sample PostgreSQL profile, annotated against okf's canonical
--- published schema (okf-core/dhall/Profile.dhall) by relative path. This file is a
--- worked example shipped with the tool; the authoritative, versioned profiles live
--- in the separate okf-profiles repository, which projects import by pinned URL.
---
--- Every `description` here identifies the profile or type. `guidance` tells an
--- author how to document it. okf renders both, but never treats either prose field
--- as a checked rule or executable instruction.
---
--- Frontmatter keys are built with the `mk/FieldRule.dhall` constructors, which is
--- the form to reach for: `field.documented "key" "prose"` and `field.plain "key"`
--- take only the data you must supply, so a future defaulted field added to
--- `FieldRule` leaves every line below working untouched.
+let FrontmatterDefaults = ../../okf-core/dhall/defaults/FrontmatterRules.dhall
+
 let Profile = ../../okf-core/dhall/Profile.dhall
 
 let field = ../../okf-core/dhall/mk/FieldRule.dhall
@@ -33,8 +22,8 @@ in    { name = "shinzui-postgresql"
           Write enough operational context that another reader can locate the object and verify the description against the database.
           ''
       , okfVersion = "0.2"
-      , frontmatter =
-        { required =
+      , frontmatter = FrontmatterDefaults::{
+        , required =
           [ field.documented
               "type"
               "The OKF concept type; must be one of the type rules below."
@@ -86,7 +75,8 @@ in    { name = "shinzui-postgresql"
         -- `okf index BUNDLE --write --okf-version 0.2`. A house convention, not a
         -- rule of the format: §12 makes the declaration a MAY, which is why
         -- `docs/profiles/okf-v0-2.dhall` requires nothing here and this file does.
-        requireBundleVersion = Some "0.2"
+        requireBundleVersion = Some
+          "0.2"
       , types =
         [ { type = "PostgreSQL Schema"
           , description = Some
@@ -97,8 +87,8 @@ in    { name = "shinzui-postgresql"
 
               Explain its responsibility and naming boundary, then identify important tables and views and how callers should choose among them.
               ''
-          , frontmatter =
-            { required = [] : List FieldRule.Type
+          , frontmatter = FrontmatterDefaults::{
+            , required = [] : List FieldRule.Type
             , recommended = [] : List FieldRule.Type
             , optional = [] : List FieldRule.Type
             }
@@ -117,8 +107,8 @@ in    { name = "shinzui-postgresql"
 
               Explain each column's business meaning and note defaults, generated values, or operational behavior that readers need to use the table safely.
               ''
-          , frontmatter =
-            { required = [] : List FieldRule.Type
+          , frontmatter = FrontmatterDefaults::{
+            , required = [] : List FieldRule.Type
             , recommended = [] : List FieldRule.Type
             , optional = [] : List FieldRule.Type
             }
@@ -137,8 +127,8 @@ in    { name = "shinzui-postgresql"
 
               Explain the question it answers, its source relations, important filters or aggregations, and any refresh, security, or performance behavior readers must know.
               ''
-          , frontmatter =
-            { required = [] : List FieldRule.Type
+          , frontmatter = FrontmatterDefaults::{
+            , required = [] : List FieldRule.Type
             , recommended = [] : List FieldRule.Type
             , optional = [] : List FieldRule.Type
             }

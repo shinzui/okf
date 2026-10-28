@@ -7,6 +7,10 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- Add bounded value selectors, grouped presence, timestamp ordering, text membership, combined uniqueness, and finite-decimal format. Compile effective root and nested constraints with read-only inspection. Preserve the complete pre-change 0.10.0.0 descriptor generation in file and registry decoding. New public constructors are `FiniteDecimal`, `InvalidConceptConstraint`, `ConstraintPresenceMissing`, `ConstraintAlternativeMissing`, `TimestampOrderViolation`, `TextOperandMismatch`, `MembershipValueMissing`, and `DuplicateSelectedValue`; exhaustive downstream consumers must handle them.
+
 ## [0.10.0.0] - 2026-10-06
 
 ### Added

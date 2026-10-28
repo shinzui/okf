@@ -19,4 +19,8 @@ let FieldRule = ./FieldRule.dhall
 in  { required : List FieldRule
     , recommended : List FieldRule
     , optional : List FieldRule
+    , presenceConstraints : List ./PresenceConstraint.dhall
+    , timestampOrderConstraints : List ./TimestampOrderConstraint.dhall
+    , membershipConstraints : List ./MembershipConstraint.dhall
+    , uniqueValuesConstraints : List ./UniqueValuesConstraint.dhall
     }

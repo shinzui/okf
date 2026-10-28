@@ -1,3 +1,7 @@
+let NestedDefaults = ../../../dhall/defaults/NestedRules.dhall
+
+let FrontmatterDefaults = ../../../dhall/defaults/FrontmatterRules.dhall
+
 let Profile = ../../../dhall/Profile.dhall
 
 let FieldRule = ../../../dhall/defaults/FieldRule.dhall
@@ -16,17 +20,21 @@ in    { name = "nested-reviews"
       , description = Some "Validates one level of structured review records."
       , guidance = None Text
       , okfVersion = "0.1"
-      , frontmatter =
-        { required =
+      , frontmatter = FrontmatterDefaults::{
+        , required =
           [ field.plain "type"
           , field.recordList
               "reviews"
-              { required =
+              NestedDefaults::{
+              , required =
                 [ NestedFieldRule::{
                   , field = "kind"
                   , allowedValues = [ "human", "model" ]
                   }
-                , NestedFieldRule::{ field = "reviewer", cardinality = Cardinality.Scalar }
+                , NestedFieldRule::{
+                  , field = "reviewer"
+                  , cardinality = Cardinality.Scalar
+                  }
                 , NestedFieldRule::{
                   , field = "reviewed_at"
                   , format = Some FieldFormat.Rfc3339Utc
@@ -47,12 +55,20 @@ in    { name = "nested-reviews"
                   }
                 , NestedFieldRule::{
                   , field = "outcome"
-                  , allowedValues = [ "approved", "changes-requested", "commented" ]
+                  , allowedValues =
+                    [ "approved", "changes-requested", "commented" ]
                   }
-                , NestedFieldRule::{ field = "context", cardinality = Cardinality.Scalar }
+                , NestedFieldRule::{
+                  , field = "context"
+                  , cardinality = Cardinality.Scalar
+                  }
                 ]
               , recommended =
-                [ NestedFieldRule::{ field = "notes", cardinality = Cardinality.Scalar } ]
+                [ NestedFieldRule::{
+                  , field = "notes"
+                  , cardinality = Cardinality.Scalar
+                  }
+                ]
               , optional = [] : List NestedFieldRule.Type
               }
           ]

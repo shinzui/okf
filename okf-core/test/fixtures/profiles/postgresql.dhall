@@ -1,9 +1,5 @@
--- The `: Profile` annotation here is load-bearing: it ties this fixture to the
--- canonical schema, so the `testLoadProfileFixture` round-trip in test/Main.hs
--- fails if okf's published Dhall schema and the Haskell decoder ever drift apart.
--- Frontmatter here is written with FieldRule record completion; the decisions
--- fixture uses the `mk/FieldRule.dhall` constructors instead, so both authoring
--- forms stay exercised.
+let FrontmatterDefaults = ../../../dhall/defaults/FrontmatterRules.dhall
+
 let Profile = ../../../dhall/Profile.dhall
 
 let FieldRule = ../../../dhall/defaults/FieldRule.dhall
@@ -15,8 +11,8 @@ in    { name = "shinzui-postgresql"
           "Conventions for documenting a PostgreSQL database as an OKF bundle."
       , guidance = None Text
       , okfVersion = "0.1"
-      , frontmatter =
-        { required =
+      , frontmatter = FrontmatterDefaults::{
+        , required =
           [ FieldRule::{
             , field = "type"
             , description = Some
@@ -54,8 +50,8 @@ in    { name = "shinzui-postgresql"
         [ { type = "PostgreSQL Schema"
           , description = Some "One namespace grouping tables and views."
           , guidance = None Text
-          , frontmatter =
-            { required = [] : List FieldRule.Type
+          , frontmatter = FrontmatterDefaults::{
+            , required = [] : List FieldRule.Type
             , recommended = [] : List FieldRule.Type
             , optional = [] : List FieldRule.Type
             }
@@ -69,8 +65,8 @@ in    { name = "shinzui-postgresql"
           , description = Some
               "One physical table in a schema, including its column list."
           , guidance = None Text
-          , frontmatter =
-            { required = [] : List FieldRule.Type
+          , frontmatter = FrontmatterDefaults::{
+            , required = [] : List FieldRule.Type
             , recommended = [] : List FieldRule.Type
             , optional = [] : List FieldRule.Type
             }
@@ -83,8 +79,8 @@ in    { name = "shinzui-postgresql"
         , { type = "PostgreSQL View"
           , description = Some "One view, including the columns it projects."
           , guidance = None Text
-          , frontmatter =
-            { required = [] : List FieldRule.Type
+          , frontmatter = FrontmatterDefaults::{
+            , required = [] : List FieldRule.Type
             , recommended = [] : List FieldRule.Type
             , optional = [] : List FieldRule.Type
             }

@@ -1,0 +1,1 @@
+{ productDiscovery = ./product-discovery.dhall }

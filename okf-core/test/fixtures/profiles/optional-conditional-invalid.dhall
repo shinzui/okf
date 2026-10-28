@@ -1,8 +1,7 @@
---| A condition on an optional rule is dead: `when` gates a presence clause, and
--- an optional rule has none. Dhall accepts the shape; compileProfile rejects it
--- with OptionalFieldWithCondition before any concept is read.
---
--- The nested declaration is rejected for the same reason at `reviews.model`.
+let NestedDefaults = ../../../dhall/defaults/NestedRules.dhall
+
+let FrontmatterDefaults = ../../../dhall/defaults/FrontmatterRules.dhall
+
 let okf = ../../../dhall/package.dhall
 
 let Profile = okf.defaults.Profile
@@ -17,16 +16,16 @@ let Cardinality = okf.Cardinality
 
 in  Profile::{
     , name = "invalid-optional-conditions"
-    , frontmatter =
-      { required = [ okf.mk.FieldRule.plain "type" ]
+    , frontmatter = FrontmatterDefaults::{
+      , required = [ okf.mk.FieldRule.plain "type" ]
       , recommended = [] : List FieldRule.Type
       , optional = [] : List FieldRule.Type
       }
     , types =
       [ TypeRule::{
         , type = "Decision Record"
-        , frontmatter =
-          { required =
+        , frontmatter = FrontmatterDefaults::{
+          , required =
             [ FieldRule::{
               , field = "status"
               , allowedValues = [ "accepted", "superseded" ]
@@ -35,8 +34,8 @@ in  Profile::{
             , FieldRule::{
               , field = "reviews"
               , cardinality = Cardinality.List
-              , elementFields = Some
-                { required =
+              , elementFields = Some NestedDefaults::{
+                , required =
                   [ NestedFieldRule::{
                     , field = "kind"
                     , allowedValues = [ "human", "model" ]

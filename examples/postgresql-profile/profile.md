@@ -30,6 +30,11 @@ These rules apply to every concept in a bundle governed by this profile,
 whatever its type. Each concept type's own page repeats them merged with that
 type's rules, which is the form that actually applies.
 
+- Presence constraints: none
+- Timestamp order constraints: none
+- Membership constraints (text operands): none
+- Unique values constraints (text operands): none
+
 ### `description` — recommended
 
 One or two sentences on what this object is for.
@@ -59,6 +64,8 @@ Provenance for this description, superseding the v0.1 `timestamp` key (OKF v0.2 
 - Object fields:
     - `at` — recommended; allowed values: any; cardinality: any; format: rfc3339-utc — UTC RFC3339 timestamp when the description was last confirmed accurate.
     - `by` — required; allowed values: any; cardinality: any; format: actor — Who or what produced this description, as an OKF v0.2 actor: `<producer>/<version>`, `human:<id>`, or `process:<id>`.
+    - Presence constraints: none
+    - Timestamp order constraints: none
 - Element fields: none
 - Checked only under `--strict`
 

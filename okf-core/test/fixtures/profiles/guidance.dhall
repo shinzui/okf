@@ -1,6 +1,5 @@
---| Focused acceptance fixture for profile-wide and type-specific authoring
--- guidance. This proves descriptor semantics; it is not a published house QA
--- profile.
+let FrontmatterDefaults = ../../../dhall/defaults/FrontmatterRules.dhall
+
 let okf = ../../../dhall/package.dhall
 
 let Profile = okf.defaults.Profile
@@ -19,8 +18,8 @@ in  Profile::{
         Keep supporting checks in source control and make the observed result reproducible.
         ''
     , okfVersion = "0.2"
-    , frontmatter =
-      { required = [ okf.mk.FieldRule.plain "type" ]
+    , frontmatter = FrontmatterDefaults::{
+      , required = [ okf.mk.FieldRule.plain "type" ]
       , recommended = [] : List FieldRule
       , optional = [] : List FieldRule
       }

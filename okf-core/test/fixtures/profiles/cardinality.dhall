@@ -1,3 +1,5 @@
+let FrontmatterDefaults = ../../../dhall/defaults/FrontmatterRules.dhall
+
 let Profile = ../../../dhall/Profile.dhall
 
 let FieldRule = ../../../dhall/FieldRule.dhall
@@ -10,8 +12,8 @@ in    { name = "cardinality"
       , description = Some "Exercises scalar and list field cardinality."
       , guidance = None Text
       , okfVersion = "0.1"
-      , frontmatter =
-        { required =
+      , frontmatter = FrontmatterDefaults::{
+        , required =
           [ field.plain "type"
           , field.scalar "title"
           , field.list "tags"
@@ -27,8 +29,8 @@ in    { name = "cardinality"
       , types =
         [ TypeRule::{
           , type = "Cardinality Concept"
-          , frontmatter =
-            { required = [ field.scalar "score" ]
+          , frontmatter = FrontmatterDefaults::{
+            , required = [ field.scalar "score" ]
             , recommended = [] : List FieldRule
             , optional = [] : List FieldRule
             }

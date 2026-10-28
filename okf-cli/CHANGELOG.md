@@ -7,6 +7,10 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- Validate single-concept product discovery constraints, render indexed relation diagnostics, and show declared/effective constraints in profile inspection and generated documentation.
+
 ## [0.10.0.0] - 2026-10-06
 
 ### Added

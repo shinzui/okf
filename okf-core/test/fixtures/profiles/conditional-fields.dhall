@@ -1,3 +1,7 @@
+let NestedDefaults = ../../../dhall/defaults/NestedRules.dhall
+
+let FrontmatterDefaults = ../../../dhall/defaults/FrontmatterRules.dhall
+
 let okf = ../../../dhall/package.dhall
 
 let Profile = okf.defaults.Profile
@@ -10,13 +14,14 @@ let NestedFieldRule = okf.defaults.NestedFieldRule
 
 let Cardinality = okf.Cardinality
 
-let condition = \(field : Text) -> \(hasValue : List Text) -> { field, hasValue }
+let condition =
+      \(field : Text) -> \(hasValue : List Text) -> { field, hasValue }
 
 let decision =
       TypeRule::{
       , type = "Decision Record"
-      , frontmatter =
-        { required =
+      , frontmatter = FrontmatterDefaults::{
+        , required =
           [ FieldRule::{
             , field = "status"
             , allowedValues = [ "active", "superseded" ]
@@ -36,8 +41,8 @@ let decision =
 let postgresql =
       TypeRule::{
       , type = "PostgreSQL Derivation"
-      , frontmatter =
-        { required =
+      , frontmatter = FrontmatterDefaults::{
+        , required =
           [ FieldRule::{
             , field = "derivationKind"
             , allowedValues = [ "projection", "operational" ]
@@ -63,11 +68,12 @@ let postgresql =
 let reviewed =
       TypeRule::{
       , type = "Reviewed Concept"
-      , frontmatter =
-        { required =
+      , frontmatter = FrontmatterDefaults::{
+        , required =
           [ okf.mk.FieldRule.recordList
               "reviews"
-              { required =
+              NestedDefaults::{
+              , required =
                 [ NestedFieldRule::{
                   , field = "kind"
                   , allowedValues = [ "human", "model" ]
@@ -106,8 +112,8 @@ let reviewed =
 in  Profile::{
     , name = "conditional-fields"
     , allowUnknownTypes = False
-    , frontmatter =
-      { required = [ okf.mk.FieldRule.plain "type" ]
+    , frontmatter = FrontmatterDefaults::{
+      , required = [ okf.mk.FieldRule.plain "type" ]
       , recommended = [] : List FieldRule.Type
       , optional = [] : List FieldRule.Type
       }

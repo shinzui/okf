@@ -1,19 +1,5 @@
---| House profile for the concept-filter fixture bundle.
---
--- Mirrors the shape of the improvement-request profile this repository's own
--- `docs/improvement-requests/` bundle uses, small enough to reason about and
--- resolvable entirely from local relative imports so the test suites stay
--- offline.
---
--- Three declarations here carry the weight of the `okf concepts --profile`
--- tests. `status` is both an OKF v0.2 core key and a profile-declared closed
--- vocabulary, which is what proves a profile rule outranks the core key list.
--- `targetPlan` is declared only on `Improvement Request`, which is what proves
--- that restricting the check to the types `--type` named is a real restriction.
--- `noteKind` is declared plainly profile-wide and closed on `Note` alone, which
--- is the shape that catches a check treating the profile-wide rules as a scope
--- of their own: there `noteKind` has an empty allowed-value list, and an empty
--- list means unconstrained.
+let NestedDefaults = ../../../dhall/defaults/NestedRules.dhall
+
 let Profile = ../../../dhall/Profile.dhall
 
 let FieldRule = ../../../dhall/defaults/FieldRule.dhall
@@ -40,7 +26,8 @@ in    { name = "concept-filters"
         , optional =
           [ FieldRule::{
             , field = "status"
-            , allowedValues = [ "proposed", "accepted", "completed", "rejected" ]
+            , allowedValues =
+              [ "proposed", "accepted", "completed", "rejected" ]
             , cardinality = Cardinality.Scalar
             }
           , field.documentHandle "requestId" "IR"
@@ -49,7 +36,8 @@ in    { name = "concept-filters"
           , field.rfc3339Utc "completedAt"
           , field.record
               "generated"
-              { required =
+              NestedDefaults::{
+              , required =
                 [ NestedFieldRule::{
                   , field = "by"
                   , format = Some FieldFormat.Actor
@@ -65,7 +53,8 @@ in    { name = "concept-filters"
               }
           , field.recordList
               "reviews"
-              { required =
+              NestedDefaults::{
+              , required =
                 [ NestedFieldRule::{
                   , field = "kind"
                   , allowedValues = [ "human", "model" ]

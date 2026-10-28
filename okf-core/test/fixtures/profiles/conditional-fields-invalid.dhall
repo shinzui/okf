@@ -1,3 +1,5 @@
+let FrontmatterDefaults = ../../../dhall/defaults/FrontmatterRules.dhall
+
 let okf = ../../../dhall/package.dhall
 
 let Profile = okf.defaults.Profile
@@ -8,8 +10,8 @@ let Cardinality = okf.Cardinality
 
 in  Profile::{
     , name = "invalid-conditional-fields"
-    , frontmatter =
-      { required =
+    , frontmatter = FrontmatterDefaults::{
+      , required =
         [ FieldRule::{
           , field = "status"
           , allowedValues = [ "active" ]

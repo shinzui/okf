@@ -5,12 +5,12 @@ description: Add the descriptor features the okf-profiles jobs, product-research
   features, and use-case profiles need to state their remaining single-concept
   constraints, so okf-profiles can retire the okf-owned rules of its interim
   product-discovery checker.
-timestamp: "2026-10-28T03:45:40Z"
+timestamp: "2026-10-28T04:48:40Z"
 generated:
   by: claude-code/claude-opus-5-5
   at: "2026-10-16T14:30:00Z"
 requestId: IR-9
-status: accepted
+status: completed
 targetPlan: docs/plans/70-express-single-concept-product-discovery-constraints-in-profile-descriptors.md
 origin: mori://shinzui/okf-profiles/plans/12-add-jobs-and-product-research-profiles-linked-to-use-cases
 reviews:
@@ -47,7 +47,7 @@ reviews:
 
 ## Status
 
-- **Status:** accepted with design clarifications (2026-10-16)
+- **Status:** completed (2026-10-28); downstream schema adoption follows an appropriate OKF release.
 - **Implementation plan:** [ExecPlan 70: Express single-concept product-discovery constraints in profile descriptors](../plans/70-express-single-concept-product-discovery-constraints-in-profile-descriptors.md).
 - **Origin:** `mori://shinzui/okf-profiles/plans/12-add-jobs-and-product-research-profiles-linked-to-use-cases`
 - **Owner of the build:** `shinzui/okf`, through the descriptor-evolution process of okf
@@ -116,3 +116,23 @@ decision, not an okf change.
 Anything that needs another concept: reference target existence and type, outcome names on a
 referenced job, assessment evidence, and supersession cycles stay with Mori under
 [ADR 1](../adr/1-profile-declared-document-ids.md).
+
+## Consumer handoff
+
+Plan 70 supplies the nine missing descriptor capabilities; inline-name uniqueness
+continues to use `uniqueBy`. After an appropriate OKF release, the producer at
+`mori://shinzui/okf-profiles` can re-pin its schema, author the constraints, and
+choose when to enable inline-name uniqueness. Literal `FrontmatterRules` and
+`NestedRules` records must gain the new empty lists or use record completion.
+
+Presence deliberately uses OKF's usable-value semantics rather than the interim
+checker's key-existence test: blank targets do not satisfy requirements, blank or
+empty triggers do not activate groups, and scalar baseline zero does activate them.
+Port mutation tests with those differences. Verify against the actual producer
+revision being migrated; the registered checkout did not provide the historical
+checker during this implementation. No producer files or pins were changed.
+
+Consumers such as `mori://shinzui/mori/packages/mori-cli` should handle the new
+public constructors listed in `okf-core/CHANGELOG.md`. Cross-concept checks remain
+outside OKF. Publication, downstream adoption, and retiring the interim checker
+remain separate work.

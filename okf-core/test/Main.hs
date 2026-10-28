@@ -178,6 +178,7 @@ main = do
         testIO "loadProfileFile and registry decoding preserve the complete 0.8.0.0 descriptor schema" testLoadPreGuidanceCompatibilityFixture,
         testIO "loadProfileFile and JSON preserve multiline guidance" testLoadGuidanceFixture,
         testIO "guidance does not affect profile validation" testGuidanceDoesNotAffectValidation,
+        testIO "product discovery constraints preserve scope, types and occurrence paths" testProductDiscoveryConstraints,
         testIO "every frozen generation fixture compiles, not merely decodes" testFrozenFixturesCompile,
         testIO "loadProfileFile preserves the frozen pre-bundle-version schema" testLoadPreBundleVersionCompatibilityFixture,
         testIO "loadProfileFile preserves the frozen pre-path schema" testLoadPrePathCompatibilityFixture,
@@ -2525,7 +2526,7 @@ testLoadNestedReferenceProfileFixture = do
       acceptanceCriteria <- lookupRawRule "acceptanceCriteria" (spec ^. #frontmatter . #required)
       assertEqual (Just "id") (acceptanceCriteria ^. #uniqueBy)
       case dependencies ^. #elementFields of
-        Just NestedRules {required = [nestedReferenceRule]} -> do
+        Just NestedRules {presenceConstraints = [], timestampOrderConstraints = [], required = [nestedReferenceRule]} -> do
           let expectedPolicy =
                 HandleReferenceRule
                   "IR"
@@ -2642,7 +2643,7 @@ testLoadNestedCompatibilityFixture = do
         [rule] -> do
           assertEqual Nothing (rule ^. #when)
           case rule ^. #elementFields of
-            Just NestedRules {required = [nestedRule]} -> do
+            Just NestedRules {presenceConstraints = [], timestampOrderConstraints = [], required = [nestedRule]} -> do
               assertEqual "kind" (nestedRule ^. #field)
               assertEqual Nothing (nestedRule ^. #when)
             _ -> Left "expected the frozen nested rule to survive the compatibility upgrade"
@@ -2672,7 +2673,7 @@ testLoadConditionalCompatibilityFixture = do
           assertEqual (Just (FieldCondition "status" ["superseded"])) (targetRule ^. #when)
           assertEqual Nothing (targetRule ^. #reference)
           case reviewsRule ^. #elementFields of
-            Just NestedRules {required = [_kindRule, providerRule]} ->
+            Just NestedRules {presenceConstraints = [], timestampOrderConstraints = [], required = [_kindRule, providerRule]} ->
               assertEqual (Just (FieldCondition "kind" ["model"])) (providerRule ^. #when)
             _ -> Left "expected frozen nested conditions to survive the compatibility upgrade"
         _ -> Left "expected three frozen condition-aware top-level rules"
@@ -2697,7 +2698,7 @@ testLoadReferenceCompatibilityFixture = do
             (referenceRule ^. #reference)
           assertEqual (Just (FieldCondition "status" ["superseded"])) (conditionRule ^. #when)
           case reviewsRule ^. #elementFields of
-            Just NestedRules {required = [kindRule], recommended = [notesRule], optional = nestedOptional} -> do
+            Just NestedRules {presenceConstraints = [], timestampOrderConstraints = [], required = [kindRule], recommended = [notesRule], optional = nestedOptional} -> do
               assertEqual "kind" (kindRule ^. #field)
               assertEqual "notes" (notesRule ^. #field)
               assertEqual [] (map (^. #field) nestedOptional)
@@ -2763,6 +2764,7 @@ frozenGenerationFixtures =
     "pre-bundle-version.dhall",
     "pre-nested-references-and-uniqueness-0.7.0.0.dhall",
     "pre-guidance-0.8.0.0.dhall",
+    "pre-product-discovery-0.10.0.0.dhall",
     -- Not a frozen generation but a *documented* one: this is the descriptor
     -- @docs\/user\/profiles.md@ shows for the specification §10 contract as a
     -- house convention. It is listed here so the documented descriptor cannot
@@ -2803,7 +2805,7 @@ testLoadPreGuidanceCompatibilityFixture = do
               (refRule ^. #reference)
           _ -> Left "expected the frozen nested reference rule to survive"
         case generatedRule ^. #objectFields of
-          Just NestedRules {required = [_byRule, atRule]} ->
+          Just NestedRules {presenceConstraints = [], timestampOrderConstraints = [], required = [_byRule, atRule]} ->
             assertEqual (Just Rfc3339Utc) (atRule ^. #format)
           _ -> Left "expected the frozen object rules to survive"
       _ -> Left "expected three frozen required rules"
@@ -2975,13 +2977,13 @@ testLoadPrePathCompatibilityFixture = do
       case spec ^. #frontmatter . #required of
         [_typeRule, sourcesRule, generatedRule] -> do
           case sourcesRule ^. #elementFields of
-            Just NestedRules {required = [resourceRule]} -> do
+            Just NestedRules {presenceConstraints = [], timestampOrderConstraints = [], required = [resourceRule]} -> do
               assertEqual "resource" (resourceRule ^. #field)
               assertEqual Scalar (resourceRule ^. #cardinality)
               assertEqual Nothing (resourceRule ^. #path)
             _ -> Left "expected the frozen element-field rule to survive"
           case generatedRule ^. #objectFields of
-            Just NestedRules {required = [byRule]} -> do
+            Just NestedRules {presenceConstraints = [], timestampOrderConstraints = [], required = [byRule]} -> do
               assertEqual "by" (byRule ^. #field)
               assertEqual (Just Profile.Actor) (byRule ^. #format)
               assertEqual Nothing (byRule ^. #path)
@@ -3018,7 +3020,7 @@ testLoadPreActorCompatibilityFixture = do
       case spec ^. #frontmatter . #required of
         [_typeRule, _titleRule, generatedRule] ->
           case generatedRule ^. #objectFields of
-            Just NestedRules {required = [byRule, atRule]} -> do
+            Just NestedRules {presenceConstraints = [], timestampOrderConstraints = [], required = [byRule, atRule]} -> do
               assertEqual "by" (byRule ^. #field)
               assertEqual Nothing (byRule ^. #format)
               assertEqual (Just Rfc3339Utc) (atRule ^. #format)
@@ -3052,7 +3054,7 @@ testLoadPreObjectCompatibilityFixture = do
             (Just (handleReferenceRule "ADR" ["mori"] False))
             (referenceRule ^. #reference)
           case reviewsRule ^. #elementFields of
-            Just NestedRules {required = [kindRule], recommended = [notesRule], optional = [urlRule]} -> do
+            Just NestedRules {presenceConstraints = [], timestampOrderConstraints = [], required = [kindRule], recommended = [notesRule], optional = [urlRule]} -> do
               assertEqual "kind" (kindRule ^. #field)
               assertEqual "notes" (notesRule ^. #field)
               assertEqual "url" (urlRule ^. #field)
@@ -3135,7 +3137,11 @@ testProfileJsonShape = do
               "idField" .= ("docId" :: Text),
               "frontmatter"
                 .= object
-                  [ "required"
+                  [ "presenceConstraints" .= ([] :: [PresenceConstraint]),
+                    "timestampOrderConstraints" .= ([] :: [TimestampOrderConstraint]),
+                    "membershipConstraints" .= ([] :: [MembershipConstraint]),
+                    "uniqueValuesConstraints" .= ([] :: [UniqueValuesConstraint]),
+                    "required"
                       .= [ object
                              [ "field" .= ("type" :: Text),
                                "description"
@@ -3205,7 +3211,11 @@ testProfileJsonShape = do
                          "guidance" .= (Nothing :: Maybe Text),
                          "frontmatter"
                            .= object
-                             [ "required" .= ([] :: [FieldRule]),
+                             [ "presenceConstraints" .= ([] :: [PresenceConstraint]),
+                               "timestampOrderConstraints" .= ([] :: [TimestampOrderConstraint]),
+                               "membershipConstraints" .= ([] :: [MembershipConstraint]),
+                               "uniqueValuesConstraints" .= ([] :: [UniqueValuesConstraint]),
+                               "required" .= ([] :: [FieldRule]),
                                "recommended" .= ([] :: [FieldRule]),
                                "optional" .= ([] :: [FieldRule])
                              ],
@@ -3731,7 +3741,11 @@ testProfileSpec =
       okfVersion = "0.1",
       frontmatter =
         FrontmatterRules
-          { required = [requiredField "type", requiredField "title"],
+          { membershipConstraints = [],
+            uniqueValuesConstraints = [],
+            presenceConstraints = [],
+            timestampOrderConstraints = [],
+            required = [requiredField "type", requiredField "title"],
             recommended = [],
             optional = []
           },
@@ -3763,7 +3777,11 @@ testDocumentIdProfileSpec =
       okfVersion = "0.1",
       frontmatter =
         FrontmatterRules
-          { required = [requiredField "type", requiredField "title"],
+          { membershipConstraints = [],
+            uniqueValuesConstraints = [],
+            presenceConstraints = [],
+            timestampOrderConstraints = [],
+            required = [requiredField "type", requiredField "title"],
             recommended = [],
             optional = []
           },
@@ -3787,7 +3805,7 @@ testDocumentIdProfileSpec =
     }
 
 emptyTestFrontmatterRules :: FrontmatterRules
-emptyTestFrontmatterRules = FrontmatterRules {required = [], recommended = [], optional = []}
+emptyTestFrontmatterRules = FrontmatterRules {membershipConstraints = [], uniqueValuesConstraints = [], presenceConstraints = [], timestampOrderConstraints = [], required = [], recommended = [], optional = []}
 
 typeAwareProfileSpec :: ProfileSpec
 typeAwareProfileSpec =
@@ -3798,7 +3816,11 @@ typeAwareProfileSpec =
       okfVersion = "0.1",
       frontmatter =
         FrontmatterRules
-          { required = [fieldRule "type" Nothing [] Any Nothing Nothing Nothing Nothing, fieldRule "title" (Just "Global title.") [] Any Nothing Nothing Nothing Nothing],
+          { membershipConstraints = [],
+            uniqueValuesConstraints = [],
+            presenceConstraints = [],
+            timestampOrderConstraints = [],
+            required = [fieldRule "type" Nothing [] Any Nothing Nothing Nothing Nothing, fieldRule "title" (Just "Global title.") [] Any Nothing Nothing Nothing Nothing],
             recommended = [fieldRule "owner" (Just "Profile-level owner.") [] Any Nothing Nothing Nothing Nothing],
             optional = []
           },
@@ -3813,7 +3835,11 @@ typeAwareProfileSpec =
               guidance = Nothing,
               frontmatter =
                 FrontmatterRules
-                  { required = [fieldRule "owner" (Just "Responsible person.") [] Any Nothing Nothing Nothing Nothing],
+                  { membershipConstraints = [],
+                    uniqueValuesConstraints = [],
+                    presenceConstraints = [],
+                    timestampOrderConstraints = [],
+                    required = [fieldRule "owner" (Just "Responsible person.") [] Any Nothing Nothing Nothing Nothing],
                     recommended = [fieldRule "reviewer" (Just "Second pair of eyes.") [] Any Nothing Nothing Nothing Nothing, fieldRule "title" (Just "Type title.") [] Any Nothing Nothing Nothing Nothing],
                     optional = []
                   },
@@ -3833,7 +3859,11 @@ testCompileProfileDefinitionErrors = do
         typeAwareProfileSpec
           { frontmatter =
               FrontmatterRules
-                { required = [duplicateField, duplicateField],
+                { membershipConstraints = [],
+                  uniqueValuesConstraints = [],
+                  presenceConstraints = [],
+                  timestampOrderConstraints = [],
+                  required = [duplicateField, duplicateField],
                   recommended = [duplicateField],
                   optional = []
                 },
@@ -3866,14 +3896,22 @@ vocabularyProfileSpec =
   typeAwareProfileSpec
     { frontmatter =
         FrontmatterRules
-          { required = [fieldRule "type" Nothing [] Any Nothing Nothing Nothing Nothing],
+          { membershipConstraints = [],
+            uniqueValuesConstraints = [],
+            presenceConstraints = [],
+            timestampOrderConstraints = [],
+            required = [fieldRule "type" Nothing [] Any Nothing Nothing Nothing Nothing],
             recommended = [fieldRule "status" Nothing ["draft", "approved", "approved"] Any Nothing Nothing Nothing Nothing],
             optional = []
           },
       types =
         [ withTypeFrontmatter
             FrontmatterRules
-              { required = [fieldRule "status" Nothing ["approved", "archived"] Any Nothing Nothing Nothing Nothing],
+              { membershipConstraints = [],
+                uniqueValuesConstraints = [],
+                presenceConstraints = [],
+                timestampOrderConstraints = [],
+                required = [fieldRule "status" Nothing ["approved", "archived"] Any Nothing Nothing Nothing Nothing],
                 recommended = [],
                 optional = []
               }
@@ -3900,7 +3938,11 @@ testUnsatisfiableVocabulary = do
           { types =
               [ withTypeFrontmatter
                   FrontmatterRules
-                    { required = [fieldRule "status" Nothing ["closed"] Any Nothing Nothing Nothing Nothing],
+                    { membershipConstraints = [],
+                      uniqueValuesConstraints = [],
+                      presenceConstraints = [],
+                      timestampOrderConstraints = [],
+                      required = [fieldRule "status" Nothing ["closed"] Any Nothing Nothing Nothing Nothing],
                       recommended = [],
                       optional = []
                     }
@@ -3915,13 +3957,21 @@ testCompiledCardinality :: Either Text ()
 testCompiledCardinality = do
   let profileRules =
         FrontmatterRules
-          { required = [fieldRule "type" Nothing [] Any Nothing Nothing Nothing Nothing],
+          { membershipConstraints = [],
+            uniqueValuesConstraints = [],
+            presenceConstraints = [],
+            timestampOrderConstraints = [],
+            required = [fieldRule "type" Nothing [] Any Nothing Nothing Nothing Nothing],
             recommended = [fieldRule "status" Nothing [] Scalar Nothing Nothing Nothing Nothing],
             optional = []
           }
       typeRules cardinality =
         FrontmatterRules
-          { required = [fieldRule "status" Nothing [] cardinality Nothing Nothing Nothing Nothing],
+          { membershipConstraints = [],
+            uniqueValuesConstraints = [],
+            presenceConstraints = [],
+            timestampOrderConstraints = [],
+            required = [fieldRule "status" Nothing [] cardinality Nothing Nothing Nothing Nothing],
             recommended = [],
             optional = []
           }
@@ -3950,7 +4000,11 @@ testVocabularyValidation = do
         vocabularyProfileSpec
           { frontmatter =
               FrontmatterRules
-                { required = [fieldRule "type" Nothing [] Any Nothing Nothing Nothing Nothing],
+                { membershipConstraints = [],
+                  uniqueValuesConstraints = [],
+                  presenceConstraints = [],
+                  timestampOrderConstraints = [],
+                  required = [fieldRule "type" Nothing [] Any Nothing Nothing Nothing Nothing],
                   recommended = [fieldRule "status" Nothing ["draft", "approved"] Any Nothing Nothing Nothing Nothing],
                   optional = []
                 },
@@ -4029,14 +4083,22 @@ testCompiledFieldFormats = do
         typeAwareProfileSpec
           { frontmatter =
               FrontmatterRules
-                { required = [fieldRule "type" Nothing [] Any Nothing Nothing Nothing Nothing, fieldRule "homepage" Nothing [] Any (Just profileFormat) Nothing Nothing Nothing],
+                { membershipConstraints = [],
+                  uniqueValuesConstraints = [],
+                  presenceConstraints = [],
+                  timestampOrderConstraints = [],
+                  required = [fieldRule "type" Nothing [] Any Nothing Nothing Nothing Nothing, fieldRule "homepage" Nothing [] Any (Just profileFormat) Nothing Nothing Nothing],
                   recommended = [],
                   optional = []
                 },
             types =
               [ withTypeFrontmatter
                   FrontmatterRules
-                    { required = [fieldRule "homepage" Nothing [] Any (Just typeFormat) Nothing Nothing Nothing],
+                    { membershipConstraints = [],
+                      uniqueValuesConstraints = [],
+                      presenceConstraints = [],
+                      timestampOrderConstraints = [],
+                      required = [fieldRule "homepage" Nothing [] Any (Just typeFormat) Nothing Nothing Nothing],
                       recommended = [],
                       optional = []
                     }
@@ -4061,7 +4123,11 @@ testInvalidFormatParameters = do
         typeAwareProfileSpec
           { frontmatter =
               FrontmatterRules
-                { required =
+                { membershipConstraints = [],
+                  uniqueValuesConstraints = [],
+                  presenceConstraints = [],
+                  timestampOrderConstraints = [],
+                  required =
                     [ fieldRule "type" Nothing [] Any Nothing Nothing Nothing Nothing,
                       fieldRule "handle" Nothing [] Any (Just (DocumentHandle "1ADR")) Nothing Nothing Nothing,
                       fieldRule "source" Nothing [] Any (Just (UriWithScheme "https_")) Nothing Nothing Nothing
@@ -4184,7 +4250,11 @@ testNonTextualFormatRefinesCardinality = do
         typeAwareProfileSpec
           { frontmatter =
               FrontmatterRules
-                { required =
+                { membershipConstraints = [],
+                  uniqueValuesConstraints = [],
+                  presenceConstraints = [],
+                  timestampOrderConstraints = [],
+                  required =
                     [ fieldRule "type" Nothing [] Any Nothing Nothing Nothing Nothing,
                       fieldRule "usage_count" Nothing [] cardinality (Just fieldFormat) Nothing Nothing Nothing
                     ],
@@ -4231,7 +4301,11 @@ testNewFormatsNarrowAcrossScopes = do
             okfVersion = "0.2",
             frontmatter =
               FrontmatterRules
-                { required =
+                { membershipConstraints = [],
+                  uniqueValuesConstraints = [],
+                  presenceConstraints = [],
+                  timestampOrderConstraints = [],
+                  required =
                     [ fieldRule "type" Nothing [] Any Nothing Nothing Nothing Nothing,
                       fieldRule "value" Nothing [] Any (Just profileFormat) Nothing Nothing Nothing
                     ],
@@ -4241,7 +4315,11 @@ testNewFormatsNarrowAcrossScopes = do
             types =
               [ withTypeFrontmatter
                   FrontmatterRules
-                    { required = [fieldRule "value" Nothing [] Any (Just typeFormat) Nothing Nothing Nothing],
+                    { membershipConstraints = [],
+                      uniqueValuesConstraints = [],
+                      presenceConstraints = [],
+                      timestampOrderConstraints = [],
+                      required = [fieldRule "value" Nothing [] Any (Just typeFormat) Nothing Nothing Nothing],
                       recommended = [],
                       optional = []
                     }
@@ -4277,7 +4355,11 @@ singleFormatProfile cardinality fieldFormat =
     { okfVersion = "0.2",
       frontmatter =
         FrontmatterRules
-          { required = [fieldRule "type" Nothing [] Any Nothing Nothing Nothing Nothing],
+          { membershipConstraints = [],
+            uniqueValuesConstraints = [],
+            presenceConstraints = [],
+            timestampOrderConstraints = [],
+            required = [fieldRule "type" Nothing [] Any Nothing Nothing Nothing Nothing],
             recommended = [fieldRule "value" Nothing [] cardinality (Just fieldFormat) Nothing Nothing Nothing],
             optional = []
           },
@@ -4290,7 +4372,11 @@ singleCardinalityProfile isRequired cardinality allowed =
   typeAwareProfileSpec
     { frontmatter =
         FrontmatterRules
-          { required = [fieldRule "type" Nothing [] Any Nothing Nothing Nothing Nothing] <> [rule | isRequired],
+          { membershipConstraints = [],
+            uniqueValuesConstraints = [],
+            presenceConstraints = [],
+            timestampOrderConstraints = [],
+            required = [fieldRule "type" Nothing [] Any Nothing Nothing Nothing Nothing] <> [rule | isRequired],
             recommended = [rule | not isRequired],
             optional = []
           },
@@ -4304,13 +4390,17 @@ testCompiledNestedRules :: Either Text ()
 testCompiledNestedRules = do
   let profileRules =
         NestedRules
-          { required = [nestedFieldRule "kind" Nothing ["decision", "implementation"] Any Nothing Nothing Nothing],
+          { presenceConstraints = [],
+            timestampOrderConstraints = [],
+            required = [nestedFieldRule "kind" Nothing ["decision", "implementation"] Any Nothing Nothing Nothing],
             recommended = [nestedFieldRule "notes" Nothing [] Scalar Nothing Nothing Nothing],
             optional = []
           }
       typeRules =
         NestedRules
-          { required =
+          { presenceConstraints = [],
+            timestampOrderConstraints = [],
+            required =
               [ nestedFieldRule "kind" Nothing ["implementation", "operations"] Any Nothing Nothing Nothing,
                 nestedFieldRule "outcome" Nothing ["approved", "rejected"] Any Nothing Nothing Nothing
               ],
@@ -4405,7 +4495,11 @@ nestedProfileWithRules outerCardinality profileNested typeNested =
       okfVersion = "0.1",
       frontmatter =
         FrontmatterRules
-          { required =
+          { membershipConstraints = [],
+            uniqueValuesConstraints = [],
+            presenceConstraints = [],
+            timestampOrderConstraints = [],
+            required =
               [ requiredField "type",
                 fieldRule "reviews" Nothing [] outerCardinality Nothing (Just profileNested) Nothing Nothing
               ],
@@ -4423,7 +4517,11 @@ nestedProfileWithRules outerCardinality profileNested typeNested =
               guidance = Nothing,
               frontmatter =
                 FrontmatterRules
-                  { required = maybe [] (\rules -> [fieldRule "reviews" Nothing [] Any Nothing (Just rules) Nothing Nothing]) typeNested,
+                  { membershipConstraints = [],
+                    uniqueValuesConstraints = [],
+                    presenceConstraints = [],
+                    timestampOrderConstraints = [],
+                    required = maybe [] (\rules -> [fieldRule "reviews" Nothing [] Any Nothing (Just rules) Nothing Nothing]) typeNested,
                     recommended = [],
                     optional = []
                   },
@@ -4442,7 +4540,9 @@ nestedReviewProfileSpec =
   where
     nestedRules =
       NestedRules
-        { required =
+        { presenceConstraints = [],
+          timestampOrderConstraints = [],
+          required =
             [ nestedFieldRule "kind" Nothing ["human", "model"] Any Nothing Nothing Nothing,
               nestedFieldRule "reviewer" Nothing [] Scalar Nothing Nothing Nothing,
               nestedFieldRule "reviewed_at" Nothing [] Any (Just Rfc3339Utc) Nothing Nothing,
@@ -4472,7 +4572,11 @@ objectProfileWithRules key declaredCardinality objectRules elementRules =
       okfVersion = "0.1",
       frontmatter =
         FrontmatterRules
-          { required =
+          { membershipConstraints = [],
+            uniqueValuesConstraints = [],
+            presenceConstraints = [],
+            timestampOrderConstraints = [],
+            required =
               [ requiredField "type",
                 FieldRule
                   { field = key,
@@ -4503,7 +4607,9 @@ objectProfileWithRules key declaredCardinality objectRules elementRules =
 provenanceMemberRules :: NestedRules
 provenanceMemberRules =
   NestedRules
-    { required = [nestedFieldRule "by" (Just "Who or what produced this content.") [] Any Nothing Nothing Nothing],
+    { presenceConstraints = [],
+      timestampOrderConstraints = [],
+      required = [nestedFieldRule "by" (Just "Who or what produced this content.") [] Any Nothing Nothing Nothing],
       recommended = [nestedFieldRule "at" Nothing [] Any (Just Rfc3339Utc) Nothing Nothing],
       optional = []
     }
@@ -4570,7 +4676,11 @@ pathProfileWith profilePath declaredFormat handlePolicy typePath =
       okfVersion = "0.1",
       frontmatter =
         FrontmatterRules
-          { required = [requiredField "type"],
+          { membershipConstraints = [],
+            uniqueValuesConstraints = [],
+            presenceConstraints = [],
+            timestampOrderConstraints = [],
+            required = [requiredField "type"],
             recommended = [],
             -- Optional rather than required, so a concept that simply does not
             -- carry the key reports nothing and the tests below see only the
@@ -4595,7 +4705,11 @@ pathProfileWith profilePath declaredFormat handlePolicy typePath =
               guidance = Nothing,
               frontmatter =
                 FrontmatterRules
-                  { required = [],
+                  { membershipConstraints = [],
+                    uniqueValuesConstraints = [],
+                    presenceConstraints = [],
+                    timestampOrderConstraints = [],
+                    required = [],
                     recommended = [],
                     optional = [(requiredField "resource") {path = typePath}]
                   },
@@ -4621,7 +4735,11 @@ sourcesPathProfile permittedSchemes =
       okfVersion = "0.1",
       frontmatter =
         FrontmatterRules
-          { required = [requiredField "type"],
+          { membershipConstraints = [],
+            uniqueValuesConstraints = [],
+            presenceConstraints = [],
+            timestampOrderConstraints = [],
+            required = [requiredField "type"],
             recommended = [],
             -- Optional for the same reason 'pathProfileWith' is: the tests are
             -- about what a present value resolves to, not about presence.
@@ -4636,7 +4754,9 @@ sourcesPathProfile permittedSchemes =
   where
     memberRules =
       NestedRules
-        { required =
+        { presenceConstraints = [],
+          timestampOrderConstraints = [],
+          required =
             [ (nestedFieldRule "resource" Nothing [] Any Nothing Nothing Nothing)
                 { path = Just (PathReferenceRule permittedSchemes False)
                 }
@@ -4921,7 +5041,9 @@ testValidatePathObjectScope = do
               Any
               ( Just
                   NestedRules
-                    { required =
+                    { presenceConstraints = [],
+                      timestampOrderConstraints = [],
+                      required =
                         [ (nestedFieldRule "resource" Nothing [] Any Nothing Nothing Nothing)
                             { path = Just (PathReferenceRule [] False)
                             }
@@ -4958,7 +5080,11 @@ versionProfileWith declaredVersion listName rules =
       okfVersion = declaredVersion,
       frontmatter =
         FrontmatterRules
-          { required = [requiredField "type"] <> [rule | rule <- rules, listName == "required"],
+          { membershipConstraints = [],
+            uniqueValuesConstraints = [],
+            presenceConstraints = [],
+            timestampOrderConstraints = [],
+            required = [requiredField "type"] <> [rule | rule <- rules, listName == "required"],
             recommended = [rule | rule <- rules, listName == "recommended"],
             optional = [rule | rule <- rules, listName == "optional"]
           },
@@ -5133,7 +5259,7 @@ testConditionDefinitionErrors = do
       compileWith rules =
         compileProfile
           typeAwareProfileSpec
-            { frontmatter = FrontmatterRules {required = rules, recommended = [], optional = []},
+            { frontmatter = FrontmatterRules {membershipConstraints = [], uniqueValuesConstraints = [], presenceConstraints = [], timestampOrderConstraints = [], required = rules, recommended = [], optional = []},
               allowUnknownTypes = True,
               types = []
             }
@@ -5158,7 +5284,9 @@ testConditionDefinitionErrors = do
     (compileWith [fieldRule "status" Nothing ["active"] Scalar Nothing Nothing Nothing (Just (FieldCondition "status" ["active"]))])
   let nestedCrossScope =
         NestedRules
-          { required =
+          { presenceConstraints = [],
+            timestampOrderConstraints = [],
+            required =
               [ nestedFieldRule "kind" Nothing ["human", "model"] Scalar Nothing Nothing Nothing,
                 nestedFieldRule "provider" Nothing [] Scalar Nothing Nothing (Just (FieldCondition "status" ["active"]))
               ],
@@ -5169,7 +5297,11 @@ testConditionDefinitionErrors = do
         typeAwareProfileSpec
           { frontmatter =
               FrontmatterRules
-                { required =
+                { membershipConstraints = [],
+                  uniqueValuesConstraints = [],
+                  presenceConstraints = [],
+                  timestampOrderConstraints = [],
+                  required =
                     [ source "status" ["active"] Scalar,
                       fieldRule "reviews" Nothing [] List Nothing (Just nestedCrossScope) Nothing Nothing
                     ],
@@ -5195,11 +5327,11 @@ testTopLevelConditionalPresence = do
         fieldRule "supersededBy" Nothing ["ADR-1"] Scalar Nothing Nothing Nothing (Just (FieldCondition "status" ["superseded"]))
       base =
         typeAwareProfileSpec
-          { frontmatter = FrontmatterRules {required = [requiredField "type", statusRule], recommended = [recommendedTarget], optional = []},
+          { frontmatter = FrontmatterRules {membershipConstraints = [], uniqueValuesConstraints = [], presenceConstraints = [], timestampOrderConstraints = [], required = [requiredField "type", statusRule], recommended = [recommendedTarget], optional = []},
             allowUnknownTypes = True,
             types =
               [ withTypeFrontmatter
-                  FrontmatterRules {required = [requiredTarget], recommended = [], optional = []}
+                  FrontmatterRules {membershipConstraints = [], uniqueValuesConstraints = [], presenceConstraints = [], timestampOrderConstraints = [], required = [requiredTarget], recommended = [], optional = []}
                   (firstTypeRule typeAwareProfileSpec)
               ]
           }
@@ -5240,7 +5372,9 @@ testNestedConditionalPresence :: Either Text ()
 testNestedConditionalPresence = do
   let nestedRules =
         NestedRules
-          { required =
+          { presenceConstraints = [],
+            timestampOrderConstraints = [],
+            required =
               [ nestedFieldRule "kind" Nothing ["human", "model"] Scalar Nothing Nothing Nothing,
                 nestedFieldRule "provider" Nothing [] Scalar Nothing Nothing (Just (FieldCondition "kind" ["model"]))
               ],
@@ -5283,7 +5417,7 @@ testReferenceDefinitionErrors = do
       baseType = firstTypeRule testDocumentIdProfileSpec
       specWith profileIdField typeRules profileRules =
         testDocumentIdProfileSpec
-          { frontmatter = FrontmatterRules {required = profileRules, recommended = [], optional = []},
+          { frontmatter = FrontmatterRules {membershipConstraints = [], uniqueValuesConstraints = [], presenceConstraints = [], timestampOrderConstraints = [], required = profileRules, recommended = [], optional = []},
             idField = profileIdField,
             requireBundleVersion = Nothing,
             types = typeRules
@@ -5297,7 +5431,7 @@ testReferenceDefinitionErrors = do
       formatSpec = specWith (Just "docId") [baseType] [referenceRule "supersedes" "ADR" [] (Just (DocumentHandle "ADR"))]
       typeReference = referenceRule "supersedes" "RFC" [] Nothing
       conflictingType :: TypeRule
-      conflictingType = baseType & #frontmatter .~ FrontmatterRules {required = [typeReference], recommended = [], optional = []}
+      conflictingType = baseType & #frontmatter .~ FrontmatterRules {membershipConstraints = [], uniqueValuesConstraints = [], presenceConstraints = [], timestampOrderConstraints = [], required = [typeReference], recommended = [], optional = []}
       rfcType = baseType {type_ = "RFC", idPrefix = Just "RFC", pathPattern = Nothing}
       conflictSpec = specWith (Just "docId") [conflictingType, rfcType] [referenceRule "supersedes" "ADR" [] Nothing]
   assertEqual
@@ -5459,7 +5593,7 @@ testNestedReferenceAndUniquenessDefinitionErrors = do
       spec
         { types =
             [ typeRule
-                { frontmatter = FrontmatterRules {required = [typeField], recommended = [], optional = []}
+                { frontmatter = FrontmatterRules {membershipConstraints = [], uniqueValuesConstraints = [], presenceConstraints = [], timestampOrderConstraints = [], required = [typeField], recommended = [], optional = []}
                 }
             | typeRule <- spec ^. #types
             ]
@@ -5537,7 +5671,11 @@ testDocumentReferenceValidation = do
         testDocumentIdProfileSpec
           & #frontmatter
           .~ FrontmatterRules
-            { required = [requiredField "type", requiredField "title"],
+            { membershipConstraints = [],
+              uniqueValuesConstraints = [],
+              presenceConstraints = [],
+              timestampOrderConstraints = [],
+              required = [requiredField "type", requiredField "title"],
               recommended = referenceRules,
               optional = []
             }
@@ -5600,7 +5738,11 @@ testOptionalFieldPresence = do
         typeAwareProfileSpec
           { frontmatter =
               FrontmatterRules
-                { required = [requiredField "type"],
+                { membershipConstraints = [],
+                  uniqueValuesConstraints = [],
+                  presenceConstraints = [],
+                  timestampOrderConstraints = [],
+                  required = [requiredField "type"],
                   recommended = [requiredField "owner"],
                   optional = optionalRules
                 },
@@ -5662,7 +5804,11 @@ testOptionalReferenceValidation = do
         testDocumentIdProfileSpec
           & #frontmatter
           .~ FrontmatterRules
-            { required = [requiredField "type", requiredField "title"],
+            { membershipConstraints = [],
+              uniqueValuesConstraints = [],
+              presenceConstraints = [],
+              timestampOrderConstraints = [],
+              required = [requiredField "type", requiredField "title"],
               recommended = [],
               optional = [fieldRule "supersedes" Nothing [] Scalar Nothing Nothing (Just (handleReferenceRule "ADR" [] False)) Nothing]
             }
@@ -5683,7 +5829,9 @@ testOptionalNestedFieldPresence :: Either Text ()
 testOptionalNestedFieldPresence = do
   let nestedRules =
         NestedRules
-          { required = [nestedFieldRule "kind" Nothing ["human", "model"] Scalar Nothing Nothing Nothing],
+          { presenceConstraints = [],
+            timestampOrderConstraints = [],
+            required = [nestedFieldRule "kind" Nothing ["human", "model"] Scalar Nothing Nothing Nothing],
             recommended = [nestedFieldRule "notes" Nothing [] Scalar Nothing Nothing Nothing],
             optional = [nestedFieldRule "model" Nothing ["opus", "sonnet"] Scalar Nothing Nothing Nothing]
           }
@@ -5715,7 +5863,11 @@ testOptionalFieldClosure = do
         typeAwareProfileSpec
           { frontmatter =
               FrontmatterRules
-                { required = [requiredField "type"],
+                { membershipConstraints = [],
+                  uniqueValuesConstraints = [],
+                  presenceConstraints = [],
+                  timestampOrderConstraints = [],
+                  required = [requiredField "type"],
                   recommended = [],
                   optional = [requiredField "supersedes"]
                 },
@@ -5746,12 +5898,12 @@ testOptionalDoesNotCancelOtherScope = do
           }
       recommendedThenOptional =
         specWith
-          FrontmatterRules {required = [requiredField "type"], recommended = [ownerRule], optional = []}
-          FrontmatterRules {required = [], recommended = [], optional = [ownerRule]}
+          FrontmatterRules {membershipConstraints = [], uniqueValuesConstraints = [], presenceConstraints = [], timestampOrderConstraints = [], required = [requiredField "type"], recommended = [ownerRule], optional = []}
+          FrontmatterRules {membershipConstraints = [], uniqueValuesConstraints = [], presenceConstraints = [], timestampOrderConstraints = [], required = [], recommended = [], optional = [ownerRule]}
       optionalThenRecommended =
         specWith
-          FrontmatterRules {required = [requiredField "type"], recommended = [], optional = [ownerRule]}
-          FrontmatterRules {required = [], recommended = [ownerRule], optional = []}
+          FrontmatterRules {membershipConstraints = [], uniqueValuesConstraints = [], presenceConstraints = [], timestampOrderConstraints = [], required = [requiredField "type"], recommended = [], optional = [ownerRule]}
+          FrontmatterRules {membershipConstraints = [], uniqueValuesConstraints = [], presenceConstraints = [], timestampOrderConstraints = [], required = [], recommended = [ownerRule], optional = []}
   concept <- profileConcept "owned/one" [("type", String "Owned Concept")] "# One\n"
   cid <- parseTestConceptId "owned/one"
   for_ [recommendedThenOptional, optionalThenRecommended] $ \spec -> do
@@ -5774,21 +5926,23 @@ testOptionalDefinitionErrors = do
       statusRule = fieldRule "status" Nothing ["active"] Scalar Nothing Nothing Nothing Nothing
   assertEqual
     (Left (ConflictingFieldRequirement Nothing "owner" :| []))
-    (compileProfile (specWith FrontmatterRules {required = [key "type", key "owner"], recommended = [], optional = [key "owner"]}))
+    (compileProfile (specWith FrontmatterRules {membershipConstraints = [], uniqueValuesConstraints = [], presenceConstraints = [], timestampOrderConstraints = [], required = [key "type", key "owner"], recommended = [], optional = [key "owner"]}))
   assertEqual
     (Left (ConflictingFieldRequirement Nothing "owner" :| []))
-    (compileProfile (specWith FrontmatterRules {required = [key "type"], recommended = [key "owner"], optional = [key "owner"]}))
+    (compileProfile (specWith FrontmatterRules {membershipConstraints = [], uniqueValuesConstraints = [], presenceConstraints = [], timestampOrderConstraints = [], required = [key "type"], recommended = [key "owner"], optional = [key "owner"]}))
   assertEqual
     (Left (DuplicateFieldRule Nothing "optional" "owner" :| []))
-    (compileProfile (specWith FrontmatterRules {required = [key "type"], recommended = [], optional = [key "owner", key "owner"]}))
+    (compileProfile (specWith FrontmatterRules {membershipConstraints = [], uniqueValuesConstraints = [], presenceConstraints = [], timestampOrderConstraints = [], required = [key "type"], recommended = [], optional = [key "owner", key "owner"]}))
   assertEqual
     (Left (OptionalFieldWithCondition Nothing (fieldPath "supersededBy") :| []))
     ( compileProfile
-        (specWith FrontmatterRules {required = [key "type", statusRule], recommended = [], optional = [conditioned "supersededBy" "status"]})
+        (specWith FrontmatterRules {membershipConstraints = [], uniqueValuesConstraints = [], presenceConstraints = [], timestampOrderConstraints = [], required = [key "type", statusRule], recommended = [], optional = [conditioned "supersededBy" "status"]})
     )
   let nestedRules =
         NestedRules
-          { required = [nestedFieldRule "kind" Nothing ["model"] Scalar Nothing Nothing Nothing],
+          { presenceConstraints = [],
+            timestampOrderConstraints = [],
+            required = [nestedFieldRule "kind" Nothing ["model"] Scalar Nothing Nothing Nothing],
             recommended = [],
             optional = [nestedFieldRule "model" Nothing [] Scalar Nothing Nothing (Just (FieldCondition "kind" ["model"]))]
           }
@@ -5798,7 +5952,11 @@ testOptionalDefinitionErrors = do
   let optionalParent =
         specWith
           FrontmatterRules
-            { required = [key "type"],
+            { membershipConstraints = [],
+              uniqueValuesConstraints = [],
+              presenceConstraints = [],
+              timestampOrderConstraints = [],
+              required = [key "type"],
               recommended = [],
               optional = [fieldRule "reviews" Nothing [] List Nothing (Just nestedRules) Nothing Nothing]
             }
@@ -5869,15 +6027,15 @@ testClosedFieldValidation = do
   let ownedRule :: TypeRule
       ownedRule =
         withTypeFrontmatter
-          FrontmatterRules {required = [requiredField "owner"], recommended = [], optional = []}
+          FrontmatterRules {membershipConstraints = [], uniqueValuesConstraints = [], presenceConstraints = [], timestampOrderConstraints = [], required = [requiredField "owner"], recommended = [], optional = []}
           (firstTypeRule typeAwareProfileSpec)
       reviewRule =
         withTypeName
           "Review"
-          (withTypeFrontmatter FrontmatterRules {required = [requiredField "reviewer"], recommended = [], optional = []} ownedRule)
+          (withTypeFrontmatter FrontmatterRules {membershipConstraints = [], uniqueValuesConstraints = [], presenceConstraints = [], timestampOrderConstraints = [], required = [requiredField "reviewer"], recommended = [], optional = []} ownedRule)
       closed =
         typeAwareProfileSpec
-          { frontmatter = FrontmatterRules {required = [requiredField "type", requiredField "status"], recommended = [], optional = []},
+          { frontmatter = FrontmatterRules {membershipConstraints = [], uniqueValuesConstraints = [], presenceConstraints = [], timestampOrderConstraints = [], required = [requiredField "type", requiredField "status"], recommended = [], optional = []},
             allowUnknownFields = False,
             idField = Just "requestId",
             requireBundleVersion = Nothing,
@@ -6042,7 +6200,7 @@ testValidateEmptyObjectRules = do
           ( objectProfileWithRules
               "generated"
               Any
-              (Just (NestedRules {required = [], recommended = [], optional = []}))
+              (Just (NestedRules {presenceConstraints = [], timestampOrderConstraints = [], required = [], recommended = [], optional = []}))
               Nothing
           )
       )
@@ -6509,7 +6667,7 @@ plainDocumentationTypeRule typeName =
     { type_ = typeName,
       description = Nothing,
       guidance = Nothing,
-      frontmatter = FrontmatterRules {required = [], recommended = [], optional = []},
+      frontmatter = FrontmatterRules {membershipConstraints = [], uniqueValuesConstraints = [], presenceConstraints = [], timestampOrderConstraints = [], required = [], recommended = [], optional = []},
       pathPattern = Nothing,
       resourceScheme = Nothing,
       requireSchemaSection = False,
@@ -6529,7 +6687,11 @@ duplicateSlugProfileSpec =
       okfVersion = "0.1",
       frontmatter =
         FrontmatterRules
-          { required = [fieldRule "type" Nothing [] Any Nothing Nothing Nothing Nothing],
+          { membershipConstraints = [],
+            uniqueValuesConstraints = [],
+            presenceConstraints = [],
+            timestampOrderConstraints = [],
+            required = [fieldRule "type" Nothing [] Any Nothing Nothing Nothing Nothing],
             recommended = [],
             optional = []
           },
@@ -8003,3 +8165,179 @@ testCatchSynchronous = do
   synchronous <- catchSynchronous (ioError (userError "expected IO failure")) (\_ -> pure True)
   asynchronous <- try @AsyncException (catchSynchronous (throwIO UserInterrupt) (\_ -> pure False))
   pure $ if synchronous && asynchronous == Left UserInterrupt then Right () else Left "asynchronous cancellation was swallowed"
+
+-- Regression matrix for bounded same-concept constraints. The descriptor is
+-- loaded through both public decoders; mutations are independent concepts.
+testProductDiscoveryConstraints :: IO (Either Text ())
+testProductDiscoveryConstraints = do
+  path <- fixtureFilePath "profiles/product-discovery.dhall"
+  oldPath <- fixtureFilePath "profiles/pre-product-discovery-0.10.0.0.dhall"
+  loaded <- loadProfileFile path
+  registry <- loadRegistry (RegistryFile path)
+  registryPath <- fixtureFilePath "profiles/product-discovery-registry.dhall"
+  namedRegistry <- loadRegistry (RegistryFile registryPath)
+  old <- loadProfileFile oldPath
+  oldRegistry <- loadRegistry (RegistryFile oldPath)
+  malformedPath <- fixtureFilePath "profiles/product-discovery-malformed.dhall"
+  malformed <- loadRegistry (RegistryFile malformedPath)
+  pure $ do
+    spec <- loaded
+    malformedEntries <- firstShow malformed
+    assertEqual [] malformedEntries
+    compiled <- firstShow (compileProfile spec)
+    named <- firstShow namedRegistry
+    assertEqual ["productDiscovery"] (map (^. #export) named)
+    assertEqual [spec] (map (^. #spec) named)
+    entries <- firstShow registry
+    assertEqual [spec] (map (^. #spec) entries)
+    oldSpec <- old
+    _ <- firstShow (compileProfile oldSpec)
+    oldEntries <- firstShow oldRegistry
+    assertEqual [oldSpec] (map (^. #spec) oldEntries)
+    assertEqual (Just "Frozen guidance") (oldSpec ^. #guidance)
+    let arr = toJSON :: [Value] -> Value
+        rec = object
+        outcome fields = ("outcomes", arr [rec fields])
+        complete = [("metric", String "duration"), ("unit", String "s"), ("direction", String "down"), ("method", String "observe")]
+        check fields = do
+          concept <- profileConcept "one" (("type", String "Job") : fields) ""
+          pure (validateProfile PermissiveConformance compiled [concept])
+        passes fields = check fields >>= assertEqual []
+        fails fields = do
+          violations <- check fields
+          if null violations then Left ("expected rejection: " <> Text.pack (show fields)) else Right ()
+        hasPath expected violations =
+          if any (Text.isInfixOf expected . Text.pack . show) violations then Right () else Left ("missing path " <> expected <> ": " <> Text.pack (show violations))
+    passes [outcome [("name", String "qualitative")]]
+    passes [outcome complete]
+    for_ ["metric", "unit", "direction", "method", "baseline", "target", "population", "period"] $ \key ->
+      fails [outcome [(key, if key `elem` ["baseline", "target"] then Number 0 else String "usable")]]
+    let measured = complete <> [("baseline", Number 0), ("population", String "authors"), ("period", String "week")]
+    fails [outcome measured]
+    passes [outcome measured, ("sources", arr [String "interview"])]
+    passes [outcome (complete <> [("target", Number 2)])]
+    for_ [Number 0, Number (-2), Number 1.25, Number 1e400] $ \n -> passes [outcome (complete <> [("target", n)])]
+    for_ [Bool True, String "1.25", Null] $ \n -> fails [outcome (complete <> [("target", n)])]
+    passes [("outcomeRefs", arr [rec [("outcomeNames", arr [])]])]
+    fails [("outcomeRefs", arr [rec [("outcomeNames", arr [String "faster"])]])]
+    for_ ["planned", "in-progress", "delivered"] $ \status -> do
+      fails [("status", String status)]
+      passes [("status", String status), ("features", arr [rec []])]
+      passes [("status", String status), ("featureRefs", arr [String "f"])]
+      fails [("status", String status), ("features", arr []), ("featureRefs", arr [])]
+      fails [("status", String status), ("features", arr [Number 1])]
+    passes [("status", String "draft")]
+    let period a b = outcome [("periodStart", String a), ("periodEnd", String b)]
+    passes [period "2026-10-01T00:00:00.1Z" "2026-10-01T00:00:00.2Z"]
+    fails [period "2026-10-01T00:00:00Z" "2026-10-01T00:00:00Z"]
+    fails [period "2026-10-02T00:00:00Z" "2026-10-01T00:00:00Z"]
+    passes [outcome [("periodStart", String "2026-10-02T00:00:00Z")]]
+    passes [("outcomes", arr [rec [("periodStart", String "2026-10-02T00:00:00Z")], rec [("periodEnd", String "2026-10-01T00:00:00Z")]])]
+    fails [period "bad" "2026-10-01T00:00:00Z"]
+    passes [("jobs", arr [rec [("name", String "author")]]), ("features", arr [rec [("jobs", arr [String "author"])]])]
+    fails [("features", arr [rec [("jobs", arr [String "unknown"])]])]
+    for_ [Number 42, Bool True, Null, rec [], arr []] $ \bad -> do
+      fails [("jobs", arr [rec [("name", bad)]])]
+      vs <- check [("features", arr [rec [("jobs", arr [bad])]])]
+      hasPath "ArrayIndex 0" vs
+      fails [("jobRefs", arr [bad])]
+      fails [("featureRefs", arr [bad])]
+      fails [("features", arr [rec [("featureRef", bad)]])]
+    vs <- check [("jobs", arr [rec [("name", Number 42)]]), ("features", arr [rec [("jobs", arr [String "unknown", Number 7])]])]
+    assertEqual 3 (length vs)
+    fails [("jobs", arr [rec [("name", String " ")]])]
+    for_ [[("featureRefs", arr [String "f", String "f"])], [("features", arr [rec [("featureRef", String "f")], rec [("featureRef", String "f")]])], [("featureRefs", arr [String "f"]), ("features", arr [rec [("featureRef", String "f")]])]] fails
+    one <- profileConcept "one" [("featureRefs", arr [String "f"])] ""
+    two <- profileConcept "two" [("featureRefs", arr [String "f"])] ""
+    assertEqual [] (validateProfile PermissiveConformance compiled [one, two])
+    let select key = ValueSelector key Nothing
+        root = spec ^. #frontmatter
+        invalid rootRules = case compileProfile (spec & #frontmatter .~ rootRules) of
+          Left _ -> Right ()
+          Right _ -> Left "expected constraint definition failure"
+        pc = PresenceConstraint Nothing [] [] []
+    invalid (root & #presenceConstraints .~ [pc])
+    invalid (root & #presenceConstraints .~ [pc & #requireAll .~ [select "unknown"]])
+    invalid (root & #presenceConstraints .~ [pc & #requireAll .~ [ValueSelector "outcomes" (Just "baseline")]])
+    invalid (root & #membershipConstraints .~ [MembershipConstraint (select "jobRefs") (select "jobRefs")])
+    invalid (root & #membershipConstraints .~ [MembershipConstraint (ValueSelector "outcomes" (Just "baseline")) (select "jobRefs")])
+    invalid (root & #uniqueValuesConstraints .~ [UniqueValuesConstraint [select "featureRefs", select "featureRefs"]])
+    invalid (root & #timestampOrderConstraints .~ [TimestampOrderConstraint "status" "status"])
+    invalid (root & #presenceConstraints .~ [PresenceConstraint (Just (FieldCondition "jobRefs" ["x"])) [] [select "sources"] []])
+    let baseConstraints = compiledProfileBaseConstraints compiled
+    assertEqual baseConstraints (compiledProfileConstraintsForType compiled "unknown")
+    assertEqual 2 (length (conceptPresenceConstraints baseConstraints))
+    let withoutRelations = spec & #frontmatter . #membershipConstraints .~ [] & #frontmatter . #uniqueValuesConstraints .~ []
+    loose <- firstShow (compileProfile withoutRelations)
+    numeric <- profileConcept "numeric" [("jobs", arr [rec [("name", Number 42)]])] ""
+    assertEqual [] (validateProfile PermissiveConformance loose [numeric])
+    -- Merge conjunction, exact deduplication, and nested constraints shared by
+    -- the two accepted record spellings.
+    let sourceRule = fieldRule "sources" Nothing [] List Nothing Nothing Nothing Nothing
+        objectMembers = NestedRules [] [] [nestedFieldRule "value" Nothing [] Scalar Nothing Nothing Nothing] [] []
+        obj = (fieldRule "context" Nothing [] Any Nothing Nothing Nothing Nothing) & #objectFields .~ Just objectMembers
+        p = PresenceConstraint Nothing [ValueSelector "outcomes" (Just "name")] [select "context"] []
+        objectSpec = spec & #frontmatter . #optional %~ (obj :) & #frontmatter . #presenceConstraints .~ [p]
+    objectCompiled <- firstShow (compileProfile objectSpec)
+    let objectCheck value = do
+          concept <- profileConcept "one" [outcome [("name", String "x")], ("context", value)] ""
+          pure (validateProfile PermissiveConformance objectCompiled [concept])
+    objectCheck (rec [("value", String "x")]) >>= assertEqual []
+    emptyObject <- objectCheck (rec [])
+    assertEqual 1 (length emptyObject)
+    let rootConstraint = PresenceConstraint Nothing [select "jobRefs"] [select "sources"] []
+        rootOnly = emptyTestFrontmatterRules & #optional .~ [sourceRule, fieldRule "jobRefs" Nothing [] List Nothing Nothing Nothing Nothing] & #presenceConstraints .~ [rootConstraint]
+        typeRule = head (testProfileSpec ^. #types) & #frontmatter .~ rootOnly & #pathPattern .~ Nothing & #resourceScheme .~ Nothing & #requireSchemaSection .~ False & #idPrefix .~ Nothing
+        mergedSpec = spec & #frontmatter .~ rootOnly & #types .~ [typeRule]
+    merged <- firstShow (compileProfile mergedSpec)
+    assertEqual [rootConstraint] (conceptPresenceConstraints (compiledProfileConstraintsForType merged (typeRule ^. #type_)))
+    let selectedRule = fieldRule "items" Nothing [] List Nothing Nothing Nothing Nothing
+        dedupRoot =
+          emptyTestFrontmatterRules
+            & #optional
+            .~ [selectedRule, sourceRule, fieldRule "jobRefs" Nothing [] List Nothing Nothing Nothing Nothing]
+            & #membershipConstraints
+            .~ [MembershipConstraint (select "items") (select "sources"), MembershipConstraint (select "items") (select "jobRefs")]
+    dedupCompiled <- firstShow (compileProfile (spec & #frontmatter .~ dedupRoot))
+    badConcept <- profileConcept "bad" [("items", arr [Number 1, Null, rec [], arr []])] ""
+    assertEqual 4 (length (validateProfile PermissiveConformance dedupCompiled [badConcept]))
+    -- Projected list presence observes the list once; sibling requirements stay
+    -- correlated with their own record rather than borrowing from another.
+    let projected = PresenceConstraint Nothing [ValueSelector "features" (Just "jobs")] [select "sources"] []
+    projectedCompiled <- firstShow (compileProfile (spec & #frontmatter . #presenceConstraints .~ [projected]))
+    projectedConcept <- profileConcept "projected" [("features", arr [rec [("jobs", arr [String "author"])]])] ""
+    let projectedViolations = validateProfile PermissiveConformance projectedCompiled [projectedConcept]
+    if any (\case ConstraintPresenceMissing {} -> True; _ -> False) projectedViolations then Right () else Left "projected whole-list trigger was lost"
+    correlated <- check [("outcomeRefs", arr [rec [("outcomeNames", arr [String "faster"])], rec [("jobRef", String "JOB-1")]]), ("jobRefs", arr [String "JOB-1"])]
+    assertEqual 1 (length correlated)
+    let timestamps = [fieldRule key Nothing [] Scalar (Just Rfc3339Utc) Nothing Nothing Nothing | key <- ["start", "end"]]
+        times = emptyTestFrontmatterRules & #optional .~ timestamps & #timestampOrderConstraints .~ [TimestampOrderConstraint "start" "end"]
+    rootTimes <- firstShow (compileProfile (spec & #frontmatter .~ times))
+    timeConcept <- profileConcept "time" [("start", String "2026-10-02T00:00:00Z"), ("end", String "2026-10-01T00:00:00Z")] ""
+    assertEqual 1 (length (validateProfile PermissiveConformance rootTimes [timeConcept]))
+    assertEqual 2 (Map.size (conceptResolvedSelectors (compiledProfileBaseConstraints rootTimes)))
+    for_ [".inf", "-.inf", ".nan"] $ \spelling ->
+      case testConceptWithFrontmatter "nonfinite" ("type: Job\noutcomes: [{metric: duration, unit: s, direction: down, method: observe, target: " <> spelling <> "}]\n") of
+        Left _ -> Right () -- parser rejection is an accepted outcome
+        Right concept -> if null (validateProfile PermissiveConformance compiled [concept]) then Left "nonfinite YAML accepted" else Right ()
+    invalid (root & #membershipConstraints .~ [MembershipConstraint (select "jobs") (select "jobRefs")])
+    invalid (root & #membershipConstraints .~ [MembershipConstraint (ValueSelector "jobs" (Just "unknown")) (select "jobRefs")])
+    invalid (root & #presenceConstraints .~ [pc & #requireAll .~ [select "sources", select "sources"]])
+    invalid (root & #presenceConstraints .~ [pc & #requireAll .~ [select ""]])
+    let siblingA = nestedFieldRule "a" Nothing [] Scalar Nothing Nothing Nothing
+        siblingB = nestedFieldRule "b" Nothing [] Scalar Nothing Nothing Nothing
+        recordGate = PresenceConstraint Nothing [select "b"] [select "a"] []
+        elementRules = NestedRules [] [] [siblingA, siblingB] [recordGate] []
+        objectRules = NestedRules [] [] [siblingA, siblingB] [] []
+        dual = (fieldRule "dual" Nothing [] Any Nothing (Just elementRules) Nothing Nothing) & #objectFields .~ Just objectRules
+        dualSpec = spec & #frontmatter .~ (emptyTestFrontmatterRules & #optional .~ [dual])
+    dualCompiled <- firstShow (compileProfile dualSpec)
+    dualRule <- maybe (Left "dual field missing") Right (Map.lookup "dual" (compiledProfileBaseRules dualCompiled))
+    assertEqual (fieldRuleElementConstraints dualRule) (fieldRuleObjectConstraints dualRule)
+    assertEqual [recordGate] (conceptPresenceConstraints (fieldRuleObjectConstraints dualRule))
+    for_ [rec [("b", String "present")], arr [rec [("b", String "present")]]] $ \value -> do
+      concept <- profileConcept "dual" [("dual", value)] ""
+      assertEqual 1 (length (validateProfile PermissiveConformance dualCompiled [concept]))
+    rendered <- firstShow (renderProfileDocumentation defaultDocumentationOptions dualCompiled)
+    let prose = Text.concat (map serializeConcept rendered)
+    assertEqual 1 (length (Text.breakOnAll "require all [a]" prose))

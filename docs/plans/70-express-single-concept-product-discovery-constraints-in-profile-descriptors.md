@@ -26,6 +26,11 @@ provenance:
       at: 2026-10-28T03:55:55Z
       mode: "update"
       note: "Resolve container-presence and text-operand review findings, add acceptance cases, and qualify unavailable producer evidence."
+    - model: "gpt-6.1-sol"
+      harness: "codex-cli"
+      at: 2026-10-28T04:34:02Z
+      mode: "implement"
+      note: "Implement the descriptor generation and concept-local constraints with compatibility and public-surface tests."
   reviews:
     - model: "gpt-6-astra"
       harness: "codex-cli"
@@ -50,10 +55,12 @@ This fulfills [IR-9](../improvement-requests/express-product-discovery-constrain
 ## Progress
 
 
-- [ ] Milestone 1: the new descriptor generation loads, compiles, exposes its effective constraints, preserves old generations, and enforces the nested-baseline-to-root-sources case through the public CLI.
-- [ ] Milestone 2: finite-decimal and grouped presence rules cover qualitative/measured outcomes, baseline context, same-record job links, and delivery-stage alternatives.
-- [ ] Milestone 3: timestamp ordering, membership, and combined uniqueness reject invalid records at their actual indexed paths while remaining local to one concept.
-- [ ] Milestone 4: human/JSON inspection and generated documentation describe every constraint; compatibility, CLI, and documentation checks pass, and the consumer handoff is documented.
+- [x] (2026-10-28) Milestone 1: the new descriptor generation loads, compiles, exposes its effective constraints, preserves old generations, and enforces the nested-baseline-to-root-sources case through the public CLI.
+- [x] (2026-10-28) Milestone 2: finite-decimal and grouped presence rules cover qualitative/measured outcomes, baseline context, same-record job links, and delivery-stage alternatives.
+- [x] (2026-10-28) Milestone 3: timestamp ordering, membership, and combined uniqueness reject invalid records at their actual indexed paths while remaining local to one concept.
+- [x] (2026-10-28) Milestone 4: human/JSON inspection and generated documentation describe every constraint; compatibility, CLI, and documentation checks pass, and the consumer handoff is documented.
+
+Implementation evidence (2026-10-28): `nix develop --command cabal test all` passes both core and CLI suites. The product-discovery matrix covers usable baseline zero, all eight measurement triggers, delivery record-list alternatives, numeric formats including `1e400`, indexed text checks and deduplication, record correlation, and concept-local comparison state. The public CLI validates the strict valid bundle and tests advisory versus enforced failure on the invalid bundle. The new frozen fixture loads and compiles through file and registry paths. Independent removal of the file fallback and of the pure registry fallback each caused the compatibility tests to fail; both were restored. Final core/CLI suites pass, registry list/show/JSON commands succeed, strict example and ADR validation pass, improvement-request profile/log validation passes, and a second documentation generation is byte-identical. `git diff --check` is clean.
 
 Planning handoff (2026-10-16): the request has been validated and accepted; implementation has not started. The working tree's `okf-core` package is 0.10.0.0, and the motivating catalog pins commit `bdf8893`, which is tag `v0.9.0.0`. `git diff v0.9.0.0 HEAD -- okf-core/dhall` is empty, so the published descriptor shape is identical in both releases: one new frozen generation covers the catalog's pin and the pre-change working tree. Neither version string is evidence of the latest published release.
 
@@ -62,6 +69,7 @@ Review handoff (2026-10-28): the two selector-contract findings are addressed be
 
 ## Surprises & Discoveries
 
+- Implementation (2026-10-28): live-schema descriptors in this repository also used literal frontmatter/nested records. Converting those authoring sites to record completion was necessary to keep their current imports type-correct; historical inline generations remained unchanged. Required final improvement-request validation additionally exposed the pre-existing metadata defect recorded as FRIC-3.
 
 - Plan validation (2026-10-16) found that three older frozen generations still share the live `FieldFormat` union and would stop decoding when `FiniteDecimal` is added. The affected records are `PreNestedReferenceFieldRule` and `PreNestedReferenceNestedFieldRule`, which the 0.7.0.0 pre-nested-reference generation and the pre-bundle-version generation both use, and `PrePathProfileFieldRule` and `PrePathProfileNestedFieldRule` (pre-path generation), all in `okf-core/src/Okf/Profile.hs`. `PreGuidanceFieldFormat` is already a frozen copy of exactly today's ten alternatives, so those four records can be rebound to it, and lifted with `upgradePreGuidanceFieldFormat`, without a new union.
 - `evaluateFieldValue` treats numbers and booleans as present only when the effective cardinality is `Scalar`. Under `Any` cardinality, `legacyValueIsPresent` counts only nonblank text and nonempty lists, so `baseline: 0` is absent. A trigger must therefore be declared scalar, or carry a numeric format that refines it to scalar, before zero can activate it. The catalog's `nestedScalar` helper already sets `Cardinality.Scalar` on every measurement member, including `periodStart` and `periodEnd`.
@@ -83,7 +91,11 @@ Review handoff (2026-10-28): the two selector-contract findings are addressed be
 ## Outcomes & Retrospective
 
 
-(To be filled during and after implementation.)
+Completed on 2026-10-28. All four milestones are accepted. Descriptors can express the nine missing single-concept rules without a producer checkout, and the existing `uniqueBy` path remains available for inline-name uniqueness. The new generation preserves old descriptor pins and fails closed on malformed new members. Runtime comparisons retain indexed paths, inspect both operands, and isolate state per concept; effective inspection exposes resolved selector rules. Human display, raw JSON, generated documentation, authoring defaults, examples, help, and changelogs are updated.
+
+ADRs 5, 6, and 11 now retain the bounded-selector semantics, ordered conjunction, shared record contract, rendering obligations, and compatibility boundary. The documentation meta-profile needed no semantic change because generated frontmatter is unchanged; its authoring literal was converted to record completion along with other live-schema descriptors. No historical inline frozen fixture changed. No dependency bounds, release pins, producer checkout, or external checker were modified. IR-9 records the release/adoption handoff and new public constructors.
+
+FRIC-3 in [docs/friction-log/3-improvement-request-validation-is-blocked-by-missing-ir-10-timestamp.md](../friction-log/3-improvement-request-validation-is-blocked-by-missing-ir-10-timestamp.md) is resolved: the required final check exposed IR-10's missing timestamp; restoring its matching creation/review timestamp made the bundle check pass. Publication and downstream adoption remain outside this completed implementation.
 
 
 ## Context and Orientation
