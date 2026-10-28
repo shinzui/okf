@@ -11,6 +11,12 @@ provenance:
     model: "gpt-6-astra"
     harness: "codex-cli"
     at: 2026-10-28T03:32:16Z
+  revisions:
+    - model: "gpt-6.1-sol"
+      harness: "codex-cli"
+      at: 2026-10-28T04:04:00Z
+      mode: "implement"
+      note: "Wire a typed fzf chooser into the existing kit engine"
 ---
 
 # Select kit installations interactively with fzf
@@ -29,13 +35,13 @@ Record friction met while implementing in the friction-log bundle as it occurs (
 ## Progress
 
 
-- [ ] M1: The chooser displays manifest items and installs the selected item through the engine.
-- [ ] M2: Cancellation, unavailable terminals, explicit names and install-to-assist visibility pass fixture acceptance.
+- [x] M1 (2026-10-27): The optional fzf chooser displays sanitized manifest name/kind/description and returns the indexed original identity to Baikai Kit. Skills and subagents install through the existing engine.
+- [x] M2 (2026-10-27): Twelve executable tests pass, including duplicate labels, Unicode/spaces, cancellation, empty kits, malformed/out-of-range output, process failure, detached/missing-fzf preflight and named installs. A selected project tool-only skill is visible in context and both provider launches.
 
 ## Surprises & Discoveries
 
 
-(None yet.)
+The engine callback carries Maybe Text, so a narrow KitSelectionError exception carries genuine selection failures to the CLI boundary. Only explicit fzf cancellation becomes Nothing; it preserves the engine’s success/no-installation contract.
 
 ## Decision Log
 
@@ -45,7 +51,9 @@ Record friction met while implementing in the friction-log bundle as it occurs (
 ## Outcomes & Retrospective
 
 
-(To be filled during implementation.)
+The chooser is wired only for omitted-name KitInstall. Preflight occurs before engine refresh; explicit names call the existing engine path directly. No installer lifecycle or visibility logic was copied. Haskell candidate tests verify display collisions cannot change identity, and executable tests prove selecting the second colliding label installs its original item.
+
+Acceptance: `nix develop --no-write-lock-file -c cabal build all`, `cabal test all` in that shell, `nix fmt`, `git diff --check`, strict ADR validation, and the twelve-test executable harness pass. Scope, tool-only/shared visibility, subagent consent and one-document Kit JSON remain valid. Cancellation reports “No item chosen; nothing installed.” and exits 0; empty/error cases exit 1 and unavailable selection exits 2. ADR 2 records the chooser/engine boundary and the separate Kit cancellation contract. No friction crossed the logging threshold under this child.
 
 ## Context and Orientation
 

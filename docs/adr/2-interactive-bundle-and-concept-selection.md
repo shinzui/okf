@@ -8,6 +8,10 @@ generated:
 docId: ADR-2
 status: Accepted
 date: 2026-07-25
+amended:
+  - by: codex-cli/gpt-6.1-sol
+    at: 2026-10-28T04:05:50Z
+    change: Add application-owned kit selection with engine-owned cancellation.
 ---
 
 # ADR 2: Interactive bundle and concept selection
@@ -39,8 +43,7 @@ and behaves exactly as it did before, including the path-then-handle resolution
 order fixed by [ADR 1](./1-profile-declared-document-ids.md). Because scripted
 usage always passes both arguments, no existing caller can be affected. The
 fuzzy finder is [fzf](https://github.com/junegunn/fzf), an external executable
-the user installs; it is an optional *runtime* dependency, and no other command
-uses it.
+the user installs; it is an optional *runtime* dependency, also used by profile and Kit selection.
 
 **A directory is a bundle root when it directly contains `index.md`, or
 directly contains a non-reserved `.md` file whose frontmatter has a non-empty
@@ -165,3 +168,22 @@ cancellation exits 130 without partial command output. After a bundle is chosen,
 the selected command keeps its existing success and failure semantics. For
 `show`, no concepts still exits 1 and concept-picker diagnostics remain specific
 to that command.
+
+
+## Kit selection extension
+
+`okf kit install [NAME]` supplies the engine's chooseItem callback only when NAME
+is omitted. OKF owns terminal presentation; Baikai Kit owns refresh, manifest
+loading, scope, visibility and installation. Preflight checks fzf and a controlling
+terminal before the engine can refresh. Named installation bypasses those probes.
+Candidates display sanitized name, kind and description while numeric indexes
+retain the original identity; labels are never parsed back into item names.
+
+Kit's Maybe callback represents only selection or cancellation. A narrowly typed
+KitSelectionError crosses that callback for empty manifests and genuine picker
+failures; only the Kit CLI boundary catches it. No library chooser exits the
+process. Kit cancellation returns Nothing to the engine and exits 0 without
+installation. Empty manifests and picker errors exit 1, unavailable selection
+exits 2 with an explicit-name remedy. Bundle/concept/profile cancellation keeps
+its existing 130 contract. Installation and contextual Assist use the shared root
+policy in ADR 16, including selected tool-only skill visibility for both providers.

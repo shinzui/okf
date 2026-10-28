@@ -42,3 +42,15 @@ PUBLISHING ITEMS
   Skills are directories with a SKILL.md file. Subagents are Markdown persona
   files. Add an entry to kit.json, commit, push, and run 'okf kit update' to
   refresh local installs. No okf rebuild is required.
+
+INTERACTIVE INSTALLATION
+
+  okf kit install                     Choose a skill or subagent with fzf.
+  okf kit install --project --tool-only
+                                      Choose and install at project scope.
+
+  Named installation never probes fzf or a terminal. Omitted NAME requires both
+  fzf and a controlling terminal before repository refresh, or exits 2 with an
+  explicit-name alternative. An empty kit exits 1. Esc/Ctrl-C returns success
+  without installing anything; other picker failures exit 1. Name, kind and
+  description are displayed, and selection retains original manifest identity.

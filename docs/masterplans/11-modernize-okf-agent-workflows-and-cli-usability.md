@@ -50,7 +50,7 @@ Dependency compatibility is one independently testable baseline. Contextual sess
 | --- | --- | --- | --- |
 | 70 | [upgrade the baikai release family and verify launch compatibility](../plans/70-upgrade-the-baikai-release-family-and-verify-launch-compatibility.md) | None | Complete |
 | 71 | [launch contextual interactive agent sessions without a required prompt](../plans/71-launch-contextual-interactive-agent-sessions-without-a-required-prompt.md) | Hard: 70 complete; integration: 72 | Complete |
-| 72 | [select kit installations interactively with fzf](../plans/72-select-kit-installations-interactively-with-fzf.md) | Hard: 70 complete; integration: 71 | Not Started |
+| 72 | [select kit installations interactively with fzf](../plans/72-select-kit-installations-interactively-with-fzf.md) | Hard: 70 complete; integration: 71 | Complete |
 | 73 | [close cli usability and haskell standards gaps](../plans/73-close-cli-usability-and-haskell-standards-gaps.md) | Hard: 71 and 72 complete | Not Started |
 
 ## Dependency Graph
@@ -78,7 +78,7 @@ Early producer/consumer checks are mandatory: plan 70 compiles existing Assist/K
 ## Progress
 
 
-Plan 70 is Complete: Cabal and Nix builds, both package suites and fake-provider terminal/Kit acceptance pass on the verified release family. Plan 71 is Complete: deterministic context, promptless aliases, both provider paths and nested project assets pass acceptance. Plan 72 is next; plan 73 awaits its chooser acceptance. The final integration gate is owned by plan 73.
+Plan 70 is Complete: Cabal and Nix builds, both package suites and fake-provider terminal/Kit acceptance pass on the verified release family. Plan 71 is Complete: deterministic context, promptless aliases, both provider paths and nested project assets pass acceptance. Plan 72 is Complete: chooser/error/cancellation acceptance and selected install-to-session visibility pass. Plan 73 is next and owns the final standards/integration gate. The final integration gate is owned by plan 73.
 
 ## Surprises & Discoveries
 

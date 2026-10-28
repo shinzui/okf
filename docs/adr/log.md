@@ -1,6 +1,7 @@
 # Bundle Update Log
 
 ## 2026-10-28
+* **Update**: Document optional Kit chooser ownership and cancellation semantics.
 * **Update**: Record contextual promptless agent sessions and shared project-root discovery.
 
 ## 2026-10-03

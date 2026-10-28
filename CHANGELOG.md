@@ -9,6 +9,9 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- `okf kit install` uses an optional fzf picker when NAME is omitted; explicit
+  names remain suitable for scripts. Cancellation succeeds without installation.
+
 - `okf agent assist [PROMPT]` opens a contextual interactive session without a
   required prompt; `okf assist` remains an alias. `--debug` and `agent context
   [--json]` inspect local context without launching. Context JSON uses schemaVersion 1.

@@ -1409,3 +1409,18 @@ scopes while specificity beats scope within one, is in `okf help config`.
 | the agent's own | the session ran and exited non-zero |
 | `2` | no controlling terminal, invalid inspection flags, or an unsupported provider policy |
 | `127` | the provider's CLI is not installed |
+
+### Interactive Kit installation
+
+`okf kit install` and `okf kit install --project --tool-only` offer the manifest's
+skills and subagents through fzf. The selected name is passed back to the shared
+engine; scope, visibility, update and local-edit rules are unchanged. Display text
+is sanitized and numeric indexes preserve identity even when labels coincide.
+
+An explicit name bypasses all fzf/terminal probes. Omitted names require fzf and
+a controlling terminal before any kit repository refresh; unavailable selection
+exits 2 and suggests `okf kit install NAME`. Empty manifests exit 1. Esc/Ctrl-C
+cancels with exit 0 and no installation, following the engine's contract. This
+is distinct from bundle/concept picker cancellation (130). Malformed output and
+picker process failures remain errors (exit 1). Project assets are discoverable
+by contextual sessions for both providers from nested project directories.

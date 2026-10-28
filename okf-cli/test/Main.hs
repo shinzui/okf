@@ -3,6 +3,7 @@ module Main (main) where
 import Baikai.Interactive (CodexApprovalPolicy (..), CodexSandboxMode (..), InteractiveSafety (..), interactiveLaunchRequest)
 import Baikai.Kit.Config (KitScope (..))
 import Baikai.Kit.Install (InstallOptions (..), OverwritePolicy (..), defaultInstallOptions)
+import Baikai.Kit.Manifest qualified as Manifest
 import Baikai.Kit.Visibility (KitVisibility (..))
 import Baikai.Provider.Claude.Interactive (claudeInteractiveCommand, defaultClaudeInteractiveConfig)
 import Baikai.Provider.OpenAI.Interactive (codexInteractiveCommand, defaultCodexInteractiveConfig)
@@ -13,6 +14,7 @@ import Data.Aeson (Value (..), toJSON)
 import Data.Aeson qualified as Aeson
 import Data.Aeson.KeyMap qualified as KeyMap
 import Data.Bifunctor (first)
+import Data.Char (isControl)
 import Data.Foldable (toList, traverse_)
 import Data.Generics.Labels ()
 import Data.List qualified as List
@@ -35,6 +37,7 @@ import Okf.Cli.Fzf (Candidate (..), FzfConfig (..), FzfOpts (..), optsToArgs, pa
 import Okf.Cli.Fzf.Selector (ConceptOrder (..), conceptCandidates, conceptPreviewCommand, orderConcepts, parseBundleSearchRoots, profileCandidates, profilePreviewCommand)
 import Okf.Cli.Help (HelpTopic (..), helpTopics)
 import Okf.Cli.Kit (KitCommand (..), OutputFormat (..))
+import Okf.Cli.Kit.Selector (kitCandidates)
 import Okf.Cli.ProfileDiscovery (ProfileDiscovery (..), discoverAvailableProfiles, parseProfileSearchRoots, profileSearchRootsEnvVar)
 import Okf.ConceptId (ConceptId, parseConceptId, renderConceptId)
 import Okf.Document (Attester (..), Executor (..), Parameter (..), parseDocument)
@@ -723,6 +726,8 @@ main = do
           assistModelOverride,
           assistCodexCommandBuilder,
           assistKitVisibility,
+          testKitCandidates,
+          parseCommandMatches ["kit", "install"] (Kit (KitInstall Nothing UserScope defaultInstallOptions)),
           parseCommandMatches ["kit"] (Kit (KitList HumanOutput)),
           parseCommandMatches ["kit", "list", "--json"] (Kit (KitList JsonOutput)),
           parseCommandMatches ["kit", "status", "--json"] (Kit (KitStatus JsonOutput)),
@@ -3724,3 +3729,13 @@ testContextRendering =
         []
         []
     markdown = Context.renderContextMarkdown fixture
+
+testKitCandidates :: Bool
+testKitCandidates =
+  map candidateValue candidates == ["same\nname", "samename"]
+    && case map candidateDisplay candidates of
+      [firstLabel, secondLabel] -> firstLabel == secondLabel && not (Text.any isControl firstLabel)
+      _ -> False
+  where
+    entry name = Manifest.SkillEntry name "description\t" Nothing "skills/demo" ["SKILL.md"] Nothing
+    candidates = kitCandidates (Manifest.KitManifest 2 [entry "same\nname", entry "samename"] [])

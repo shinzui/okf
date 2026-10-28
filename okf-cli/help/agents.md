@@ -17,7 +17,11 @@ KIT COMMANDS
   Use --shared to make an item available in every agent session, or --tool-only
   to restrict it to sessions OKF launches. Codex custom agents require shared
   visibility or --accept-shared-codex because Codex cannot isolate them.
-  Install requires NAME; OKF does not configure an interactive kit chooser.
+  Omit NAME to choose a skill or subagent with fzf. Explicit NAME bypasses
+  terminal and fzf probes. The picker requires fzf and a controlling terminal;
+  when unavailable it exits 2 before refreshing the repository. Empty kits exit 1.
+  Esc/Ctrl-C cancels with exit 0 and no installation (the Kit engine contract;
+  bundle/concept pickers instead exit 130). Picker errors exit 1.
 
 ASSIST
 

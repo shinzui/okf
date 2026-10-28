@@ -231,6 +231,108 @@ sys.exit(23)
         self.assertIn('assist', completion.stdout)
         self.assertIn('context', completion.stdout)
 
+    def fake_fzf(self, action='0'):
+        self.env['OKF_TEST_PICK'] = action
+        self.env['OKF_TEST_CANDIDATES'] = str(self.root / 'picker-received.txt')
+        executable = self.bin / 'fzf'
+        executable.write_text(f'#!{sys.executable}\n' + """import os, sys
+lines = sys.stdin.read().splitlines()
+with open(os.environ['OKF_TEST_CANDIDATES'], 'w') as f:
+    f.write('\\n'.join(lines))
+action = os.environ['OKF_TEST_PICK']
+if action == 'cancel': sys.exit(130)
+if action == 'fail': sys.exit(7)
+if action == 'nomatch': sys.exit(1)
+if action == 'invalid': print('invalid'); sys.exit(0)
+if action == 'outside': print('999\\toutside'); sys.exit(0)
+print(lines[int(action)])
+""")
+        executable.chmod(0o755)
+
+    def test_kit_picker_preflight(self):
+        self.env['OKF_CONFIG'] = str(self.root / 'preflight.dhall')
+        Path(self.env['OKF_CONFIG']).write_text('let Provider = < Claude | Codex > in '
+            '{kit = {repoUrl = "file:///nonexistent-kit-origin", providers = [Provider.Claude]}, '
+            'assist = {provider = Provider.Claude, model = None Text, systemPrompt = None Text}}')
+        self.fake_fzf()
+        result = self.run_okf('kit', 'install')
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn('okf kit install NAME', result.stderr)
+        self.assertFalse((self.root / '.cache/okf/kit').exists())
+        self.env['PATH'] = str(self.root / 'no-bin')
+        status, output = self.run_terminal('kit', 'install')
+        self.assertEqual(status, 2, output)
+        self.assertIn('install fzf', output)
+        self.assertFalse((self.root / '.cache/okf/kit').exists())
+
+    def test_kit_picker_selection_and_visibility(self):
+        self.fake_fzf('1')
+        self.local_kit(skills=[
+            {'name': 'review-ü', 'description': 'Shared label \x1b[31m', 'path': 'skills/demo', 'files': ['SKILL.md']},
+            {'name': 'review space ü', 'description': 'Shared label \x1b[31m', 'path': 'skills/demo', 'files': ['SKILL.md']}])
+        (self.project / '.git').mkdir()
+        status, output = self.run_terminal('kit', 'install', '--project', '--tool-only')
+        self.assertEqual(status, 0, output)
+        self.assertIn("Installed skill 'review space ü'", output)
+        candidates = (self.root / 'picker-received.txt').read_text()
+        self.assertIn('[skill]', candidates)
+        self.assertNotIn('\x1b', candidates)
+        self.assertFalse((self.project / '.agents/skills/review-ü').exists())
+        self.assertTrue((self.project / '.agents/skills/review space ü/SKILL.md').exists())
+        snapshot = json.loads(self.run_okf('agent', 'context', '--json').stdout)
+        self.assertEqual({a['provider'] for a in snapshot['installedAssets']}, {'claude', 'codex'})
+        for provider in ('claude', 'codex'):
+            status, output = self.run_terminal('agent', 'assist', '--provider', provider)
+            self.assertEqual(status, 23, output)
+            argv = json.loads(self.record.read_text())['argv']
+            self.assertIn('review space ü', ' '.join(argv))
+
+    def test_kit_picker_failures_write_no_assets(self):
+        self.local_kit(skills=[{'name': 'review-ü', 'description': 'Fixture skill',
+                               'path': 'skills/demo', 'files': ['SKILL.md']}])
+        for action, expected in [('cancel', 0), ('fail', 1), ('invalid', 1), ('outside', 1), ('nomatch', 1)]:
+            with self.subTest(action=action):
+                self.fake_fzf(action)
+                status, output = self.run_terminal('kit', 'install', '--project')
+                self.assertEqual(status, expected, output)
+                self.assertFalse((self.project / '.okf/agents').exists())
+                self.assertFalse((self.project / '.agents').exists())
+        self.fake_fzf('fail')
+        # An explicit name bypasses fzf and terminal probes, even detached.
+        result = self.run_okf('kit', 'install', 'review-ü', '--project', '--shared')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((self.project / '.agents/skills/review-ü/SKILL.md').exists())
+
+    def test_empty_kit_and_agent_selection(self):
+        self.fake_fzf()
+        self.local_kit()
+        status, output = self.run_terminal('kit', 'install')
+        self.assertEqual(status, 1, output)
+        self.assertIn('no skills or subagents', output)
+        self.assertFalse((self.root / 'picker-received.txt').exists())
+        # Refresh the local origin with one subagent. The engine owns git refresh.
+        origin = self.root / 'kit-origin'
+        (origin / 'kit.json').write_text(json.dumps({'version': 2, 'skills': [], 'agents': [
+            {'name': 'reviewer', 'description': 'Fixture agent', 'path': 'agents/reviewer.md'}]}))
+        subprocess.run(['git', 'add', '.'], cwd=origin, check=True, capture_output=True)
+        subprocess.run(['git', '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid',
+                        'commit', '-m', 'add agent'], cwd=origin, check=True, capture_output=True)
+        status, output = self.run_terminal('kit', 'install', '--project', '--accept-shared-codex')
+        self.assertEqual(status, 0, output)
+        self.assertIn("Installed agent 'reviewer'", output)
+        self.assertIn('[agent]', (self.root / 'picker-received.txt').read_text())
+
+    def test_duplicate_picker_labels_keep_identity(self):
+        self.fake_fzf('1')
+        self.local_kit(skills=[{'name': name, 'description': 'Same description',
+                               'path': 'skills/demo', 'files': ['SKILL.md']}
+                              for name in ('same\nname', 'samename')])
+        status, output = self.run_terminal('kit', 'install', '--project', '--shared')
+        self.assertEqual(status, 0, output)
+        lines = (self.root / 'picker-received.txt').read_text().splitlines()
+        self.assertEqual(lines[0].split('\t', 1)[1], lines[1].split('\t', 1)[1])
+        self.assertTrue((self.project / '.agents/skills/samename/SKILL.md').exists())
+
     def local_kit(self, skills=None, agents=None):
         origin = self.root / 'kit-origin'
         origin.mkdir()

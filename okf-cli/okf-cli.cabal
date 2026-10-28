@@ -58,6 +58,7 @@ library
     Okf.Cli.Help
     Okf.Cli.Kit
     Okf.Cli.Kit.Config
+    Okf.Cli.Kit.Selector
     Okf.Cli.ProfileDiscovery
     Okf.Cli.Version
 

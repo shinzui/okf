@@ -272,6 +272,7 @@ Claude session that can use them. The default configuration points at
 ```bash
 cabal run okf -- config show
 cabal run okf -- kit list
+cabal run okf -- kit install                 # choose with fzf
 cabal run okf -- kit install author-okf-concept
 cabal run okf -- kit status
 cabal run okf -- assist --print-command "add a tables/orders concept"
@@ -287,6 +288,10 @@ installed assets and common commands. A starting prompt is optional; `okf assist
 remains an alias and keeps the existing configuration keys. Launches require a
 controlling terminal; inspection works in scripts. Project asset lookup uses the
 nearest `.git`, `okf-config.dhall` or `.okf` ancestor.
+
+Omitting the install name opens fzf when a controlling terminal is available.
+Explicit names work in scripts without fzf. Cancelling Kit selection succeeds
+without installing anything.
 
 To publish another skill, add `skills/<name>/SKILL.md` to `okf-kit`, add a matching
 entry to `kit.json`, commit, and push. Users pick it up with `okf kit update` or
