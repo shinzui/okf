@@ -16,6 +16,11 @@ provenance:
       at: 2026-10-28T03:42:02Z
       mode: "implement"
       note: "Begin dependency compatibility baseline"
+    - model: "gpt-6.1-sol"
+      harness: "codex-cli"
+      at: 2026-10-28T04:33:15Z
+      mode: "update"
+      note: "Use Mina-compatible registry columns so completed children roll up correctly"
 ---
 
 # Modernize OKF agent workflows and CLI usability
@@ -46,12 +51,17 @@ Dependency compatibility is one independently testable baseline. Contextual sess
 ## Exec-Plan Registry
 
 
-| Plan | Title and path | Dependencies | Status |
-| --- | --- | --- | --- |
-| 70 | [upgrade the baikai release family and verify launch compatibility](../plans/70-upgrade-the-baikai-release-family-and-verify-launch-compatibility.md) | None | Complete |
-| 71 | [launch contextual interactive agent sessions without a required prompt](../plans/71-launch-contextual-interactive-agent-sessions-without-a-required-prompt.md) | Hard: 70 complete; integration: 72 | Complete |
-| 72 | [select kit installations interactively with fzf](../plans/72-select-kit-installations-interactively-with-fzf.md) | Hard: 70 complete; integration: 71 | Complete |
-| 73 | [close cli usability and haskell standards gaps](../plans/73-close-cli-usability-and-haskell-standards-gaps.md) | Hard: 71 and 72 complete | Complete |
+| # | Title | Path | Hard Deps | Soft Deps | Status |
+| --- | --- | --- | --- | --- | --- |
+| 70 | Upgrade the Baikai release family and verify launch compatibility | [Plan 70](../plans/70-upgrade-the-baikai-release-family-and-verify-launch-compatibility.md) | None | None | Complete |
+| 71 | Launch contextual interactive agent sessions without a required prompt | [Plan 71](../plans/71-launch-contextual-interactive-agent-sessions-without-a-required-prompt.md) | EP-70 | None | Complete |
+| 72 | Select kit installations interactively with fzf | [Plan 72](../plans/72-select-kit-installations-interactively-with-fzf.md) | EP-70 | None | Complete |
+| 73 | Close CLI usability and Haskell standards gaps | [Plan 73](../plans/73-close-cli-usability-and-haskell-standards-gaps.md) | EP-71, EP-72 | None | Complete |
+
+Plans 71 and 72 have the integration relationship described below; neither is a
+soft execution prerequisite for the other. Registry dependency cells use the
+`EP-N` references recognized by Mina.
+
 
 ## Dependency Graph
 
@@ -104,3 +114,7 @@ Delivered the verified Baikai release family, canonical `agent assist/context` c
 Final evidence is recorded in plan 73: both package suites, Cabal/Nix builds, current-platform flake checks, strict ADR/friction validation and all fifteen executable tests pass on both binaries. The combined fixture journey executes context's own command example and traces a selected project skill into both providers, including Ctrl-C and exit propagation. Real installed providers additionally reached their startup interfaces in isolated homes without submitting a task.
 
 Distillation reviewed every child's decisions/discoveries/outcomes. ADR 16 owns context, configuration and launch/root semantics; ADR 2 owns chooser/engine separation and cancellation; ADR 18 owns cancellation-safe optional discovery; ADR 21 owns shared help/metadata and config-free recovery; ADR-22 owns coherent application release overrides on the shared Haskell channel. FRIC-1/FRIC-2 in docs/friction-log are accepted initiative-level build integration lessons, captured in ADR-22. No friction remains logged and no integration gate remains open.
+
+Tracking verification (2026-10-28): the registry uses Mina’s six-column layout.
+`mina master-plan list --limit 1` reports 9/9 milestones (100%) and 4/4 children
+done; `mina master-plan list --incomplete` excludes this completed plan.
