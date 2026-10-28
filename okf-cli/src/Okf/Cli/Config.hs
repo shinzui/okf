@@ -43,12 +43,14 @@ module Okf.Cli.Config
 where
 
 import Control.Exception (IOException, SomeException, catch)
+import Data.Generics.Labels ()
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Text qualified as Text
 import Dhall (FromDhall (..), auto, genericAutoWith)
 import Dhall qualified
 import Okf.Cli.Aliases (validateAliases)
+import Okf.Exception (catchSynchronous)
 import Okf.Prelude
 import Okf.Profile.Registry (defaultRegistryReference)
 import System.Directory (doesFileExist, getCurrentDirectory, getHomeDirectory)
@@ -424,7 +426,7 @@ decodeConfigFile path = do
     tryDecode :: IO a -> IO (Either Text a)
     tryDecode action =
       (Right <$> action)
-        `catch` \(exception :: SomeException) ->
+        `catchSynchronous` \(exception :: SomeException) ->
           pure (Left (Text.pack (show exception)))
 
 normalizeProfileConfig :: OkfConfig -> OkfConfig

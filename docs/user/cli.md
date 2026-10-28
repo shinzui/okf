@@ -1407,7 +1407,8 @@ scopes while specificity beats scope within one, is in `okf help config`.
 |-----------|---------|
 | `0` | the command line was printed, or the session ran and exited zero |
 | the agent's own | the session ran and exited non-zero |
-| `2` | no controlling terminal, invalid inspection flags, or an unsupported provider policy |
+| `1` | invalid CLI arguments or an unknown help topic |
+| `2` | no controlling terminal or an unsupported provider policy |
 | `127` | the provider's CLI is not installed |
 
 ### Interactive Kit installation
@@ -1424,3 +1425,27 @@ cancels with exit 0 and no installation, following the engine's contract. This
 is distinct from bundle/concept picker cancellation (130). Malformed output and
 picker process failures remain errors (exit 1). Project assets are discoverable
 by contextual sessions for both providers from nested project directories.
+
+### Help layout and scripting
+
+`okf help TOPIC --width 60` wraps plain prose to a positive explicit width.
+Interactive help uses the terminal's ioctl width with a 140-column cap. Indented
+examples, fenced blocks and unbreakable URLs remain intact. With no explicit
+width and piped stdout, help keeps its historical bytes (embedded topic text plus
+the writer's final newline). Bare `okf help` lists topics. Invalid widths and
+unknown topics fail on stderr with remedies.
+
+Agent settings/inspection, context output and Kit options have labeled help
+sections. Shell completions include topic names, canonical agent commands and
+Kit visibility flags. Help, version and completion work with malformed config.
+The Haskell packages require GHC 9.12 or newer (base >=4.21); every component
+inherits the GHC2024 common stanza.
+
+Executable acceptance uses temporary homes, local Git kits, fake fzf/providers,
+and PTYs; it never modifies installed user assets:
+
+```bash
+nix develop --no-write-lock-file -c cabal build all
+nix develop --no-write-lock-file -c cabal test all
+python3 scripts/test-agent-workflows.py --okf "$(cabal list-bin exe:okf)"
+```

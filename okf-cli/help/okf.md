@@ -97,3 +97,10 @@ SEE ALSO
   okf help agents        Installing agent skills and launching assist.
 
   The full user guide lives under docs/user/ in the okf repository.
+
+HELP LAYOUT
+
+  okf help agents --width 60   Wrap prose at an explicit positive width.
+  Help automatically uses terminal width, capped at 140 columns. Indented
+  examples, fenced code and URLs are preserved. Piped default output keeps its
+  historical bytes. Bare 'okf help' lists topics; topic names support completion.

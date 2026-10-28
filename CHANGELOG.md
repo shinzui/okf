@@ -9,6 +9,10 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- `okf help TOPIC --width N` wraps prose; terminal help uses ioctl sizing,
+  capped at 140 columns, while piped default output stays byte-stable.
+- Topic-name completion, grouped agent/Kit options and shared command examples.
+
 - `okf kit install` uses an optional fzf picker when NAME is omitted; explicit
   names remain suitable for scripts. Cancellation succeeds without installation.
 
@@ -19,6 +23,13 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   directories. Detached launches fail promptly with inspection alternatives.
 
 ### Changed
+
+- Both packages require GHC >=9.12 (base >=4.21); configuration/profile decoding
+  preserves asynchronous cancellation and owned process/terminal resources close
+  on exceptions.
+- Unknown help topics report errors and valid alternatives on stderr.
+- **Breaking (okf-cli library):** AssistOptions carries an optional prompt and
+  an inspection mode; Command adds AgentContext and HelpCommand carries width.
 
 - Upgrade `mori://shinzui/baikai/packages/baikai` to 0.10.0.0,
   `mori://shinzui/baikai/packages/baikai-kit` to 0.4.0.3, and

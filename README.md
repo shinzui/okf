@@ -296,7 +296,8 @@ without installing anything.
 To publish another skill, add `skills/<name>/SKILL.md` to `okf-kit`, add a matching
 entry to `kit.json`, commit, and push. Users pick it up with `okf kit update` or
 `okf kit install <name>`; no okf rebuild is required. Run `okf help agents` for
-the embedded guide.
+the embedded guide. Use `okf help agents --width 60` for an explicit width;
+terminal help sizes itself and piped default output stays byte-stable.
 
 
 ## Bundle Format

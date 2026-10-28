@@ -16,7 +16,7 @@ import Baikai.Kit.Manifest (kindLabel)
 import Baikai.Kit.Sidecar (sidecarPath)
 import Baikai.Kit.Status (InstalledCopy (..), installedCopies)
 import Control.Exception (IOException, try)
-import Control.Lens ((^.))
+import Control.Lens ((&), (.~), (^.))
 import Control.Monad (filterM)
 import Data.Aeson (ToJSON, encode)
 import Data.ByteString.Lazy (ByteString)
@@ -74,8 +74,8 @@ collectAgentContext = do
   workingDirectory <- getCurrentDirectory
   -- Configuration cannot change the tool identity or root policy. Inspect both
   -- providers without evaluating potentially remote/secret-bearing Dhall config.
-  let kit = (kitConfig defaultOkfConfig) {Kit.providers = [InteractiveClaude, InteractiveCodex]}
-  projectRoot <- Kit.projectRoot kit
+  let kit = kitConfig defaultOkfConfig & #providers .~ [InteractiveClaude, InteractiveCodex]
+  projectRoot <- kit ^. #projectRoot
   bundleRoots <- rootsAt projectRoot <$> bundleSearchRoots
   profileRoots <- rootsAt projectRoot <$> profileSearchRoots
   (bundlePaths, bundleWarnings) <- discover "bundles" (discoverBundleRoots defaultDiscoveryOptions) bundleRoots
@@ -91,7 +91,7 @@ collectAgentContext = do
         projectRoot,
         bundles = sort (nub bundlePaths),
         profiles = sortOn (\ProfileContext {path} -> path) [p | (Just p, _) <- loadedProfiles],
-        commands = sortOn commandPath commandGuides,
+        commands = sortOn (\CommandGuide {commandPath} -> commandPath) commandGuides,
         installedAssets = sortOn (\AssetContext {path, provider, scope} -> (path, provider, scope)) assets,
         warnings = sort (nub (bundleWarnings <> profileWarnings <> concatMap snd loadedProfiles <> assetWarnings))
       }

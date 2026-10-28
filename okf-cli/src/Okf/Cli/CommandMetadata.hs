@@ -1,5 +1,5 @@
 -- | Shared command descriptions and actionable examples for help and agents.
-module Okf.Cli.CommandMetadata (CommandGuide (..), commandGuides, commandDescription) where
+module Okf.Cli.CommandMetadata (CommandGuide (..), commandGuides, commandDescription, commandExamples) where
 
 import Data.Aeson (ToJSON)
 import Data.List (find)
@@ -28,7 +28,7 @@ commandGuides =
     CommandGuide "trust" "Report trust tiers, status, and staleness for every concept" ["okf trust --help"] False,
     CommandGuide "sources" "List the provenance recorded by each concept" ["okf sources --help"] False,
     CommandGuide "computations" "List the attested computations a bundle declares" ["okf computations --help"] False,
-    CommandGuide "concepts" "List the concepts a bundle holds, with optional filters" ["okf concepts BUNDLE --where 'status=\"accepted\"' --json"] False,
+    CommandGuide "concepts" "List the concepts a bundle holds, with optional filters" ["okf concepts BUNDLE --where status=accepted --json"] False,
     CommandGuide "id" "Allocate and list document IDs" ["okf id list BUNDLE --profile PROFILE", "okf id next BUNDLE --profile PROFILE ADR"] False,
     CommandGuide "alias" "List configured command aliases" ["okf alias --help"] False,
     CommandGuide "config" "Show and manage okf configuration" ["okf config show", "okf config agent"] True,
@@ -44,4 +44,14 @@ commandGuides =
 
 commandDescription :: String -> String
 commandDescription name =
-  maybe name (Text.unpack . description) (find (\guide -> commandPath guide == Text.pack name) commandGuides)
+  maybe name (\CommandGuide {description} -> Text.unpack description) (find (\CommandGuide {commandPath} -> commandPath == Text.pack name) commandGuides)
+
+-- | Parser help and live context use the same concrete command spellings.
+commandExamples :: [Text] -> String
+commandExamples paths =
+  Text.unpack
+    ( Text.unlines
+        ( "Examples:"
+            : ["  " <> example | CommandGuide {commandPath, examples} <- commandGuides, commandPath `elem` paths, example <- examples]
+        )
+    )

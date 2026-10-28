@@ -7,7 +7,8 @@ import Baikai.Kit.Manifest qualified as Manifest
 import Baikai.Kit.Visibility (KitVisibility (..))
 import Baikai.Provider.Claude.Interactive (claudeInteractiveCommand, defaultClaudeInteractiveConfig)
 import Baikai.Provider.OpenAI.Interactive (codexInteractiveCommand, defaultCodexInteractiveConfig)
-import Control.Exception (bracket, try)
+import Control.Concurrent (forkIO, newEmptyMVar, putMVar, takeMVar, threadDelay)
+import Control.Exception (AsyncException (UserInterrupt), bracket, throwTo, try)
 import Control.Lens ((&), (.~))
 import Control.Monad (unless)
 import Data.Aeson (Value (..), toJSON)
@@ -33,9 +34,9 @@ import Okf.Cli.Assist (AssistInspection (..), AssistOptions (..), buildAgentComm
 import Okf.Cli.BundleDiscovery (BundleDiscovery (..), bundleSearchRootsEnvVar, discoverAvailableBundles)
 import Okf.Cli.CommandMetadata qualified as Metadata
 import Okf.Cli.Config (AgentFieldSettings (..), AgentSettings (..), ConfigSource (..), KitSettings (..), OkfConfig (..), OkfEffort (..), OkfProvider (..), ProfileSettings (..), agentSharedDefaults, defaultOkfConfig, exampleConfigText, findConfigSource, loadAgentScopes, loadAliasesForExpansion, loadOkfConfig, okfConfigEnvVar, projectConfigPath, renderConfig)
-import Okf.Cli.Fzf (Candidate (..), FzfConfig (..), FzfOpts (..), optsToArgs, parseSelectionIndex, renderCandidateLines, shellQuote, withAnsi, withHeight, withNoSort, withPrompt)
+import Okf.Cli.Fzf (Candidate (..), FzfConfig (..), FzfOpts (..), optsToArgs, parseSelectionIndex, renderCandidateLines, runFzf, shellQuote, withAnsi, withHeight, withNoSort, withPrompt)
 import Okf.Cli.Fzf.Selector (ConceptOrder (..), conceptCandidates, conceptPreviewCommand, orderConcepts, parseBundleSearchRoots, profileCandidates, profilePreviewCommand)
-import Okf.Cli.Help (HelpTopic (..), helpTopics)
+import Okf.Cli.Help (HelpTopic (..), helpTopics, renderTopic)
 import Okf.Cli.Kit (KitCommand (..), OutputFormat (..))
 import Okf.Cli.Kit.Selector (kitCandidates)
 import Okf.Cli.ProfileDiscovery (ProfileDiscovery (..), discoverAvailableProfiles, parseProfileSearchRoots, profileSearchRootsEnvVar)
@@ -48,13 +49,32 @@ import Okf.Query (ConceptFilter (..), ConceptPredicate (..), FieldSelector (..),
 import Okf.Validation (ValidationProfile (..), validateBundle)
 import Options.Applicative
 import System.Directory (Permissions (..), canonicalizePath, createDirectoryIfMissing, createFileLink, doesDirectoryExist, doesFileExist, getCurrentDirectory, getPermissions, getTemporaryDirectory, listDirectory, makeAbsolute, removeDirectoryRecursive, setModificationTime, setPermissions, withCurrentDirectory)
-import System.Environment (lookupEnv, setEnv, unsetEnv, withArgs)
+import System.Environment (getArgs, getExecutablePath, lookupEnv, setEnv, unsetEnv, withArgs)
 import System.Exit (ExitCode (..), exitFailure)
 import System.FilePath (normalise, takeDirectory, (</>))
 import System.IO.Temp (createTempDirectory)
+import System.Timeout (timeout)
 
 main :: IO ()
 main = do
+  arguments <- getArgs
+  if "--select-1" `elem` arguments then fzfFixture arguments else runTests
+
+fzfFixture :: [String] -> IO ()
+fzfFixture arguments = do
+  _ <- Text.IO.getContents
+  case promptPath arguments of
+    Just path -> writeFile path "ready"
+    Nothing -> pure ()
+  threadDelay 30000000
+  where
+    promptPath ("--prompt" : path : _) = Just path
+    promptPath (_ : rest) = promptPath rest
+    promptPath [] = Nothing
+
+runTests :: IO ()
+runTests = do
+  fzfCancellation <- testFzfCancellation
   bundleDiscoveryListing <- testBundleDiscoveryListing
   profileDiscoveryListing <- testProfileDiscoveryListing
   profilePickerExitCodes <- testProfilePickerExitCodes
@@ -105,7 +125,9 @@ main = do
   conceptMenuOrdering <- testConceptMenuOrdering
   nonAsciiDiagnostics <- testNonAsciiValuesSurviveDiagnostics
   let results =
-        [ parseBundlesMatches ["bundles"] (BundlesOptions False),
+        [ fzfCancellation,
+          testHelpWrapping,
+          parseBundlesMatches ["bundles"] (BundlesOptions False),
           parseBundlesMatches ["bundles", "--json"] (BundlesOptions True),
           parseProfilesMatches ["profiles"] (ProfilesOptions False),
           parseProfilesMatches ["profiles", "--json"] (ProfilesOptions True),
@@ -3739,3 +3761,39 @@ testKitCandidates =
   where
     entry name = Manifest.SkillEntry name "description\t" Nothing "skills/demo" ["SKILL.md"] Nothing
     candidates = kitCandidates (Manifest.KitManifest 2 [entry "same\nname", entry "samename"] [])
+
+testHelpWrapping :: Bool
+testHelpWrapping =
+  renderTopic Nothing body == body
+    && all (`Text.isInfixOf` rendered) [example, url, fenced]
+    && all ((<= 60) . Text.length) (takeWhile (not . Text.null) (Text.lines rendered))
+    && Text.words prose == Text.words (Text.unlines (takeWhile (not . Text.null) (Text.lines rendered)))
+  where
+    prose = Text.unwords (replicate 20 "ordinary prose words")
+    example = "  okf agent assist --system-prompt 'an example preserved verbatim even when it exceeds the width'"
+    url = "https://example.invalid/a/long/unbreakable/url/that/must/remain/a/single/token"
+    fenced = "```bash\n" <> Text.replicate 90 "x" <> "\n```"
+    body = Text.intercalate "\n\n" [prose, example, url, fenced] <> "\n"
+    rendered = renderTopic (Just 60) body
+
+testFzfCancellation :: IO Bool
+testFzfCancellation = withIsolatedConfigEnv "okf-fzf-cancellation" $ do
+  executable <- getExecutablePath
+  root <- getCurrentDirectory
+  let marker = root </> "ready"
+      config = FzfConfig executable True False False True
+      awaitReady 0 = pure False
+      awaitReady attempts = do
+        exists <- doesFileExist marker
+        if exists then pure True else threadDelay 1000 >> awaitReady (attempts - 1 :: Int)
+  finished <- newEmptyMVar
+  worker <- forkIO $ do
+    outcome <- try @AsyncException (runFzf config (withPrompt (Text.pack marker)) [Candidate "fixture" ("fixture" :: Text.Text)])
+    putMVar finished outcome
+  ready <- awaitReady 2000
+  throwTo worker UserInterrupt
+  outcome <- timeout 2000000 (takeMVar finished)
+  pure $
+    ready && case outcome of
+      Just (Left UserInterrupt) -> True
+      _ -> False

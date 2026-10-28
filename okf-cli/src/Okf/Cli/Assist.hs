@@ -19,7 +19,6 @@ where
 
 import Baikai.Agent (AgentRenderError, renderAgentRenderError)
 import Baikai.Interactive (InteractiveLaunchRequest, InteractiveProvider (..), interactiveLaunchRequest)
-import Baikai.Kit.Config qualified as Kit
 import Baikai.Kit.Session (agentDirsForSession, codexSessionArgs)
 import Baikai.Provider.Claude.Interactive (claudeInteractiveCommand, defaultClaudeInteractiveConfig)
 import Baikai.Provider.OpenAI.Interactive (codexInteractiveCommand, defaultCodexInteractiveConfig)
@@ -46,7 +45,7 @@ import Okf.Cli.Kit.Config (kitConfig)
 import Options.Applicative
 import System.Exit (ExitCode (..), exitWith)
 import System.IO (IOMode (ReadMode), hClose, hPutStrLn, openFile, stderr)
-import System.Process (createProcess, delegate_ctlc, proc, waitForProcess)
+import System.Process (delegate_ctlc, proc, waitForProcess, withCreateProcess)
 
 -- | Inspection modes are a parser alternative, so conflicting flags fail.
 data AssistInspection = LaunchSession | PrintCommand | DebugContext
@@ -66,38 +65,52 @@ assistOptionsParser :: Parser AssistOptions
 assistOptionsParser =
   AssistOptions
     <$> optional (Text.pack <$> strArgument (metavar "PROMPT" <> help "Optional task or question to start the interactive session"))
-    <*> optional
-      ( option
-          (eitherReader (first Text.unpack . parseOkfProvider . Text.pack))
-          ( long "provider"
-              <> metavar "PROVIDER"
-              <> help "Agent CLI to launch: claude or codex"
+    <*> parserOptionGroup
+      "Agent settings"
+      ( optional
+          ( option
+              (eitherReader (first Text.unpack . parseOkfProvider . Text.pack))
+              ( long "provider"
+                  <> metavar "PROVIDER"
+                  <> help "Agent CLI to launch: claude or codex"
+              )
           )
       )
-    <*> optional
-      ( Text.pack
-          <$> strOption (long "model" <> metavar "MODEL" <> help "Override the assist model from config")
-      )
-    <*> optional
-      ( option
-          (eitherReader (first Text.unpack . parseOkfEffort . Text.pack))
-          ( long "effort"
-              <> metavar "LEVEL"
-              <> help "Reasoning effort: minimal, low, medium, high, xhigh, or max"
+    <*> parserOptionGroup
+      "Agent settings"
+      ( optional
+          ( Text.pack
+              <$> strOption (long "model" <> metavar "MODEL" <> help "Override the assist model from config")
           )
       )
-    <*> optional
-      ( Text.pack
-          <$> strOption
-            ( long "system-prompt"
-                <> metavar "TEXT"
-                <> help "Extra system prompt, appended to the agent's own"
-            )
+    <*> parserOptionGroup
+      "Agent settings"
+      ( optional
+          ( option
+              (eitherReader (first Text.unpack . parseOkfEffort . Text.pack))
+              ( long "effort"
+                  <> metavar "LEVEL"
+                  <> help "Reasoning effort: minimal, low, medium, high, xhigh, or max"
+              )
+          )
       )
-    <*> ( flag' PrintCommand (long "print-command" <> help "Print the rendered interactive command without launching")
-            <|> flag' DebugContext (long "debug" <> help "Print the live OKF context without launching")
-            <|> pure LaunchSession
-        )
+    <*> parserOptionGroup
+      "Agent settings"
+      ( optional
+          ( Text.pack
+              <$> strOption
+                ( long "system-prompt"
+                    <> metavar "TEXT"
+                    <> help "Extra system prompt, appended to the agent's own"
+                )
+          )
+      )
+    <*> parserOptionGroup
+      "Inspection"
+      ( flag' PrintCommand (long "print-command" <> help "Print the rendered interactive command without launching")
+          <|> flag' DebugContext (long "debug" <> help "Print the live OKF context without launching")
+          <|> pure LaunchSession
+      )
 
 -- | The flag layer of the precedence chain. Values are already parsed, so
 -- @--effort medum@ fails during argument parsing with the list of valid levels
@@ -137,7 +150,7 @@ launcherFor ProviderClaude =
       -- text through the request's own systemPrompt field would render
       -- --system-prompt, which /replaces/ Claude's system prompt; that would
       -- silently change how every existing assist session behaves. Keep
-      -- appending until Baikai can express the difference (baikai IR-4).
+      -- appending until Baikai can express the difference (mori://shinzui/baikai/okf/improvement-requests/concepts/IR-4).
       applySystemPrompt = \mSystemPrompt request ->
         request & #extraArgs .~ maybe [] (\text -> ["--append-system-prompt", text]) mSystemPrompt,
       buildCommand = claudeInteractiveCommand defaultClaudeInteractiveConfig
@@ -190,7 +203,7 @@ buildSessionAgentCommand ::
   OkfConfig -> ResolvedAgent -> AssistOptions -> IO (Either AgentRenderError (FilePath, [String]))
 buildSessionAgentCommand config resolved options = do
   let launcher = launcherFor (resolvedProviderOf resolved)
-      kit = (kitConfig config) {Kit.providers = [InteractiveClaude, InteractiveCodex]}
+      kit = kitConfig config & #providers .~ [InteractiveClaude, InteractiveCodex]
   agentDirs <- agentDirsForSession kit
   sessionArgs <- case resolvedProviderOf resolved of
     ProviderClaude -> pure []
@@ -208,8 +221,8 @@ buildContextualCommand launcher resolved@ResolvedAgent {systemPrompt} agentDirs 
    in buildCommand launcher request
 
 handleAssistCommand :: OkfConfig -> ResolvedAgent -> AssistOptions -> IO ()
-handleAssistCommand config resolved options
-  | inspection options == DebugContext = collectAgentContext >>= Text.IO.putStr . renderContextMarkdown
+handleAssistCommand config resolved options@AssistOptions {inspection}
+  | inspection == DebugContext = collectAgentContext >>= Text.IO.putStr . renderContextMarkdown
   | otherwise = do
       let launcher = launcherFor (resolvedProviderOf resolved)
       renderedCommand <- buildSessionAgentCommand config resolved options
@@ -218,7 +231,7 @@ handleAssistCommand config resolved options
           Text.IO.hPutStrLn stderr ("okf agent assist: " <> renderAgentRenderError renderError)
           exitWith (ExitFailure 2)
         Right (executable, argv)
-          | inspection options == PrintCommand ->
+          | inspection == PrintCommand ->
               Text.IO.putStrLn (Text.unwords (map (shellQuote . Text.pack) (executable : argv)))
           | otherwise -> do
               terminal <- try @IOException (bracket (openFile "/dev/tty" ReadMode) hClose (const (pure ())))
@@ -236,12 +249,12 @@ handleAssistCommand config resolved options
 -- @launchCodexInteractive@ calls 'createProcess' without it. Without
 -- delegation the terminal's SIGINT reaches okf as well as the agent, so the
 -- first Ctrl-C inside a session would kill okf and orphan the agent. See
--- baikai IR-5.
+-- mori://shinzui/baikai/okf/improvement-requests/concepts/IR-5.
 launchAgent :: InteractiveLauncher -> FilePath -> [String] -> IO ()
 launchAgent launcher executable argv = do
-  result <- try @IOException $ do
-    (_, _, _, processHandle) <- createProcess (proc executable argv) {delegate_ctlc = True}
-    waitForProcess processHandle
+  result <- try @IOException $
+    withCreateProcess (proc executable argv) {delegate_ctlc = True} $ \_ _ _ processHandle ->
+      waitForProcess processHandle
   case result of
     Left exception -> do
       hPutStrLn stderr $

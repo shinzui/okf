@@ -14,7 +14,7 @@ module Okf.Profile.Discovery
   )
 where
 
-import Control.Exception (Exception, SomeException, catch, throw)
+import Control.Exception (Exception, SomeException, throw)
 import Control.Monad (filterM)
 import Data.List qualified as List
 import Data.Text qualified as Text
@@ -24,6 +24,7 @@ import Dhall.Import qualified
 import Dhall.Parser qualified
 import Dhall.TypeCheck qualified
 import Okf.Discovery (isSearchableDirectory, listDirectorySafe)
+import Okf.Exception (catchSynchronous)
 import Okf.Prelude
 import Okf.Profile (ProfileSpec, decodeProfileExpr)
 import System.Directory (doesFileExist, pathIsSymbolicLink)
@@ -105,7 +106,7 @@ fileQualifiesAsProfileDescriptor path
 -- network request. The file is parsed exactly once before import resolution.
 loadProfileDescriptorWithoutNetwork :: FilePath -> IO (Either Text ProfileSpec)
 loadProfileDescriptorWithoutNetwork path =
-  action `catch` \(exception :: SomeException) -> pure (Left (Text.pack (show exception)))
+  action `catchSynchronous` \(exception :: SomeException) -> pure (Left (Text.pack (show exception)))
   where
     action = do
       contents <- Text.IO.readFile path
@@ -136,4 +137,4 @@ instance Exception RemoteImportsDisabled
 
 safelyFalse :: IO Bool -> IO Bool
 safelyFalse action =
-  action `catch` \(_ :: SomeException) -> pure False
+  action `catchSynchronous` \(_ :: SomeException) -> pure False

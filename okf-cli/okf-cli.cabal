@@ -70,7 +70,7 @@ library
     baikai-claude ^>=0.7.3.0,
     baikai-kit ^>=0.4.0.3,
     baikai-openai ^>=0.7.3.0,
-    base >=4.20 && <5,
+    base >=4.21 && <5,
     bytestring >=0.11 && <0.13,
     containers >=0.6 && <0.8,
     dhall >=1.41 && <1.43,
@@ -81,8 +81,9 @@ library
     githash ^>=0.1,
     lens ^>=5.3,
     okf-core ^>=0.10.0.0,
-    optparse-applicative >=0.18 && <0.20,
+    optparse-applicative >=0.19 && <0.20,
     process >=1.6 && <1.7,
+    terminal-size >=0.3.4 && <0.4,
     text ^>=2.1,
     time >=1.12 && <1.15,
 
@@ -97,7 +98,7 @@ test-suite okf-cli-test
     baikai-claude ^>=0.7.3.0,
     baikai-kit ^>=0.4.0.3,
     baikai-openai ^>=0.7.3.0,
-    base >=4.20 && <5,
+    base >=4.21 && <5,
     containers >=0.6 && <0.8,
     directory,
     filepath,
@@ -105,7 +106,7 @@ test-suite okf-cli-test
     lens ^>=5.3,
     okf-cli,
     okf-core ^>=0.10.0.0,
-    optparse-applicative >=0.18,
+    optparse-applicative >=0.19,
     temporary,
     text ^>=2.1,
     time >=1.12 && <1.15,
@@ -120,5 +121,5 @@ executable okf
     -with-rtsopts=-N
 
   build-depends:
-    base >=4.20 && <5,
+    base >=4.21 && <5,
     okf-cli,

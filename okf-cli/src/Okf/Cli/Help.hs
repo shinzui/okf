@@ -17,6 +17,8 @@ module Okf.Cli.Help
     helpTopics,
     helpCommandParser,
     handleHelpCommand,
+    renderTopic,
+    resolveWidth,
   )
 where
 
@@ -26,11 +28,15 @@ import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text.IO
 import Options.Applicative
+import System.Console.Terminal.Size qualified as Terminal
+import System.Exit (exitFailure)
+import System.IO (hIsTerminalDevice, stderr, stdout)
+import Text.Read (readMaybe)
 
 -- | A bare @help@ lists topics; @help <topic>@ shows one.
 data HelpCommand
   = ListTopics
-  | ShowTopic !Text
+  | ShowTopic !Text !(Maybe Int)
   deriving stock (Show, Eq)
 
 -- | A single help guide: short name, one-line description, embedded content.
@@ -118,24 +124,33 @@ kitTopicContent = $(embedStringFile "help/kit.md")
 agentsTopicContent :: Text
 agentsTopicContent = $(embedStringFile "help/agents.md")
 
--- | Parse @help [TOPIC]@. With no argument, 'pure ListTopics' wins via '<|>'.
+-- | Bare help reliably lists topics. The width option is declared once.
 helpCommandParser :: Parser HelpCommand
 helpCommandParser =
-  showTopicParser <|> pure ListTopics
+  make <$> optional topicArgument <*> parserOptionGroup "Layout" widthOption
   where
-    showTopicParser =
-      ShowTopic . Text.pack
+    make Nothing _ = ListTopics
+    make (Just topic) width = ShowTopic topic width
+    topicArgument =
+      Text.pack
         <$> strArgument
           ( metavar "TOPIC"
-              <> help ("Help topic: " <> Text.unpack topicList)
+              <> help "Help topic; omit to list available topics"
+              <> completeWith (map (Text.unpack . topicName) helpTopics)
           )
-    topicList = Text.intercalate ", " (map topicName helpTopics)
+    widthOption =
+      optional $
+        option
+          (eitherReader positiveWidth)
+          (long "width" <> short 'w' <> metavar "COLUMNS" <> help "Wrap prose to a positive width; preserve examples and URLs")
+    positiveWidth raw = case readMaybe raw of
+      Just width | width > 0 -> Right width
+      _ -> Left "width must be a positive integer"
 
--- | Run the @help@ command: list the topic index or print one topic.
 handleHelpCommand :: HelpCommand -> IO ()
 handleHelpCommand = \case
   ListTopics -> listTopics
-  ShowTopic name -> showTopic name
+  ShowTopic name width -> showTopic name width
 
 listTopics :: IO ()
 listTopics = do
@@ -147,10 +162,54 @@ listTopics = do
     -- 14, so the longest topic name ("computations") still gets two spaces.
     padRight n t = t <> Text.replicate (max 0 (n - Text.length t)) " "
 
-showTopic :: Text -> IO ()
-showTopic name =
+showTopic :: Text -> Maybe Int -> IO ()
+showTopic name requestedWidth =
   case find (\t -> topicName t == Text.toLower name) helpTopics of
-    Just t -> Text.IO.putStrLn (topicContent t)
+    Just topic -> do
+      width <- resolveWidth requestedWidth
+      -- Preserve the historical final writer newline when output is piped.
+      Text.IO.putStrLn (renderTopic width (topicContent topic))
     Nothing -> do
-      Text.IO.putStrLn ("Unknown topic: " <> name)
-      Text.IO.putStrLn ("Available: " <> Text.intercalate ", " (map topicName helpTopics))
+      Text.IO.hPutStrLn stderr ("Unknown topic: " <> name)
+      Text.IO.hPutStrLn stderr ("Use `okf help`; available: " <> Text.intercalate ", " (map topicName helpTopics))
+      exitFailure
+
+-- | ioctl only: never issue an escape sequence or wait for terminal input.
+resolveWidth :: Maybe Int -> IO (Maybe Int)
+resolveWidth (Just width) = pure (Just width)
+resolveWidth Nothing = do
+  terminal <- hIsTerminalDevice stdout
+  if not terminal
+    then pure Nothing
+    else do
+      window <- Terminal.size
+      pure $ case window of
+        Just Terminal.Window {Terminal.width = width} | width > 0 -> Just (min 140 width)
+        _ -> Nothing
+
+-- | Reflow only plain prose. Indentation, fenced blocks and unbreakable URLs
+-- are preserved. Explicit widths bypass the automatic readability cap.
+renderTopic :: Maybe Int -> Text -> Text
+renderTopic Nothing body = body
+renderTopic (Just width) body = Text.unlines (go Nothing (Text.lines body))
+  where
+    go _ [] = []
+    go fence (line : rest)
+      | Just marker <- fence = line : go (if marker `Text.isPrefixOf` Text.stripStart line then Nothing else fence) rest
+      | Just marker <- fenceMarker line = line : go (Just marker) rest
+      | protected line = line : go Nothing rest
+      | otherwise =
+          let (paragraph, remaining) = span (\lineValue -> not (protected lineValue) && fenceMarker lineValue == Nothing) rest
+           in wrapWords (Text.words (Text.unwords (line : paragraph))) <> go Nothing remaining
+    protected line = Text.null (Text.strip line) || "  " `Text.isPrefixOf` line || "\t" `Text.isPrefixOf` line
+    fenceMarker :: Text -> Maybe Text
+    fenceMarker line
+      | "```" `Text.isPrefixOf` Text.stripStart line = Just "```"
+      | "~~~" `Text.isPrefixOf` Text.stripStart line = Just "~~~"
+      | otherwise = Nothing
+    wrapWords [] = []
+    wrapWords (word : rest) = pack word rest
+    pack line [] = [line]
+    pack line (word : rest)
+      | Text.length line + 1 + Text.length word <= max 1 width = pack (line <> " " <> word) rest
+      | otherwise = line : pack word rest

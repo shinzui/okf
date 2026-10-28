@@ -6,6 +6,9 @@ No provider credentials or real user assets are used.
 """
 import argparse
 import errno
+import fcntl
+import struct
+import termios
 import json
 import os
 from pathlib import Path
@@ -64,6 +67,8 @@ sys.exit(23)
     def run_terminal(self, *argv):
         pid, fd = pty.fork()
         if pid == 0:
+            columns = int(self.env.get('OKF_TEST_COLUMNS', '80'))
+            fcntl.ioctl(0, termios.TIOCSWINSZ, struct.pack('HHHH', 24, columns, 0, 0))
             os.chdir(self.project)
             os.execve(args.okf, [args.okf, *argv], self.env)
         output = bytearray()
@@ -230,6 +235,115 @@ sys.exit(23)
         self.assertEqual(completion.returncode, 0)
         self.assertIn('assist', completion.stdout)
         self.assertIn('context', completion.stdout)
+
+    def completion(self, words, enriched=False):
+        flags = ['--bash-completion-index', str(len(words) - 1)]
+        if enriched:
+            flags += ['--bash-completion-enriched']
+        for word in words:
+            flags += ['--bash-completion-word', word]
+        return self.run_okf(*flags)
+
+    def test_help_width_and_completion(self):
+        help_dir = Path(__file__).resolve().parents[1] / 'okf-cli/help'
+        for topic in help_dir.glob('*.md'):
+            with self.subTest(topic=topic.stem):
+                result = self.run_okf('help', topic.stem)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout, topic.read_text() + '\n')
+        for width in ('0', '-1', 'nope'):
+            result = self.run_okf('help', 'agents', '--width', width)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('positive integer', result.stderr)
+        for columns, effective in ((60, 60), (240, 140)):
+            self.env['OKF_TEST_COLUMNS'] = str(columns)
+            expected = self.run_okf('help', 'agents', '--width', str(effective))
+            status, output = self.run_terminal('help', 'agents')
+            self.assertEqual(status, 0, output)
+            self.assertEqual(output.replace('\r\n', '\n'), expected.stdout)
+        self.assertIn('HELP TOPICS', self.run_okf('help').stdout)
+        unknown = self.run_okf('help', 'unknown-topic')
+        self.assertNotEqual(unknown.returncode, 0)
+        self.assertEqual(unknown.stdout, '')
+        self.assertIn('okf help', unknown.stderr)
+        invalid = self.run_okf('agent', 'unknown-command')
+        self.assertNotEqual(invalid.returncode, 0)
+        self.assertIn('context', invalid.stderr)
+        self.assertIn('Agent settings', self.run_okf('agent', 'assist', '--help').stdout)
+        self.assertIn('Inspection', self.run_okf('agent', 'assist', '--help').stdout)
+        self.assertIn('Kit scope', self.run_okf('kit', 'install', '--help').stdout)
+        (self.project / 'okf-config.dhall').write_text('malformed config')
+        for shell in ('bash', 'zsh', 'fish'):
+            result = self.run_okf('completions', shell)
+            self.assertEqual(result.returncode, 0)
+            self.assertEqual(result.stdout, self.run_okf('completions', shell).stdout)
+        for words, expected in [(['okf', 'help', ''], ['agents', 'kit', 'profiles']),
+                                (['okf', 'agent', 'assist', '--'], ['--debug', '--print-command', '--provider']),
+                                (['okf', 'kit', 'install', '--'], ['--shared', '--tool-only', '--project'])]:
+            result = self.completion(words)
+            self.assertEqual(result.returncode, 0)
+            self.assertTrue(all(word in result.stdout for word in expected), result.stdout)
+        enriched = self.completion(['okf', 'agent', ''], enriched=True)
+        self.assertEqual(enriched.returncode, 0)
+        self.assertIn('Inspect local OKF context', enriched.stdout)
+        self.assertEqual(enriched.stdout, self.completion(['okf', 'agent', ''], enriched=True).stdout)
+        self.assertEqual(self.run_okf('--version').returncode, 0)
+        self.assertFalse(self.record.exists())
+
+    def test_integrated_journey(self):
+        self.fake_fzf()
+        self.local_kit(skills=[{'name': 'review-ü', 'description': 'Fixture skill',
+                               'path': 'skills/demo', 'files': ['SKILL.md']}])
+        bundle = self.project / 'knowledge'
+        bundle.mkdir()
+        (bundle / 'index.md').write_text('---\nokf_version: "0.2"\n---\n# Knowledge\n')
+        (bundle / 'concept-1.md').write_text('---\ntype: Note\ntitle: Journey\nstatus: accepted\n---\n# Journey\n')
+        discovered = self.run_okf('bundles', '--json')
+        self.assertEqual(discovered.returncode, 0, discovered.stderr)
+        self.assertIn('knowledge', json.dumps(json.loads(discovered.stdout)))
+        concepts = self.run_okf('concepts', str(bundle), '--where', 'status=accepted', '--json')
+        self.assertEqual(concepts.returncode, 0, concepts.stderr)
+        self.assertEqual(json.loads(concepts.stdout), [{'type': 'Note', 'title': 'Journey', 'status': 'accepted'}])
+        shown = self.run_okf('show', str(bundle), 'concept-1')
+        self.assertEqual(shown.returncode, 0, shown.stderr)
+        self.assertIn('Journey', shown.stdout)
+        self.assertFalse((self.root / 'picker-received.txt').exists())
+        status, output = self.run_terminal('kit', 'install', '--project', '--tool-only')
+        self.assertEqual(status, 0, output)
+        context = self.run_okf('agent', 'context', '--json')
+        snapshot = json.loads(context.stdout)
+        self.assertIn(str(bundle.resolve()), snapshot['bundles'])
+        self.assertEqual(len(snapshot['installedAssets']), 2)
+        guide = next(c for c in snapshot['commands'] if c['commandPath'] == 'concepts')
+        example = guide['examples'][0].replace('BUNDLE', shlex.quote(str(bundle)))
+        from_example = self.run_okf(*shlex.split(example)[1:])
+        self.assertEqual(from_example.returncode, 0, from_example.stderr)
+        self.assertEqual(json.loads(from_example.stdout), json.loads(concepts.stdout))
+        self.env['OKF_TEST_INTERRUPT'] = '1'
+        for provider in ('claude', 'codex'):
+            status, output = self.run_terminal('agent', 'assist', '--provider', provider)
+            self.assertEqual(status, 23, output)
+            self.assertIn('INTERRUPTED', output)
+            received = json.loads(self.record.read_text())
+            self.assertIn(str(bundle.resolve()), ' '.join(received['argv']))
+            with self.assertRaises(ProcessLookupError):
+                os.kill(received['pid'], 0)
+
+    def test_inspection_does_not_read_stdin(self):
+        process = subprocess.Popen([args.okf, 'agent', 'context', '--json'],
+                                   cwd=self.project, env=self.env, stdin=subprocess.PIPE,
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                   start_new_session=True)
+        try:
+            self.assertEqual(process.wait(timeout=5), 0)
+            self.assertEqual(json.loads(process.stdout.read())['schemaVersion'], 1)
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait()
+            process.stdin.close()
+            process.stdout.close()
+            process.stderr.close()
 
     def fake_fzf(self, action='0'):
         self.env['OKF_TEST_PICK'] = action

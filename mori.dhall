@@ -170,7 +170,16 @@ in  Schema.Project::{
               , kind = Some Schema.DependencyKind.ThirdParty
               , source = Some Schema.DependencySource.Hackage
               , scope = Some Schema.DependencyScope.Regular
-              , versionConstraint = Some ">=0.18 && <0.20"
+              , versionConstraint = Some ">=0.19 && <0.20"
+              }
+          , Schema.Dependency.WithAugmentation
+              { name = "biegunka/terminal-size:terminal-size"
+              , extraDocs = [] : List Schema.DocRef.Type
+              , localPathOverride = None Text
+              , kind = Some Schema.DependencyKind.ThirdParty
+              , source = Some Schema.DependencySource.Hackage
+              , scope = Some Schema.DependencyScope.Regular
+              , versionConstraint = Some ">=0.3.4 && <0.4"
               }
           , Schema.Dependency.WithAugmentation
               { name = "shinzui/baikai:baikai"
@@ -228,6 +237,7 @@ in  Schema.Project::{
       , "haskell/aeson:aeson"
       , "haskell/time"
       , "pcapriotti/optparse-applicative"
+      , "biegunka/terminal-size:terminal-size"
       , "shinzui/baikai:baikai"
       , "shinzui/baikai:baikai-claude"
       , "shinzui/baikai:baikai-kit"
@@ -264,6 +274,12 @@ in  Schema.Project::{
       , Schema.MoriRef::{
         , namespace = "pcapriotti"
         , name = "optparse-applicative"
+        }
+      , Schema.MoriRef::{
+        , namespace = "biegunka"
+        , name = "terminal-size"
+        , kind = Some Schema.MoriArtifactKind.Package
+        , key = Some "terminal-size"
         }
       , Schema.MoriRef::{
         , namespace = "shinzui"

@@ -8,6 +8,10 @@ generated:
 docId: ADR-18
 status: Accepted
 date: 2026-08-18
+amended:
+  - by: codex-cli/gpt-6.1-sol
+    at: "2026-10-28T04:19:43Z"
+    change: Preserve asynchronous cancellation across optional discovery and Dhall decoding.
 ---
 
 # ADR 18: Local profile descriptor discovery
@@ -109,3 +113,16 @@ the precise way to present only user-facing descriptors.
 
 The picker is additive. Existing non-interactive validation, explicit profile
 paths, registry exports, and their exit behavior remain unchanged.
+
+
+## Cancellation boundary
+
+Optional discovery and Dhall decoding translate synchronous failures into their
+ordinary empty/error results. They must rethrow asynchronous cancellation rather
+than treating it as an unreadable source or retrying every legacy decoder.
+Okf.Exception.catchSynchronous supplies that shared boundary for profile,
+registry and configuration loaders. Expected filesystem/process failures use
+narrow IOException catches. CLI terminal handles and owned subprocesses are
+bracketed; cancellation releases those resources and propagates to the caller.
+A fixture process regression interrupts an active fzf read and requires the
+UserInterrupt to reach the test caller instead of becoming FzfError.

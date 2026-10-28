@@ -80,6 +80,7 @@ import Data.Vector qualified as Vector
 import Okf.Bundle (Concept, conceptDocument)
 import Okf.Document (OKFDocument (frontmatter), coreFrontmatterFields, frontmatterLookup)
 import Okf.Prelude
+
 -- Imported with an explicit list that leaves out the 'Cardinality'
 -- constructors: two of them are named 'List' and 'Object', which would clash
 -- with aeson's 'Value' constructors of the same names.

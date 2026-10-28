@@ -2,7 +2,7 @@
 
 module Main (main) where
 
-import Control.Exception (bracket)
+import Control.Exception (AsyncException (UserInterrupt), bracket, throwIO, try)
 import Data.Aeson (object, toJSON, (.=))
 import Data.Aeson qualified as Aeson
 import Data.Aeson.KeyMap qualified as KeyMap
@@ -21,14 +21,17 @@ import Okf.Bundle
 import Okf.ConceptId
 import Okf.Discovery
 import Okf.Document
+import Okf.Exception (catchSynchronous)
 import Okf.Graph
 import Okf.Index
 import Okf.Log
 import Okf.Markdown
 import Okf.Path
+
 -- 'List' and 'Object' are 'Cardinality' constructors; aeson's same-named
 -- 'Value' constructors are reached as 'Aeson.Object' and friends.
 import Okf.Prelude hiding (List, Object, setField, (.=))
+
 -- 'HumanActor' is both an 'Okf.Actor' constructor and a 'FieldFormat'
 -- alternative. This module names the actor far more often, so the format is
 -- reached as 'Profile.HumanActor'.
@@ -60,7 +63,8 @@ main :: IO ()
 main = do
   results <-
     sequence
-      [ testIO "bootstrap descriptors round-trip from local sources and physical paths" testBootstrapRoundTrip,
+      [ testIO "synchronous catches preserve asynchronous cancellation" testCatchSynchronous,
+        testIO "bootstrap descriptors round-trip from local sources and physical paths" testBootstrapRoundTrip,
         testIO "bootstrap expressions preserve hashes and reject relative imports" testBootstrapExpressions,
         test "bootstrap paths and versions" testBootstrapPure,
         test "parseActor classifies the three specification section 7 shapes" testParseActorShapes,
@@ -7993,3 +7997,9 @@ testBootstrapPure = do
   assertEqual (parseOkfVersion "0.2") (bootstrapOkfVersion Nothing spec)
   assertEqual (parseOkfVersion "0.3") (bootstrapOkfVersion (parseOkfVersion "0.3") spec)
   assertEqual (parseOkfVersion "0.1") (bootstrapOkfVersion Nothing (spec & #requireBundleVersion .~ Just "bad"))
+
+testCatchSynchronous :: IO (Either Text ())
+testCatchSynchronous = do
+  synchronous <- catchSynchronous (ioError (userError "expected IO failure")) (\_ -> pure True)
+  asynchronous <- try @AsyncException (catchSynchronous (throwIO UserInterrupt) (\_ -> pure False))
+  pure $ if synchronous && asynchronous == Left UserInterrupt then Right () else Left "asynchronous cancellation was swallowed"

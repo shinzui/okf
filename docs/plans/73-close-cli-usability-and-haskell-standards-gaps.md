@@ -11,6 +11,12 @@ provenance:
     model: "gpt-6-astra"
     harness: "codex-cli"
     at: 2026-10-28T03:32:17Z
+  revisions:
+    - model: "gpt-6.1-sol"
+      harness: "codex-cli"
+      at: 2026-10-28T04:08:06Z
+      mode: "implement"
+      note: "Close help, exception, compiler and integration acceptance gaps"
 ---
 
 # Close CLI usability and Haskell standards gaps
@@ -29,13 +35,15 @@ Make help, completion, errors and common workflows consistently usable, and brin
 ## Progress
 
 
-- [ ] M1: Applicable CLI/core standards have concrete findings, fixes and regression acceptance.
-- [ ] M2: Integrated agent, kit, help and script workflows pass and documentation matches the shipped CLI.
+- [x] M1 (2026-10-27): The recipe-by-recipe audit below records findings, fixes and justified exceptions. Help width/groups/completion, compiler bounds, label imports, synchronous exception boundaries and owned resources pass pure, process and executable regressions.
+- [x] M2 (2026-10-27): Both package suites, Cabal/Nix builds, current-system flake checks and all fifteen executable tests pass. The combined journey verifies discovery, raw concepts JSON, actual selected installation, inspected context, both promptless providers, Ctrl-C and child exit. Documentation and strict ADR/friction validation pass.
 
 ## Surprises & Discoveries
 
 
-(None yet.)
+2026-10-27: The integrated context-example test found that a quoted standalone equality is a legacy literal in the existing --where grammar. The actionable example now uses `status=accepted`; parser behavior and the raw-frontmatter JSON contract remain unchanged. The executable journey runs the exact example from context after replacing its BUNDLE placeholder.
+
+2026-10-27: parserOptionGroup decorates the current parser but does not recurse into engine-owned subcommands. A presentation-only adapter decorates existing Kit child ParserInfo values; engine parsing and installation remain authoritative. The ordinary help writer historically adds a final newline to embedded source; preserve that byte contract rather than silently removing it.
 
 ## Decision Log
 
@@ -45,7 +53,25 @@ Make help, completion, errors and common workflows consistently usable, and brin
 ## Outcomes & Retrospective
 
 
-(To be filled during implementation.)
+Standards audit and final acceptance record:
+
+mori://shinzui/haskell-jitsurei/docs/cli-overview and the agent/config/kit recipes apply. Plans 70–72 implement provider-owned rendering, shared installer lifecycle, inspectable context, promptless sessions and optional indexed selection. The final executable journey discovers a bundle, filters raw-frontmatter concepts, shows a concept explicitly, selects/installs a local kit skill, inspects context, executes its exact concepts example and launches/interrupts both providers, returning their exit status. Clipboard and a new configuration language/framework are inapplicable: existing stdout pipelines and compatible Dhall configuration already supply these boundaries without a new workflow.
+
+mori://shinzui/haskell-jitsurei/docs/cli-help-width applies: Help previously printed topics verbatim everywhere. Positive explicit widths and ioctl-based auto-width (cap 140) now wrap plain prose without reading terminal input. Indented blocks, fences and whole URLs stay intact. The justified compatibility exception is the existing writer newline: piped output equals embedded source plus that historical newline, rather than changing shipped output to exactly the source bytes. Pure wrapping tests and narrow/wide PTYs compare those contracts; invalid widths and unknown topics fail usefully on stderr.
+
+mori://shinzui/haskell-jitsurei/docs/cli-option-groups applies: Agent settings/inspection, context output, help layout and engine-owned Kit child options are grouped. optparse-applicative 0.19.0.0 was verified against Hackage and its upstream 0.19.0 tag; Cabal/Mori now require >=0.19. terminal-size 0.3.4 was checked against Hackage, the upstream 0.3.4 tag and released source after Mori reported no indexed project. Nested help, unknown-command alternatives and shared metadata examples are exercised by the executable harness. The Kit ParserInfo adapter uses the dependency's own exported record API because those parser types do not supply generic-lens instances; it changes presentation only.
+
+mori://shinzui/haskell-jitsurei/docs/cli-shell-completions already applies through Bash/Zsh/Fish scripts that query the parser. Added topic-name completions; the canonical agent namespace and Kit visibility flags are covered by the plain/enriched protocol. All three shell generators and completion remain deterministic and usable under malformed configuration. No second command list was added for completion; registry protection still derives from parser registration.
+
+mori://shinzui/haskell-jitsurei/docs/cli-stdin-integration is conditional. These operations select filesystem entities or hand an inherited terminal to an interactive provider; consuming arbitrary piped text as an omitted prompt would change the promptless-session contract. Explicit argv input wins and inspection never reads stdin. An open, unwritten stdin pipe must not delay context inspection. Machine JSON remains one document on stdout, with diagnostics on stderr; Kit list/status/update and concepts raw-frontmatter JSON are exercised without changing their existing shapes.
+
+mori://shinzui/haskell-jitsurei/docs/core-standards applies to both packages and every library/executable/test component. All inherit GHC2024 and the four baseline extensions from common stanzas, with explicit deriving strategies and postpositive qualified imports. The former base >=4.20 minimum admitted GHC 9.10; both packages now require base >=4.21, matching GHC >=9.12 and the pinned 9.12.4 compiler. No implicit deriving or prepositive qualified imports were found. Missing per-module Data.Generics.Labels imports in Cli/Config were corrected.
+
+mori://shinzui/haskell-jitsurei/docs/core-record-patterns applies where records need generic-lens disambiguation. New context/metadata/Kit operations use field-pun patterns, constructors and label setters. Existing external Dhall/parser record APIs retain their producer-owned setters; stable legacy test-fixture updates are retained as a style-only exception because they verify frozen decoder shapes and introduce no runtime ambiguity. Public record strictness and representation are preserved rather than incidentally changing evaluation semantics. The established core Prelude already supplies common package-qualified imports; a new CLI Prelude or a wholesale multiline-string migration would add churn without fixing an observed problem. Table indexing was inspected: column counts and row constructors agree, so user data cannot invalidate bounds; existing multi-column table regressions remain applicable.
+
+The exception/resource audit found broad catches swallowing asynchronous cancellation in optional/config/profile paths. Okf.Exception.catchSynchronous now preserves cancellation across decoding/discovery, while expected process/filesystem failures use IOException. Fzf terminal handles and subprocess pipes are bracketed, as are Assist process handles. Core keeps no CLI exit/prompt logic. A core cancellation test and an active self-executable fzf fixture fail if UserInterrupt becomes error-shaped data, and terminal provider tests retain Ctrl-C/exit behavior.
+
+Durable outcomes are distilled into ADRs 2, 16, 18, 21 and newly allocated ADR-22. ADR-22 records release overlays, shared channel policies and monorepo normalization; task-local execution details stay here. FRIC-1/FRIC-2 remain accepted under plan 70; this child has no new material friction. Final candidate evidence on aarch64-darwin with GHC 9.12.4: `nix develop --no-write-lock-file -c cabal build all`, `nix develop --no-write-lock-file -c cabal test all`, `nix fmt`, `git diff --check`, `nix build .#okf-cli --out-link /tmp/okf-plan73-result --no-write-lock-file` and `nix flake check --no-write-lock-file` all exit zero. Flake checks validate treefmt and pre-commit for the current platform; incompatible platforms are explicitly omitted by Nix and are not claimed tested. The executable harness passes all 15 tests against both the Cabal executable (9.623s) and `/tmp/okf-plan73-result/bin/okf` (9.568s). Both package suites also pass the new asynchronous-boundary and owned-fzf cancellation regressions. Strict ADR validation reports 22 concepts and friction validation reports two accepted entries, with no logged entries left. No required integration gate remains.
 
 ## Context and Orientation
 

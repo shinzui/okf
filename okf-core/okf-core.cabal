@@ -61,6 +61,7 @@ library
     Okf.ConceptId
     Okf.Discovery
     Okf.Document
+    Okf.Exception
     Okf.Graph
     Okf.Index
     Okf.Log
@@ -79,7 +80,7 @@ library
   build-depends:
     aeson >=2.2 && <2.4,
     attoparsec >=0.14 && <0.15,
-    base >=4.20 && <5,
+    base >=4.21 && <5,
     bytestring >=0.11 && <0.13,
     cmark-gfm ^>=0.2,
     containers >=0.6 && <0.8,
@@ -104,7 +105,7 @@ test-suite okf-core-test
   hs-source-dirs: test
   build-depends:
     aeson,
-    base >=4.20 && <5,
+    base >=4.21 && <5,
     containers >=0.6 && <0.8,
     dhall >=1.41 && <1.43,
     directory,

@@ -46,7 +46,7 @@ module Okf.Profile.Registry
   )
 where
 
-import Control.Exception (SomeException, catch, fromException)
+import Control.Exception (SomeException, fromException)
 import Data.List qualified as List
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text.IO
@@ -58,6 +58,7 @@ import Dhall.Map qualified
 import Dhall.Parser qualified as Dhall.Parser
 import Dhall.Src (Src)
 import Dhall.TypeCheck qualified as Dhall.TypeCheck
+import Okf.Exception (catchSynchronous)
 import Okf.Prelude
 import Okf.Profile (ProfileSpec, decodeProfileExpr)
 import Okf.Profile.Discovery (loadProfileDescriptorWithoutNetwork)
@@ -295,7 +296,7 @@ loadRegistryDetailed reference = do
     Just registryError -> pure (Left registryError)
     Nothing ->
       (Right . registryEntries <$> evaluateRef reference)
-        `catch` \(exception :: SomeException) ->
+        `catchSynchronous` \(exception :: SomeException) ->
           pure (Left (classifyRegistryException exception))
 
 registryReferencePreflight :: RegistryRef -> IO (Maybe RegistryLoadError)

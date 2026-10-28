@@ -39,7 +39,7 @@ module Okf.Cli.Fzf
 where
 
 import Control.Applicative ((<|>))
-import Control.Exception (SomeException, try)
+import Control.Exception (IOException, bracket, try)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe, isJust)
 import Data.Text (Text)
@@ -52,9 +52,9 @@ import System.IO (IOMode (ReadMode), hClose, hIsTerminalDevice, hSetEncoding, op
 import System.Process
   ( CreateProcess (..),
     StdStream (CreatePipe, Inherit),
-    createProcess,
     proc,
     waitForProcess,
+    withCreateProcess,
   )
 
 -- | Everything needed to decide whether an interactive picker can run, probed
@@ -92,10 +92,8 @@ detectFzfConfig = do
 
 checkTtyAvailable :: IO Bool
 checkTtyAvailable = do
-  opened <- try @SomeException (openFile "/dev/tty" ReadMode)
-  case opened of
-    Left _ -> pure False
-    Right handle -> hClose handle >> pure True
+  opened <- try @IOException (bracket (openFile "/dev/tty" ReadMode) hClose (const (pure ())))
+  pure (either (const False) (const True) opened)
 
 -- | An interactive picker is possible when fzf exists and there is a terminal
 -- to draw on.
@@ -207,8 +205,8 @@ parseSelectionIndex output =
 shellQuote :: Text -> Text
 shellQuote value = "'" <> Text.replace "'" "'\\''" value <> "'"
 
--- | Show a menu and return the chosen value. Never throws: every failure is a
--- 'FzfError'. An empty candidate list short-circuits without spawning fzf.
+-- | Show a menu and return the chosen value. Expected IO failures become
+-- 'FzfError'; asynchronous cancellation propagates after resource cleanup. An empty candidate list short-circuits without spawning fzf.
 runFzf :: FzfConfig -> FzfOpts -> [Candidate a] -> IO (FzfResult a)
 runFzf config opts candidates
   | null candidates = pure FzfNoMatch
@@ -224,8 +222,7 @@ runFzf config opts candidates
                 std_err = Inherit,
                 delegate_ctlc = True
               }
-      outcome <- try @SomeException $ do
-        (maybeIn, maybeOut, _, processHandle) <- createProcess spec
+      outcome <- try @IOException $ withCreateProcess spec $ \maybeIn maybeOut _ processHandle ->
         case (maybeIn, maybeOut) of
           (Just inHandle, Just outHandle) -> do
             hSetEncoding inHandle utf8

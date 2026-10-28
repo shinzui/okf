@@ -7,6 +7,8 @@ where
 import Baikai.Interactive (InteractiveProvider (..))
 import Baikai.Kit.Config (KitConfig)
 import Baikai.Kit.Config qualified as Engine
+import Control.Lens ((&), (.~))
+import Data.Generics.Labels ()
 import Okf.Cli.Config (KitSettings (..), OkfConfig (..), OkfProvider (..))
 
 -- | Build the baikai-kit configuration from okf's loaded configuration. The
@@ -14,9 +16,8 @@ import Okf.Cli.Config (KitSettings (..), OkfConfig (..), OkfProvider (..))
 -- sidecar files.
 kitConfig :: OkfConfig -> KitConfig
 kitConfig OkfConfig {kit = KitSettings {repoUrl = url, providers = providerList}} =
-  (Engine.kitConfig "okf" url (map toInteractive providerList))
-    { Engine.projectRoot = Engine.projectRootByMarkers [".git", "okf-config.dhall", ".okf"]
-    }
+  Engine.kitConfig "okf" url (map toInteractive providerList)
+    & #projectRoot .~ Engine.projectRootByMarkers [".git", "okf-config.dhall", ".okf"]
 
 toInteractive :: OkfProvider -> InteractiveProvider
 toInteractive = \case

@@ -8,6 +8,10 @@ generated:
 docId: ADR-21
 status: Accepted
 date: 2026-10-03
+amended:
+  - by: codex-cli/gpt-6.1-sol
+    at: "2026-10-28T04:19:43Z"
+    change: Share command descriptions/examples and preserve config-free nested help and completion.
 originatingPlan: docs/plans/68-add-user-defined-command-aliases-to-okf.md
 ---
 
@@ -114,3 +118,22 @@ The CLI test suite covers frozen shapes, validation, precedence, duplicate
 handling, non-recursion, trailing arguments, and every registry command's help
 and protection. Executable acceptance compares alias/canonical JSON, parser
 errors and exit status, listing, completion, and broken-config recovery paths.
+
+
+## Help and completion integration
+
+The canonical registry now includes agent assist/context and the legacy assist
+spelling. CommandMetadata supplies descriptions and executable examples to parser
+help and context; builtinCommands still derives from parser registration and
+remains authoritative for alias protection. Help on empty/invalid input displays
+available commands. Topic names and nested agent/Kit flags are completed through
+the same parser tree, and malformed configuration cannot block these paths.
+
+Explicit help widths must be positive. Terminal width detection uses ioctl,
+capped at 140 columns, without reading input; piped default topic output retains
+its historical bytes, including the writer's final newline. Prose wraps while
+indented examples, fenced blocks and whole URLs are preserved. Unknown topics
+fail with valid alternatives on stderr rather than producing success-shaped
+stdout. The Kit parser remains engine-owned; a presentation-only adapter groups
+options inside its existing child ParserInfo values without replacing flags or
+installation behavior.

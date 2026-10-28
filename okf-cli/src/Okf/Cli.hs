@@ -72,6 +72,7 @@ import Data.ByteString.Lazy qualified as LazyBytes
 import Data.ByteString.Lazy.Char8 qualified as LazyByteString
 import Data.Char (isDigit)
 import Data.Foldable (toList, traverse_)
+import Data.Generics.Labels ()
 import Data.List qualified as List
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map.Strict qualified as Map
@@ -100,7 +101,7 @@ import Okf.Cli.Agent.Context (collectAgentContext, renderContextJson, renderCont
 import Okf.Cli.Aliases (AliasCommand (..), aliasCommandParser, expandAlias, isAliasCandidate, renderAliases)
 import Okf.Cli.Assist (AssistOptions, assistAgentOverrides, assistOptionsParser, handleAssistCommand)
 import Okf.Cli.BundleDiscovery (BundleDiscovery (..), discoverAvailableBundles)
-import Okf.Cli.CommandMetadata (commandDescription)
+import Okf.Cli.CommandMetadata (commandDescription, commandExamples)
 import Okf.Cli.Completions (CompletionsShell, completionsParser, handleCompletions)
 import Okf.Cli.Config
 import Okf.Cli.Fzf (FzfConfig, detectFzfConfig, shellQuote)
@@ -491,7 +492,7 @@ runCli = do
   rawArgs <- getArgs
   aliases <- if isAliasCandidate builtinCommands rawArgs then loadAliasesForExpansion else pure Map.empty
   let expandedArgs = expandAlias builtinCommands aliases rawArgs
-  Options {cmd} <- handleParseResult (execParserPure defaultPrefs parserInfo expandedArgs)
+  Options {cmd} <- handleParseResult (execParserPure (prefs (showHelpOnEmpty <> showHelpOnError)) parserInfo expandedArgs)
   runCommand cmd
 
 parserInfo :: ParserInfo Options
@@ -501,6 +502,7 @@ parserInfo =
     ( fullDesc
         <> progDesc "Validate, index, inspect, and graph Open Knowledge Format bundles"
         <> header "okf - Open Knowledge Format bundle tools"
+        <> footer (commandExamples ["bundles", "agent", "kit", "help"])
     )
 
 versionOption :: Parser (a -> a)
@@ -530,9 +532,9 @@ commandDefinitions =
     ("alias", info (Alias <$> aliasCommandParser <**> helper) (progDesc (commandDescription "alias"))),
     ("config", info (Config <$> configCommandParser <**> helper) (progDesc (commandDescription "config"))),
     ("profile", info (Profile <$> profileCommandParser <**> helper) (progDesc (commandDescription "profile"))),
-    ("kit", info (Kit <$> kitCommandParser <**> helper) (progDesc (commandDescription "kit"))),
-    ("agent", info (agentCommandParser <**> helper) (progDesc (commandDescription "agent"))),
-    ("assist", info (Assist <$> assistOptionsParser <**> helper) (progDesc (commandDescription "assist"))),
+    ("kit", info (Kit <$> kitCommandParser <**> helper) (progDesc (commandDescription "kit") <> footer (commandExamples ["kit"]))),
+    ("agent", info (agentCommandParser <**> helper) (progDesc (commandDescription "agent") <> footer (commandExamples ["agent"]))),
+    ("assist", info (Assist <$> assistOptionsParser <**> helper) (progDesc (commandDescription "assist") <> footer (commandExamples ["assist"]))),
     ("completions", info (Completions <$> completionsParser <**> helper) (progDesc (commandDescription "completions"))),
     ("help", info (Help <$> helpCommandParser <**> helper) (progDesc (commandDescription "help")))
   ]
@@ -546,8 +548,8 @@ commandParser = hsubparser (foldMap (uncurry command) commandDefinitions)
 agentCommandParser :: Parser Command
 agentCommandParser =
   hsubparser
-    ( command "assist" (info (Assist <$> assistOptionsParser <**> helper) (progDesc (commandDescription "agent assist")))
-        <> command "context" (info (AgentContext <$> jsonSwitch <**> helper) (progDesc (commandDescription "agent context")))
+    ( command "assist" (info (Assist <$> assistOptionsParser <**> helper) (progDesc (commandDescription "agent assist") <> footer (commandExamples ["agent assist"])))
+        <> command "context" (info (AgentContext <$> parserOptionGroup "Context output" jsonSwitch <**> helper) (progDesc (commandDescription "agent context") <> footer (commandExamples ["agent context"])))
     )
 
 bundlesOptionsParser :: Parser BundlesOptions

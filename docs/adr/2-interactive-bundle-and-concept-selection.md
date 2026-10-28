@@ -12,6 +12,9 @@ amended:
   - by: codex-cli/gpt-6.1-sol
     at: 2026-10-28T04:05:50Z
     change: Add application-owned kit selection with engine-owned cancellation.
+  - by: codex-cli/gpt-6.1-sol
+    at: 2026-10-28T04:23:31Z
+    change: Bracket picker resources and preserve asynchronous cancellation.
 ---
 
 # ADR 2: Interactive bundle and concept selection
@@ -187,3 +190,8 @@ installation. Empty manifests and picker errors exit 1, unavailable selection
 exits 2 with an explicit-name remedy. Bundle/concept/profile cancellation keeps
 its existing 130 contract. Installation and contextual Assist use the shared root
 policy in ADR 16, including selected tool-only skill visibility for both providers.
+
+The fzf process and its pipes are owned by withCreateProcess; terminal probes
+bracket their handles. Expected IO errors remain typed failures, while
+asynchronous cancellation propagates after cleanup. This preserves explicit
+engine cancellation results without swallowing cancellation of OKF itself.

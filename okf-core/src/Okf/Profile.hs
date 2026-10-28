@@ -83,7 +83,7 @@ module Okf.Profile
 where
 
 import CMarkGFM qualified
-import Control.Exception (SomeException, catch)
+import Control.Exception (SomeException)
 import Data.Aeson (ToJSON (..), object, (.=))
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as Aeson.Key
@@ -109,6 +109,8 @@ import Dhall.Map qualified as Dhall.Map
 import Dhall.Src (Src)
 import Network.URI (parseURI, uriScheme)
 import Numeric.Natural (Natural)
+import Okf.Exception (catchSynchronous)
+
 -- Imported qualified: 'Okf.Actor.HumanActor' is a constructor of 'Actor.Actor'
 -- and 'HumanActor' is a constructor of 'FieldFormat', so an unqualified import
 -- makes the two ambiguous.
@@ -140,6 +142,7 @@ import Okf.Index
   )
 import Okf.Markdown (markdownOptions)
 import Okf.Path (PathReference (..), classifyPathReference)
+
 -- 'List' and 'Object' are 'Cardinality' constructors here; the names aeson uses
 -- for the corresponding 'Value' constructors are reached as 'Aeson.Array' and
 -- 'Aeson.Object'.
@@ -2495,7 +2498,7 @@ loadProfileFile path = do
     tryDecode :: IO a -> IO (Either Text a)
     tryDecode action =
       (Right <$> action)
-        `catch` \(exception :: SomeException) -> pure (Left (Text.pack (show exception)))
+        `catchSynchronous` \(exception :: SomeException) -> pure (Left (Text.pack (show exception)))
 
 -- | Does an already-evaluated Dhall expression decode as a profile? Tries the
 -- current schema, then the pre-guidance, pre-nested-reference,
