@@ -2,6 +2,9 @@
 
 ## 2026-10-28
 
+* **Planning**: IR-11: accepted for planning and linked to ExecPlan 74; clarify
+  conditional-member acceptance and order nested closure after product-discovery
+  schema changes.
 * **Traceability**: IR-9: identify the linked implementation plan by its full title
   to distinguish the two plans numbered 70; retain the existing targetPlan path.
 

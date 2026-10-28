@@ -7,8 +7,10 @@ description: Extend IR-2's closed vocabulary to the records declared by
 generated:
   by: claude-code/claude-opus-5-5
   at: "2026-10-19T17:23:17Z"
+timestamp: "2026-10-28T04:04:00Z"
 requestId: IR-11
-status: proposed
+status: accepted
+targetPlan: docs/plans/74-close-the-vocabulary-of-nested-profile-records.md
 origin: mori://tan/tan-ng-frontend
 dependencies:
   - ref: mori://shinzui/okf/okf/improvement-requests/concepts/IR-2
@@ -30,9 +32,10 @@ acceptanceCriteria:
   - id: AC-2
     statement: A key declared under required, recommended or optional is
       accepted whether or not its `when` condition holds.
-    verification: A core test with a conditional optional nested field, present
-      on an element whose condition does not hold, reports no unknown-field
-      violation.
+    verification: Core tests use conditional required/recommended nested fields
+      present when their conditions are false, plus an unconditional optional
+      field; none produces an unknown-field violation. Optional fields with
+      conditions remain invalid descriptor definitions.
   - id: AC-3
     statement: Descriptors that do not opt in, and every frozen descriptor
       generation, keep today's open nested records.
@@ -59,13 +62,26 @@ reviews:
 
 ## Status
 
-- **Status:** proposed (2026-10-19)
+- **Status:** accepted for planning (2026-10-28); implementation not started.
+- **Implementation plan:** [ExecPlan 74: Close the vocabulary of nested profile records](../plans/74-close-the-vocabulary-of-nested-profile-records.md).
 - **Origin:** `mori://tan/tan-ng-frontend`, from reviewing its design bundle
   (`mori://tan/tan-ng-frontend/okf/designs/concepts/BB-1`)
 - **Owner of the build:** `shinzui/okf`, through the descriptor-evolution process of
   [ADR 11](../adr/11-growing-the-profile-descriptor-language.md)
 - **Size:** small to medium — one member on `NestedRules`, one frozen generation,
   one check reusing the nested path rendering IR-4 added.
+
+## Planning disposition
+
+[ExecPlan 74](../plans/74-close-the-vocabulary-of-nested-profile-records.md)
+implements this request after the
+[product-discovery descriptor plan](../plans/70-express-single-concept-product-discovery-constraints-in-profile-descriptors.md),
+so each schema addition has one ordered compatibility generation. Nested closure
+merges with logical AND over `allowUnknownFields`, while declared names are the
+union of the matching profile/type member maps. Element and object policies remain
+independent. AC-2 now uses conditional required/recommended members and an
+unconditional optional member: existing compilation rejects `when` on optional
+fields, and this request does not change that rule.
 
 ## Problem
 
@@ -74,8 +90,7 @@ IR-2 lets a profile close its top-level frontmatter: with
 a nested record there is no counterpart. IR-2 scoped itself to top-level keys, IR-4
 declared nested shapes and "deliberately does not extend" closure to them, and
 [ExecPlan 29](../plans/29-validate-one-level-nested-profile-records.md) records that
-"an extra key such as `provider` is allowed until it is declared". No later request
-picks it up.
+"an extra key such as `provider` is allowed until it is declared". This request and its linked implementation plan pick up that deferred scope.
 
 So a closed profile is closed only at the surface. The records that carry most of a
 structured document's content — review entries, acceptance criteria, rows of a
@@ -190,8 +205,8 @@ generation would otherwise drop the new member and silently reopen the record.
 
 Descriptors that build nested rules as plain record literals rather than through
 `NestedRules::{…}` stop typechecking against the new schema until they add the
-member. The catalog uses the defaults, so the impact is on local descriptors; the
-release note should say so.
+member. Do not assume every catalog or local descriptor uses defaults; the release note
+should explain both record-literal migration and unchanged loading of old pins.
 
 The check sits next to the existing nested validation, reusing the per-element
 traversal and `nestedDefinitionPath`, and shares one notion of "declared name" with
