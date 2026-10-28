@@ -3,7 +3,6 @@
 .seihou/manifest.json.tmp
 .mina/
 CLAUDE.local.md
-.envrc
 dist
 dist-*
 cabal-dev
