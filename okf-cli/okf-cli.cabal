@@ -1,6 +1,6 @@
 cabal-version: 3.4
 name: okf-cli
-version: 0.12.0.0
+version: 0.12.0.1
 synopsis: Command-line interface for Open Knowledge Format bundles
 description:
   okf-cli provides the @okf@ executable for working with Open Knowledge Format
@@ -81,7 +81,7 @@ library
     generic-lens >=2.2 && <2.4,
     githash ^>=0.1,
     lens ^>=5.3,
-    okf-core ^>=0.12.0.0,
+    okf-core ^>=0.12.0.1,
     optparse-applicative >=0.19 && <0.20,
     process >=1.6 && <1.7,
     terminal-size >=0.3.4 && <0.4,
@@ -106,7 +106,7 @@ test-suite okf-cli-test
     generic-lens >=2.2 && <2.4,
     lens ^>=5.3,
     okf-cli,
-    okf-core ^>=0.12.0.0,
+    okf-core ^>=0.12.0.1,
     optparse-applicative >=0.19,
     process >=1.6 && <1.7,
     temporary,

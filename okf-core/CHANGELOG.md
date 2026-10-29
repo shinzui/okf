@@ -7,10 +7,14 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.12.0.1] - 2026-10-28
+
 ### Fixed
 
-- Render nonempty indexes with one final newline and empty indexes without a blank line, preserving root version frontmatter.
-- Remove trailing spaces and tabs from bootstrap descriptor comments, including multiline source annotations, without changing Dhall expressions.
+- Render nonempty indexes with one final newline and empty indexes without a
+  blank line, preserving root version frontmatter.
+- Remove trailing spaces and tabs from bootstrap descriptor comments, including
+  multiline source annotations, without changing Dhall expressions.
 
 ## [0.12.0.0] - 2026-10-28
 

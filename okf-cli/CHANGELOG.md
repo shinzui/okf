@@ -7,9 +7,17 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.12.0.1] - 2026-10-28
+
 ### Fixed
 
-- Generate indexes and profile bootstrap artifacts that pass staged Git whitespace checks without manual cleanup; preview and profile documentation share the corrected index endings.
+- Generate indexes and profile bootstrap artifacts that pass staged Git
+  whitespace checks without manual cleanup; preview and profile documentation
+  share the corrected index endings.
+
+### Changed
+
+- Require okf-core ^>=0.12.0.1 for the corrected artifact rendering.
 
 ## [0.12.0.0] - 2026-10-28
 

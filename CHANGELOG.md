@@ -7,6 +7,17 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.12.0.1] - 2026-10-28
+
+### Fixed
+
+- Render nonempty indexes with one final newline and empty indexes without a
+  blank line, preserving root version frontmatter. Index previews and generated
+  profile documentation use the same corrected endings.
+- Remove trailing spaces and tabs from profile bootstrap descriptor comments,
+  including multiline source annotations, without changing Dhall expressions.
+  Generated bundle artifacts pass staged Git whitespace checks without cleanup.
+
 ## [0.12.0.0] - 2026-10-28
 
 ### Added
