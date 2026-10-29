@@ -102,6 +102,8 @@ main = do
         test "logStaleness prefers the deepest enclosing log" testLogStalenessPrefersDeepestLog,
         test "appendLogEntry inserts newest-first and prepends within a day" testAppendLogEntry,
         testIO "generateIndex groups documents by frontmatter type" testGenerateIndexGroupsByType,
+        testIO "index endings are exact for every directory shape" testIndexEndings,
+        testIO "index writers preserve endings and versions across directory shapes" testIndexWriterEndings,
         testIO "extractLinks resolves relative and absolute bundle links" testExtractLinksResolveBundleLinks,
         testIO "extractLinks ignores external markdown URLs" testExtractLinksIgnoresExternalUrls,
         testIO "buildGraph includes only edges to existing concepts" testBuildGraphIncludesKnownEdges,
@@ -788,11 +790,114 @@ testGenerateIndexGroupsByType =
               -- §8's progressive disclosure reaches a file with no frontmatter:
               -- a directory holding only an attester used to render one newline.
               let withFiles = renderIndex [] ["revenue.py"] []
-              -- The trailing blank line is 'renderIndex''s own, appended after
-              -- every section; a concepts-only index ends the same way.
-              assertEqual "# Files\n\n- [revenue.py](revenue.py)\n\n" withFiles
+              assertEqual "# Files\n\n- [revenue.py](revenue.py)\n" withFiles
           )
     )
+
+-- Exact bytes protect ordering, links and section spacing as well as EOF.
+indexEndingCases :: [([FilePath], [FilePath], [FilePath], Text)]
+indexEndingCases =
+  [ ([], [], [], ""),
+    (["z", "a"], [], [], directories),
+    ([], ["z.py", "a.py"], [], files),
+    ([], [], ["z", "b", "a"], concepts),
+    (["z", "a"], ["z.py", "a.py"], ["z", "b", "a"], directories <> "\n" <> files <> "\n" <> concepts)
+  ]
+  where
+    directories = "# Subdirectories\n\n- [a/](a/index.md)\n- [z/](z/index.md)\n"
+    files = "# Files\n\n- [a.py](a.py)\n- [z.py](z.py)\n"
+    concepts = "# Alpha\n\n- [Title a](a.md) - Description a.\n- [Title b](b.md) - Description b.\n\n# Zeta\n\n- [Title z](z.md) - Description z.\n"
+
+indexEndingConcept :: FilePath -> Text
+indexEndingConcept name =
+  Text.unlines
+    [ "---",
+      "type: " <> (if name == "z" then "Zeta" else "Alpha"),
+      "title: Title " <> Text.pack name,
+      "description: Description " <> Text.pack name <> ".",
+      "---",
+      "Body."
+    ]
+
+testIndexEndings :: IO (Either Text ())
+testIndexEndings = pure $ for_ indexEndingCases $ \(directories, files, names, expected) -> do
+  concepts <- for names $ \name -> do
+    cid <- firstShow (parseConceptId (Text.pack name))
+    document <- firstShow (parseDocument (indexEndingConcept name))
+    pure (conceptFromDocument cid document)
+  assertEqual expected (renderIndex directories files concepts)
+  assertEqual expected (renderRootIndex Nothing directories files concepts)
+  assertEqual
+    ("---\nokf_version: \"0.2\"\n---\n" <> (if Text.null expected then "" else "\n" <> expected))
+    (renderRootIndex (Just (OkfVersion 0 2)) directories files concepts)
+
+testIndexWriterEndings :: IO (Either Text ())
+testIndexWriterEndings = do
+  rootResults <- for indexEndingCases $ \(directories, files, names, expected) ->
+    withDiscoveryTree "okf-root-index-endings" [] $ \root -> do
+      for_ directories $ \directory -> createDirectoryIfMissing True (root </> directory)
+      for_ files $ \file -> Text.IO.writeFile (root </> file) "content\n"
+      for_ names $ \name -> Text.IO.writeFile (root </> name <> ".md") (indexEndingConcept name)
+      variants <- for [Nothing, Just (OkfVersion 0 2)] $ \version -> do
+        written <- writeBundleIndexesWith version root
+        firstBytes <- renderBundleIndexes root
+        firstRoot <- Text.IO.readFile (root </> "index.md")
+        rewritten <- writeBundleIndexes root
+        secondBytes <- renderBundleIndexes root
+        secondRoot <- Text.IO.readFile (root </> "index.md")
+        pure $ do
+          firstShow written
+          firstShow rewritten
+          void (firstShow firstBytes)
+          assertEqual firstBytes secondBytes
+          assertEqual firstRoot secondRoot
+          assertEqual
+            ( case version of
+                Nothing -> expected
+                Just _ -> "---\nokf_version: \"0.2\"\n---\n" <> (if Text.null expected then "" else "\n" <> expected)
+            )
+            firstRoot
+      pure (sequence_ variants)
+  results <- for indexEndingCases $ \(directories, files, names, expected) ->
+    withDiscoveryTree "okf-index-endings" [] $ \root -> do
+      -- Exercise each shape both at the root and nested; child indexes start empty.
+      for_ ["", "nested"] $ \prefix -> do
+        createDirectoryIfMissing True (root </> prefix)
+        for_ directories $ \directory -> createDirectoryIfMissing True (root </> prefix </> directory)
+        for_ files $ \file -> Text.IO.writeFile (root </> prefix </> file) "content\n"
+        for_ names $ \name -> Text.IO.writeFile (root </> prefix </> name <> ".md") (indexEndingConcept name)
+      let readIndexes = do
+            rendered <- renderBundleIndexes root
+            case rendered of
+              Left err -> pure (Left (Text.pack (show err)))
+              Right indexes -> Right <$> traverse (\(path, _) -> (path,) <$> Text.IO.readFile (root </> path)) indexes
+          rootBody =
+            renderRootIndex Nothing ("nested" : directories) files
+              <$> traverse
+                (\name -> conceptFromDocument <$> firstShow (parseConceptId (Text.pack name)) <*> firstShow (parseDocument (indexEndingConcept name)))
+                names
+      firstWrite <- writeBundleIndexes root
+      firstBytes <- readIndexes
+      secondWrite <- writeBundleIndexes root
+      secondBytes <- readIndexes
+      -- Preserve a raw, unparseable declaration, then override it explicitly.
+      Text.IO.writeFile (root </> "index.md") "---\nokf_version: \"future version\"\n---\n"
+      preservedWrite <- writeBundleIndexes root
+      preserved <- Text.IO.readFile (root </> "index.md")
+      overrideWrite <- writeBundleIndexesWith (Just (OkfVersion 0 2)) root
+      overridden <- Text.IO.readFile (root </> "index.md")
+      pure $ do
+        for_ [firstWrite, secondWrite, preservedWrite, overrideWrite] firstShow
+        bytes <- firstBytes
+        assertEqual firstBytes secondBytes
+        expectedRoot <- rootBody
+        assertEqual (Just expectedRoot) (lookup "index.md" bytes)
+        assertEqual (Just expected) (lookup ("nested" </> "index.md") bytes)
+        for_ [prefix </> directory </> "index.md" | prefix <- ["", "nested"], directory <- directories] $ \path ->
+          assertEqual (Just "") (lookup path bytes)
+        assertEqual ("---\nokf_version: \"future version\"\n---\n\n" <> expectedRoot) preserved
+        assertEqual ("---\nokf_version: \"0.2\"\n---\n\n" <> expectedRoot) overridden
+  pure (sequence_ (rootResults <> results))
 
 testExtractLinksResolveBundleLinks :: IO (Either Text ())
 testExtractLinksResolveBundleLinks =
@@ -8159,6 +8264,7 @@ testBootstrapRoundTrip = do
                 actual <- loadProfileFile (destination </> "profile.dhall")
                 expected <- loadRegistry ref
                 pure $ do
+                  assertBootstrapComments contents'
                   entries <- expected
                   entry <- maybe (Left "missing export") Right (findRegistryEntry selected entries)
                   assertEqual (Right (entry ^. #spec)) actual
@@ -8174,10 +8280,12 @@ testBootstrapExpressions = do
   relative <- render "./registry/package.dhall" "x"
   header <- render ("https://example.invalid/package.dhall using ./headers.dhall " <> hash) "x"
   malformed <- render "let =" "x"
-  multiline <- render (reference <> "\n-- metadata\n") "x"
+  multiline <- render (reference <> "\n-- metadata  \t\n  \t\n--   indented  text\t \n") "x"
+  environment <- render "env:OKF_BOOTSTRAP_TEST_UNSET" ""
   location <- render "https://example.invalid/package.dhall as Location" ""
   pure $ do
     contents <- first renderBootstrapError hashed
+    assertBootstrapComments contents
     assertBool "hash preserved" (hash `Text.isInfixOf` contents)
     assertBool "nested selection" ("registry.a.b" `Text.isSuffixOf` Text.stripEnd contents)
     escapedText <- first renderBootstrapError escaped
@@ -8186,8 +8294,32 @@ testBootstrapExpressions = do
     assertBool "relative header import rejected" (case header of Left RelativeExpressionImport {} -> True; _ -> False)
     assertBool "parse failure classified" (case malformed of Left DescriptorParseError {} -> True; _ -> False)
     multilineText <- first renderBootstrapError multiline
+    assertBootstrapComments multilineText
+    assertBool "meaningful comment indentation retained" ("-- --   indented  text\n" `Text.isInfixOf` multilineText)
     assertBool "multiline metadata remains a comment" (case Dhall.exprFromText "descriptor" multilineText of Right _ -> True; _ -> False)
-    void (first renderBootstrapError location)
+    locationText <- first renderBootstrapError location
+    assertBootstrapComments locationText
+    assertBool "location import preserved" ("as Location" `Text.isInfixOf` locationText)
+    environmentText <- first renderBootstrapError environment
+    assertBootstrapComments environmentText
+    assertBool "environment import and live guidance retained" (all (`Text.isInfixOf` environmentText) ["env:OKF_BOOTSTRAP_TEST_UNSET", "Local and environment inputs remain live"])
+    assertBool "environment descriptor parses without reading input" (case Dhall.exprFromText "descriptor" environmentText of Right _ -> True; _ -> False)
+
+assertBootstrapComments :: Text -> Either Text ()
+assertBootstrapComments contents = do
+  let comments = filter (Text.isPrefixOf "--") (Text.lines contents)
+  assertBool "descriptor comments present" (not (null comments))
+  assertBool "empty comments use bare dashes" ("--" `elem` comments)
+  for_ comments $ \line ->
+    assertBool
+      ("comment has trailing whitespace: " <> line)
+      (not (" " `Text.isSuffixOf` line || "\t" `Text.isSuffixOf` line))
+  assertBool
+    "descriptor explanation remains readable"
+    ( all
+        (`Text.isInfixOf` contents)
+        ["-- OKF profile descriptor written by `okf profile init`.", "-- Profile:", "-- Source:  "]
+    )
 
 testBootstrapPure :: Either Text ()
 testBootstrapPure = do

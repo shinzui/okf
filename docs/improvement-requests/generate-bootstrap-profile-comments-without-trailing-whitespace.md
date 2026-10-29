@@ -3,12 +3,15 @@ type: Improvement Request
 title: Generate bootstrap profile comments without trailing whitespace
 description: Render empty profile.dhall comment lines without trailing spaces
   so bundles created by okf profile init pass the consumer's Git whitespace gate.
-timestamp: "2026-10-29T02:14:15Z"
+timestamp: "2026-10-29T02:39:56Z"
 generated:
   by: codex/gpt-6
   at: "2026-10-29T02:14:15Z"
 requestId: IR-14
-status: proposed
+status: completed
+completedAt: "2026-10-29T02:39:56Z"
+targetPlan: docs/plans/75-generate-bundle-artifacts-without-whitespace-cleanup.md
+resolution: Bootstrap comments have clean line endings without changing descriptor semantics; all generated bundle files pass staged Git checks and strict profile validation.
 origin: mori://tan/tan-platform
 dependencies:
   - ref: mori://shinzui/okf/okf/improvement-requests/concepts/IR-13
@@ -42,9 +45,18 @@ reviews:
     context: Author self-check against the source friction entry and
       renderBootstrapDescriptor at 440e1cc. Not an independent review or a
       fresh reproduction.
+amended:
+  - by: codex-cli/gpt-6.1-sol
+    at: "2026-10-29T02:39:56Z"
+    change: Record completed whitespace acceptance from ExecPlan 75.
 ---
 
 # Improvement Request: Generate bootstrap profile comments without trailing whitespace
+
+## Implementation evidence
+
+Completed on 2026-10-29 through [ExecPlan 75](../plans/75-generate-bundle-artifacts-without-whitespace-cleanup.md).
+Both Haskell suites pass. Core tests cover empty and multiline comments, trailing spaces and tabs, preserved hashes, local paths, environment inputs, and location imports. Independent descriptor round-trips still pass. CLI acceptance and the public-command smoke check stage every bootstrap artifact, pass Git whitespace checks, and print `OK: 0 concepts (okf_version 0.1)` under strict generated-profile and log enforcement.
 
 ## Problem and evidence
 

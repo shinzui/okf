@@ -10,6 +10,12 @@ provenance:
     model: "gpt-6.1-sol"
     harness: "codex-cli"
     at: 2026-10-29T02:26:09Z
+  revisions:
+    - model: "gpt-6.1-sol"
+      harness: "codex-cli"
+      at: 2026-10-29T02:35:56Z
+      mode: "implement"
+      note: "Implement renderer endings and staged Git regression coverage for IR-13 and IR-14."
 ---
 
 # Generate bundle artifacts without whitespace cleanup
@@ -29,13 +35,14 @@ This single plan addresses [IR-13](../improvement-requests/generate-indexes-with
 
 ## Progress
 
-- [ ] Milestone 1: Root and nested index output has the specified endings for every directory shape, preserves index content and version declarations, and is byte-identical on repeated generation; core regression tests pass.
-- [ ] Milestone 2: Every generated descriptor comment line is free of trailing spaces and tabs, including multiline annotations, while descriptor round-trip and hash/source behavior tests pass.
-- [ ] Milestone 3: Automated CLI acceptance proves that index generation and whole-bundle bootstrap pass staged Git whitespace checks and bundle validation; both suites and the public-command smoke check pass, and release notes and request dispositions reflect the result.
+- [x] Milestone 1 (2026-10-29; `okf-core-test` passes): Root and nested index output has the specified endings for every directory shape, preserves index content and version declarations, and is byte-identical on repeated generation; core regression tests pass.
+- [x] Milestone 2 (2026-10-29; `okf-core-test` passes): Every generated descriptor comment line is free of trailing spaces and tabs, including multiline annotations, while descriptor round-trip and hash/source behavior tests pass.
+- [x] Milestone 3 (2026-10-29; both suites and the public-command smoke check pass): Automated CLI acceptance proves that index generation and whole-bundle bootstrap pass staged Git whitespace checks and bundle validation; both suites and the public-command smoke check pass, and release notes and request dispositions reflect the result.
 
 
 ## Surprises & Discoveries
 
+2026-10-29: Both original suites passed under the Nix development shell (GHC 9.12.4). With the regressions added and the renderers unchanged, both suites failed: exact output reported an empty index as `"\n"` and a files-only index with two final newlines; staged Git checks reported index blank lines at EOF and trailing whitespace on descriptor comment lines 2 and 5. This confirms the regression cases exercise both consumer defects. The ordinary shell provides GHC 9.10/base 4.20, below the repository's base 4.21 minimum; use the documented Nix environment. This recurrence is recorded as [FRIC-6](../friction-log/6-ambient-compiler-remains-below-the-project-minimum.md).
 
 
 ## Decision Log
@@ -49,6 +56,13 @@ This single plan addresses [IR-13](../improvement-requests/generate-indexes-with
 
 ## Outcomes & Retrospective
 
+2026-10-29: All three milestones are complete. Shared index rendering now emits an empty string for empty unversioned directories, one final newline for nonempty indexes, and no separator after version-only frontmatter. Descriptor metadata is split into comment lines before removing trailing spaces/tabs; expression rendering, import hashes, relocation and semantic round-trips remain unchanged. Exact core regressions, root/nested writer matrices, staged Git CLI acceptance, and documentation-generation comparisons pass. Only the two planned example index endings changed. IR-13 and IR-14 are completed, with fixes recorded under both packages' Unreleased changelogs; no release was published.
+
+Final acceptance used `nix develop --no-write-lock-file -c cabal test okf-core-test okf-cli-test` under GHC 9.12.4: both suites passed. The public-command smoke block also exited zero, printed `OK: 0 concepts (okf_version 0.1)` under explicit strict profile/log enforcement, and completed both staged Git whitespace checks and the repeated-generation `cmp` without diagnostics. Repository formatting and `git diff --check` passed. Strict validation with log enforcement of `docs/improvement-requests` reported `OK: 14 concepts`; the friction recording/triage helper validated its bundle with strict profile and log enforcement.
+
+[FRIC-6](../friction-log/6-ambient-compiler-remains-below-the-project-minimum.md) is accepted: checks use the documented Nix shell rather than the older ambient compiler. This repeats FRIC-4 under a separate plan; the Concrete Steps now make the compiler preflight explicit. No other friction was recorded under this plan.
+
+The ADR distillation pass reviewed ADR-10, ADR-13 and ADR-20 against the final change. Their version-preservation, directory/file listing, core-renderer ownership and descriptor semantic contracts still apply unchanged; this serialization correction introduces no additional architectural decision requiring an ADR amendment. No implementation work remains.
 
 
 ## Context and Orientation
@@ -102,7 +116,7 @@ The shared renderer also feeds profile documentation. `testProfileDocumentationM
 
 ## Concrete Steps
 
-Run from the repository root, `/Users/shinzui/Keikaku/bokuno/okf`. Enter the development shell if the Haskell tools are unavailable:
+Run from the repository root, `/Users/shinzui/Keikaku/bokuno/okf`. Enter the development shell before running the Haskell commands below. The ambient tools are installed but provide GHC 9.10/base 4.20, below this project's minimum; the shell provides GHC 9.12.4:
 
 ```bash
 nix develop --no-write-lock-file

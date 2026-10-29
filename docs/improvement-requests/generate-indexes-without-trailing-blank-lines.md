@@ -4,12 +4,15 @@ title: Generate indexes without trailing blank lines
 description: End generated index.md files with a single newline so profile
   bootstrap and repeated index regeneration pass git diff --check without
   manual cleanup.
-timestamp: "2026-10-29T02:14:15Z"
+timestamp: "2026-10-29T02:39:56Z"
 generated:
   by: codex/gpt-6
   at: "2026-10-29T02:14:15Z"
 requestId: IR-13
-status: proposed
+status: completed
+completedAt: "2026-10-29T02:39:56Z"
+targetPlan: docs/plans/75-generate-bundle-artifacts-without-whitespace-cleanup.md
+resolution: Root and nested indexes have deliberate endings, preserve version declarations and content, and pass staged Git checks after repeated generation.
 origin: mori://tan/tan-platform
 acceptanceCriteria:
   - id: AC-1
@@ -40,9 +43,18 @@ reviews:
     context: Author self-check against the four source friction entries,
       Okf.Index, the profile-init writer and the existing renderer tests at
       440e1cc. Not an independent review or a fresh reproduction.
+amended:
+  - by: codex-cli/gpt-6.1-sol
+    at: "2026-10-29T02:39:56Z"
+    change: Record completed whitespace acceptance from ExecPlan 75.
 ---
 
 # Improvement Request: Generate indexes without trailing blank lines
+
+## Implementation evidence
+
+Completed on 2026-10-29 through [ExecPlan 75](../plans/75-generate-bundle-artifacts-without-whitespace-cleanup.md).
+Both Haskell suites pass. Exact core tests cover empty, subdirectory-only, files-only, concepts-only and mixed directories, with and without version frontmatter. Writer tests preserve parsed and raw declarations and explicit overrides. CLI tests stage indexes from undeclared and 0.2 bundles, compare previews with written bytes, regenerate twice, and validate strictly.
 
 ## Problem
 
@@ -92,4 +104,4 @@ Git's whitespace gate as well as exact renderer assertions.
 [IR-14](generate-bootstrap-profile-comments-without-trailing-whitespace.md)
 addresses the separate profile.dhall comment whitespace reported by the same
 bootstrap incident. Its bootstrap acceptance depends on this index fix; both
-requests remain proposed until the OKF owner triages them.
+requests are completed by ExecPlan 75; release publication is separate.

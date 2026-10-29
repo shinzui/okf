@@ -151,7 +151,7 @@ declarationFromValue value =
 -- caller, so a stray @.DS_Store@ never reaches a committed index.
 renderIndex :: [FilePath] -> [FilePath] -> [Concept] -> Text
 renderIndex subdirectories files concepts =
-  Text.intercalate "\n" (filter (not . Text.null) [subdirectorySection, fileSection, conceptSections]) <> "\n"
+  Text.intercalate "\n" (filter (not . Text.null) [subdirectorySection, fileSection, conceptSections])
   where
     sortedSubdirectories = List.sort subdirectories
     subdirectorySection
@@ -202,9 +202,10 @@ renderRootIndexText :: Maybe Text -> [FilePath] -> [FilePath] -> [Concept] -> Te
 renderRootIndexText Nothing subdirectories files concepts =
   renderIndex subdirectories files concepts
 renderRootIndexText (Just versionText) subdirectories files concepts =
-  Text.unlines ["---", "okf_version: \"" <> escaped versionText <> "\"", "---", ""]
-    <> renderIndex subdirectories files concepts
+  Text.unlines ["---", "okf_version: \"" <> escaped versionText <> "\"", "---"]
+    <> (if Text.null body then "" else "\n" <> body)
   where
+    body = renderIndex subdirectories files concepts
     -- The only two characters that can end a double-quoted YAML scalar early.
     -- A parsed version can contain neither; a preserved raw one might.
     escaped = Text.replace "\"" "\\\"" . Text.replace "\\" "\\\\"

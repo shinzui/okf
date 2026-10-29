@@ -87,8 +87,11 @@ renderBootstrapDescriptor destination source = handleFailure $ do
               ""
             ]
               <> guidance source
-      pure (Right (Text.unlines (map ("-- " <>) (concatMap (Text.splitOn "\n") comments)) <> D.pretty body <> "\n"))
+      pure (Right (Text.unlines (map commentLine (concatMap (Text.splitOn "\n") comments)) <> D.pretty body <> "\n"))
   where
+    commentLine line = case Text.dropWhileEnd (\c -> c == ' ' || c == '\t') line of
+      "" -> "--"
+      text -> "-- " <> text
     handleFailure action =
       action `catch` \(err :: SomeException) ->
         case fromException err :: Maybe SomeAsyncException of

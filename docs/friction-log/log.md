@@ -1,5 +1,9 @@
 # Bundle Update Log
 
+## 2026-10-29
+* **Update**: FRIC-6 accepted: Accept the documented Nix environment after both test suites and the public-command smoke check pass; clarify the compiler preflight in plan 75.
+* **Addition**: FRIC-6 records detour environment friction with mori://shinzui/okf: Ambient compiler remains below the project minimum
+
 ## 2026-10-28
 * **Update**: FRIC-5 accepted: Accepted: the ordering cost one detour, the equivalent comparison reached parity, and plan 13 already owns the formal baselines and script.
 * **Addition**: FRIC-5 records detour process friction with mori://shinzui/okf-profiles/plans/13-make-profile-policy-sweeps-observable-and-run-them-natively-in-okf: Plan 13 parity prerequisites were not yet recorded

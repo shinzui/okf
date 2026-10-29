@@ -7,6 +7,10 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Fixed
+
+- Generate indexes and profile bootstrap artifacts that pass staged Git whitespace checks without manual cleanup; preview and profile documentation share the corrected index endings.
+
 ## [0.12.0.0] - 2026-10-28
 
 ### Added

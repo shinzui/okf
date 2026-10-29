@@ -10,7 +10,7 @@ import Baikai.Provider.OpenAI.Interactive (codexInteractiveCommand, defaultCodex
 import Control.Concurrent (forkIO, newEmptyMVar, putMVar, takeMVar, threadDelay)
 import Control.Exception (AsyncException (UserInterrupt), bracket, finally, throwTo, try)
 import Control.Lens ((&), (.~), (^.))
-import Control.Monad (unless)
+import Control.Monad (forM, unless)
 import Data.Aeson (Value (..), toJSON)
 import Data.Aeson qualified as Aeson
 import Data.Aeson.KeyMap qualified as KeyMap
@@ -44,7 +44,7 @@ import Okf.Cli.Kit.Selector (kitCandidates)
 import Okf.Cli.ProfileDiscovery (ProfileDiscovery (..), discoverAvailableProfiles, parseProfileSearchRoots, profileSearchRootsEnvVar)
 import Okf.ConceptId (ConceptId, parseConceptId, renderConceptId)
 import Okf.Document (Attester (..), Executor (..), Parameter (..), parseDocument)
-import Okf.Index (OkfVersion (..), VersionDeclaration (..), parseOkfVersion, readBundleVersion)
+import Okf.Index (OkfVersion (..), VersionDeclaration (..), parseOkfVersion, readBundleVersion, renderBundleIndexes)
 import Okf.Profile (Cardinality (..), CompiledProfile, FieldCondition (..), FieldFormat (..), FieldPath (..), FieldPathSegment (..), FieldRule (..), FrontmatterRules (..), HandleReferenceRule (..), NestedFieldRule (..), NestedRules (..), PathReferenceRule (..), ProfileSpec (..), ProfileViolation (..), TypeRule (..), compileProfile, compiledProfileSpec, loadProfileFile, validateProfile, validateProfileVersion)
 import Okf.Profile.Registry (ProfileSource (..), ProfileSourceLoadError (..), RegistryEntry (..), RegistryLoadError (..), RegistryRef (..), SourcedProfile (..), defaultRegistryReference)
 import Okf.Profile.Sweep qualified as Sweep
@@ -54,9 +54,10 @@ import Options.Applicative
 import System.Directory (Permissions (..), canonicalizePath, copyFile, createDirectoryIfMissing, createFileLink, doesDirectoryExist, doesFileExist, getCurrentDirectory, getPermissions, getTemporaryDirectory, listDirectory, makeAbsolute, removeDirectoryRecursive, setModificationTime, setPermissions, withCurrentDirectory)
 import System.Environment (getArgs, getExecutablePath, lookupEnv, setEnv, unsetEnv, withArgs)
 import System.Exit (ExitCode (..), exitFailure)
-import System.FilePath (normalise, takeDirectory, (</>))
+import System.FilePath (normalise, takeDirectory, takeFileName, (</>))
 import System.IO (IOMode (..), hClose, hFlush, stdout, withFile)
 import System.IO.Temp (createTempDirectory)
+import System.Process (readProcessWithExitCode)
 import System.Timeout (timeout)
 
 main :: IO ()
@@ -106,6 +107,7 @@ runTests = do
   assistModelOverride <- testAssistModelOverride
   assistCodexCommandBuilder <- testAssistCodexCommandBuilder
   assistKitVisibility <- testAssistKitVisibility
+  generatedWhitespace <- testGeneratedWhitespace
   profileBootstrap <- testProfileBootstrap
   profileDocumentWrites <- testProfileDocumentWritesBundle
   profileDocumentDeclaresVersion <- testProfileDocumentDeclaresOkfVersion
@@ -706,6 +708,7 @@ runTests = do
           profileDiscoveryListing,
           profilePickerExitCodes,
           effectiveProfileSources,
+          generatedWhitespace,
           profileBootstrap,
           profileDocumentWrites,
           profileDocumentDeclaresVersion,
@@ -3680,6 +3683,121 @@ parseShowsInfo args =
     Failure _ -> True
     CompletionInvoked _ -> True
     Success _ -> False
+
+-- Keep .git outside bundle/: directory discovery intentionally sees all children.
+-- The staged check also checks new files, unlike a working-tree diff.
+testGeneratedWhitespace :: IO Bool
+testGeneratedWhitespace =
+  withRepositoryPath "generated whitespace" "okf-core/test/fixtures/registry/package.dhall" $ \registry -> do
+    absoluteRegistry <- makeAbsolute registry
+    withIsolatedConfigEnv "okf-cli-whitespace" $ do
+      root <- getCurrentDirectory
+      let git arguments = do
+            (status, out, err) <- readProcessWithExitCode "git" (["-C", root] <> arguments) ""
+            unless (status == ExitSuccess) (putStrLn ("git " <> unwords arguments <> " failed:\n" <> out <> err))
+            pure (status, out, err)
+          cleanStaged = do
+            (status, out, err) <- git ["-c", "core.whitespace=blank-at-eol,blank-at-eof,space-before-tab", "diff", "--cached", "--check"]
+            pure (status == ExitSuccess && null out && null err)
+          run arguments = captureStdout (try @ExitCode (withArgs arguments runCli))
+          indexes bundle = filter ((== "index.md") . takeFileName . fst) <$> readMarkdownTree bundle
+          check label passed = do
+            unless passed (putStrLn ("generated whitespace failed: " <> label))
+            pure passed
+      (initialized, _, _) <- git ["init", "-q"]
+      standalone <- forM [False, True] $ \declared -> do
+        let bundle = root </> (if declared then "declared" else "undeclared") </> "bundle"
+            concept =
+              Text.unlines
+                [ "---",
+                  "type: Note",
+                  "title: Example",
+                  "description: A strict-valid example.",
+                  "generated:",
+                  "  by: process:test",
+                  "  at: 2026-10-29T00:00:00Z",
+                  "---",
+                  "Body."
+                ]
+        traverse_ (createDirectoryIfMissing True . (bundle </>)) ["nested", "files", "empty", "parent/child"]
+        Text.IO.writeFile (bundle </> "root.md") concept
+        Text.IO.writeFile (bundle </> "nested/note.md") concept
+        Text.IO.writeFile (bundle </> "files/data.py") "pass\n"
+        if declared
+          then Text.IO.writeFile (bundle </> "index.md") "---\nokf_version: \"0.2\"\n---\n"
+          else pure ()
+        (written, _) <- run ["index", bundle, "--write"]
+        firstBytes <- indexes bundle
+        (previewed, preview) <- run ["index", bundle]
+        previewIndexes <- renderBundleIndexes bundle
+        previewFiles <- forM (either (const []) (map fst) previewIndexes) $ \path ->
+          (path,) <$> Text.IO.readFile (bundle </> path)
+        (rewritten, _) <- run ["index", bundle, "--write"]
+        secondBytes <- indexes bundle
+        version <- readBundleVersion bundle
+        (validated, _) <- run ["validate", bundle, "--strict"]
+        -- Stage precisely the generated indexes; source whitespace is not this test's subject.
+        (staged, _, _) <- git (["-c", "core.autocrlf=false", "add", "--"] <> map ((bundle </>) . fst) secondBytes)
+        clean <- cleanStaged
+        let previewExpected = foldMap (\(path, contents) -> "--- " <> Text.pack path <> "\n" <> contents) previewFiles
+        unless (preview == previewExpected) $
+          putStrLn ("index preview differs from written files: " <> show (preview, previewExpected))
+        check
+          ("standalone " <> show declared)
+          ( written == Right ()
+              && rewritten == Right ()
+              && previewed == Right ()
+              && validated == Right ()
+              && length firstBytes == 6
+              && firstBytes == secondBytes
+              && preview == previewExpected
+              && version == Right (if declared then VersionDeclared (OkfVersion 0 2) else VersionUndeclared)
+              && staged == ExitSuccess
+              && clean
+          )
+      let bundle = root </> "bootstrap" </> "bundle"
+      (bootstrapped, _) <-
+        run
+          [ "profile",
+            "init",
+            "postgresql",
+            "--no-local",
+            "--registry",
+            absoluteRegistry,
+            "--bundle",
+            bundle,
+            "--date",
+            "2026-10-29",
+            "--write"
+          ]
+      (staged, _, _) <- git ["-c", "core.autocrlf=false", "add", "--", bundle]
+      clean <- cleanStaged
+      (validated, report) <-
+        run
+          ["validate", bundle, "--strict", "--profile", bundle </> "profile.dhall", "--profile-enforce", "--log-enforce"]
+      firstBytes <- indexes bundle
+      (regenerated, _) <- run ["index", bundle, "--write"]
+      secondBytes <- indexes bundle
+      (regeneratedAgain, _) <- run ["index", bundle, "--write"]
+      thirdBytes <- indexes bundle
+      (restaged, _, _) <- git ["-c", "core.autocrlf=false", "add", "--", bundle]
+      cleanAgain <- cleanStaged
+      bootstrap <-
+        check
+          "whole bootstrap"
+          ( bootstrapped == Right ()
+              && validated == Right ()
+              && report == "OK: 0 concepts (okf_version 0.1)\n"
+              && regenerated == Right ()
+              && regeneratedAgain == Right ()
+              && firstBytes == secondBytes
+              && secondBytes == thirdBytes
+              && staged == ExitSuccess
+              && restaged == ExitSuccess
+              && clean
+              && cleanAgain
+          )
+      pure (initialized == ExitSuccess && and standalone && bootstrap)
 
 -- Exercise both the no-write preflight boundary and recovery after mutation.
 testProfileBootstrap :: IO Bool
