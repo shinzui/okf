@@ -1,5 +1,8 @@
 # Bundle Update Log
 
+## 2026-10-29
+* **Addition**: IR-13: request indexes without trailing blank lines, consolidating four consumer friction reports; IR-14: request bootstrap profile comments without trailing whitespace from the same initial incident.
+
 ## 2026-10-28
 * **Update**: Complete IR-12 with all-family parity and timing evidence from ExecPlan 71;
 released in 0.12.0.0.
