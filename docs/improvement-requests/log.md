@@ -1,5 +1,8 @@
 # Bundle Update Log
 
+## 2026-11-08
+* **Addition**: IR-15 proposed: preview exact log additions before writing, complementing the adoption-evidence data-loss report BUG-2.
+
 ## 2026-10-29
 * **Update**: Complete IR-13 and IR-14 through ExecPlan 75: exact renderer regressions, staged Git whitespace checks, deterministic regeneration, and strict bootstrap profile validation pass.
 * **Addition**: IR-13: request indexes without trailing blank lines, consolidating four consumer friction reports; IR-14: request bootstrap profile comments without trailing whitespace from the same initial incident.
