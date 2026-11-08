@@ -12,6 +12,14 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - `okf log add --preview` shows the target path and exact proposed diff without
   creating or modifying bundle files or directories (IR-15).
 
+### Changed
+
+- Upgrade `mori://shinzui/baikai/packages/baikai` to 0.10.1.0 with cancellation
+  fixes for traced calls. All consumed Baikai packages use their latest releases:
+  `mori://shinzui/baikai/packages/baikai-kit` remains at 0.4.0.3, and
+  `mori://shinzui/baikai/packages/baikai-claude` and
+  `mori://shinzui/baikai/packages/baikai-openai` remain at 0.7.3.0.
+
 ## [0.12.0.1] - 2026-10-28
 
 ### Fixed

@@ -160,8 +160,8 @@ sys.exit(23)
         (bundle / 'index.md').write_text('---\nokf_version: "0.2"\n---\n# Fixture\n')
         # A valid local-only descriptor, including profile/type authoring guidance.
         fixture = Path(__file__).resolve().parents[1] / 'okf-core/test/fixtures/profiles/guidance.dhall'
-        schema = fixture.parents[3] / 'dhall/package.dhall'
-        (self.project / 'profile.dhall').write_text(fixture.read_text().replace('../../../dhall/package.dhall', str(schema)))
+        schema_dir = fixture.parents[3] / 'dhall'
+        (self.project / 'profile.dhall').write_text(fixture.read_text().replace('../../../dhall/', str(schema_dir) + '/'))
         self.env['OKF_AGENT_MODEL'] = 'PRIVATE_SENTINEL'
         context = self.run_okf('agent', 'context', '--json')
         self.assertEqual(context.returncode, 0, context.stderr)

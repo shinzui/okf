@@ -67,7 +67,7 @@ library
   autogen-modules: Paths_okf_cli
   build-depends:
     aeson >=2.2 && <2.4,
-    baikai ^>=0.10.0.0,
+    baikai ^>=0.10.1.0,
     baikai-claude ^>=0.7.3.0,
     baikai-kit ^>=0.4.0.3,
     baikai-openai ^>=0.7.3.0,
@@ -95,7 +95,7 @@ test-suite okf-cli-test
   hs-source-dirs: test
   build-depends:
     aeson >=2.2 && <2.4,
-    baikai ^>=0.10.0.0,
+    baikai ^>=0.10.1.0,
     baikai-claude ^>=0.7.3.0,
     baikai-kit ^>=0.4.0.3,
     baikai-openai ^>=0.7.3.0,

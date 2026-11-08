@@ -63,6 +63,8 @@
       # The escaped quotes make GIT_HASH expand to a Haskell string literal.
       okf-cli = pkgs.haskell.lib.compose.overrideCabal
         (drv: {
+          # CLI regressions apply preview patches and check generated whitespace.
+          testToolDepends = (drv.testToolDepends or [ ]) ++ [ pkgs.git ];
           configureFlags = (drv.configureFlags or [ ]) ++ [
             "--ghc-option=-DGIT_HASH=\"${builtins.substring 0 7 gitRev}\""
           ];
