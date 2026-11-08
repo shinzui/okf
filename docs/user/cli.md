@@ -403,6 +403,13 @@ that concept's directory, creating it if absent; without one, it writes the root
 `log.md`. Re-running the same command adds another bullet; it does not
 deduplicate.
 
+Additions preserve all existing log bytes, including prose, tables, historical
+Markdown formatting and LF or CRLF line endings. Entries are prepended within
+an existing date, and new dates are inserted newest first. The log must have
+one top-level title and unique date headings in newest-first order. Unsupported
+or ambiguous Markdown, invalid UTF-8 and invalid dates are refused before the
+log is written; the error explains what needs repair.
+
 For backward compatibility, one positional after `log add` is always the
 explicit `BUNDLE`; omit all positionals to select a bundle and update its root
 log. Selecting a bundle interactively while naming a concept is not supported.

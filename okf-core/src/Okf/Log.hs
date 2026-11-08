@@ -6,6 +6,7 @@ module Okf.Log
     LogParseError (..),
     LogValidationError (..),
     appendLogEntry,
+    insertLogEntry,
     logErrorIsStructural,
     parseLog,
     serializeLog,
@@ -15,6 +16,7 @@ where
 
 import CMarkGFM qualified
 import Data.Char qualified as Char
+import Data.List qualified as List
 import Data.Text qualified as Text
 import Data.Time (Day, defaultTimeLocale, parseTimeM)
 import Okf.Markdown (markdownOptions)
@@ -54,6 +56,8 @@ data LogValidationError
   deriving stock (Generic, Eq, Show)
 
 -- | Parse Markdown into the log model. Structural validation is separate.
+-- This model omits other Markdown blocks and source formatting; use
+-- 'insertLogEntry' to modify an existing file without losing that content.
 parseLog :: Text -> Log
 parseLog markdown =
   finish (foldl' step emptyBuild topLevelNodes)
@@ -198,6 +202,74 @@ appendLogEntry dateText entry logFile@Log {logDays} =
       | logDate day == dateText = day {logEntries = entry : logEntries day} : rest
       | dateText > logDate day = newDay : day : rest
       | otherwise = day : insertDay rest
+
+-- | Insert into the original Markdown without rendering historical content.
+-- Source positions come from top-level headings, so heading-like text inside
+-- code, HTML, lists and block quotes cannot become an insertion boundary.
+-- Unsupported or ambiguous structure is rejected before a caller writes it.
+insertLogEntry :: Text -> LogEntry -> Text -> Either Text Text
+insertLogEntry dateText entry markdown = do
+  unless (isIsoDate dateText) (Left "use a real calendar date in YYYY-MM-DD form")
+  when (Text.any (== '\r') (Text.replace "\r\n" "" markdown)) $
+    Left "bare CR line endings are unsupported; use LF or CRLF"
+  title <- case titles of
+    [node] -> Right node
+    _ -> Left "expected exactly one top-level log title (# heading)"
+  titlePosition <- headingPosition title
+  days <- for dateHeadings $ \node -> do
+    pos <- headingPosition node
+    let day = plainText node
+    unless (isIsoDate day) (Left ("non-date level-two heading: " <> day))
+    unless (CMarkGFM.startLine pos > CMarkGFM.endLine titlePosition) $
+      Left "date headings must follow the log title"
+    pure (day, pos)
+  unless (and (zipWith (>) (fmap fst days) (drop 1 (fmap fst days)))) $
+    Left "date headings must be unique and ordered newest first"
+  -- Parsing the generated fragment also rejects messages that introduce extra
+  -- headings or entries. Compare the complete parsed result below to catch an
+  -- insertion swallowed by an unclosed code fence or HTML block at EOF.
+  case CMarkGFM.commonmarkToNode markdownOptions [] fragment of
+    CMarkGFM.Node _ _ [CMarkGFM.Node _ (CMarkGFM.HEADING 1) _, CMarkGFM.Node _ (CMarkGFM.HEADING 2) _, CMarkGFM.Node _ (CMarkGFM.LIST _) [_]] -> pure ()
+    _ -> Left "kind and message must form a single log entry"
+  let (offset, insertion) = case List.find ((== dateText) . fst) days of
+        Just (_, pos) -> (afterLine (CMarkGFM.endLine pos), renderedEntry)
+        Nothing ->
+          ( maybe
+              (Text.length markdown)
+              (beforeLine . CMarkGFM.startLine . snd)
+              (List.find ((< dateText) . fst) days),
+            "## " <> dateText <> newline <> renderedEntry
+          )
+      (before, after) = Text.splitAt offset markdown
+      separator
+        | Text.null before || (newline <> newline) `Text.isSuffixOf` before = ""
+        | newline `Text.isSuffixOf` before = newline
+        | otherwise = newline <> newline
+      result = before <> separator <> insertion <> newline <> (if Text.null after then "" else newline) <> after
+      parsedResult = parseLog result
+  -- Read the new entry in context: reference-style links may resolve against
+  -- definitions in the original Markdown rather than in the isolated fragment.
+  insertedEntry <- case [newEntry | LogDay day (newEntry : _) <- logDays parsedResult, day == dateText] of
+    [newEntry] -> Right newEntry
+    _ -> Left "inserted entry is not visible under its date heading"
+  unless (parsedResult == appendLogEntry dateText insertedEntry (parseLog markdown)) $
+    Left "cannot safely insert an entry into this Markdown structure"
+  pure result
+  where
+    CMarkGFM.Node _ _ nodes = CMarkGFM.commonmarkToNode markdownOptions [] markdown
+    titles = [node | node@(CMarkGFM.Node _ (CMarkGFM.HEADING 1) _) <- nodes]
+    dateHeadings = [node | node@(CMarkGFM.Node _ (CMarkGFM.HEADING 2) _) <- nodes]
+    headingPosition (CMarkGFM.Node (Just pos) _ _) = Right pos
+    headingPosition _ = Left "log heading has no source position"
+    newline = if "\r\n" `Text.isInfixOf` markdown then "\r\n" else "\n"
+    renderedEntry = case entry of
+      LogEntry (Just kind) body -> "* **" <> kind <> "**: " <> body
+      LogEntry Nothing body -> "* " <> body
+    fragment = "# Log\n\n## " <> dateText <> "\n" <> renderedEntry <> "\n"
+    -- Keep CRs and all original line terminators in the slices. Only line
+    -- numbers are used; cmark's byte-based columns need no Text conversion.
+    afterLine line = min (Text.length markdown) (sum (fmap ((+ 1) . Text.length) (take line (Text.splitOn "\n" markdown))))
+    beforeLine line = afterLine (line - 1)
 
 dropKindSeparator :: Text -> Text
 dropKindSeparator text =

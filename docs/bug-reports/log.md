@@ -1,6 +1,9 @@
 # Bundle Update Log
 
 ## 2026-11-08
+
+* **Update**: BUG-2 fixed (unreleased): preserve prior log bytes when adding entries and bootstrapping profiles; refuse unsafe insertion before writing.
+
 * **Addition**: BUG-2 confirmed: log additions silently delete adoption evidence; reproduced with okf 0.12.0.0 and consolidated six Kansoku friction occurrences.
 
 ## 2026-08-16

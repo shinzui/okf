@@ -6,7 +6,13 @@ generated:
   by: process:codex
   at: "2026-11-08T03:36:19Z"
 bugId: BUG-2
-status: confirmed
+status: fixed
+fixedVersion: unreleased
+resolution: >-
+  Log additions now splice a new entry into the original UTF-8 text instead of
+  reconstructing historical content from the parsed model. Unsupported insertion
+  is refused before writing. Writer regressions verify exact retained bytes,
+  missing-log creation, concept-directory selection and profile bootstrap.
 severity: data-loss
 origin: mori://shinzui/kansoku/okf/friction-log/concepts/FRIC-1
 affects: mori://shinzui/okf
@@ -100,7 +106,8 @@ These six records are occurrences of one defect, consolidated here:
 - `mori://shinzui/kansoku/okf/friction-log/concepts/FRIC-14`: adoption paragraph/table removed during replicated-migration work.
 
 The source entries remain `accepted` because that status records their local
-workaround. It does not mean the upstream defect is fixed.
+workaround. Their local status alone does not establish whether the upstream
+defect is fixed.
 
 ## Fix acceptance
 
@@ -114,3 +121,29 @@ workaround. It does not mean the upstream defect is fixed.
 
 [IR-15](../improvement-requests/preview-log-additions-before-writing.md) requests a
 separate preview capability. It does not replace repairing this destructive default.
+
+## Resolution
+
+`runLogAdd` now reads the original UTF-8 bytes and uses
+`Okf.Log.insertLogEntry` to splice in the new entry. Markdown source positions
+identify actual top-level date headings, leaving paragraphs, tables, historical
+bullets, escaping and line endings untouched. Profile bootstrap uses this same
+writer. The parsed model remains available for inspection and validation; it
+does not supply the historical text written back to the file.
+
+The writer refuses unsupported inputs before writing: invalid UTF-8, bare CR
+line endings, missing or multiple top-level titles, malformed, duplicate or
+unordered date headings, and insertion points swallowed by an unclosed fence
+or HTML block. It also rejects invalid requested dates. Diagnostics name the
+target and explain the refusal.
+
+`testLogAddPreservesHistory` in `okf-cli/test/Main.hs` compares the persisted
+bytes against an exact expected insertion for same-day additions and newer,
+intermediate and older dates. Its mixed Markdown includes Unicode, adoption
+prose and tables, inline code, links, escaping and heading-like text inside
+code, quotations and HTML. It exercises LF and CRLF, setext date headings,
+reference-style links and a missing final newline, and confirms refusals leave
+the original bytes unchanged. The missing-log/concept-directory and profile
+bootstrap tests also check that prior evidence survives.
+
+Verified with `cabal test okf-core-test okf-cli-test --offline`; both suites pass.

@@ -15,6 +15,7 @@ import Data.Aeson (Value (..), toJSON)
 import Data.Aeson qualified as Aeson
 import Data.Aeson.KeyMap qualified as KeyMap
 import Data.Bifunctor (first)
+import Data.ByteString qualified as Bytes
 import Data.Char (isControl)
 import Data.Foldable (toList, traverse_)
 import Data.Generics.Labels ()
@@ -23,6 +24,7 @@ import Data.List.NonEmpty (NonEmpty (..))
 import Data.Map.Strict qualified as Map
 import Data.Maybe (listToMaybe)
 import Data.Text qualified as Text
+import Data.Text.Encoding qualified as Text.Encoding
 import Data.Text.IO qualified as Text.IO
 import Data.Time.Calendar (fromGregorian)
 import Data.Time.Clock (UTCTime (..))
@@ -88,6 +90,7 @@ runTests = do
   profilePickerExitCodes <- testProfilePickerExitCodes
   effectiveProfileSources <- testEffectiveProfileSources
   logAddWrites <- testLogAddWritesFile
+  logAddPreserves <- testLogAddPreservesHistory
   aliasStartup <- testAliasStartup
   aliasConfiguration <- testAliasConfiguration
   configDefaults <- testConfigDefaults
@@ -704,6 +707,7 @@ runTests = do
           parseShowsInfo ["--version"],
           parseFails ["hello"],
           logAddWrites,
+          logAddPreserves,
           bundleDiscoveryListing,
           profileDiscoveryListing,
           profilePickerExitCodes,
@@ -2616,11 +2620,79 @@ testLogAddWritesFile = do
           }
     )
   written <- Text.IO.readFile (root </> "tables" </> "log.md")
+  -- A concept addition must keep selecting its directory log, preserving both
+  -- existing nested history and the independent root log.
+  let rootLog = "# Root Log\n\nRoot-only provenance.\n"
+      nestedLog = "# Tables Log\n\n## 2026-06-22\n\nNested adoption evidence.\n\n- **Adoption**: Keep `column_name`.\n"
+  Text.IO.writeFile (root </> "log.md") rootLog
+  Text.IO.writeFile (root </> "tables" </> "log.md") nestedLog
+  runLogAdd root (LogAddOptions (Just "tables/users") "Update" "Nested update" (Just "2026-06-23"))
+  nestedAfter <- Text.IO.readFile (root </> "tables" </> "log.md")
+  rootAfter <- Text.IO.readFile (root </> "log.md")
   removeDirectoryRecursive root
   pure
     ( "## 2026-06-23" `Text.isInfixOf` written
         && "* **Update**: Refreshed schema" `Text.isInfixOf` written
+        && rootAfter == rootLog
+        && nestedAfter == Text.replace "## 2026-06-22" "## 2026-06-23\n* **Update**: Nested update\n\n## 2026-06-22" nestedLog
     )
+
+-- Compare persisted UTF-8 bytes, including local history that exists only in
+-- the working tree. Each expected result differs by exactly one insertion.
+testLogAddPreservesHistory :: IO Bool
+testLogAddPreservesHistory = do
+  temp <- getTemporaryDirectory
+  bracket (createTempDirectory temp "okf-cli-log-preserve") removeDirectoryRecursive $ \root -> do
+    let prefix = "# Bundle Update Log\n\nIntro: 東京.\n\n"
+        heading = "## 2026-11-06\n"
+        history = "\nAdopted guides; retain this provenance.\n\n| Original | Retained |\n| --- | --- |\n| old-guide.md | guide.md |\n\n- **Adoption**: Keep `guide_name` and [guide](guide.md), escaped \\_text\\_.\n\n```md\n## 2099-01-01\n```\n\n> ## 2098-01-01\n\n<!--\n## 2097-01-01\n-->\n\n- Final entry without a newline."
+        original = prefix <> heading <> history
+        bullet = "* **Update**: Add one entry"
+        cases =
+          [ ("same day", "2026-11-06", original, prefix <> heading <> "\n" <> bullet <> "\n\n" <> history),
+            ("newest day", "2026-11-07", original, prefix <> "## 2026-11-07\n" <> bullet <> "\n\n" <> heading <> history),
+            ("oldest day", "2026-11-05", original, original <> "\n\n## 2026-11-05\n" <> bullet <> "\n"),
+            ("middle day", "2026-11-07", prefix <> "## 2026-11-08\n- Later.\n\n" <> heading <> history, prefix <> "## 2026-11-08\n- Later.\n\n## 2026-11-07\n" <> bullet <> "\n\n" <> heading <> history),
+            ("setext day", "2026-11-06", prefix <> "2026-11-06\n----------\n" <> history, prefix <> "2026-11-06\n----------\n\n" <> bullet <> "\n" <> history),
+            ("title only", "2026-11-06", "# Log\n", "# Log\n\n## 2026-11-06\n" <> bullet <> "\n")
+          ]
+        encode = Text.Encoding.encodeUtf8
+        run day = try @ExitCode (runLogAdd root (LogAddOptions Nothing "Update" "Add one entry" (Just day)))
+    preserved <- forM [(label, day, convert before, convert after) | convert <- [id, Text.replace "\n" "\r\n"], (label, day, before, after) <- cases] $ \(label, day, before, expected) -> do
+      Bytes.writeFile (root </> "log.md") (encode before)
+      outcome <- run day
+      actual <- Bytes.readFile (root </> "log.md")
+      let passed = outcome == Right () && actual == encode expected
+      unless passed (putStrLn ("log preservation failed: " <> label <> "\n" <> show actual))
+      pure passed
+    refused <- forM
+      [ "# Log\n\n## invalid\n- Keep.\n",
+        "# Log\n\n## 2026-11-06\n- Keep.\n\n## 2026-11-06\n- Duplicate.\n",
+        "# Log\n\n## 2026-11-05\n- Older.\n\n## 2026-11-06\n- Newer.\n",
+        "# Log\n\n# Another title\n",
+        "# Log\r\r## 2026-11-06\r- Keep.",
+        "# Log\n\n## 2026-11-06\n- Keep.\n\n```\nUnclosed fence",
+        "# Log\n\n## 2026-11-06\n- Keep.\n\n<!-- unclosed HTML",
+        Bytes.pack [255, 254, 128]
+      ]
+      $ \before -> do
+        Bytes.writeFile (root </> "log.md") before
+        outcome <- run "2026-11-05"
+        actual <- Bytes.readFile (root </> "log.md")
+        pure (outcome == Left (ExitFailure 1) && actual == before)
+    invalidDates <- forM ["2026-02-30", "yesterday"] $ \day -> do
+      Bytes.writeFile (root </> "log.md") (encode original)
+      outcome <- run day
+      actual <- Bytes.readFile (root </> "log.md")
+      pure (outcome == Left (ExitFailure 1) && actual == encode original)
+    missingResult <- try @ExitCode (runLogAdd (root </> "missing") (LogAddOptions Nothing "Update" "Add one entry" (Just "2026-02-30")))
+    missingCreated <- doesDirectoryExist (root </> "missing")
+    let referenceHistory = original <> "\n\n[source]: guide.md\n"
+        referenceExpected = prefix <> "## 2026-11-07\n* **Update**: See [guide][source].\n\n" <> heading <> history <> "\n\n[source]: guide.md\n"
+    Bytes.writeFile (root </> "log.md") (encode referenceHistory)
+    referenceResult <- try @ExitCode (runLogAdd root (LogAddOptions Nothing "Update" "See [guide][source]." (Just "2026-11-07")))
+    referenceAfter <- Bytes.readFile (root </> "log.md")
+    pure (and preserved && and refused && and invalidDates && missingResult == Left (ExitFailure 1) && not missingCreated && referenceResult == Right () && referenceAfter == encode referenceExpected)
 
 -- | Discovery stays sorted and duplicate-free across repeated roots, an empty
 -- search is successful, and JSON metadata failure leaves a path-only entry.
@@ -3857,16 +3929,19 @@ testProfileBootstrap =
       versionOk <- success "unparseable version" (rejectedVersion == Left (ExitFailure 1) && indexAfter == oldIndex && not descriptorAfter)
       let existing = root </> "existing"
           conceptText = "---\ntype: Note\ntitle: Keep me\n---\nOriginal bytes.\n"
+          existingHistory = "## 2026-09-18\n\nRetain this provenance: 東京.\n\n| Original | Retained |\n| --- | --- |\n| old.md | nested/concept.md |\n\n- **Update**: Preserve `column_name`, [concept](nested/concept.md) and \\_escaping\\_.\n"
+          existingLog = "# Bundle Update Log\n\n" <> existingHistory
       createDirectoryIfMissing True (existing </> "nested")
       Text.IO.writeFile (existing </> "nested" </> "concept.md") conceptText
       Text.IO.writeFile (existing </> "index.md") "---\nokf_version: \"0.3\"\n---\n"
-      Text.IO.writeFile (existing </> "log.md") "# Bundle Update Log\n\n## 2026-09-18\n* **Update**: Preserve this entry.\n"
+      Text.IO.writeFile (existing </> "log.md") existingLog
       existingResult <- run (options existing)
       preserved <- Text.IO.readFile (existing </> "nested" </> "concept.md")
       higher <- readBundleVersion existing
       appended <- Text.IO.readFile (existing </> "log.md")
       nestedIndex <- doesFileExist (existing </> "nested" </> "index.md")
-      existingOk <- success "existing bundle" (existingResult == Right () && preserved == conceptText && higher == Right (VersionDeclared (OkfVersion 0 3)) && "Preserve this entry." `Text.isInfixOf` appended && Text.count "**Adoption**" appended == 1 && nestedIndex)
+      let (adoptionPrefix, historyAfter) = Text.breakOn existingHistory appended
+      existingOk <- success "existing bundle" (existingResult == Right () && preserved == conceptText && higher == Right (VersionDeclared (OkfVersion 0 3)) && historyAfter == existingHistory && "# Bundle Update Log\n\n## 2026-09-19\n* **Adoption**:" `Text.isPrefixOf` adoptionPrefix && Text.count "**Adoption**" appended == 1 && nestedIndex)
       -- Invalid definitions load but must fail compilation before mutation.
       let invalidRegistry = root </> "invalid.dhall"
       Text.IO.writeFile invalidRegistry ("let registry = " <> Text.pack absoluteRegistry <> " in registry.postgresql with okfVersion = \"invalid\"")

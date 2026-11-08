@@ -7,6 +7,12 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Fixed
+
+- Preserve existing log bytes when adding entries or bootstrapping profiles,
+  including adoption prose, tables, historical Markdown and CRLF line endings.
+  Refuse unsupported or ambiguous insertion before writing the log (BUG-2).
+
 ## [0.12.0.1] - 2026-10-28
 
 ### Fixed

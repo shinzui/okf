@@ -56,6 +56,12 @@ APPENDING AN ENTRY
 
   Re-running the same command adds another bullet; it does not deduplicate.
 
+  Additions preserve existing bytes, including prose, tables, Markdown formatting
+  and LF or CRLF line endings. Entries are prepended within a date; new dates
+  are inserted newest first. Logs need one top-level title and unique date
+  headings in newest-first order. Unsafe or unsupported insertion fails before
+  writing the log, with an explanation of what needs repair.
+
 VALIDATION
 
   A present log.md must use valid YYYY-MM-DD calendar headings and non-empty

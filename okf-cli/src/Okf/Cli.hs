@@ -69,6 +69,7 @@ import Control.Exception (IOException, try)
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as AesonKey
 import Data.Aeson.KeyMap qualified as KeyMap
+import Data.ByteString qualified as Bytes
 import Data.ByteString.Lazy qualified as LazyBytes
 import Data.ByteString.Lazy.Char8 qualified as LazyByteString
 import Data.Char (isDigit)
@@ -2327,13 +2328,17 @@ runLogAdd bundlePath LogAddOptions {conceptId, kind, message, date} = do
   targetPath <- resolveLogTarget bundlePath conceptId
   let absolutePath = bundlePath </> targetPath
       entry = Log.LogEntry {Log.logKind = Just kind, Log.logText = message}
+      refuse reason = dieText ("log: refusing to update " <> Text.pack absolutePath <> ": " <> reason <> ". No log content was written.")
   exists <- doesFileExist absolutePath
-  existingLog <-
+  updated <-
     if exists
-      then Log.parseLog <$> Text.IO.readFile absolutePath
-      else pure (emptyLogFor targetPath)
+      then do
+        original <- Bytes.readFile absolutePath
+        markdown <- either (\_ -> refuse "log is not valid UTF-8") pure (Text.Encoding.decodeUtf8' original)
+        either refuse pure (Log.insertLogEntry entryDate entry markdown)
+      else either refuse pure (Log.insertLogEntry entryDate entry (Log.serializeLog (emptyLogFor targetPath)))
   createDirectoryIfMissing True (FilePath.takeDirectory absolutePath)
-  Text.IO.writeFile absolutePath (Log.serializeLog (Log.appendLogEntry entryDate entry existingLog))
+  Bytes.writeFile absolutePath (Text.Encoding.encodeUtf8 updated)
   Text.IO.putStrLn ("Wrote " <> Text.pack targetPath <> " for " <> entryDate)
 
 resolveLogTarget :: FilePath -> Maybe Text -> IO FilePath
