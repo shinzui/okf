@@ -325,7 +325,8 @@ data LogAddOptions = LogAddOptions
   { conceptId :: !(Maybe Text),
     kind :: !Text,
     message :: !Text,
-    date :: !(Maybe Text)
+    date :: !(Maybe Text),
+    preview :: !Bool
   }
   deriving stock (Show, Eq)
 
@@ -622,7 +623,9 @@ logAddCommandParser =
         "add"
         ( info
             (logAddOptionsToCommand <$> optionalBundleArgument <*> logAddOptionsParser <**> helper)
-            (progDesc "Append an entry to the nearest log.md")
+            ( progDesc "Append an entry to the nearest log.md"
+                <> footer "Review before writing: okf log add BUNDLE --preview -m 'Refreshed schema' --date 2026-06-23. Run again without --preview to write the reviewed edit."
+            )
         )
     )
 
@@ -664,6 +667,7 @@ logAddOptionsParser =
                 <> help "Entry date; defaults to today in UTC"
             )
       )
+    <*> switch (long "preview" <> help "Show the target path and exact proposed diff without writing files or directories")
 
 graphOptionsParser :: Parser GraphOptions
 graphOptionsParser =
@@ -1878,7 +1882,7 @@ runProfileInit ProfileInitOptions {registryRefs, export = requestedExport, bundl
         either (\err -> dieText ("profile init: index generation failed: " <> renderBundleError err <> "\n" <> indexRecovery)) pure indexResult
       Text.IO.putStrLn ("Declared " <> declarationText <> " in " <> Text.pack (destination </> "index.md"))
       bootstrapPhase "log write" "The verified descriptor and indexes remain. Inspect log.md before adding the Adoption entry; do not append it twice." $
-        runLogAdd destination (LogAddOptions Nothing "Adoption" message (Just entryDate))
+        runLogAdd destination (LogAddOptions Nothing "Adoption" message (Just entryDate) False)
       Text.IO.putStrLn "Bootstrap files have been written; validation follows."
       Text.IO.putStrLn ("Enforce in CI: okf validate " <> destinationArg <> " --strict --profile " <> descriptorArg <> " --profile-enforce --log-enforce")
       Text.IO.putStrLn ("Read the conventions: okf profile document --profile " <> descriptorArg)
@@ -2323,23 +2327,26 @@ runLog LogOptions {bundlePath, logSub = LogAdd addOptions} = do
   runLogAdd resolvedBundle addOptions
 
 runLogAdd :: FilePath -> LogAddOptions -> IO ()
-runLogAdd bundlePath LogAddOptions {conceptId, kind, message, date} = do
+runLogAdd bundlePath LogAddOptions {conceptId, kind, message, date, preview = previewOnly} = do
   entryDate <- maybe todayDate pure date
   targetPath <- resolveLogTarget bundlePath conceptId
   let absolutePath = bundlePath </> targetPath
       entry = Log.LogEntry {Log.logKind = Just kind, Log.logText = message}
       refuse reason = dieText ("log: refusing to update " <> Text.pack absolutePath <> ": " <> reason <> ". No log content was written.")
   exists <- doesFileExist absolutePath
-  updated <-
+  original <-
     if exists
       then do
-        original <- Bytes.readFile absolutePath
-        markdown <- either (\_ -> refuse "log is not valid UTF-8") pure (Text.Encoding.decodeUtf8' original)
-        either refuse pure (Log.insertLogEntry entryDate entry markdown)
-      else either refuse pure (Log.insertLogEntry entryDate entry (Log.serializeLog (emptyLogFor targetPath)))
-  createDirectoryIfMissing True (FilePath.takeDirectory absolutePath)
-  Bytes.writeFile absolutePath (Text.Encoding.encodeUtf8 updated)
-  Text.IO.putStrLn ("Wrote " <> Text.pack targetPath <> " for " <> entryDate)
+        bytes <- Bytes.readFile absolutePath
+        Just <$> either (\_ -> refuse "log is not valid UTF-8") pure (Text.Encoding.decodeUtf8' bytes)
+      else pure Nothing
+  updated <- either refuse pure (Log.insertLogEntry entryDate entry (fromMaybe (Log.serializeLog (emptyLogFor targetPath)) original))
+  if previewOnly
+    then Bytes.putStr (Text.Encoding.encodeUtf8 (Log.renderLogDiff absolutePath original updated))
+    else do
+      createDirectoryIfMissing True (FilePath.takeDirectory absolutePath)
+      Bytes.writeFile absolutePath (Text.Encoding.encodeUtf8 updated)
+      Text.IO.putStrLn ("Wrote " <> Text.pack targetPath <> " for " <> entryDate)
 
 resolveLogTarget :: FilePath -> Maybe Text -> IO FilePath
 resolveLogTarget _ Nothing =

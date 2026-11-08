@@ -7,6 +7,16 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- `okf log add --preview` shows the target path and exact proposed unified diff
+  without changing bundle files or directories, using the normal writer's
+  target selection, validation and edit construction (IR-15).
+
+### Changed
+
+- **Breaking (library):** `LogAddOptions` adds the `preview` boolean field.
+
 ### Fixed
 
 - Preserve existing log bytes when adding entries or bootstrapping profiles,

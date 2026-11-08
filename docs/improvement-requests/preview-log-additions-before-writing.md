@@ -7,7 +7,13 @@ generated:
   by: process:codex
   at: "2026-11-08T03:36:19Z"
 requestId: IR-15
-status: proposed
+status: completed
+completedAt: "2026-11-08T04:01:25Z"
+resolution: >-
+  log add --preview prints the target path and an exact unified diff without
+  changing bundle files or directories. Preview and write share target selection,
+  validation and edit construction; acceptance tests apply the emitted patch and
+  compare its bytes with a normal write.
 origin: mori://shinzui/kansoku/okf/friction-log/concepts/FRIC-1
 acceptanceCriteria:
   - id: AC-1
@@ -76,3 +82,24 @@ whether the caller previews them. This request adds an inspection capability
 that remains useful after that fix. It does not authorize lossy writes, require
 interactive confirmation, add a new log format, or request changes to unrelated
 build and migration frictions in the consumer log.
+
+## Implementation
+
+`okf log add BUNDLE --preview -m MESSAGE --date YYYY-MM-DD` renders the pending
+edit as a unified diff, with the target path in its headers and `/dev/null` as
+the original for a new log. Remove `--preview` to write the same edit. Keep the
+date, inputs and source log unchanged between preview and write.
+
+Both modes call the same source-preserving insertion function and share input
+validation and root or concept-directory selection. Only the write branch
+creates directories or writes the proposed bytes. `Okf.Log.renderLogDiff`
+compares original and proposed source lines, including CRLF and missing final
+newlines, and shows removals as well as additions.
+
+`testLogAddPreview` exercises the command parser, snapshots the complete scratch
+tree and bytes around previews, and applies each emitted patch with Git before
+comparing it byte-for-byte with an ordinary write. Cases cover mixed Markdown
+with adoption prose, a table and historical entries, root and nested logs,
+absent logs and directories, LF and CRLF, missing final newlines and explicit
+dates. It also checks shared input errors and the review example in command
+help. Core renderer tests explicitly verify deletion and modification display.

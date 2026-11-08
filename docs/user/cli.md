@@ -403,6 +403,21 @@ that concept's directory, creating it if absent; without one, it writes the root
 `log.md`. Re-running the same command adds another bullet; it does not
 deduplicate.
 
+Use `--preview` to inspect the target path and exact proposed unified diff
+without creating or modifying any bundle file or directory. It shows additions,
+deletions and context, comparing a new log against `/dev/null`. Preview shares
+the writer's target selection, validation and proposed content, including for
+concept-local logs. With an explicit bundle it runs non-interactively:
+
+```bash
+okf log add BUNDLE --preview -m "Refreshed schema" --date 2026-06-23
+okf log add BUNDLE -m "Refreshed schema" --date 2026-06-23
+```
+
+Review the first command's diff, then run the second to write it. Keep the
+inputs and source log unchanged and specify `--date` so both commands produce
+the same content even across UTC midnight.
+
 Additions preserve all existing log bytes, including prose, tables, historical
 Markdown formatting and LF or CRLF line endings. Entries are prepended within
 an existing date, and new dates are inserted newest first. The log must have

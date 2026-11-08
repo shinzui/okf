@@ -101,6 +101,7 @@ main = do
         test "logStaleness reads generated.at ahead of the legacy timestamp" testLogStalenessReadsGeneratedAt,
         test "logStaleness prefers the deepest enclosing log" testLogStalenessPrefersDeepestLog,
         test "appendLogEntry inserts newest-first and prepends within a day" testAppendLogEntry,
+        test "log diffs expose removals and exact line endings" testLogDiff,
         testIO "generateIndex groups documents by frontmatter type" testGenerateIndexGroupsByType,
         testIO "index endings are exact for every directory shape" testIndexEndings,
         testIO "index writers preserve endings and versions across directory shapes" testIndexWriterEndings,
@@ -752,6 +753,23 @@ testLogStalenessPrefersDeepestLog = do
         }
     ]
     (logStaleness [usersConcept] logs)
+
+testLogDiff :: Either Text ()
+testLogDiff =
+  if and
+    [ renderLogDiff "log.md" (Just "# Log\n\nAdoption evidence.\n- Old entry\n") "# Log\n\n- New entry\n"
+        == "--- log.md\n+++ log.md\n@@ -1,4 +1,3 @@\n # Log\n \n-Adoption evidence.\n-- Old entry\n+- New entry\n",
+      renderLogDiff "log.md" Nothing "# Log\n"
+        == "--- /dev/null\n+++ log.md\n@@ -0,0 +1,1 @@\n+# Log\n",
+      renderLogDiff "log.md" (Just "# Log\r\nold") "# Log\r\nnew\n"
+        == "--- log.md\n+++ log.md\n@@ -1,2 +1,2 @@\n # Log\r\n-old\n\\ No newline at end of file\n+new\n",
+      renderLogDiff "log.md" (Just "# Log\n") "# Log\r\n"
+        == "--- log.md\n+++ log.md\n@@ -1,1 +1,1 @@\n-# Log\n+# Log\r\n",
+      renderLogDiff "log.md" (Just "same\n") "same\n" == "--- log.md\n+++ log.md\n",
+      renderLogDiff "a\t\"b/log.md" Nothing "new" == "--- /dev/null\n+++ \"a\\011\\\"b/log.md\"\n@@ -0,0 +1,1 @@\n+new\n\\ No newline at end of file\n"
+    ]
+    then Right ()
+    else Left "log diff omitted a change or rendered an incorrect hunk"
 
 testAppendLogEntry :: Either Text ()
 testAppendLogEntry =

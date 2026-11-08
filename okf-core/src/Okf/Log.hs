@@ -9,6 +9,7 @@ module Okf.Log
     insertLogEntry,
     logErrorIsStructural,
     parseLog,
+    renderLogDiff,
     serializeLog,
     validateLog,
   )
@@ -19,6 +20,7 @@ import Data.Char qualified as Char
 import Data.List qualified as List
 import Data.Text qualified as Text
 import Data.Time (Day, defaultTimeLocale, parseTimeM)
+import Numeric (showOct)
 import Okf.Markdown (markdownOptions)
 import Okf.Prelude
 
@@ -286,6 +288,61 @@ ensureTrailingNewline text
   | Text.null text = "\n"
   | "\n" `Text.isSuffixOf` text = text
   | otherwise = text <> "\n"
+
+-- | Show an exact unified diff against the original source, or @/dev/null@
+-- for a new file. A single hunk spans every change with up to three context
+-- lines at each end. Line terminators (including CRLF and absent final LF)
+-- participate in comparison, so formatting changes cannot be hidden.
+renderLogDiff :: FilePath -> Maybe Text -> Text -> Text
+renderLogDiff path original updated =
+  "--- "
+    <> maybe "/dev/null" (const displayPath) original
+    <> "\n"
+    <> "+++ "
+    <> displayPath
+    <> "\n"
+    <> if old == new
+      then ""
+      else
+        "@@ -"
+          <> range start (length before + length removed + length after)
+          <> " +"
+          <> range start (length before + length added + length after)
+          <> " @@\n"
+          <> foldMap (renderLine " ") before
+          <> foldMap (renderLine "-") removed
+          <> foldMap (renderLine "+") added
+          <> foldMap (renderLine " ") after
+  where
+    -- Quote unusual path characters using Git's quoted-path convention.
+    displayPath
+      | any (\c -> c == '"' || c == '\\' || Char.isControl c) path = "\"" <> Text.concatMap quoteChar (Text.pack path) <> "\""
+      | otherwise = Text.pack path
+    quoteChar '"' = "\\\""
+    quoteChar '\\' = "\\\\"
+    quoteChar c
+      | Char.ord c < 32 || Char.ord c == 127 =
+          let octal = showOct (Char.ord c) ""
+           in "\\" <> Text.pack (replicate (3 - length octal) '0' <> octal)
+      | otherwise = Text.singleton c
+    old = sourceLines (fromMaybe "" original)
+    new = sourceLines updated
+    prefixLength = length (takeWhile (uncurry (==)) (zip old new))
+    oldRest = drop prefixLength old
+    newRest = drop prefixLength new
+    suffixLength = length (takeWhile (uncurry (==)) (zip (reverse oldRest) (reverse newRest)))
+    before = drop (max 0 (prefixLength - 3)) (take prefixLength old)
+    after = take 3 (drop (length oldRest - suffixLength) oldRest)
+    removed = take (length oldRest - suffixLength) oldRest
+    added = take (length newRest - suffixLength) newRest
+    start = prefixLength - length before
+    range offset count = Text.pack (show (if count == 0 then offset else offset + 1)) <> "," <> Text.pack (show count)
+    renderLine marker line = marker <> line <> if "\n" `Text.isSuffixOf` line then "" else "\n\\ No newline at end of file\n"
+    sourceLines text
+      | Text.null text = []
+      | otherwise =
+          let (line, rest) = Text.breakOn "\n" text
+           in if Text.null rest then [line] else (line <> "\n") : sourceLines (Text.drop 1 rest)
 
 isIsoDate :: Text -> Bool
 isIsoDate value =

@@ -7,6 +7,11 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+### Added
+
+- `okf log add --preview` shows the target path and exact proposed diff without
+  creating or modifying bundle files or directories (IR-15).
+
 ## [0.12.0.1] - 2026-10-28
 
 ### Fixed

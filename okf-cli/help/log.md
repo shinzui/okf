@@ -49,6 +49,18 @@ APPENDING AN ENTRY
   okf log add BUNDLE --kind Update -m "Reorganized the bundle"
   okf log add BUNDLE CONCEPT_ID --kind Update -m "..." --date 2026-06-23
 
+  Review an exact proposed edit before writing:
+
+    okf log add BUNDLE --preview -m "Refreshed schema" --date 2026-06-23
+    okf log add BUNDLE -m "Refreshed schema" --date 2026-06-23
+
+  --preview prints a unified diff with the target path, additions, deletions
+  and context. A new log is compared against /dev/null. It creates or changes
+  no bundle files or directories and needs no confirmation. Supply BUNDLE to
+  run non-interactively; CONCEPT_ID works exactly as for a normal addition.
+  Preview and write share target selection, validation and edit construction.
+  Use an explicit --date and unchanged inputs to write the reviewed content.
+
   With a CONCEPT_ID the entry goes in that concept's directory log.md, creating
   the file if absent. Without one it goes in the root log.md. --kind is the
   leading bold label and defaults to Update; -m/--message is required; --date

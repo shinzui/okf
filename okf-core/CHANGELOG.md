@@ -11,6 +11,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 - `Okf.Log.insertLogEntry` inserts an entry into original Markdown while
   preserving existing content and formatting, refusing unsafe insertion.
+- `Okf.Log.renderLogDiff` renders an exact unified diff against source Markdown
+  or a new file, including deletions and line-ending changes.
 
 ## [0.12.0.1] - 2026-10-28
 

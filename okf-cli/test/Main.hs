@@ -53,11 +53,11 @@ import Okf.Profile.Sweep qualified as Sweep
 import Okf.Query (ConceptFilter (..), ConceptPredicate (..), FieldSelector (..), SortDirection (..), SortKey (..), WhereCondition (..), filterConcepts, filterConceptsWhere, parseSortKey, parseWhereCondition, sortConcepts)
 import Okf.Validation (ValidationProfile (..), validateBundle)
 import Options.Applicative
-import System.Directory (Permissions (..), canonicalizePath, copyFile, createDirectoryIfMissing, createFileLink, doesDirectoryExist, doesFileExist, getCurrentDirectory, getPermissions, getTemporaryDirectory, listDirectory, makeAbsolute, removeDirectoryRecursive, setModificationTime, setPermissions, withCurrentDirectory)
+import System.Directory (Permissions (..), canonicalizePath, copyFile, createDirectoryIfMissing, createFileLink, doesDirectoryExist, doesFileExist, getCurrentDirectory, getPermissions, getTemporaryDirectory, listDirectory, makeAbsolute, removeDirectoryRecursive, removeFile, setModificationTime, setPermissions, withCurrentDirectory)
 import System.Environment (getArgs, getExecutablePath, lookupEnv, setEnv, unsetEnv, withArgs)
 import System.Exit (ExitCode (..), exitFailure)
 import System.FilePath (normalise, takeDirectory, takeFileName, (</>))
-import System.IO (IOMode (..), hClose, hFlush, stdout, withFile)
+import System.IO (Handle, IOMode (..), hClose, hFlush, stderr, stdout, withFile)
 import System.IO.Temp (createTempDirectory)
 import System.Process (readProcessWithExitCode)
 import System.Timeout (timeout)
@@ -91,6 +91,7 @@ runTests = do
   effectiveProfileSources <- testEffectiveProfileSources
   logAddWrites <- testLogAddWritesFile
   logAddPreserves <- testLogAddPreservesHistory
+  logAddPreview <- testLogAddPreview
   aliasStartup <- testAliasStartup
   aliasConfiguration <- testAliasConfiguration
   configDefaults <- testConfigDefaults
@@ -171,7 +172,7 @@ runTests = do
                     Nothing
                     False
                     Nothing
-                    (LogAdd (LogAddOptions Nothing "Update" "Root update" Nothing))
+                    (LogAdd (LogAddOptions Nothing "Update" "Root update" Nothing False))
                 )
             ),
           parseCommandMatches
@@ -181,7 +182,7 @@ runTests = do
                     (Just "b")
                     False
                     Nothing
-                    (LogAdd (LogAddOptions Nothing "Update" "Root update" Nothing))
+                    (LogAdd (LogAddOptions Nothing "Update" "Root update" Nothing False))
                 )
             ),
           parseCommandMatches
@@ -275,7 +276,8 @@ runTests = do
                       { conceptId = Just "tables/users",
                         kind = "Update",
                         message = "Refreshed schema",
-                        date = Just "2026-06-23"
+                        date = Just "2026-06-23",
+                        preview = False
                       }
               },
           parseSucceeds ["graph", "bundle", "--json"],
@@ -708,6 +710,7 @@ runTests = do
           parseFails ["hello"],
           logAddWrites,
           logAddPreserves,
+          logAddPreview,
           bundleDiscoveryListing,
           profileDiscoveryListing,
           profilePickerExitCodes,
@@ -2615,7 +2618,8 @@ testLogAddWritesFile = do
                   { conceptId = Just "tables/users",
                     kind = "Update",
                     message = "Refreshed schema",
-                    date = Just "2026-06-23"
+                    date = Just "2026-06-23",
+                    preview = False
                   }
           }
     )
@@ -2626,7 +2630,7 @@ testLogAddWritesFile = do
       nestedLog = "# Tables Log\n\n## 2026-06-22\n\nNested adoption evidence.\n\n- **Adoption**: Keep `column_name`.\n"
   Text.IO.writeFile (root </> "log.md") rootLog
   Text.IO.writeFile (root </> "tables" </> "log.md") nestedLog
-  runLogAdd root (LogAddOptions (Just "tables/users") "Update" "Nested update" (Just "2026-06-23"))
+  runLogAdd root (LogAddOptions (Just "tables/users") "Update" "Nested update" (Just "2026-06-23") False)
   nestedAfter <- Text.IO.readFile (root </> "tables" </> "log.md")
   rootAfter <- Text.IO.readFile (root </> "log.md")
   removeDirectoryRecursive root
@@ -2657,7 +2661,7 @@ testLogAddPreservesHistory = do
             ("title only", "2026-11-06", "# Log\n", "# Log\n\n## 2026-11-06\n" <> bullet <> "\n")
           ]
         encode = Text.Encoding.encodeUtf8
-        run day = try @ExitCode (runLogAdd root (LogAddOptions Nothing "Update" "Add one entry" (Just day)))
+        run day = try @ExitCode (runLogAdd root (LogAddOptions Nothing "Update" "Add one entry" (Just day) False))
     preserved <- forM [(label, day, convert before, convert after) | convert <- [id, Text.replace "\n" "\r\n"], (label, day, before, after) <- cases] $ \(label, day, before, expected) -> do
       Bytes.writeFile (root </> "log.md") (encode before)
       outcome <- run day
@@ -2685,14 +2689,112 @@ testLogAddPreservesHistory = do
       outcome <- run day
       actual <- Bytes.readFile (root </> "log.md")
       pure (outcome == Left (ExitFailure 1) && actual == encode original)
-    missingResult <- try @ExitCode (runLogAdd (root </> "missing") (LogAddOptions Nothing "Update" "Add one entry" (Just "2026-02-30")))
+    missingResult <- try @ExitCode (runLogAdd (root </> "missing") (LogAddOptions Nothing "Update" "Add one entry" (Just "2026-02-30") False))
     missingCreated <- doesDirectoryExist (root </> "missing")
     let referenceHistory = original <> "\n\n[source]: guide.md\n"
         referenceExpected = prefix <> "## 2026-11-07\n* **Update**: See [guide][source].\n\n" <> heading <> history <> "\n\n[source]: guide.md\n"
     Bytes.writeFile (root </> "log.md") (encode referenceHistory)
-    referenceResult <- try @ExitCode (runLogAdd root (LogAddOptions Nothing "Update" "See [guide][source]." (Just "2026-11-07")))
+    referenceResult <- try @ExitCode (runLogAdd root (LogAddOptions Nothing "Update" "See [guide][source]." (Just "2026-11-07") False))
     referenceAfter <- Bytes.readFile (root </> "log.md")
     pure (and preserved && and refused && and invalidDates && missingResult == Left (ExitFailure 1) && not missingCreated && referenceResult == Right () && referenceAfter == encode referenceExpected)
+
+-- Exercise the actual command parser and compare a patch applied by Git with
+-- the normal writer. Snapshot directories as well as file bytes before Git or
+-- the writer runs, so preview cannot quietly create an absent log directory.
+testLogAddPreview :: IO Bool
+testLogAddPreview = do
+  temp <- getTemporaryDirectory
+  bracket (createTempDirectory temp "okf-cli-log-preview" >>= canonicalizePath) removeDirectoryRecursive $ \scratch -> do
+    let mixed = "# Log\n\nAdopted guides: 東京.\n\n| Original | Retained |\n| --- | --- |\n| old.md | guide.md |\n\n## 2026-11-06\n\n- **Adoption**: Keep `guide_name`, [guide](guide.md), and \\_text\\_."
+        cases =
+          [ ("root", Nothing, "log.md", Just mixed, "2026-11-07"),
+            ("same-day", Nothing, "log.md", Just mixed, "2026-11-06"),
+            ("oldest", Nothing, "log.md", Just mixed, "2026-11-05"),
+            ("crlf", Nothing, "log.md", Just (Text.replace "\n" "\r\n" mixed), "2026-11-05"),
+            ("nested", Just "tables/deep/users", "tables/deep/log.md", Just mixed, "2026-11-07"),
+            ("new-log", Just "tables/deep/users", "tables/deep/log.md", Nothing, "2026-11-07"),
+            ("new-directory", Just "absent/deep/users", "absent/deep/log.md", Nothing, "2026-11-07"),
+            ("new-root", Nothing, "log.md", Nothing, "2026-11-07")
+          ]
+        run args = captureStdout (captureHandle stderr (try @ExitCode (withArgs args runCli)))
+        snapshot root = do
+          let walk relative = do
+                names <- List.sort <$> listDirectory (root </> relative)
+                fmap concat . forM names $ \name -> do
+                  let path = relative </> name
+                  directory <- doesDirectoryExist (root </> path)
+                  if directory
+                    then ((path, Nothing) :) <$> walk path
+                    else do
+                      bytes <- Bytes.readFile (root </> path)
+                      pure [(path, Just bytes)]
+          walk ""
+    previews <- forM cases $ \(label, selectedConcept, target, original, day) -> do
+      let root = scratch </> label
+          targetPath = root </> target
+          args = ["log", "add", root] <> maybe [] (pure . Text.unpack) selectedConcept <> ["-m", "Reviewed update: 東京", "--date", day]
+      createDirectoryIfMissing True (root </> "tables/deep")
+      Text.IO.writeFile (root </> "index.md") "---\nokf_version: '0.2'\n---\n\n# Bundle\n"
+      Text.IO.writeFile (root </> "tables/deep/users.md") "---\ntype: Table\n---\n\n# Users\n"
+      traverse_ (\text -> Text.IO.writeFile targetPath text) original
+      before <- snapshot root
+      ((previewResult, _), patch) <- run (args <> ["--preview"])
+      after <- snapshot root
+      -- Apply the emitted diff, retaining CRs and no-final-newline markers.
+      (patchResult, _, patchError) <- withCurrentDirectory root (readProcessWithExitCode "git" ["apply", "--unsafe-paths", "-p0", "-"] (Text.unpack patch))
+      patchedExists <- doesFileExist targetPath
+      patched <- if patchedExists then Bytes.readFile targetPath else pure ""
+      case original of
+        Just text -> Bytes.writeFile targetPath (Text.Encoding.encodeUtf8 text)
+        Nothing -> whenFileExists targetPath (removeFile targetPath)
+      ((writeResult, _), _) <- run args
+      written <- Bytes.readFile targetPath
+      let passed =
+            previewResult == Right ()
+              && before == after
+              && patchResult == ExitSuccess
+              && writeResult == Right ()
+              && patched == written
+              && Text.pack targetPath `Text.isInfixOf` patch
+              && "+* **Update**: Reviewed update: 東京" `Text.isInfixOf` patch
+              && (maybe False (const True) original || "--- /dev/null\n" `Text.isPrefixOf` patch)
+      unless passed (putStrLn ("log preview failed: " <> label <> "\n" <> Text.unpack patch <> patchError))
+      pure passed
+    let root = scratch </> "errors"
+        baseArgs = ["log", "add", root, "-m", "Update", "--date", "2026-11-07"]
+        badCases =
+          [ ("# Log\n", ["log", "add", root, "-m", "Update", "--date", "2026-02-30"]),
+            ("# Log\n", ["log", "add", root, "../escape", "-m", "Update"]),
+            ("# Log\n", ["log", "add", root, "--preview"]),
+            ("# Log\n", ["log", "add", root, "-m", "first\n\n* second"]),
+            ("# Log\n\n## invalid\n- Keep.\n", baseArgs),
+            (Bytes.pack [255, 254, 128], baseArgs)
+          ]
+    createDirectoryIfMissing True root
+    errors <- forM badCases $ \(bytes, args) -> do
+      Bytes.writeFile (root </> "log.md") bytes
+      before <- snapshot root
+      ((normalResult, normalError), _) <- run (filter (/= "--preview") args)
+      ((previewResult, previewError), output) <- run (args <> ["--preview" | "--preview" `notElem` args])
+      after <- snapshot root
+      pure (normalResult == Left (ExitFailure 1) && previewResult == normalResult && previewError == normalError && Text.null output && before == after)
+    -- A root that does not exist must remain absent, including its parents.
+    before <- snapshot scratch
+    ((absentResult, _), _) <- run ["log", "add", scratch </> "missing/child", "--preview", "-m", "New root", "--date", "2026-11-07"]
+    after <- snapshot scratch
+    let documentedHelp = case execParserPure defaultPrefs parserInfo ["log", "add", "--help"] of
+          Failure failure ->
+            let (helpText, code) = renderFailure failure "okf"
+                normalized = Text.unwords (Text.words (Text.pack helpText))
+             in code == ExitSuccess
+                  && "--preview" `Text.isInfixOf` normalized
+                  && "okf log add BUNDLE --preview -m 'Refreshed schema' --date 2026-06-23" `Text.isInfixOf` normalized
+          _ -> False
+    pure (and previews && and errors && absentResult == Right () && before == after && documentedHelp)
+  where
+    whenFileExists path action = do
+      exists <- doesFileExist path
+      if exists then action else pure ()
 
 -- | Discovery stays sorted and duplicate-free across repeated roots, an empty
 -- search is successful, and JSON metadata failure leaves a path-only entry.
@@ -4126,15 +4228,18 @@ testNestedClosureCli = withRepositoryPath2 "nested closure CLI" "okf-core/test/f
 
 -- | Run an action with stdout redirected to a file, returning what it printed.
 captureStdout :: IO a -> IO (a, Text.Text)
-captureStdout action = do
+captureStdout = captureHandle stdout
+
+captureHandle :: Handle -> IO a -> IO (a, Text.Text)
+captureHandle stream action = do
   temporary <- getTemporaryDirectory
   directory <- createTempDirectory temporary "okf-cli-capture"
   let path = directory </> "stdout"
   result <- withFile path WriteMode $ \handle -> do
-    hFlush stdout
-    saved <- hDuplicate stdout
-    hDuplicateTo handle stdout
-    action `finally` (hFlush stdout >> hDuplicateTo saved stdout >> hClose saved)
+    hFlush stream
+    saved <- hDuplicate stream
+    hDuplicateTo handle stream
+    action `finally` (hFlush stream >> hDuplicateTo saved stream >> hClose saved)
   output <- Text.IO.readFile path
   removeDirectoryRecursive directory
   pure (result, output)
