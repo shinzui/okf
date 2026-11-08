@@ -7,6 +7,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.13.0.0] - 2026-11-08
+
 ### Added
 
 - `Okf.Log.insertLogEntry` inserts an entry into original Markdown while

@@ -7,6 +7,8 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ## [Unreleased]
 
+## [0.13.0.0] - 2026-11-08
+
 ### Added
 
 - `okf log add --preview` shows the target path and exact proposed unified diff
@@ -15,6 +17,9 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
+- Require okf-core ^>=0.13.0.0 for content-preserving log insertion and previews.
+- Upgrade `mori://shinzui/baikai/packages/baikai` to 0.10.1.0 for cancellation
+  fixes in traced calls.
 - **Breaking (library):** `LogAddOptions` adds the `preview` boolean field.
 
 ### Fixed
